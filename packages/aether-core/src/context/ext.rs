@@ -1,6 +1,6 @@
 use crate::events::AgentMessage;
 use llm::types::IsoString;
-use llm::{ChatMessage, Context, ToolCallError, ToolCallResult};
+use llm::{AssistantReasoning, ChatMessage, Context, ToolCallError, ToolCallResult};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -82,10 +82,11 @@ fn apply_agent_event(ctx: &mut Context, event: &AgentMessage, acc: &mut TurnAccu
         }
         AgentMessage::Done => {
             let text = std::mem::take(&mut acc.text);
-            let reasoning = std::mem::take(&mut acc.reasoning);
+            let reasoning_text = std::mem::take(&mut acc.reasoning);
             let tools = std::mem::take(&mut acc.tool_results);
             if !text.is_empty() || !tools.is_empty() {
-                ctx.push_assistant_turn(&text, &reasoning, tools);
+                let reasoning = AssistantReasoning::from_parts(reasoning_text, None);
+                ctx.push_assistant_turn(&text, reasoning, tools);
             }
         }
         AgentMessage::ContextCleared => {

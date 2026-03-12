@@ -4,8 +4,8 @@ use crate::mcp::run_mcp_task::{McpCommand, ToolExecutionEvent};
 use futures::Stream;
 use llm::types::IsoString;
 use llm::{
-    ChatMessage, Context, LlmError, LlmResponse, StopReason, StreamingModelProvider, ToolCallError,
-    ToolCallRequest, ToolCallResult,
+    AssistantReasoning, ChatMessage, Context, EncryptedReasoningContent, LlmError, LlmResponse,
+    StopReason, StreamingModelProvider, ToolCallError, ToolCallRequest, ToolCallResult,
 };
 use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
@@ -146,7 +146,8 @@ impl Agent {
     async fn on_iteration_complete(&mut self, id: String, iteration: IterationState) {
         let IterationState {
             message_content,
-            reasoning_content,
+            reasoning_summary_text,
+            encrypted_reasoning,
             completed_tool_calls,
             stop_reason,
             ..
@@ -160,7 +161,9 @@ impl Agent {
             return;
         }
 
-        self.update_context(&message_content, &reasoning_content, completed_tool_calls);
+        let reasoning =
+            AssistantReasoning::from_parts(reasoning_summary_text.clone(), encrypted_reasoning);
+        self.update_context(&message_content, reasoning, completed_tool_calls);
 
         let _ = self
             .message_tx
@@ -172,12 +175,12 @@ impl Agent {
             })
             .await;
 
-        if !reasoning_content.is_empty() {
+        if !reasoning_summary_text.is_empty() {
             let _ = self
                 .message_tx
                 .send(AgentMessage::Thought {
                     message_id: id.clone(),
-                    chunk: reasoning_content,
+                    chunk: reasoning_summary_text,
                     is_complete: true,
                     model_name: self.llm.display_name(),
                 })
@@ -273,12 +276,7 @@ impl Agent {
 
     fn start_llm_stream(&mut self) {
         self.streams.remove("llm");
-
-        let llm_stream = self
-            .llm
-            .stream_response(&self.context)
-            .map(StreamEvent::Llm);
-
+        let llm_stream = self.llm.stream_response(&self.context).map(StreamEvent::Llm);
         self.streams.insert("llm".to_string(), Box::pin(llm_stream));
     }
 
@@ -303,7 +301,7 @@ impl Agent {
         if !previous_response.is_empty() {
             self.context.add_message(ChatMessage::Assistant {
                 content: previous_response.to_string(),
-                reasoning_content: None,
+                reasoning: AssistantReasoning::default(),
                 timestamp: IsoString::now(),
                 tool_calls: Vec::new(),
             });
@@ -326,8 +324,8 @@ impl Agent {
         state: &mut IterationState,
     ) {
         use LlmResponse::{
-            Done, Error, Reasoning, Start, Text, ToolRequestArg, ToolRequestComplete,
-            ToolRequestStart, Usage,
+            Done, EncryptedReasoning, Error, Reasoning, Start, Text, ToolRequestArg,
+            ToolRequestComplete, ToolRequestStart, Usage,
         };
 
         let response = match result {
@@ -353,7 +351,28 @@ impl Agent {
             }
 
             Reasoning { chunk } => {
-                self.handle_llm_reasoning(chunk, state).await;
+                state.reasoning_summary_text.push_str(&chunk);
+                if let Some(id) = &state.current_message_id {
+                    let _ = self
+                        .message_tx
+                        .send(AgentMessage::Thought {
+                            message_id: id.clone(),
+                            chunk,
+                            is_complete: false,
+                            model_name: self.llm.display_name(),
+                        })
+                        .await;
+                }
+            }
+
+            EncryptedReasoning { id, content } => {
+                if let Some(model) = self.llm.model() {
+                    state.encrypted_reasoning = Some(EncryptedReasoningContent {
+                        id,
+                        model,
+                        content,
+                    });
+                }
             }
 
             ToolRequestStart { id, name } => {
@@ -393,22 +412,6 @@ impl Agent {
             let _ = self
                 .message_tx
                 .send(AgentMessage::Text {
-                    message_id: id.clone(),
-                    chunk,
-                    is_complete: false,
-                    model_name: self.llm.display_name(),
-                })
-                .await;
-        }
-    }
-
-    async fn handle_llm_reasoning(&mut self, chunk: String, state: &mut IterationState) {
-        state.reasoning_content.push_str(&chunk);
-
-        if let Some(id) = &state.current_message_id {
-            let _ = self
-                .message_tx
-                .send(AgentMessage::Thought {
                     message_id: id.clone(),
                     chunk,
                     is_complete: false,
@@ -688,11 +691,11 @@ impl Agent {
     fn update_context(
         &mut self,
         message_content: &str,
-        reasoning_content: &str,
+        reasoning: AssistantReasoning,
         completed_tools: Vec<Result<ToolCallResult, ToolCallError>>,
     ) {
         self.context
-            .push_assistant_turn(message_content, reasoning_content, completed_tools);
+            .push_assistant_turn(message_content, reasoning, completed_tools);
     }
 }
 
@@ -742,7 +745,8 @@ impl AutoContinue {
 struct IterationState {
     current_message_id: Option<String>,
     message_content: String,
-    reasoning_content: String,
+    reasoning_summary_text: String,
+    encrypted_reasoning: Option<EncryptedReasoningContent>,
     pending_tool_ids: HashSet<String>,
     completed_tool_calls: Vec<Result<ToolCallResult, ToolCallError>>,
     llm_done: bool,
@@ -755,7 +759,8 @@ impl IterationState {
         Self {
             current_message_id: None,
             message_content: String::new(),
-            reasoning_content: String::new(),
+            reasoning_summary_text: String::new(),
+            encrypted_reasoning: None,
             pending_tool_ids: HashSet::new(),
             completed_tool_calls: Vec::new(),
             llm_done: false,
@@ -767,7 +772,8 @@ impl IterationState {
     fn on_llm_start(&mut self, message_id: String) {
         self.current_message_id = Some(message_id);
         self.message_content.clear();
-        self.reasoning_content.clear();
+        self.reasoning_summary_text.clear();
+        self.encrypted_reasoning = None;
         self.stop_reason = None;
     }
 

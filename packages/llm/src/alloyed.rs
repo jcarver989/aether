@@ -45,6 +45,10 @@ impl StreamingModelProvider for AlloyedModelProvider {
         }
     }
 
+    fn model(&self) -> Option<crate::LlmModel> {
+        self.get_current_provider().and_then(|p| p.model())
+    }
+
     fn display_name(&self) -> String {
         match self.get_current_provider() {
             Some(provider) => provider.display_name(),

@@ -16,7 +16,7 @@ mod tools;
 pub mod types;
 
 pub use catalog::LlmModel;
-pub use chat_message::ChatMessage;
+pub use chat_message::{AssistantReasoning, ChatMessage, EncryptedReasoningContent};
 pub use context::Context;
 pub use credential::ProviderCredential;
 pub use error::{ContextOverflowError, LlmError, Result};

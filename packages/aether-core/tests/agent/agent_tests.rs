@@ -514,14 +514,11 @@ async fn test_reasoning_content_is_saved_in_context_after_tool_call() -> Result<
         )
     });
 
-    let Some(ChatMessage::Assistant {
-        reasoning_content, ..
-    }) = assistant_with_tool_call
-    else {
+    let Some(ChatMessage::Assistant { reasoning, .. }) = assistant_with_tool_call else {
         panic!("expected assistant message with tool call");
     };
 
-    assert_eq!(reasoning_content.as_deref(), Some("internal plan"));
+    assert_eq!(reasoning.summary_text.as_deref(), Some("internal plan"));
 
     Ok(())
 }

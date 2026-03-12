@@ -60,6 +60,10 @@ impl ProviderFactory for GeminiProvider {
 }
 
 impl StreamingModelProvider for GeminiProvider {
+    fn model(&self) -> Option<crate::LlmModel> {
+        format!("gemini:{}", self.model).parse().ok()
+    }
+
     fn context_window(&self) -> Option<u32> {
         get_context_window("gemini", &self.model)
     }

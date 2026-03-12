@@ -163,7 +163,7 @@ mod tests {
     fn test_map_assistant_with_tool_calls() {
         let messages = vec![ChatMessage::Assistant {
             content: "I'll help you with that".to_string(),
-            reasoning_content: None,
+            reasoning: Default::default(),
             timestamp: IsoString::now(),
             tool_calls: vec![ToolCallRequest {
                 id: "call_1".to_string(),

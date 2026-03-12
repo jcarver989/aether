@@ -74,7 +74,9 @@ pub fn process_compatible_stream<E: Into<LlmError> + Send>(
                         if let Some(reasoning) = delta.reasoning_content
                             && !reasoning.is_empty() {
                                 had_reasoning = true;
-                                yield Ok(LlmResponse::Reasoning { chunk: reasoning });
+                                yield Ok(LlmResponse::Reasoning {
+                                    chunk: reasoning,
+                                });
                             }
 
                         if let Some(content) = delta.content

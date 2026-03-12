@@ -75,7 +75,16 @@ fn process_event(
         }
         ResponseStreamEvent::ResponseReasoningSummaryTextDelta(e) => {
             if !e.delta.is_empty() {
-                responses.push(Ok(LlmResponse::Reasoning { chunk: e.delta }));
+                responses.push(Ok(LlmResponse::Reasoning {
+                    chunk: e.delta,
+                }));
+            }
+        }
+        ResponseStreamEvent::ResponseOutputItemDone(e) => {
+            if let OutputItem::Reasoning(reasoning) = e.item {
+                if let Some(encrypted) = reasoning.encrypted_content {
+                    responses.push(Ok(LlmResponse::EncryptedReasoning { id: reasoning.id, content: encrypted }));
+                }
             }
         }
         ResponseStreamEvent::ResponseCompleted(e) => {
@@ -108,10 +117,10 @@ fn process_event(
 mod tests {
     use super::*;
     use async_openai::types::responses::{
-        FunctionToolCall, Response, ResponseCompletedEvent, ResponseErrorEvent,
+        FunctionToolCall, ReasoningItem, Response, ResponseCompletedEvent, ResponseErrorEvent,
         ResponseFunctionCallArgumentsDeltaEvent, ResponseFunctionCallArgumentsDoneEvent,
-        ResponseOutputItemAddedEvent, ResponseReasoningSummaryTextDeltaEvent,
-        ResponseTextDeltaEvent, ResponseUsage,
+        ResponseOutputItemAddedEvent, ResponseOutputItemDoneEvent,
+        ResponseReasoningSummaryTextDeltaEvent, ResponseTextDeltaEvent, ResponseUsage,
     };
     /// Build a minimal `Response` with given status and optional usage via JSON deserialization.
     fn make_response(status: &Status, usage: Option<ResponseUsage>) -> Response {
@@ -373,5 +382,50 @@ mod tests {
 
         assert!(responses[0].is_ok()); // Start
         assert!(responses[1].is_err()); // Stream error
+    }
+
+    #[test]
+    fn test_encrypted_reasoning_from_output_item_done() {
+        let event = ResponseStreamEvent::ResponseOutputItemDone(ResponseOutputItemDoneEvent {
+            sequence_number: 1,
+            output_index: 0,
+            item: OutputItem::Reasoning(ReasoningItem {
+                id: "r_1".to_string(),
+                summary: vec![],
+                encrypted_content: Some("enc-blob-data".to_string()),
+                content: None,
+                status: None,
+            }),
+        });
+
+        let mut tool_collector = ToolCallCollector::<u32>::new();
+        let mut stop_reason = None;
+        let responses = process_event(event, &mut tool_collector, &mut stop_reason);
+
+        assert_eq!(responses.len(), 1);
+        assert!(
+            matches!(&responses[0], Ok(LlmResponse::EncryptedReasoning { content }) if content == "enc-blob-data")
+        );
+    }
+
+    #[test]
+    fn test_output_item_done_without_encrypted_content_is_ignored() {
+        let event = ResponseStreamEvent::ResponseOutputItemDone(ResponseOutputItemDoneEvent {
+            sequence_number: 1,
+            output_index: 0,
+            item: OutputItem::Reasoning(ReasoningItem {
+                id: "r_2".to_string(),
+                summary: vec![],
+                encrypted_content: None,
+                content: None,
+                status: None,
+            }),
+        });
+
+        let mut tool_collector = ToolCallCollector::<u32>::new();
+        let mut stop_reason = None;
+        let responses = process_event(event, &mut tool_collector, &mut stop_reason);
+
+        assert!(responses.is_empty());
     }
 }

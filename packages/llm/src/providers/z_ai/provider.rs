@@ -41,6 +41,10 @@ impl ProviderFactory for ZAiProvider {
 }
 
 impl StreamingModelProvider for ZAiProvider {
+    fn model(&self) -> Option<crate::LlmModel> {
+        format!("zai:{}", self.model).parse().ok()
+    }
+
     fn context_window(&self) -> Option<u32> {
         get_context_window("zai", &self.model)
     }

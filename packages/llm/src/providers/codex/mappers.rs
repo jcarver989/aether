@@ -1,6 +1,6 @@
 use async_openai::types::responses::{
     EasyInputContent, EasyInputMessage, FunctionCallOutput, FunctionCallOutputItemParam,
-    FunctionTool, FunctionToolCall, InputItem, Item, Role, Tool,
+    FunctionTool, FunctionToolCall, InputItem, Item, ReasoningItem, Role, Tool,
 };
 
 use crate::{ChatMessage, LlmError, ToolDefinition};
@@ -24,10 +24,20 @@ pub fn map_messages(messages: &[ChatMessage]) -> (Option<String>, Vec<InputItem>
             ChatMessage::Assistant {
                 content,
                 tool_calls,
+                reasoning,
                 ..
             } => {
                 if !content.is_empty() {
                     items.push(easy_message(Role::Assistant, content.clone()));
+                }
+                if let Some(encrypted) = &reasoning.encrypted_content {
+                    items.push(InputItem::Item(Item::Reasoning(ReasoningItem {
+                        id: encrypted.id.clone(),
+                        summary: vec![],
+                        encrypted_content: Some(encrypted.content.clone()),
+                        content: None,
+                        status: None,
+                    })));
                 }
                 for tc in tool_calls {
                     items.push(InputItem::Item(Item::FunctionCall(FunctionToolCall {
@@ -111,7 +121,7 @@ fn easy_message(role: Role, content: String) -> InputItem {
 mod tests {
     use super::*;
     use crate::types::IsoString;
-    use crate::{ToolCallError, ToolCallRequest, ToolCallResult};
+    use crate::{AssistantReasoning, EncryptedReasoningContent, ToolCallError, ToolCallRequest, ToolCallResult};
 
     #[test]
     fn map_messages_extracts_system_prompt() {
@@ -140,7 +150,7 @@ mod tests {
             },
             ChatMessage::Assistant {
                 content: "I'll read that file.".to_string(),
-                reasoning_content: None,
+                reasoning: Default::default(),
                 timestamp: IsoString::now(),
                 tool_calls: vec![ToolCallRequest {
                     id: "call_1".to_string(),
@@ -156,7 +166,7 @@ mod tests {
             })),
             ChatMessage::Assistant {
                 content: "Here's the file content.".to_string(),
-                reasoning_content: None,
+                reasoning: Default::default(),
                 timestamp: IsoString::now(),
                 tool_calls: vec![],
             },
@@ -238,7 +248,7 @@ mod tests {
             },
             ChatMessage::Assistant {
                 content: "Hi".to_string(),
-                reasoning_content: None,
+                reasoning: Default::default(),
                 timestamp: IsoString::now(),
                 tool_calls: vec![ToolCallRequest {
                     id: "tc_1".to_string(),
@@ -307,5 +317,48 @@ mod tests {
         assert!(
             matches!(err, LlmError::ToolParameterParsing { ref tool_name, .. } if tool_name == "broken")
         );
+    }
+
+    #[test]
+    fn map_messages_includes_encrypted_reasoning_item() {
+        let messages = vec![ChatMessage::Assistant {
+            content: "thinking done".to_string(),
+            reasoning: AssistantReasoning::from_parts(
+                "summary".to_string(),
+                Some(EncryptedReasoningContent {
+                    id: "r_1".to_string(),
+                    model: crate::LlmModel::Ollama("test".to_string()),
+                    content: "encrypted-blob".to_string(),
+                }),
+            ),
+            timestamp: IsoString::now(),
+            tool_calls: vec![],
+        }];
+
+        let (_, items) = map_messages(&messages);
+        // Should have: easy_message (text) + reasoning item = 2
+        assert_eq!(items.len(), 2);
+
+        let reasoning_item = &items[1];
+        if let InputItem::Item(Item::Reasoning(r)) = reasoning_item {
+            assert_eq!(r.encrypted_content.as_deref(), Some("encrypted-blob"));
+        } else {
+            panic!("Expected Item::Reasoning, got {reasoning_item:?}");
+        }
+    }
+
+    #[test]
+    fn map_messages_skips_reasoning_item_without_encrypted_content() {
+        let messages = vec![ChatMessage::Assistant {
+            content: "no encrypted".to_string(),
+            reasoning: AssistantReasoning::from_parts("just a summary".to_string(), None),
+            timestamp: IsoString::now(),
+            tool_calls: vec![],
+        }];
+
+        let (_, items) = map_messages(&messages);
+        // Only the text message, no reasoning item
+        assert_eq!(items.len(), 1);
+        assert!(matches!(&items[0], InputItem::EasyMessage(_)));
     }
 }

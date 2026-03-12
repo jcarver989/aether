@@ -91,7 +91,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> Vec<CompatibleChatMessage> {
             }),
             ChatMessage::Assistant {
                 content,
-                reasoning_content,
+                reasoning,
                 tool_calls,
                 ..
             } => {
@@ -111,8 +111,8 @@ pub fn map_messages(messages: &[ChatMessage]) -> Vec<CompatibleChatMessage> {
                 let has_tool_calls = !openai_tool_calls.is_empty();
                 let tool_calls = has_tool_calls.then_some(openai_tool_calls);
 
-                let reasoning_content = if reasoning_content.is_some() {
-                    reasoning_content.clone()
+                let reasoning_content = if reasoning.summary_text.is_some() {
+                    reasoning.summary_text.clone()
                 } else if has_tool_calls {
                     Some(".".to_string())
                 } else {
@@ -284,7 +284,10 @@ mod tests {
     fn assistant_with_tool_call(reasoning_content: Option<&str>) -> ChatMessage {
         ChatMessage::Assistant {
             content: String::new(),
-            reasoning_content: reasoning_content.map(ToString::to_string),
+            reasoning: crate::AssistantReasoning {
+                summary_text: reasoning_content.map(ToString::to_string),
+                encrypted_content: None,
+            },
             timestamp: IsoString::now(),
             tool_calls: vec![ToolCallRequest {
                 id: "call_1".to_string(),

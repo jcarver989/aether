@@ -1,8 +1,45 @@
 use serde::{Deserialize, Serialize};
 
+use crate::catalog::LlmModel;
 use crate::types::IsoString;
 
 use super::{ToolCallError, ToolCallRequest, ToolCallResult};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EncryptedReasoningContent {
+    pub id: String,
+    #[serde(
+        serialize_with = "serialize_llm_model",
+        deserialize_with = "deserialize_llm_model"
+    )]
+    pub model: LlmModel,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct AssistantReasoning {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_text: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encrypted_content: Option<EncryptedReasoningContent>,
+}
+
+impl AssistantReasoning {
+    pub fn from_parts(
+        summary_text: String,
+        encrypted: Option<EncryptedReasoningContent>,
+    ) -> Self {
+        Self {
+            summary_text: (!summary_text.is_empty()).then_some(summary_text),
+            encrypted_content: encrypted,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.summary_text.is_none() && self.encrypted_content.is_none()
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -17,8 +54,8 @@ pub enum ChatMessage {
     },
     Assistant {
         content: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        reasoning_content: Option<String>,
+        #[serde(default)]
+        reasoning: AssistantReasoning,
         timestamp: IsoString,
         tool_calls: Vec<ToolCallRequest>,
     },
@@ -65,12 +102,16 @@ impl ChatMessage {
             | ChatMessage::Summary { content, .. } => content.len(),
             ChatMessage::Assistant {
                 content,
-                reasoning_content,
+                reasoning,
                 tool_calls,
                 ..
             } => {
                 content.len()
-                    + reasoning_content.as_ref().map_or(0, String::len)
+                    + reasoning.summary_text.as_ref().map_or(0, String::len)
+                    + reasoning
+                        .encrypted_content
+                        .as_ref()
+                        .map_or(0, |ec| ec.content.len())
                     + tool_calls
                         .iter()
                         .map(|tc| tc.name.len() + tc.arguments.len())
@@ -97,5 +138,143 @@ impl ChatMessage {
             | ChatMessage::Summary { timestamp, .. } => Some(timestamp),
             ChatMessage::ToolCallResult(_) => None,
         }
+    }
+}
+
+fn serialize_llm_model<S: serde::Serializer>(model: &LlmModel, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(&model.to_string())
+}
+
+fn deserialize_llm_model<'de, D: serde::Deserializer<'de>>(d: D) -> Result<LlmModel, D::Error> {
+    let s = String::deserialize(d)?;
+    s.parse::<LlmModel>().map_err(serde::de::Error::custom)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_model() -> LlmModel {
+        "anthropic:claude-opus-4-6".parse().unwrap()
+    }
+
+    #[test]
+    fn assistant_reasoning_is_empty_when_default() {
+        let r = AssistantReasoning::default();
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    fn assistant_reasoning_not_empty_with_summary() {
+        let r = AssistantReasoning::from_parts("thinking".to_string(), None);
+        assert!(!r.is_empty());
+    }
+
+    #[test]
+    fn assistant_reasoning_not_empty_with_encrypted() {
+        let r = AssistantReasoning {
+            summary_text: None,
+            encrypted_content: Some(EncryptedReasoningContent {
+                id: "r_test".to_string(),
+                model: make_model(),
+                content: "blob".to_string(),
+            }),
+        };
+        assert!(!r.is_empty());
+    }
+
+    #[test]
+    fn from_parts_empty_summary_is_none() {
+        let r = AssistantReasoning::from_parts(String::new(), None);
+        assert!(r.summary_text.is_none());
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    fn encrypted_reasoning_content_serde_roundtrip() {
+        let model = make_model();
+        let ec = EncryptedReasoningContent {
+            id: "r_test".to_string(),
+            model: model.clone(),
+            content: "encrypted-data".to_string(),
+        };
+        let json = serde_json::to_string(&ec).unwrap();
+        let parsed: EncryptedReasoningContent = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.model, model);
+        assert_eq!(parsed.content, "encrypted-data");
+    }
+
+    #[test]
+    fn assistant_reasoning_serde_roundtrip() {
+        let model = make_model();
+        let r = AssistantReasoning {
+            summary_text: Some("thought".to_string()),
+            encrypted_content: Some(EncryptedReasoningContent {
+                id: "r_test".to_string(),
+                model,
+                content: "blob".to_string(),
+            }),
+        };
+        let json = serde_json::to_string(&r).unwrap();
+        let parsed: AssistantReasoning = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, r);
+    }
+
+    #[test]
+    fn assistant_reasoning_serde_empty_roundtrip() {
+        let r = AssistantReasoning::default();
+        let json = serde_json::to_string(&r).unwrap();
+        assert_eq!(json, "{}");
+        let parsed: AssistantReasoning = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, r);
+    }
+
+    #[test]
+    fn chat_message_assistant_serde_roundtrip_with_reasoning() {
+        let model = make_model();
+        let msg = ChatMessage::Assistant {
+            content: "response".to_string(),
+            reasoning: AssistantReasoning {
+                summary_text: Some("plan".to_string()),
+                encrypted_content: Some(EncryptedReasoningContent {
+                    id: "r_test".to_string(),
+                    model,
+                    content: "enc".to_string(),
+                }),
+            },
+            timestamp: IsoString::now(),
+            tool_calls: vec![],
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: ChatMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, msg);
+    }
+
+    #[test]
+    fn estimated_bytes_includes_encrypted_content() {
+        let model = make_model();
+        let msg_with = ChatMessage::Assistant {
+            content: "hi".to_string(),
+            reasoning: AssistantReasoning {
+                summary_text: Some("think".to_string()),
+                encrypted_content: Some(EncryptedReasoningContent {
+                    id: "r_test".to_string(),
+                    model,
+                    content: "x".repeat(100),
+                }),
+            },
+            timestamp: IsoString::now(),
+            tool_calls: vec![],
+        };
+        let msg_without = ChatMessage::Assistant {
+            content: "hi".to_string(),
+            reasoning: AssistantReasoning {
+                summary_text: Some("think".to_string()),
+                encrypted_content: None,
+            },
+            timestamp: IsoString::now(),
+            tool_calls: vec![],
+        };
+        assert!(msg_with.estimated_bytes() > msg_without.estimated_bytes());
     }
 }

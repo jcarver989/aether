@@ -64,6 +64,10 @@ impl ProviderFactory for OpenRouterProvider {
 }
 
 impl StreamingModelProvider for OpenRouterProvider {
+    fn model(&self) -> Option<crate::LlmModel> {
+        format!("openrouter:{}", self.model).parse().ok()
+    }
+
     fn context_window(&self) -> Option<u32> {
         get_context_window("openrouter", &self.model)
     }
