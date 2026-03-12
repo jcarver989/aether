@@ -78,6 +78,31 @@ impl SessionStore {
         Some((meta, events))
     }
 
+    pub fn list(&self) -> Vec<SessionMeta> {
+        let entries = match fs::read_dir(&self.dir) {
+            Ok(entries) => entries,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut sessions: Vec<SessionMeta> = entries
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                    return None;
+                }
+                let file = File::open(&path).ok()?;
+                let mut reader = BufReader::new(file);
+                let mut first_line = String::new();
+                reader.read_line(&mut first_line).ok()?;
+                serde_json::from_str::<SessionMeta>(first_line.trim()).ok()
+            })
+            .collect();
+
+        sessions.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        sessions
+    }
+
     fn append_line<T: Serialize>(&self, session_id: &str, value: &T) -> io::Result<()> {
         fs::create_dir_all(&self.dir)?;
         let path = self.session_path(session_id);
@@ -245,5 +270,65 @@ mod tests {
         assert_eq!(events[1], error);
         assert_eq!(events[2], done);
         assert_eq!(events[3], tool_result);
+    }
+
+    #[test]
+    fn list_empty_dir_returns_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::from_path(dir.path().to_path_buf());
+        assert!(store.list().is_empty());
+    }
+
+    #[test]
+    fn list_nonexistent_dir_returns_empty() {
+        let store = SessionStore::from_path(PathBuf::from("/nonexistent/path"));
+        assert!(store.list().is_empty());
+    }
+
+    #[test]
+    fn list_returns_sessions_sorted_by_created_at_descending() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::from_path(dir.path().to_path_buf());
+
+        let meta_old = SessionMeta {
+            session_id: "s-old".to_string(),
+            cwd: PathBuf::from("/tmp"),
+            model: "test-model".to_string(),
+            selected_mode: None,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+        };
+        let meta_new = SessionMeta {
+            session_id: "s-new".to_string(),
+            cwd: PathBuf::from("/tmp"),
+            model: "test-model".to_string(),
+            selected_mode: None,
+            created_at: "2026-02-01T00:00:00Z".to_string(),
+        };
+
+        store.append_meta("s-old", &meta_old).unwrap();
+        store.append_meta("s-new", &meta_new).unwrap();
+
+        let listed = store.list();
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0].session_id, "s-new");
+        assert_eq!(listed[1].session_id, "s-old");
+    }
+
+    #[test]
+    fn list_skips_malformed_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::from_path(dir.path().to_path_buf());
+
+        store.append_meta("s1", &test_meta()).unwrap();
+
+        // Write a malformed JSONL file
+        std::fs::write(dir.path().join("bad.jsonl"), "not valid json\n").unwrap();
+
+        // Write a non-jsonl file
+        std::fs::write(dir.path().join("readme.txt"), "ignore me").unwrap();
+
+        let listed = store.list();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].session_id, "s1");
     }
 }

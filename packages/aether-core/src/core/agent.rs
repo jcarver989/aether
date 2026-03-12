@@ -276,7 +276,10 @@ impl Agent {
 
     fn start_llm_stream(&mut self) {
         self.streams.remove("llm");
-        let llm_stream = self.llm.stream_response(&self.context).map(StreamEvent::Llm);
+        let llm_stream = self
+            .llm
+            .stream_response(&self.context)
+            .map(StreamEvent::Llm);
         self.streams.insert("llm".to_string(), Box::pin(llm_stream));
     }
 
@@ -367,11 +370,8 @@ impl Agent {
 
             EncryptedReasoning { id, content } => {
                 if let Some(model) = self.llm.model() {
-                    state.encrypted_reasoning = Some(EncryptedReasoningContent {
-                        id,
-                        model,
-                        content,
-                    });
+                    state.encrypted_reasoning =
+                        Some(EncryptedReasoningContent { id, model, content });
                 }
             }
 

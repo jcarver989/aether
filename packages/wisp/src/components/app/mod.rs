@@ -50,6 +50,11 @@ pub enum AppAction {
         method_id: String,
     },
     ClearScreen,
+    ListSessions,
+    LoadSession {
+        session_id: String,
+        cwd: PathBuf,
+    },
     OpenGitDiffViewer,
     RefreshGitDiffViewer,
     CloseGitDiffViewer,
@@ -197,6 +202,18 @@ impl TuiApp for App {
                 AcpEvent::AuthenticateFailed { method_id, error } => {
                     self.state.on_authenticate_failed(&method_id, &error)
                 }
+                AcpEvent::SessionsListed { sessions } => {
+                    self.state.open_session_picker(sessions);
+                    Some(vec![])
+                }
+                AcpEvent::SessionLoaded {
+                    session_id,
+                    config_options,
+                } => {
+                    self.session_id = session_id;
+                    self.state.update_config_options(&config_options);
+                    Some(vec![])
+                }
                 AcpEvent::ConnectionClosed => self.state.on_connection_closed(),
             },
         };
@@ -284,6 +301,9 @@ impl TuiApp for App {
             self.state.prompt_composer.render(context),
             self.state.prompt_composer.cursor(context),
         );
+        if let Some(ref session_picker) = self.state.session_picker {
+            layout.section(session_picker.render(context));
+        }
         if let Some(ref elicitation_form) = self.state.elicitation_form {
             layout.section(elicitation_form.form.render(context));
         }

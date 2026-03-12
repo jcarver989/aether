@@ -16,6 +16,7 @@ pub enum PromptComposerMessage {
         attachments: Vec<PromptAttachment>,
     },
     OpenConfig,
+    OpenSessionPicker,
     ClearScreen,
 }
 
@@ -197,6 +198,10 @@ impl PromptComposer {
             self.text_input.clear();
             self.close_all();
             Some(vec![PromptComposerMessage::OpenConfig])
+        } else if cmd.builtin && cmd.name == "resume" {
+            self.text_input.clear();
+            self.close_all();
+            Some(vec![PromptComposerMessage::OpenSessionPicker])
         } else if cmd.has_input {
             self.text_input.set_input(format!("/{} ", cmd.name));
             Some(vec![])
@@ -308,6 +313,13 @@ fn builtin_commands() -> Vec<CommandEntry> {
         CommandEntry {
             name: "config".into(),
             description: "Open configuration settings".into(),
+            has_input: false,
+            hint: None,
+            builtin: true,
+        },
+        CommandEntry {
+            name: "resume".into(),
+            description: "Resume a previous session".into(),
             has_input: false,
             hint: None,
             builtin: true,

@@ -75,15 +75,16 @@ fn process_event(
         }
         ResponseStreamEvent::ResponseReasoningSummaryTextDelta(e) => {
             if !e.delta.is_empty() {
-                responses.push(Ok(LlmResponse::Reasoning {
-                    chunk: e.delta,
-                }));
+                responses.push(Ok(LlmResponse::Reasoning { chunk: e.delta }));
             }
         }
         ResponseStreamEvent::ResponseOutputItemDone(e) => {
             if let OutputItem::Reasoning(reasoning) = e.item {
                 if let Some(encrypted) = reasoning.encrypted_content {
-                    responses.push(Ok(LlmResponse::EncryptedReasoning { id: reasoning.id, content: encrypted }));
+                    responses.push(Ok(LlmResponse::EncryptedReasoning {
+                        id: reasoning.id,
+                        content: encrypted,
+                    }));
                 }
             }
         }

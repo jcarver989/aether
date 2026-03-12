@@ -1,4 +1,5 @@
 use agent_client_protocol as acp;
+use std::path::Path;
 use tokio::sync::mpsc;
 
 use super::error::AcpClientError;
@@ -27,6 +28,11 @@ pub(crate) enum PromptCommand {
         session_id: acp::SessionId,
         method_id: String,
     },
+    ListSessions,
+    LoadSession {
+        session_id: acp::SessionId,
+        cwd: std::path::PathBuf,
+    },
 }
 
 /// Send-safe handle for issuing prompt commands to the !Send ACP connection.
@@ -50,21 +56,17 @@ impl AcpPromptHandle {
         text: &str,
         content: Option<Vec<acp::ContentBlock>>,
     ) -> Result<(), AcpClientError> {
-        self.cmd_tx
-            .send(PromptCommand::Prompt {
-                session_id: session_id.clone(),
-                text: text.to_string(),
-                content,
-            })
-            .map_err(|_| AcpClientError::AgentCrashed("prompt channel closed".into()))
+        self.send(PromptCommand::Prompt {
+            session_id: session_id.clone(),
+            text: text.to_string(),
+            content,
+        })
     }
 
     pub fn cancel(&self, session_id: &acp::SessionId) -> Result<(), AcpClientError> {
-        self.cmd_tx
-            .send(PromptCommand::Cancel {
-                session_id: session_id.clone(),
-            })
-            .map_err(|_| AcpClientError::AgentCrashed("cancel channel closed".into()))
+        self.send(PromptCommand::Cancel {
+            session_id: session_id.clone(),
+        })
     }
 
     pub fn set_config_option(
@@ -73,13 +75,11 @@ impl AcpPromptHandle {
         config_id: &str,
         value: &str,
     ) -> Result<(), AcpClientError> {
-        self.cmd_tx
-            .send(PromptCommand::SetConfigOption {
-                session_id: session_id.clone(),
-                config_id: config_id.to_string(),
-                value: value.to_string(),
-            })
-            .map_err(|_| AcpClientError::AgentCrashed("set_config_option channel closed".into()))
+        self.send(PromptCommand::SetConfigOption {
+            session_id: session_id.clone(),
+            config_id: config_id.to_string(),
+            value: value.to_string(),
+        })
     }
 
     pub fn authenticate_mcp_server(
@@ -87,14 +87,10 @@ impl AcpPromptHandle {
         session_id: &acp::SessionId,
         server_name: &str,
     ) -> Result<(), AcpClientError> {
-        self.cmd_tx
-            .send(PromptCommand::AuthenticateMcpServer {
-                session_id: session_id.clone(),
-                server_name: server_name.to_string(),
-            })
-            .map_err(|_| {
-                AcpClientError::AgentCrashed("authenticate_mcp_server channel closed".into())
-            })
+        self.send(PromptCommand::AuthenticateMcpServer {
+            session_id: session_id.clone(),
+            server_name: server_name.to_string(),
+        })
     }
 
     pub fn authenticate(
@@ -102,12 +98,31 @@ impl AcpPromptHandle {
         session_id: &acp::SessionId,
         method_id: &str,
     ) -> Result<(), AcpClientError> {
+        self.send(PromptCommand::Authenticate {
+            session_id: session_id.clone(),
+            method_id: method_id.to_string(),
+        })
+    }
+
+    pub fn list_sessions(&self) -> Result<(), AcpClientError> {
+        self.send(PromptCommand::ListSessions)
+    }
+
+    pub fn load_session(
+        &self,
+        session_id: &acp::SessionId,
+        cwd: &Path,
+    ) -> Result<(), AcpClientError> {
+        self.send(PromptCommand::LoadSession {
+            session_id: session_id.clone(),
+            cwd: cwd.to_path_buf(),
+        })
+    }
+
+    fn send(&self, cmd: PromptCommand) -> Result<(), AcpClientError> {
         self.cmd_tx
-            .send(PromptCommand::Authenticate {
-                session_id: session_id.clone(),
-                method_id: method_id.to_string(),
-            })
-            .map_err(|_| AcpClientError::AgentCrashed("authenticate channel closed".into()))
+            .send(cmd)
+            .map_err(|_| AcpClientError::AgentCrashed("command channel closed".into()))
     }
 }
 
@@ -204,6 +219,36 @@ mod tests {
                 assert_eq!(extra, content);
             }
             _ => panic!("Expected Prompt command with content"),
+        }
+    }
+
+    #[test]
+    fn test_list_sessions_sends_command() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let handle = AcpPromptHandle { cmd_tx: tx };
+
+        handle.list_sessions().unwrap();
+
+        let cmd = rx.try_recv().unwrap();
+        assert!(matches!(cmd, PromptCommand::ListSessions));
+    }
+
+    #[test]
+    fn test_load_session_sends_command() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let handle = AcpPromptHandle { cmd_tx: tx };
+        let session_id = acp::SessionId::new("sess-restore");
+        let cwd = std::path::Path::new("/tmp/project");
+
+        handle.load_session(&session_id, cwd).unwrap();
+
+        let cmd = rx.try_recv().unwrap();
+        match cmd {
+            PromptCommand::LoadSession { session_id, cwd } => {
+                assert_eq!(session_id.0.as_ref(), "sess-restore");
+                assert_eq!(cwd, std::path::PathBuf::from("/tmp/project"));
+            }
+            _ => panic!("Expected LoadSession command"),
         }
     }
 }

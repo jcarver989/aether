@@ -17,6 +17,7 @@ pub(crate) mod prompt_composer;
 pub mod provider_login;
 pub(crate) mod reasoning_bar;
 pub mod server_status;
+pub(crate) mod session_picker;
 pub mod status_line;
 pub mod text_input;
 pub mod thought_message;

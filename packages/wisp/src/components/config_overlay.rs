@@ -144,7 +144,7 @@ impl ConfigOverlay {
     }
 
     pub fn remove_auth_method(&mut self, method_id: &str) {
-        self.auth_methods.retain(|m| m.id.0.as_ref() != method_id);
+        self.auth_methods.retain(|m| m.id().0.as_ref() != method_id);
         if let Some(ref mut overlay) = self.provider_login_overlay {
             overlay.remove_entry(method_id);
             if overlay.is_empty() {
@@ -158,8 +158,8 @@ impl ConfigOverlay {
         self.auth_methods
             .iter()
             .map(|m| ProviderLoginEntry {
-                method_id: m.id.0.to_string(),
-                name: m.name.clone(),
+                method_id: m.id().0.to_string(),
+                name: m.name().to_string(),
                 status: ProviderLoginStatus::NeedsLogin,
             })
             .collect()
@@ -482,8 +482,8 @@ mod tests {
 
     fn make_auth_methods() -> Vec<acp::AuthMethod> {
         vec![
-            acp::AuthMethod::new("anthropic", "Anthropic"),
-            acp::AuthMethod::new("openrouter", "OpenRouter"),
+            acp::AuthMethod::Agent(acp::AuthMethodAgent::new("anthropic", "Anthropic")),
+            acp::AuthMethod::Agent(acp::AuthMethodAgent::new("openrouter", "OpenRouter")),
         ]
     }
 
