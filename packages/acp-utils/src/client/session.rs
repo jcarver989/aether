@@ -319,7 +319,7 @@ where
                         });
                     }
                     Err(e) => {
-                        tracing::warn!("list_sessions failed: {e:?}");
+                        let _ = event_tx.send(AcpEvent::PromptError(e));
                     }
                 }
             }

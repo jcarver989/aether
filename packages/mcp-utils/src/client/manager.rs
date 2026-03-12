@@ -565,13 +565,13 @@ impl McpManager {
                 // Wait for the server task to complete (with a timeout)
                 match tokio::time::timeout(std::time::Duration::from_secs(5), handle).await {
                     Ok(Ok(())) => {
-                        println!("Server '{server_name}' shut down gracefully");
+                        tracing::info!("Server '{server_name}' shut down gracefully");
                     }
                     Ok(Err(e)) => {
-                        eprintln!("Server '{server_name}' task panicked: {e:?}");
+                        tracing::warn!("Server '{server_name}' task panicked: {e:?}");
                     }
                     Err(_) => {
-                        eprintln!("Server '{server_name}' shutdown timed out");
+                        tracing::warn!("Server '{server_name}' shutdown timed out");
                         // Task will be cancelled when the handle is dropped
                     }
                 }
@@ -595,13 +595,13 @@ impl McpManager {
                 // Wait for the server task to complete (with a timeout)
                 match tokio::time::timeout(std::time::Duration::from_secs(5), handle).await {
                     Ok(Ok(())) => {
-                        println!("Server '{server_name}' shut down gracefully");
+                        tracing::info!("Server '{server_name}' shut down gracefully");
                     }
                     Ok(Err(e)) => {
-                        eprintln!("Server '{server_name}' task panicked: {e:?}");
+                        tracing::warn!("Server '{server_name}' task panicked: {e:?}");
                     }
                     Err(_) => {
-                        eprintln!("Server '{server_name}' shutdown timed out");
+                        tracing::warn!("Server '{server_name}' shutdown timed out");
                         // Task will be cancelled when the handle is dropped
                     }
                 }
@@ -644,7 +644,9 @@ impl McpManager {
             // Try to send notification - servers that don't support roots will ignore it
             if let Err(e) = server_conn.client.notify_roots_list_changed().await {
                 // Only log errors for debugging; it's expected that some servers may not support roots
-                eprintln!("Note: server '{server_name}' did not accept roots notification: {e}");
+                tracing::debug!(
+                    "Note: server '{server_name}' did not accept roots notification: {e}"
+                );
             }
         }
     }
@@ -656,8 +658,129 @@ impl Drop for McpManager {
         for (server_name, server) in servers {
             if let Some(handle) = server.server_task {
                 handle.abort();
-                eprintln!("Server '{server_name}' task aborted during cleanup");
+                tracing::warn!("Server '{server_name}' task aborted during cleanup");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::McpManager;
+    use crate::client::config::ServerConfig;
+    use rmcp::{
+        Json, RoleServer, ServerHandler,
+        handler::server::{router::tool::ToolRouter, wrapper::Parameters},
+        model::{Implementation, ServerCapabilities, ServerInfo},
+        service::DynService,
+        tool, tool_handler, tool_router,
+    };
+    use schemars::JsonSchema;
+    use serde::{Deserialize, Serialize};
+    use std::{
+        io,
+        sync::{Arc, Mutex},
+    };
+    use tokio::sync::mpsc;
+
+    #[derive(Clone)]
+    struct TestServer {
+        tool_router: ToolRouter<Self>,
+    }
+
+    #[tool_handler(router = self.tool_router)]
+    impl ServerHandler for TestServer {
+        fn get_info(&self) -> ServerInfo {
+            ServerInfo {
+                server_info: Implementation {
+                    name: "test-server".to_string(),
+                    version: "0.1.0".to_string(),
+                    description: Some("Test MCP server".to_string()),
+                    title: None,
+                    icons: None,
+                    website_url: None,
+                },
+                capabilities: ServerCapabilities::builder().enable_tools().build(),
+                ..Default::default()
+            }
+        }
+    }
+
+    impl Default for TestServer {
+        fn default() -> Self {
+            Self {
+                tool_router: Self::tool_router(),
+            }
+        }
+    }
+
+    #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+    struct EchoRequest {
+        value: String,
+    }
+
+    #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+    struct EchoResult {
+        value: String,
+    }
+
+    #[tool_router]
+    impl TestServer {
+        fn as_dyn(self) -> Box<dyn DynService<RoleServer>> {
+            Box::new(self)
+        }
+
+        #[tool(description = "Returns the provided value")]
+        async fn echo(&self, request: Parameters<EchoRequest>) -> Json<EchoResult> {
+            let Parameters(EchoRequest { value }) = request;
+            Json(EchoResult { value })
+        }
+    }
+
+    #[derive(Clone)]
+    struct SharedWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl io::Write for SharedWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn drop_logs_cleanup_abort_with_tracing() {
+        let (elicitation_sender, _elicitation_receiver) = mpsc::channel(1);
+        let mut manager = McpManager::new(elicitation_sender, None);
+        manager
+            .add_mcp(
+                ServerConfig::InMemory {
+                    name: "test".to_string(),
+                    server: TestServer::default().as_dyn(),
+                }
+                .into(),
+            )
+            .await
+            .unwrap();
+
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .without_time()
+            .with_writer({
+                let output = Arc::clone(&output);
+                move || SharedWriter(Arc::clone(&output))
+            })
+            .finish();
+
+        tracing::subscriber::with_default(subscriber, || {
+            drop(manager);
+        });
+
+        let logs = String::from_utf8(output.lock().unwrap().clone()).unwrap();
+        assert!(logs.contains("Server 'test' task aborted during cleanup"));
     }
 }
