@@ -882,7 +882,10 @@ mod tests {
             .expect("should have focused line");
         let text = focused_line.plain_text();
         // Medium = 2 filled, 1 empty
-        assert!(text.contains("▰▰▱"), "expected reasoning bar, got: {text}");
+        assert!(
+            text.contains("[■■·]"),
+            "expected reasoning bar, got: {text}"
+        );
     }
 
     #[test]
@@ -897,7 +900,7 @@ mod tests {
             .find(|l| l.contains("▶"))
             .expect("should have focused line");
         assert!(
-            !focused_line.contains('▰'),
+            !focused_line.contains('■'),
             "should not show bar on non-reasoning model"
         );
     }
