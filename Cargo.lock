@@ -104,6 +104,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "aether-project"
+version = "0.1.0"
+dependencies = [
+ "aether-core",
+ "glob",
+ "llm",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "utils",
+]
+
+[[package]]
 name = "agent-client-protocol"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

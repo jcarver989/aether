@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "packages/aether-core",
+    "packages/aether-project",
     "packages/wisp",
     "packages/crucible",
     "packages/aether-cli",
