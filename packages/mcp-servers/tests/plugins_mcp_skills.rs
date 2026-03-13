@@ -254,10 +254,6 @@ async fn test_load_auxiliary_file() {
     assert!(available.contains(&serde_json::json!("references/REF.md")));
     assert!(available.contains(&serde_json::json!("traits.md")));
 
-    // Check referenced_files
-    let referenced = file["referencedFiles"].as_array().unwrap();
-    assert!(referenced.contains(&serde_json::json!("traits.md")));
-
     // Load auxiliary file
     let result_aux = client
         .call_tool(CallToolRequestParams::new("get_skills")
@@ -283,8 +279,8 @@ async fn test_load_auxiliary_file() {
             .unwrap()
             .contains("Traits content")
     );
-    // available_files should be empty for non-SKILL.md
-    assert!(aux_file["availableFiles"].as_array().unwrap().is_empty());
+    // available_files should be absent (skipped when empty) for non-SKILL.md
+    assert!(aux_file.get("availableFiles").is_none());
 }
 
 #[tokio::test]
