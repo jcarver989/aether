@@ -7,8 +7,7 @@ use rmcp::model::{CallToolRequestParams, ClientInfo};
 use rmcp::service::RunningService;
 
 fn call_tool_params(name: &str, args: serde_json::Value) -> CallToolRequestParams {
-    CallToolRequestParams::new(name.to_string())
-        .with_arguments(args.as_object().unwrap().clone())
+    CallToolRequestParams::new(name.to_string()).with_arguments(args.as_object().unwrap().clone())
 }
 
 async fn call_tool_error(

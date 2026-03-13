@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use oauth2::{AccessToken, RefreshToken, TokenResponse};
-use rmcp::transport::auth::{AuthError, CredentialStore, OAuthTokenResponse, StoredCredentials, VendorExtraTokenFields};
+use rmcp::transport::auth::{
+    AuthError, CredentialStore, OAuthTokenResponse, StoredCredentials, VendorExtraTokenFields,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};

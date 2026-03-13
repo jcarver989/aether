@@ -15,7 +15,10 @@ const POLL_TIMEOUT: Duration = Duration::from_secs(60);
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 pub fn test_client_info() -> ClientInfo {
-    ClientInfo::new(Default::default(), Implementation::new("lsp-e2e-test", "0.1.0"))
+    ClientInfo::new(
+        Default::default(),
+        Implementation::new("lsp-e2e-test", "0.1.0"),
+    )
 }
 
 /// Connect a `CodingMcp` server to a test project with LSP enabled.

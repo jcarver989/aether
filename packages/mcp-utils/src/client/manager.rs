@@ -672,11 +672,9 @@ mod tests {
     #[tool_handler(router = self.tool_router)]
     impl ServerHandler for TestServer {
         fn get_info(&self) -> ServerInfo {
-            ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
-                .with_server_info(
-                    Implementation::new("test-server", "0.1.0")
-                        .with_description("Test MCP server"),
-                )
+            ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_server_info(
+                Implementation::new("test-server", "0.1.0").with_description("Test MCP server"),
+            )
         }
     }
 
