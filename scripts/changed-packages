@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Extract unique workspace package names from file paths passed as arguments.
+# Usage: changed-packages file1.rs file2.rs ... -- outputs -p pkg1 -p pkg2 ...
+set -euo pipefail
+
+packages=""
+for f in "$@"; do
+    case "$f" in
+        packages/*/*)
+            pkg=$(echo "$f" | cut -d/ -f2)
+            packages="$packages $pkg"
+            ;;
+    esac
+done
+
+# Deduplicate and print -p flags
+echo "$packages" | tr ' ' '\n' | sort -u | sed '/^$/d' | while read -r pkg; do
+    printf -- '-p %s ' "$pkg"
+done
