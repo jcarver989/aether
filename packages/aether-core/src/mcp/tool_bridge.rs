@@ -177,12 +177,8 @@ mod tests {
             }
         });
 
-        let mcp_result = McpCallToolResult {
-            content: vec![Content::text("plain text fallback")],
-            structured_content: Some(structured),
-            is_error: Some(false),
-            meta: None,
-        };
+        let mut mcp_result = McpCallToolResult::structured(structured);
+        mcp_result.content = vec![Content::text("plain text fallback")];
 
         let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
 
@@ -218,12 +214,8 @@ mod tests {
             }
         });
 
-        let mcp_result = McpCallToolResult {
-            content: vec![],
-            structured_content: Some(structured),
-            is_error: Some(false),
-            meta: None,
-        };
+        let mut mcp_result = McpCallToolResult::structured(structured);
+        mcp_result.content = vec![];
 
         let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
         assert!(!result.result.contains("_meta"));
@@ -262,12 +254,8 @@ mod tests {
             }
         });
 
-        let mcp_result = McpCallToolResult {
-            content: vec![],
-            structured_content: Some(structured),
-            is_error: Some(false),
-            meta: None,
-        };
+        let mut mcp_result = McpCallToolResult::structured(structured);
+        mcp_result.content = vec![];
 
         let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
         let rm = result_meta.expect("result_meta should be present");
@@ -292,12 +280,8 @@ mod tests {
             }
         });
 
-        let mcp_result = McpCallToolResult {
-            content: vec![],
-            structured_content: Some(structured),
-            is_error: Some(false),
-            meta: None,
-        };
+        let mut mcp_result = McpCallToolResult::structured(structured);
+        mcp_result.content = vec![];
 
         let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
         assert!(result_meta.is_none());
@@ -314,12 +298,8 @@ mod tests {
             "data": "hello"
         });
 
-        let mcp_result = McpCallToolResult {
-            content: vec![],
-            structured_content: Some(structured),
-            is_error: Some(false),
-            meta: None,
-        };
+        let mut mcp_result = McpCallToolResult::structured(structured);
+        mcp_result.content = vec![];
 
         let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
         assert!(result.result.contains("success"));
@@ -331,12 +311,7 @@ mod tests {
     fn test_tool_call_result_falls_back_to_content() {
         let request = make_request();
 
-        let mcp_result = McpCallToolResult {
-            content: vec![Content::text("plain text result")],
-            structured_content: None,
-            is_error: Some(false),
-            meta: None,
-        };
+        let mcp_result = McpCallToolResult::success(vec![Content::text("plain text result")]);
 
         let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
         assert!(result.result.contains("plain text result"));
@@ -406,12 +381,8 @@ mod tests {
             }
         });
 
-        let mcp_result = McpCallToolResult {
-            content: vec![],
-            structured_content: Some(structured),
-            is_error: Some(false),
-            meta: None,
-        };
+        let mut mcp_result = McpCallToolResult::structured(structured);
+        mcp_result.content = vec![];
 
         let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
         assert!(!result.result.contains("_meta"));
@@ -475,12 +446,7 @@ mod tests {
     fn test_tool_call_result_handles_error() {
         let request = make_request();
 
-        let mcp_result = McpCallToolResult {
-            content: vec![Content::text("Error: file not found")],
-            structured_content: None,
-            is_error: Some(true),
-            meta: None,
-        };
+        let mcp_result = McpCallToolResult::error(vec![Content::text("Error: file not found")]);
 
         let err = mcp_result_to_tool_call_result(&request, mcp_result).unwrap_err();
         assert!(err.error.contains("file not found"));
@@ -499,12 +465,8 @@ mod tests {
             "totalCount": 2
         });
 
-        let mcp_result = McpCallToolResult {
-            content: vec![],
-            structured_content: Some(structured),
-            is_error: Some(false),
-            meta: None,
-        };
+        let mut mcp_result = McpCallToolResult::structured(structured);
+        mcp_result.content = vec![];
 
         let (result, _) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
 
@@ -608,12 +570,8 @@ mod tests {
         let big_value = "x".repeat(TOOL_RESULT_MAX_BYTES + 1000);
         let structured = json!({ "data": big_value });
 
-        let mcp_result = McpCallToolResult {
-            content: vec![],
-            structured_content: Some(structured),
-            is_error: Some(false),
-            meta: None,
-        };
+        let mut mcp_result = McpCallToolResult::structured(structured);
+        mcp_result.content = vec![];
 
         let (result, _) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
 
