@@ -9,6 +9,8 @@
 pub mod streaming;
 pub mod types;
 
+use async_openai::types::chat::ChatCompletionStreamOptions;
+
 use crate::providers::openai::mappers::map_tools;
 use crate::{Context, LlmError};
 
@@ -35,5 +37,9 @@ pub fn build_chat_request(
         messages,
         stream: Some(true),
         tools,
+        stream_options: Some(ChatCompletionStreamOptions {
+            include_usage: Some(true),
+            include_obfuscation: None,
+        }),
     })
 }
