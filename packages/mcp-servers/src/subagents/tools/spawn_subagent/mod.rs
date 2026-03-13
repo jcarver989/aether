@@ -123,7 +123,7 @@ pub struct SpawnSubAgentsOutput {
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 /// Prompt instructions appended to sub-agent prompts to ensure structured output
@@ -180,7 +180,7 @@ impl AgentExecutor {
                 results: vec![],
                 success_count: 0,
                 error_count: 0,
-                _meta: None,
+                meta: None,
             };
         }
 
@@ -242,7 +242,7 @@ impl AgentExecutor {
             results,
             success_count,
             error_count,
-            _meta: Some(display_meta.into()),
+            meta: Some(display_meta.into()),
         }
     }
 }

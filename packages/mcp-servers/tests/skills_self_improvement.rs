@@ -377,17 +377,19 @@ async fn test_full_lifecycle() {
     let parsed = parse_tool_result(&result);
     assert_eq!(parsed["status"], "created");
 
-    // 2. Get — content loads
+    // 2. Get — content loads (using new API)
     let result = client
         .call_tool(call_tool_params(
             "get_skills",
-            serde_json::json!({"skills": ["lifecycle-skill"]}),
+            serde_json::json!({
+                "requests": [{ "name": "lifecycle-skill" }]
+            }),
         ))
         .await
         .unwrap();
     let parsed = parse_tool_result(&result);
     assert!(
-        parsed["skills"][0]["content"]
+        parsed["files"][0]["content"]
             .as_str()
             .unwrap()
             .contains("Step 1")
@@ -427,13 +429,15 @@ async fn test_full_lifecycle() {
     let result = client
         .call_tool(call_tool_params(
             "get_skills",
-            serde_json::json!({"skills": ["lifecycle-skill"]}),
+            serde_json::json!({
+                "requests": [{ "name": "lifecycle-skill" }]
+            }),
         ))
         .await
         .unwrap();
     let parsed = parse_tool_result(&result);
     assert!(
-        parsed["skills"][0]["content"]
+        parsed["files"][0]["content"]
             .as_str()
             .unwrap()
             .contains("better stuff")
@@ -476,13 +480,15 @@ async fn test_full_lifecycle() {
     let result = client
         .call_tool(call_tool_params(
             "get_skills",
-            serde_json::json!({"skills": ["lifecycle-skill"]}),
+            serde_json::json!({
+                "requests": [{ "name": "lifecycle-skill" }]
+            }),
         ))
         .await
         .unwrap();
     let parsed = parse_tool_result(&result);
     assert!(
-        parsed["skills"][0]["content"]
+        parsed["files"][0]["content"]
             .as_str()
             .unwrap()
             .contains("better stuff")
