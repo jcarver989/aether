@@ -279,22 +279,14 @@ impl ServerHandler for SkillsMcp {
             Ok(catalog) => Self::build_instructions(&catalog),
             Err(_) => Self::build_instructions(&PromptCatalog::empty()),
         };
-        ServerInfo {
-            server_info: Implementation {
-                name: "skills-mcp".to_string(),
-                version: "0.1.0".to_string(),
-                title: None,
-                description: None,
-                icons: None,
-                website_url: None,
-            },
-            instructions: Some(instructions),
-            capabilities: ServerCapabilities::builder()
+        ServerInfo::new(
+            ServerCapabilities::builder()
                 .enable_prompts()
                 .enable_tools()
                 .build(),
-            ..Default::default()
-        }
+        )
+        .with_server_info(Implementation::new("skills-mcp", "0.1.0"))
+        .with_instructions(instructions)
     }
 
     async fn list_prompts(
@@ -307,12 +299,9 @@ impl ServerHandler for SkillsMcp {
             .slash_commands()
             .map(|s| {
                 let arguments = s.argument_hint.as_ref().map(|hint| {
-                    vec![PromptArgument {
-                        name: "ARGUMENTS".to_string(),
-                        title: None,
-                        description: Some(hint.clone()),
-                        required: Some(false),
-                    }]
+                    vec![PromptArgument::new("ARGUMENTS")
+                        .with_description(hint.clone())
+                        .with_required(false)]
                 });
 
                 Prompt::new(s.name.clone(), Some(s.description.clone()), arguments)
@@ -351,10 +340,7 @@ impl ServerHandler for SkillsMcp {
         let content = substitute_parameters(&body, &arguments);
         let messages = vec![PromptMessage::new_text(PromptMessageRole::User, content)];
 
-        Ok(GetPromptResult {
-            description: Some(spec.description.clone()),
-            messages,
-        })
+        Ok(GetPromptResult::new(messages).with_description(spec.description.clone()))
     }
 }
 

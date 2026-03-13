@@ -125,19 +125,9 @@ When using tools that take file paths, always use absolute paths from:
 impl ServerHandler for LspMcp {
     fn get_info(&self) -> ServerInfo {
         let instructions = self.build_instructions();
-        ServerInfo {
-            server_info: Implementation {
-                name: "lsp-mcp".to_string(),
-                version: "0.1.0".to_string(),
-                title: None,
-                description: None,
-                icons: None,
-                website_url: None,
-            },
-            instructions: Some(instructions),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            ..Default::default()
-        }
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new("lsp-mcp", "0.1.0"))
+            .with_instructions(instructions)
     }
 }
 

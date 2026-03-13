@@ -1,8 +1,9 @@
 use async_openai::types::chat::{
     ChatChoiceStream, ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk,
-    ChatCompletionMessageToolCalls, ChatCompletionStreamResponseDelta as OpenAiDelta,
-    ChatCompletionTools, CompletionUsage, CreateChatCompletionStreamResponse,
-    FinishReason as OpenAiFinishReason, FunctionCall, FunctionCallStream, FunctionType, Role,
+    ChatCompletionMessageToolCalls, ChatCompletionStreamOptions,
+    ChatCompletionStreamResponseDelta as OpenAiDelta, ChatCompletionTools, CompletionUsage,
+    CreateChatCompletionStreamResponse, FinishReason as OpenAiFinishReason, FunctionCall,
+    FunctionCallStream, FunctionType, Role,
 };
 use serde::{Deserialize, Serialize};
 

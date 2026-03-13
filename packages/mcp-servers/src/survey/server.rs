@@ -103,23 +103,12 @@ impl SurveyMcp {
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for SurveyMcp {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            server_info: Implementation {
-                name: "survey-mcp".to_string(),
-                version: "0.1.0".to_string(),
-                title: None,
-                description: None,
-                icons: None,
-                website_url: None,
-            },
-            instructions: Some(
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new("survey-mcp", "0.1.0"))
+            .with_instructions(
                 "Ask the user structured questions using the `ask_user` tool. \
-                 Define form schemas to collect text, numbers, booleans, and selections."
-                    .to_string(),
-            ),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            ..Default::default()
-        }
+                 Define form schemas to collect text, numbers, booleans, and selections.",
+            )
     }
 }
 

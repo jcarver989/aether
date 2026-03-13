@@ -12,17 +12,7 @@ async fn create_test_client(
     rmcp::service::RunningService<rmcp::RoleClient, ClientInfo>,
 ) {
     let server_service = SkillsMcp::new(test_dir.to_path_buf());
-    let client_info = ClientInfo {
-        client_info: Implementation {
-            name: "test-client".to_string(),
-            version: "0.1.0".to_string(),
-            icons: None,
-            title: None,
-            website_url: None,
-            description: None,
-        },
-        ..Default::default()
-    };
+    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
 
     connect(server_service, client_info)
         .await
@@ -30,12 +20,7 @@ async fn create_test_client(
 }
 
 fn call_tool_params(name: &str, args: serde_json::Value) -> CallToolRequestParams {
-    CallToolRequestParams {
-        name: name.to_string().into(),
-        meta: None,
-        task: None,
-        arguments: Some(args.as_object().unwrap().clone()),
-    }
+    CallToolRequestParams::new(name.to_string()).with_arguments(args.as_object().unwrap().clone())
 }
 
 fn parse_tool_result(result: &rmcp::model::CallToolResult) -> serde_json::Value {

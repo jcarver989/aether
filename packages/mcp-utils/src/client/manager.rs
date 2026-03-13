@@ -13,7 +13,7 @@ use rmcp::{
     RoleClient,
     model::{
         CallToolRequestParams, ClientCapabilities, ClientInfo, CreateElicitationRequestParams,
-        CreateElicitationResult, ElicitationAction, Implementation, ProtocolVersion, Root,
+        CreateElicitationResult, ElicitationAction, Implementation, Root,
     },
     service::RunningService,
     transport::streamable_http_client::StreamableHttpClientTransportConfig,
@@ -73,22 +73,13 @@ impl McpManager {
             servers: HashMap::new(),
             tools: HashMap::new(),
             tool_definitions: Vec::new(),
-            client_info: ClientInfo {
-                meta: None,
-                protocol_version: ProtocolVersion::default(),
-                capabilities: ClientCapabilities::builder()
+            client_info: ClientInfo::new(
+                ClientCapabilities::builder()
                     .enable_elicitation()
                     .enable_roots()
                     .build(),
-                client_info: Implementation {
-                    name: "aether".to_string(),
-                    version: "0.1.0".to_string(),
-                    description: None,
-                    title: None,
-                    icons: None,
-                    website_url: None,
-                },
-            },
+                Implementation::new("aether", "0.1.0"),
+            ),
             elicitation_sender,
             roots: Arc::new(RwLock::new(Vec::new())),
             oauth_handler,
@@ -394,12 +385,8 @@ impl McpManager {
                     call.server
                 ))
             })?;
-            let params = CallToolRequestParams {
-                meta: None,
-                name: call.tool.into(),
-                arguments: call.arguments,
-                task: None,
-            };
+            let params = CallToolRequestParams::new(call.tool)
+                .with_arguments(call.arguments.unwrap_or_default());
             return Ok((conn.client.clone(), params));
         }
 
@@ -412,12 +399,10 @@ impl McpManager {
         let arguments = serde_json::from_str::<serde_json::Value>(arguments_json)?
             .as_object()
             .cloned();
-        let params = CallToolRequestParams {
-            meta: None,
-            name: tool_name.to_string().into(),
-            arguments,
-            task: None,
-        };
+        let mut params = CallToolRequestParams::new(tool_name.to_string());
+        if let Some(args) = arguments {
+            params = params.with_arguments(args);
+        }
 
         Ok((client, params))
     }
@@ -501,14 +486,11 @@ impl McpManager {
                         .map(|prompt| {
                             let namespaced_name =
                                 create_namespaced_tool_name(&server_name, &prompt.name);
-                            rmcp::model::Prompt {
-                                name: namespaced_name,
-                                description: prompt.description,
-                                arguments: prompt.arguments,
-                                title: prompt.title,
-                                icons: prompt.icons,
-                                meta: prompt.meta,
-                            }
+                            rmcp::model::Prompt::new(
+                                namespaced_name,
+                                prompt.description,
+                                prompt.arguments,
+                            )
                         })
                         .collect();
 
@@ -540,11 +522,10 @@ impl McpManager {
             .get(server_name)
             .ok_or_else(|| McpError::ServerNotFound(server_name.to_string()))?;
 
-        let request = rmcp::model::GetPromptRequestParams {
-            meta: None,
-            name: prompt_name.into(),
-            arguments,
-        };
+        let mut request = rmcp::model::GetPromptRequestParams::new(prompt_name);
+        if let Some(args) = arguments {
+            request = request.with_arguments(args);
+        }
 
         server_conn.client.get_prompt(request).await.map_err(|e| {
             McpError::PromptGetFailed(format!(
@@ -691,18 +672,11 @@ mod tests {
     #[tool_handler(router = self.tool_router)]
     impl ServerHandler for TestServer {
         fn get_info(&self) -> ServerInfo {
-            ServerInfo {
-                server_info: Implementation {
-                    name: "test-server".to_string(),
-                    version: "0.1.0".to_string(),
-                    description: Some("Test MCP server".to_string()),
-                    title: None,
-                    icons: None,
-                    website_url: None,
-                },
-                capabilities: ServerCapabilities::builder().enable_tools().build(),
-                ..Default::default()
-            }
+            ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+                .with_server_info(
+                    Implementation::new("test-server", "0.1.0")
+                        .with_description("Test MCP server"),
+                )
         }
     }
 

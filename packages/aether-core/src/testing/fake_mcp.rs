@@ -26,19 +26,12 @@ pub struct FakeMcpServer {
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for FakeMcpServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            server_info: Implementation {
-                name: "fake-mcp-server".to_string(),
-                version: "0.1.0".to_string(),
-                description: Some("A fake MCP server for testing".to_string()),
-                title: None,
-                icons: None,
-                website_url: None,
-            },
-            instructions: Some("A fake MCP server for testing".into()),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            ..Default::default()
-        }
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(
+                Implementation::new("fake-mcp-server", "0.1.0")
+                    .with_description("A fake MCP server for testing"),
+            )
+            .with_instructions("A fake MCP server for testing")
     }
 }
 

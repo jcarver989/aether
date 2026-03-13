@@ -8,12 +8,11 @@ fn create_prompt(name: &str, description: Option<&str>) -> Prompt {
 
 /// Create an MCP prompt with an ARGUMENTS parameter (unified prompt format).
 fn create_prompt_with_hint(name: &str, description: Option<&str>, hint: &str) -> Prompt {
-    let arguments = Some(vec![PromptArgument {
-        name: "ARGUMENTS".into(),
-        title: None,
-        description: Some(hint.to_string()),
-        required: Some(false),
-    }]);
+    let arguments = Some(vec![
+        PromptArgument::new("ARGUMENTS")
+            .with_description(hint)
+            .with_required(false),
+    ]);
     Prompt::new(
         name.to_string(),
         description.map(|s| s.to_string()),

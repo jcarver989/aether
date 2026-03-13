@@ -84,8 +84,6 @@ impl ClientHandler for McpClient {
     ) -> Result<ListRootsResult, ErrorData> {
         let roots = self.roots.read().await;
 
-        Ok(ListRootsResult {
-            roots: roots.clone(),
-        })
+        Ok(ListRootsResult::new(roots.clone()))
     }
 }

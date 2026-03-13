@@ -36,7 +36,7 @@ async fn test_read_file_meta_includes_matched_rule_names() {
 
     let meta = result
         .0
-        ._meta
+        .meta
         .as_ref()
         .expect("_meta should be set when rules match");
     assert_eq!(meta.display.title, "Read file");
@@ -72,7 +72,7 @@ async fn test_read_file_meta_unchanged_without_rules() {
         .await
         .unwrap();
 
-    let meta = result.0._meta.as_ref().expect("_meta should always be set");
+    let meta = result.0.meta.as_ref().expect("_meta should always be set");
     // Should NOT contain "+rules:" since no rules matched
     assert!(
         !meta.display.value.contains("+rules:"),
