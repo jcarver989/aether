@@ -12,11 +12,12 @@ Slash commands and reusable skill prompts. Skills teach the agent domain-specifi
 │   ├── commit.md
 │   ├── review-branch.md
 │   └── ...
-└── skills/             # Skill directories
+└── skills/             # Skill directories (multi-file support)
     ├── rust/
-    │   └── SKILL.md
-    ├── frontend-design/
-    │   └── SKILL.md
+    │   ├── SKILL.md        # Primary skill content (required)
+    │   ├── traits.md       # Auxiliary file
+    │   └── references/
+    │       └── REF.md      # Nested auxiliary file
     └── ...
 ```
 
@@ -24,10 +25,51 @@ Slash commands and reusable skill prompts. Skills teach the agent domain-specifi
 
 | Tool | Description |
 |------|-------------|
-| `list_skills` | List all available skills with their names and descriptions. |
-| `get_skills` | Load the full content of one or more skills by name. |
+| `get_skills` | Load files from skill directories. Omit `path` for `SKILL.md`, or provide `path` for auxiliary files. |
+| `save_skill` | Create or update a skill's `SKILL.md` file. |
+| `rate_skill` | Rate a skill as helpful or harmful. Low-confidence skills are pruned. |
 
 Commands are exposed as **MCP Prompts** (via `list_prompts` / `get_prompt`) rather than tools. This is what powers `/slash-commands` in the TUI.
+
+## get_skills API
+
+`get_skills` loads files from skill directories with progressive disclosure:
+
+- Omit `path` → loads `SKILL.md`
+- Provide `path` → loads that file relative to the skill root
+- When loading `SKILL.md`, the response includes `availableFiles` (manifest of auxiliary files) and `referencedFiles` (files linked from the body)
+
+### Examples
+
+Load a skill root:
+```json
+{ "requests": [{ "name": "rust" }] }
+```
+
+Load auxiliary files:
+```json
+{ "requests": [
+  { "name": "rust", "path": "traits.md" },
+  { "name": "rust", "path": "references/REF.md" }
+] }
+```
+
+### Response Fields
+
+- `name` — skill name
+- `path` — file path (normalized to `SKILL.md` if omitted)
+- `content` — file content (null if error)
+- `error` — error message if loading failed
+- `availableFiles` — auxiliary files in the skill (only for `SKILL.md`)
+- `referencedFiles` — files linked from `SKILL.md` body
+
+### Security
+
+Path validation prevents:
+- Absolute paths
+- Path traversal (`..`)
+- Access outside the skill directory
+- Directory paths (only files allowed)
 
 ## Writing a Command
 
@@ -62,11 +104,15 @@ Create a directory under `skills/` with a `SKILL.md` file:
 ---
 name: rust
 description: Rust best practices and project conventions
+tags: [rust, testing]
 ---
 
 # Rust Coding Guidelines
 
-Your skill content here — conventions, patterns, examples, etc.
+See [traits](./traits.md) for trait conventions.
+See [error-handling](./error-handling.md) for error patterns.
 ```
 
-Skills are loaded on-demand when the agent calls `get_skills`. They inject domain knowledge into the agent's context without consuming tokens until needed.
+Skills support multi-file content. The `SKILL.md` is the primary file loaded by `get_skills`. Auxiliary files (like `traits.md`, `error-handling.md`) can be loaded on-demand by providing the `path` parameter.
+
+The agent discovers auxiliary files via the `availableFiles` field when loading `SKILL.md`, and via `referencedFiles` which extracts relative markdown links from the body.

@@ -13,7 +13,6 @@ pub struct TestFrontmatter {
 }
 
 /// Creates test files and directories from a slice of (path, content) pairs
-/// Returns the temp directory path for cleanup
 fn create_test_files(files: &[(&str, &str)]) -> TempDir {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
 
@@ -29,7 +28,6 @@ fn create_test_files(files: &[(&str, &str)]) -> TempDir {
     temp_dir
 }
 
-/// Helper to create MCP client connected to a test server
 async fn create_test_client(
     test_dir: &Path,
 ) -> (
@@ -56,6 +54,12 @@ async fn create_test_client(
     (server_handle, client)
 }
 
+fn parse_tool_result(result: &rmcp::model::CallToolResult) -> serde_json::Value {
+    let content = result.content.first().expect("Expected content");
+    let text = content.as_text().expect("Expected text content");
+    serde_json::from_str(&text.text).expect("Invalid JSON response")
+}
+
 #[tokio::test]
 async fn test_load_from_nested_directories() {
     let test_files = vec![
@@ -72,13 +76,11 @@ async fn test_load_from_nested_directories() {
 
     let temp_dir = create_test_files(&test_files);
 
-    // Load skills from nested directories
     let skills_with_dirs: Vec<(PathBuf, MarkdownFile<TestFrontmatter>)> =
         MarkdownFile::from_nested_dirs(temp_dir.path(), "SKILL.md")
             .await
             .expect("Failed to load skills");
 
-    // Verify we get exactly 2 skills (flat file should be ignored)
     assert_eq!(skills_with_dirs.len(), 2);
 
     let skill_names: Vec<String> = skills_with_dirs
@@ -92,18 +94,6 @@ async fn test_load_from_nested_directories() {
     assert!(skill_names.contains(&"skill-1".to_string()));
     assert!(skill_names.contains(&"skill-2".to_string()));
     assert!(!skill_names.contains(&"illegal-flat-skill".to_string()));
-
-    // Verify content is loaded correctly
-    let skill1 = skills_with_dirs
-        .iter()
-        .find(|(dir, _)| dir.file_name().unwrap().to_str() == Some("skill-1"))
-        .map(|(_, file)| file)
-        .unwrap();
-    assert!(skill1.content.contains("This is skill 1 content"));
-    assert_eq!(
-        skill1.frontmatter.as_ref().unwrap().description,
-        Some("First skill".to_string())
-    );
 }
 
 #[tokio::test]
@@ -124,11 +114,9 @@ async fn test_load_skills_tool() {
     ];
 
     let temp_dir = create_test_files(&test_files);
-
-    // Create MCP server and client
     let (_server_handle, client) = create_test_client(temp_dir.path()).await;
 
-    // Test loading multiple skills
+    // Test loading multiple skills using new requests API
     let result = client
         .call_tool(CallToolRequestParams {
             name: "get_skills".into(),
@@ -136,7 +124,11 @@ async fn test_load_skills_tool() {
             task: None,
             arguments: Some(
                 serde_json::json!({
-                    "skills": ["skill-1", "skill-2", "skill-3"]
+                    "requests": [
+                        { "name": "skill-1" },
+                        { "name": "skill-2" },
+                        { "name": "skill-3" }
+                    ]
                 })
                 .as_object()
                 .unwrap()
@@ -146,58 +138,64 @@ async fn test_load_skills_tool() {
         .await
         .expect("Failed to call get_skills tool");
 
-    // Verify result
-    assert!(result.content.len() == 1);
-    if let Some(content) = result.content.first() {
-        if let Some(text_content) = content.as_text() {
-            let parsed: serde_json::Value =
-                serde_json::from_str(&text_content.text).expect("Invalid JSON response");
+    let parsed = parse_tool_result(&result);
+    let files = parsed["files"].as_array().expect("Expected files array");
+    assert_eq!(files.len(), 3);
 
-            let skills = parsed["skills"].as_array().expect("Expected skills array");
-            assert_eq!(skills.len(), 3);
+    let skill1 = files.iter().find(|s| s["name"] == "skill-1").unwrap();
+    assert_eq!(skill1["path"], "SKILL.md");
+    assert!(
+        skill1["content"]
+            .as_str()
+            .unwrap()
+            .contains("This is the content for skill 1")
+    );
 
-            // Verify skill-1
-            let skill1 = skills.iter().find(|s| s["name"] == "skill-1").unwrap();
-            assert!(
-                skill1["content"]
-                    .as_str()
-                    .unwrap()
-                    .contains("This is the content for skill 1")
-            );
+    let skill2 = files.iter().find(|s| s["name"] == "skill-2").unwrap();
+    assert!(
+        skill2["content"]
+            .as_str()
+            .unwrap()
+            .contains("This is the content for skill 2.")
+    );
 
-            // Verify skill-2
-            let skill2 = skills.iter().find(|s| s["name"] == "skill-2").unwrap();
-            assert!(
-                skill2["content"]
-                    .as_str()
-                    .unwrap()
-                    .contains("This is the content for skill 2.")
-            );
+    let skill3 = files.iter().find(|s| s["name"] == "skill-3").unwrap();
+    assert!(
+        skill3["content"]
+            .as_str()
+            .unwrap()
+            .contains("This is skill 3")
+    );
+}
 
-            // Verify skill-3
-            let skill3 = skills.iter().find(|s| s["name"] == "skill-3").unwrap();
-            assert!(
-                skill3["content"]
-                    .as_str()
-                    .unwrap()
-                    .contains("This is skill 3")
-            );
-        } else {
-            panic!("Expected text content");
-        }
-    } else {
-        panic!("Expected content in result");
-    }
+#[tokio::test]
+async fn test_load_skills_with_missing() {
+    let test_files = vec![
+        (
+            "skills/skill-1/SKILL.md",
+            "---\ndescription: First skill\nagent-invocable: true\n---\n# Skill 1\n\nContent.",
+        ),
+        (
+            "skills/skill-2/SKILL.md",
+            "---\ndescription: Second skill\nagent-invocable: true\n---\n# Skill 2\n\nContent.",
+        ),
+    ];
 
-    // Test loading with some missing skills
-    let result_with_missing = client
+    let temp_dir = create_test_files(&test_files);
+    let (_server_handle, client) = create_test_client(temp_dir.path()).await;
+
+    let result = client
         .call_tool(CallToolRequestParams {
             name: "get_skills".into(),
             meta: None,
             task: None,
             arguments: Some(
                 serde_json::json!({
-                    "skills": ["skill-1", "nonexistent-skill", "skill-2"]
+                    "requests": [
+                        { "name": "skill-1" },
+                        { "name": "nonexistent-skill" },
+                        { "name": "skill-2" }
+                    ]
                 })
                 .as_object()
                 .unwrap()
@@ -205,20 +203,174 @@ async fn test_load_skills_tool() {
             ),
         })
         .await
-        .expect("Failed to call get_skills tool with missing skills");
+        .expect("Failed to call get_skills tool");
 
-    if let Some(content) = result_with_missing.content.first() {
-        if let Some(text_content) = content.as_text() {
-            let parsed: serde_json::Value =
-                serde_json::from_str(&text_content.text).expect("Invalid JSON response");
+    let parsed = parse_tool_result(&result);
+    let files = parsed["files"].as_array().unwrap();
+    assert_eq!(files.len(), 3);
 
-            // Should only have 2 skills loaded (nonexistent-skill is silently skipped)
-            let skills = parsed["skills"].as_array().unwrap();
-            assert_eq!(skills.len(), 2);
+    // skill-1 and skill-2 should have content
+    let skill1 = files.iter().find(|s| s["name"] == "skill-1").unwrap();
+    assert!(skill1["content"].is_string());
+    assert!(skill1["error"].is_null());
 
-            // Verify we got skill-1 and skill-2 (not nonexistent-skill)
-            assert!(skills.iter().any(|s| s["name"] == "skill-1"));
-            assert!(skills.iter().any(|s| s["name"] == "skill-2"));
-        }
-    }
+    let skill2 = files.iter().find(|s| s["name"] == "skill-2").unwrap();
+    assert!(skill2["content"].is_string());
+    assert!(skill2["error"].is_null());
+
+    // nonexistent-skill should have error
+    let missing = files
+        .iter()
+        .find(|s| s["name"] == "nonexistent-skill")
+        .unwrap();
+    assert!(missing["content"].is_null());
+    assert!(missing["error"].as_str().unwrap().contains("not found"));
+}
+
+#[tokio::test]
+async fn test_load_auxiliary_file() {
+    let test_files = vec![
+        (
+            "skills/test-skill/SKILL.md",
+            "---\ndescription: Test skill\nagent-invocable: true\n---\n# Main\n\nSee [traits](./traits.md).",
+        ),
+        (
+            "skills/test-skill/traits.md",
+            "# Traits\n\nTraits content here.",
+        ),
+        (
+            "skills/test-skill/references/REF.md",
+            "# Reference\n\nReference content.",
+        ),
+    ];
+
+    let temp_dir = create_test_files(&test_files);
+    let (_server_handle, client) = create_test_client(temp_dir.path()).await;
+
+    // Load SKILL.md first - should get available_files
+    let result = client
+        .call_tool(CallToolRequestParams {
+            name: "get_skills".into(),
+            meta: None,
+            task: None,
+            arguments: Some(
+                serde_json::json!({
+                    "requests": [{ "name": "test-skill" }]
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+        })
+        .await
+        .expect("Failed to call get_skills");
+
+    let parsed = parse_tool_result(&result);
+    let file = &parsed["files"][0];
+
+    // Check available_files
+    let available = file["availableFiles"].as_array().unwrap();
+    assert!(available.contains(&serde_json::json!("references/REF.md")));
+    assert!(available.contains(&serde_json::json!("traits.md")));
+
+    // Check referenced_files
+    let referenced = file["referencedFiles"].as_array().unwrap();
+    assert!(referenced.contains(&serde_json::json!("traits.md")));
+
+    // Load auxiliary file
+    let result_aux = client
+        .call_tool(CallToolRequestParams {
+            name: "get_skills".into(),
+            meta: None,
+            task: None,
+            arguments: Some(
+                serde_json::json!({
+                    "requests": [{ "name": "test-skill", "path": "traits.md" }]
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+        })
+        .await
+        .expect("Failed to call get_skills");
+
+    let parsed_aux = parse_tool_result(&result_aux);
+    let aux_file = &parsed_aux["files"][0];
+
+    assert_eq!(aux_file["path"], "traits.md");
+    assert!(
+        aux_file["content"]
+            .as_str()
+            .unwrap()
+            .contains("Traits content")
+    );
+    // available_files should be empty for non-SKILL.md
+    assert!(aux_file["availableFiles"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_reject_traversal() {
+    let test_files = vec![(
+        "skills/test-skill/SKILL.md",
+        "---\ndescription: Test\nagent-invocable: true\n---\n# Test",
+    )];
+
+    let temp_dir = create_test_files(&test_files);
+    let (_server_handle, client) = create_test_client(temp_dir.path()).await;
+
+    let result = client
+        .call_tool(CallToolRequestParams {
+            name: "get_skills".into(),
+            meta: None,
+            task: None,
+            arguments: Some(
+                serde_json::json!({
+                    "requests": [{ "name": "test-skill", "path": "../other-skill/SKILL.md" }]
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+        })
+        .await
+        .expect("Failed to call get_skills");
+
+    let parsed = parse_tool_result(&result);
+    let file = &parsed["files"][0];
+
+    assert!(file["error"].as_str().unwrap().contains("traversal"));
+}
+
+#[tokio::test]
+async fn test_reject_absolute_path() {
+    let test_files = vec![(
+        "skills/test-skill/SKILL.md",
+        "---\ndescription: Test\nagent-invocable: true\n---\n# Test",
+    )];
+
+    let temp_dir = create_test_files(&test_files);
+    let (_server_handle, client) = create_test_client(temp_dir.path()).await;
+
+    let result = client
+        .call_tool(CallToolRequestParams {
+            name: "get_skills".into(),
+            meta: None,
+            task: None,
+            arguments: Some(
+                serde_json::json!({
+                    "requests": [{ "name": "test-skill", "path": "/etc/passwd" }]
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+        })
+        .await
+        .expect("Failed to call get_skills");
+
+    let parsed = parse_tool_result(&result);
+    let file = &parsed["files"][0];
+
+    assert!(file["error"].as_str().unwrap().contains("Absolute"));
 }

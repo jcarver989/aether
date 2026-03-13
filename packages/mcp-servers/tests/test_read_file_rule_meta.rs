@@ -34,7 +34,11 @@ async fn test_read_file_meta_includes_matched_rule_names() {
         .await
         .unwrap();
 
-    let meta = result.0._meta.as_ref().expect("_meta should be set when rules match");
+    let meta = result
+        .0
+        ._meta
+        .as_ref()
+        .expect("_meta should be set when rules match");
     assert_eq!(meta.display.title, "Read file");
     assert!(
         meta.display.value.contains("+rules: writing-rust"),
