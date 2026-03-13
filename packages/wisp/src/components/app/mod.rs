@@ -203,7 +203,12 @@ impl TuiApp for App {
                     Some(self.state.on_authenticate_failed(&method_id, &error))
                 }
                 AcpEvent::SessionsListed { sessions } => {
-                    self.state.open_session_picker(sessions);
+                    let current_id = &self.session_id;
+                    let filtered: Vec<_> = sessions
+                        .into_iter()
+                        .filter(|s| s.session_id != *current_id)
+                        .collect();
+                    self.state.open_session_picker(filtered);
                     Some(vec![])
                 }
                 AcpEvent::SessionLoaded {
@@ -348,6 +353,7 @@ mod tests {
     use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings, save_settings};
     use crate::test_helpers::{CUSTOM_TMTHEME, with_wisp_home};
     use crate::tui::Event;
+    use crate::tui::testing::render_component;
     use acp_utils::config_option_id::THEME_CONFIG_ID;
     use std::fs;
     use std::time::{Duration, Instant};
@@ -787,6 +793,58 @@ mod tests {
             output_before[0].plain_text(),
             output_after[0].plain_text(),
             "spinner frame should change after tick"
+        );
+    }
+
+    #[test]
+    fn sessions_listed_filters_out_current_session() {
+        let current_session_id = acp::SessionId::new("current-session");
+        let mut app = App::new(
+            "test-agent".to_string(),
+            &[],
+            vec![],
+            AcpPromptHandle::noop(),
+            current_session_id.clone(),
+            PathBuf::from("."),
+        );
+
+        let sessions = vec![
+            acp::SessionInfo::new("other-session-1", PathBuf::from("/project"))
+                .title("First other session".to_string()),
+            acp::SessionInfo::new("current-session", PathBuf::from("/project"))
+                .title("Current session title".to_string()),
+            acp::SessionInfo::new("other-session-2", PathBuf::from("/other"))
+                .title("Second other session".to_string()),
+        ];
+
+        let context = ViewContext::new((120, 40));
+        app.update(
+            AppEvent::External(AcpEvent::SessionsListed { sessions }),
+            &context,
+        );
+
+        let picker = app.state.session_picker.as_ref().unwrap();
+        let term = render_component(|ctx| picker.render(ctx), 60, 10);
+        let lines = term.get_lines();
+
+        assert!(
+            !lines
+                .iter()
+                .any(|line| line.contains("Current session title")),
+            "current session should be filtered out, got: {:?}",
+            lines
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("First other session")),
+            "first other session should be present"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("Second other session")),
+            "second other session should be present"
         );
     }
 }
