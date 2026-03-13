@@ -82,7 +82,7 @@ pub struct LspRenameOutput {
     /// Display metadata for TUI rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 /// Execute the rename operation
@@ -134,7 +134,7 @@ pub async fn execute_lsp_rename(
         files_affected,
         changes,
         success: true,
-        _meta: Some(rename_display_meta(&input, true, total_edits, files_affected).into()),
+        meta: Some(rename_display_meta(&input, true, total_edits, files_affected).into()),
         ..Default::default()
     })
 }
@@ -159,7 +159,7 @@ fn rename_failure(input: &LspRenameInput, error: String) -> LspRenameOutput {
         new_name: input.new_name.clone(),
         success: false,
         error: Some(error),
-        _meta: Some(rename_display_meta(input, false, 0, 0).into()),
+        meta: Some(rename_display_meta(input, false, 0, 0).into()),
         ..Default::default()
     }
 }

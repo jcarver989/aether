@@ -113,7 +113,7 @@ pub struct LspSymbolOutput {
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 impl LspSymbolOutput {
@@ -259,7 +259,7 @@ pub async fn execute_lsp_symbol(
 
     #[allow(clippy::used_underscore_binding)]
     {
-        output._meta = Some(symbol_display_meta(&input, &output).into());
+        output.meta = Some(symbol_display_meta(&input, &output).into());
     }
     Ok(output)
 }

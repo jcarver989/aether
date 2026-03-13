@@ -95,7 +95,7 @@ pub struct LspDiagnosticsOutput {
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 /// Scope label for output serialization
@@ -131,7 +131,7 @@ pub async fn execute_lsp_diagnostics(
     };
     #[allow(clippy::used_underscore_binding)]
     {
-        output._meta = Some(ToolDisplayMeta::new("LSP errors", value).into());
+        output.meta = Some(ToolDisplayMeta::new("LSP errors", value).into());
     }
 
     Ok(output)
@@ -180,7 +180,7 @@ fn build_output(
         file_path,
         diagnostics,
         summary,
-        _meta: None,
+        meta: None,
     }
 }
 

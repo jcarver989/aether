@@ -38,7 +38,7 @@ pub struct BashOutput {
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 #[derive(Debug)]
@@ -76,7 +76,7 @@ pub struct ReadBackgroundBashOutput {
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 pub async fn read_background_bash(
@@ -126,7 +126,7 @@ pub async fn read_background_bash(
                 output,
                 status,
                 exit_code: Some(exit_code),
-                _meta: Some(display_meta.into()),
+                meta: Some(display_meta.into()),
             },
             None,
         ))
@@ -138,7 +138,7 @@ pub async fn read_background_bash(
                 output,
                 status: "running".to_string(),
                 exit_code: None,
-                _meta: Some(display_meta.into()),
+                meta: Some(display_meta.into()),
             },
             Some(BackgroundProcessHandle {
                 shell_id,
@@ -278,7 +278,7 @@ pub async fn execute_command(args: BashInput) -> Result<BashResult, BashError> {
                     exit_code,
                     killed: Some(false),
                     shell_id: None,
-                    _meta: Some(display_meta.into()),
+                    meta: Some(display_meta.into()),
                 }))
             }
             Ok(Err(e)) => Err(BashError::SpawnFailed {
@@ -299,7 +299,7 @@ pub async fn execute_command(args: BashInput) -> Result<BashResult, BashError> {
                     exit_code: -1,
                     killed: Some(true),
                     shell_id: None,
-                    _meta: Some(display_meta.into()),
+                    meta: Some(display_meta.into()),
                 }))
             }
         }

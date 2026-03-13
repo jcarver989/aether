@@ -332,7 +332,7 @@ When using tools that take file paths, always use absolute paths from:
             let rule_names: Vec<&str> = matched.iter().map(|r| r.name.as_str()).collect();
             let base = format!("{}, {total_lines} lines", basename(&file_path));
             let value = format!("{base} +rules: {}", rule_names.join(", "));
-            result._meta = Some(ToolDisplayMeta::new("Read file", value).into());
+            result.meta = Some(ToolDisplayMeta::new("Read file", value).into());
         }
 
         Ok(Json(result))
@@ -463,7 +463,7 @@ When using tools that take file paths, always use absolute paths from:
                     exit_code: 0,
                     killed: None,
                     shell_id: Some(shell_id),
-                    _meta: Some(display_meta.into()),
+                    meta: Some(display_meta.into()),
                 }))
             }
         }
@@ -641,7 +641,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             let rule_names: Vec<&str> = matched.iter().map(|r| r.name.as_str()).collect();
             let base = format!("{}, {total_lines} lines", basename(&file_path));
             let value = format!("{base} +rules: {}", rule_names.join(", "));
-            result._meta = Some(ToolDisplayMeta::new("Read file", value).into());
+            result.meta = Some(ToolDisplayMeta::new("Read file", value).into());
         }
 
         Ok(Json(result))

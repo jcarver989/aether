@@ -22,7 +22,7 @@ pub struct TaskGetOutput {
     pub message: String,
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 /// Get a task by ID
@@ -42,7 +42,7 @@ pub fn execute_task_get(
         status: "success".to_string(),
         message: format!("Retrieved task '{}'", task.title),
         task: task.clone(),
-        _meta: Some(display_meta.into()),
+        meta: Some(display_meta.into()),
     })
 }
 

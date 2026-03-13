@@ -43,7 +43,7 @@ pub struct EditFileResponse {
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, FileError> {
@@ -119,7 +119,7 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
         total_lines,
         replacements_made,
         content: updated_content,
-        _meta: Some(ToolResultMeta::with_diff_preview(
+        meta: Some(ToolResultMeta::with_diff_preview(
             display_meta,
             diff_preview,
         )),
@@ -182,7 +182,7 @@ mod tests {
         .await
         .unwrap();
 
-        let meta = result._meta.unwrap();
+        let meta = result.meta.unwrap();
         let diff = meta.diff_preview.unwrap();
         assert_eq!(diff.start_line, Some(3));
     }
@@ -202,7 +202,7 @@ mod tests {
         .await
         .unwrap();
 
-        let meta = result._meta.unwrap();
+        let meta = result.meta.unwrap();
         let diff = meta.diff_preview.unwrap();
         assert_eq!(diff.start_line, Some(1));
     }
@@ -226,7 +226,7 @@ mod tests {
         .await
         .unwrap();
 
-        let diff = result._meta.unwrap().diff_preview.unwrap();
+        let diff = result.meta.unwrap().diff_preview.unwrap();
         let tags: Vec<DiffTag> = diff.lines.iter().map(|l| l.tag).collect();
         assert_eq!(
             tags,
@@ -254,7 +254,7 @@ mod tests {
         .await
         .unwrap();
 
-        let diff = result._meta.unwrap().diff_preview.unwrap();
+        let diff = result.meta.unwrap().diff_preview.unwrap();
         for line in &diff.lines {
             assert_ne!(line.tag, DiffTag::Context, "no context lines expected");
         }
@@ -275,7 +275,7 @@ mod tests {
         .await
         .unwrap();
 
-        let diff = result._meta.unwrap().diff_preview.unwrap();
+        let diff = result.meta.unwrap().diff_preview.unwrap();
         let tags: Vec<DiffTag> = diff.lines.iter().map(|l| l.tag).collect();
         assert!(tags.contains(&DiffTag::Added));
         // The unchanged lines should be context
@@ -299,7 +299,7 @@ mod tests {
         .await
         .unwrap();
 
-        let diff = result._meta.unwrap().diff_preview.unwrap();
+        let diff = result.meta.unwrap().diff_preview.unwrap();
         let tags: Vec<DiffTag> = diff.lines.iter().map(|l| l.tag).collect();
         assert!(tags.contains(&DiffTag::Removed));
         assert!(tags.contains(&DiffTag::Context));

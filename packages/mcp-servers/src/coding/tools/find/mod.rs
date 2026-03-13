@@ -27,7 +27,7 @@ pub struct FindOutput {
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 pub async fn find_files_by_name(args: FindInput) -> Result<FindOutput, FindError> {
@@ -111,7 +111,7 @@ pub async fn find_files_by_name(args: FindInput) -> Result<FindOutput, FindError
         matches,
         count,
         search_path: search_path.to_string(),
-        _meta: Some(display_meta.into()),
+        meta: Some(display_meta.into()),
     })
 }
 

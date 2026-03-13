@@ -68,7 +68,7 @@ pub struct TaskListOutput {
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 pub fn execute_task_list(input: &TaskListInput, store: &TaskStore) -> TaskListOutput {
@@ -129,7 +129,7 @@ pub fn execute_task_list(input: &TaskListInput, store: &TaskStore) -> TaskListOu
         tasks,
         count,
         message,
-        _meta: Some(display_meta.into()),
+        meta: Some(display_meta.into()),
     }
 }
 

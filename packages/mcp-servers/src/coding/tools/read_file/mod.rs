@@ -38,7 +38,7 @@ pub struct ReadFileResult {
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, FileError> {
@@ -96,7 +96,7 @@ pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, Fi
         limit: Some(limit),
         size: content.len(),
         raw_content: content,
-        _meta: Some(display_meta.into()),
+        meta: Some(display_meta.into()),
     })
 }
 
