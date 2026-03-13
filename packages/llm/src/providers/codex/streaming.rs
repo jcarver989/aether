@@ -405,7 +405,7 @@ mod tests {
 
         assert_eq!(responses.len(), 1);
         assert!(
-            matches!(&responses[0], Ok(LlmResponse::EncryptedReasoning { content }) if content == "enc-blob-data")
+            matches!(&responses[0], Ok(LlmResponse::EncryptedReasoning { content, .. }) if content == "enc-blob-data")
         );
     }
 
