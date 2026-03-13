@@ -316,6 +316,7 @@ When using tools that take file paths, always use absolute paths from:
             .map_err(|e| e.to_string())?;
         self.files_read.write().await.insert(file_path.clone());
 
+        let total_lines = result.total_lines;
         let roots = self.roots.read().await;
         let matched = self.read_rule_state.get_matched_rules(&roots, &file_path);
         for rule in &matched {
@@ -325,6 +326,13 @@ When using tools that take file paths, always use absolute paths from:
                 rule.body
             )
             .unwrap();
+        }
+
+        if !matched.is_empty() {
+            let rule_names: Vec<&str> = matched.iter().map(|r| r.name.as_str()).collect();
+            let base = format!("{}, {total_lines} lines", basename(&file_path));
+            let value = format!("{base} +rules: {}", rule_names.join(", "));
+            result._meta = Some(ToolDisplayMeta::new("Read file", value).into());
         }
 
         Ok(Json(result))
@@ -610,12 +618,32 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
     /// Read a file and track it in the read set (test helper, no MCP context needed).
     pub async fn test_read_file(&self, args: ReadFileArgs) -> Result<Json<ReadFileResult>, String> {
         let file_path = args.file_path.clone();
-        let result = self
+        let mut result = self
             .tools
             .read_file(args)
             .await
             .map_err(|e| e.to_string())?;
-        self.files_read.write().await.insert(file_path);
+        self.files_read.write().await.insert(file_path.clone());
+
+        let total_lines = result.total_lines;
+        let roots = self.roots.read().await;
+        let matched = self.read_rule_state.get_matched_rules(&roots, &file_path);
+        for rule in &matched {
+            write!(
+                result.content,
+                "\n\n<system-reminder>\n{}\n</system-reminder>",
+                rule.body
+            )
+            .unwrap();
+        }
+
+        if !matched.is_empty() {
+            let rule_names: Vec<&str> = matched.iter().map(|r| r.name.as_str()).collect();
+            let base = format!("{}, {total_lines} lines", basename(&file_path));
+            let value = format!("{base} +rules: {}", rule_names.join(", "));
+            result._meta = Some(ToolDisplayMeta::new("Read file", value).into());
+        }
+
         Ok(Json(result))
     }
 
