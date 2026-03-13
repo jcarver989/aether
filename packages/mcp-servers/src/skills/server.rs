@@ -8,7 +8,8 @@ use rmcp::{
     },
     model::{
         GetPromptRequestParams, GetPromptResult, Implementation, ListPromptsResult,
-        PaginatedRequestParams, PromptMessage, PromptMessageRole, ServerCapabilities, ServerInfo,
+        PaginatedRequestParams, Prompt, PromptArgument, PromptMessage, PromptMessageRole,
+        ServerCapabilities, ServerInfo,
     },
     service::RequestContext,
     tool, tool_handler, tool_router,
@@ -17,22 +18,18 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::error;
 
 use super::tools::{
     LoadSkillsInput, LoadSkillsOutput, RateSkillInput, RateSkillOutput, SaveSkillInput,
     SaveSkillOutput, Skill, rate_skill, save_skill,
 };
-use crate::skills::skill_file::{SKILL_FILENAME, SkillMetadata, SkillsFile, load_skill_metadata};
-use crate::skills::{
-    prompt_file::{PromptFile, to_prompt},
-    tools::rate_skill::RateSkillStatus,
-};
+use crate::skills::tools::rate_skill::RateSkillStatus;
+use aether_project::{PromptCatalog, PromptFile, SKILL_FILENAME};
 
 /// CLI arguments for `SkillsMcp` server
 #[derive(Debug, Clone, Parser)]
 pub struct SkillsMcpArgs {
-    /// Base directory for skills (contains 'commands' and 'skills' subdirectories)
+    /// Base directory for skills (contains 'skills' subdirectory)
     #[arg(long = "dir")]
     pub base_dir: Option<PathBuf>,
 }
@@ -47,12 +44,11 @@ impl SkillsMcpArgs {
     }
 }
 
-/// MCP server for skills and slash-commands
+/// MCP server for unified prompt artifacts (skills, slash commands, and rules).
 #[derive(Clone)]
 pub struct SkillsMcp {
-    commands_dir: PathBuf,
     skills_dir: PathBuf,
-    skills_info: Arc<RwLock<Vec<SkillMetadata>>>,
+    catalog: Arc<RwLock<PromptCatalog>>,
     tool_router: ToolRouter<Self>,
     roots: Arc<RwLock<Vec<PathBuf>>>,
 }
@@ -60,12 +56,17 @@ pub struct SkillsMcp {
 impl SkillsMcp {
     pub fn new(base_dir: PathBuf) -> Self {
         let skills_dir = base_dir.join("skills");
-        let skills_info = load_skill_metadata(&skills_dir);
+        let catalog = PromptCatalog::from_dir(&skills_dir).unwrap_or_else(|e| {
+            tracing::warn!(
+                "Failed to load skill catalog from {}: {e}",
+                skills_dir.display()
+            );
+            PromptCatalog::empty()
+        });
 
         Self {
-            commands_dir: base_dir.join("commands"),
             skills_dir,
-            skills_info: Arc::new(RwLock::new(skills_info)),
+            catalog: Arc::new(RwLock::new(catalog)),
             tool_router: Self::tool_router(),
             roots: Arc::new(RwLock::new(vec![base_dir])),
         }
@@ -82,14 +83,16 @@ impl SkillsMcp {
         self
     }
 
-    fn build_instructions(skills_info: &[SkillMetadata]) -> String {
+    fn build_instructions(catalog: &PromptCatalog) -> String {
         let mut instructions = include_str!("./instructions.md").to_string();
 
-        if !skills_info.is_empty() {
+        let agent_skills: Vec<_> = catalog.skills().collect();
+
+        if !agent_skills.is_empty() {
             instructions.push_str("\n\n## Complete List of Available Skills\n");
             instructions.push_str("You have access to the following Skills:\n\n");
 
-            for skill in skills_info {
+            for skill in agent_skills {
                 use std::fmt::Write as _;
                 if skill.tags.is_empty() {
                     let _ = writeln!(instructions, "- **{}**: {}", skill.name, skill.description);
@@ -107,10 +110,12 @@ impl SkillsMcp {
         instructions
     }
 
-    /// Reload skill metadata from disk.
-    async fn reload_metadata(&self) {
-        let metadata = load_skill_metadata(&self.skills_dir);
-        *self.skills_info.write().await = metadata;
+    /// Reload the prompt catalog from disk.
+    async fn reload_catalog(&self) {
+        match PromptCatalog::from_dir(&self.skills_dir) {
+            Ok(catalog) => *self.catalog.write().await = catalog,
+            Err(e) => tracing::warn!("Failed to reload skill catalog: {e}"),
+        }
     }
 }
 
@@ -119,13 +124,12 @@ impl ServerHandler for SkillsMcp {
     fn get_info(&self) -> ServerInfo {
         // try_read() avoids blocking the synchronous get_info() callback.
         // On contention (only possible during a concurrent tool call), we fall back
-        // to an empty skill list — this only affects the MCP handshake instructions,
+        // to an empty catalog — this only affects the MCP handshake instructions,
         // and the tools themselves always read fresh data.
-        let skills_info = self
-            .skills_info
-            .try_read()
-            .map(|g| g.clone())
-            .unwrap_or_default();
+        let instructions = match self.catalog.try_read() {
+            Ok(catalog) => Self::build_instructions(&catalog),
+            Err(_) => Self::build_instructions(&PromptCatalog::empty()),
+        };
         ServerInfo {
             server_info: Implementation {
                 name: "skills-mcp".to_string(),
@@ -135,7 +139,7 @@ impl ServerHandler for SkillsMcp {
                 icons: None,
                 website_url: None,
             },
-            instructions: Some(Self::build_instructions(&skills_info)),
+            instructions: Some(instructions),
             capabilities: ServerCapabilities::builder()
                 .enable_prompts()
                 .enable_tools()
@@ -149,32 +153,25 @@ impl ServerHandler for SkillsMcp {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListPromptsResult, McpError> {
-        let command_files_with_paths = match PromptFile::from_dir(&self.commands_dir).await {
-            Ok(files) => files,
-            Err(e) => {
-                error!(
-                    "Failed to load prompt files from {:?}: {}",
-                    self.commands_dir, e
-                );
-
-                return Ok(ListPromptsResult {
-                    prompts: Vec::new(),
-                    next_cursor: None,
-                    meta: None,
+        let catalog = self.catalog.read().await;
+        let prompts = catalog
+            .slash_commands()
+            .map(|s| {
+                let arguments = s.argument_hint.as_ref().map(|hint| {
+                    vec![PromptArgument {
+                        name: "ARGUMENTS".to_string(),
+                        title: None,
+                        description: Some(hint.clone()),
+                        required: Some(false),
+                    }]
                 });
-            }
-        };
 
-        let commands = command_files_with_paths
-            .iter()
-            .filter_map(|(path, file)| {
-                let name = path.file_stem()?.to_string_lossy().to_string();
-                Some(to_prompt(file, name))
+                Prompt::new(s.name.clone(), Some(s.description.clone()), arguments)
             })
             .collect();
 
         Ok(ListPromptsResult {
-            prompts: commands,
+            prompts,
             next_cursor: None,
             meta: None,
         })
@@ -185,10 +182,15 @@ impl ServerHandler for SkillsMcp {
         request: GetPromptRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<GetPromptResult, McpError> {
-        let prompt_path = self.commands_dir.join(format!("{}.md", request.name));
-        let command_file = PromptFile::from_file(&prompt_path).map_err(|e| {
-            McpError::invalid_params(format!("Prompt '{}' not found: {}", request.name, e), None)
-        })?;
+        let catalog = self.catalog.read().await;
+        let spec = catalog
+            .slash_commands()
+            .find(|s| s.name == request.name.as_str())
+            .ok_or_else(|| {
+                McpError::invalid_params(format!("Prompt '{}' not found", request.name), None)
+            })?;
+
+        let body = spec.body.clone();
 
         let arguments = request.arguments.as_ref().map(|json_map| {
             json_map
@@ -197,14 +199,11 @@ impl ServerHandler for SkillsMcp {
                 .collect::<HashMap<String, String>>()
         });
 
-        let content = substitute_parameters(&command_file.content, &arguments);
+        let content = substitute_parameters(&body, &arguments);
         let messages = vec![PromptMessage::new_text(PromptMessageRole::User, content)];
 
         Ok(GetPromptResult {
-            description: command_file
-                .frontmatter
-                .as_ref()
-                .and_then(|f| f.description.clone()),
+            description: Some(spec.description.clone()),
             messages,
         })
     }
@@ -223,11 +222,10 @@ impl SkillsMcp {
         let mut skills = Vec::new();
         for skill_name in args.skills {
             let skill_path = self.skills_dir.join(&skill_name).join(SKILL_FILENAME);
-
-            if let Ok(skill_file) = SkillsFile::from_file(&skill_path) {
+            if let Ok(prompt) = PromptFile::parse(&skill_path) {
                 skills.push(Skill {
                     name: skill_name,
-                    content: skill_file.content,
+                    content: prompt.body,
                 });
             }
         }
@@ -244,7 +242,7 @@ impl SkillsMcp {
         let Parameters(input) = request;
         let result = save_skill(&input, &self.skills_dir).map_err(|e| e.to_string())?;
 
-        self.reload_metadata().await;
+        self.reload_catalog().await;
 
         Ok(Json(result))
     }
@@ -259,7 +257,7 @@ impl SkillsMcp {
         let result = rate_skill(&input, &self.skills_dir).map_err(|e| e.to_string())?;
 
         if matches!(result.status, RateSkillStatus::Pruned) {
-            self.reload_metadata().await;
+            self.reload_catalog().await;
         }
 
         Ok(Json(result))

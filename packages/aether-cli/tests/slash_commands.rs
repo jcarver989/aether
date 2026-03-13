@@ -1,23 +1,19 @@
 use agent_client_protocol as acp;
 use rmcp::model::{Prompt, PromptArgument};
 
-/// Test helper to create an MCP prompt
-fn create_test_prompt(name: &str, description: Option<&str>, args: Vec<&str>) -> Prompt {
-    let arguments = if args.is_empty() {
-        None
-    } else {
-        Some(
-            args.into_iter()
-                .map(|name| PromptArgument {
-                    name: name.into(),
-                    description: None,
-                    required: Some(true),
-                    title: None,
-                })
-                .collect(),
-        )
-    };
+/// Create an MCP prompt with no arguments.
+fn create_prompt(name: &str, description: Option<&str>) -> Prompt {
+    Prompt::new(name.to_string(), description.map(|s| s.to_string()), None)
+}
 
+/// Create an MCP prompt with an ARGUMENTS parameter (unified prompt format).
+fn create_prompt_with_hint(name: &str, description: Option<&str>, hint: &str) -> Prompt {
+    let arguments = Some(vec![PromptArgument {
+        name: "ARGUMENTS".into(),
+        title: None,
+        description: Some(hint.to_string()),
+        required: Some(false),
+    }]);
     Prompt::new(
         name.to_string(),
         description.map(|s| s.to_string()),
@@ -27,19 +23,18 @@ fn create_test_prompt(name: &str, description: Option<&str>, args: Vec<&str>) ->
 
 #[test]
 fn test_map_prompt_to_command_strips_namespace() {
-    let prompt = create_test_prompt("coding__web", Some("Search the web"), vec![]);
+    let prompt = create_prompt("coding__web", Some("Search the web"));
 
     let command = aether_cli::map_mcp_prompt_to_available_command(&prompt);
 
     assert_eq!(command.name, "web");
     assert_eq!(command.description, "Search the web");
-    // All commands now have input hints for optional arguments
     assert!(command.input.is_some());
 }
 
 #[test]
 fn test_map_prompt_to_command_without_namespace() {
-    let prompt = create_test_prompt("test", Some("Run tests"), vec![]);
+    let prompt = create_prompt("test", Some("Run tests"));
 
     let command = aether_cli::map_mcp_prompt_to_available_command(&prompt);
 
@@ -48,19 +43,15 @@ fn test_map_prompt_to_command_without_namespace() {
 }
 
 #[test]
-fn test_map_prompt_to_command_with_arguments() {
-    let prompt = create_test_prompt(
-        "coding__search",
-        Some("Search code"),
-        vec!["query", "pattern"],
-    );
+fn test_map_prompt_to_command_with_argument_hint() {
+    let prompt = create_prompt_with_hint("search", Some("Search code"), "[query]");
 
     let command = aether_cli::map_mcp_prompt_to_available_command(&prompt);
 
     assert_eq!(command.name, "search");
     match command.input {
         Some(acp::AvailableCommandInput::Unstructured(input)) => {
-            assert_eq!(input.hint, "query pattern");
+            assert_eq!(input.hint, "[query]");
         }
         _ => panic!("Expected Unstructured input with hint"),
     }

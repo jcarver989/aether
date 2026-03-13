@@ -10,6 +10,7 @@ use rmcp::{
     service::RequestContext,
     tool, tool_handler, tool_router,
 };
+use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::{
     collections::{HashMap, HashSet},
@@ -23,6 +24,7 @@ use tokio::{
 
 pub mod default_tools;
 pub mod error;
+pub mod prompt_rule_matcher;
 pub mod tools;
 pub mod tools_trait;
 
@@ -118,6 +120,8 @@ pub struct CodingMcp<T: CodingTools = DefaultCodingTools> {
     web_searcher: Option<WebSearcher<BraveSearchClient>>,
     /// Workspace roots (from MCP protocol or CLI args)
     roots: RwLock<Vec<PathBuf>>,
+    /// Read rules discovered from skill files (activated on file reads)
+    read_rule_state: prompt_rule_matcher::PromptRuleMatcher,
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -152,6 +156,7 @@ impl CodingMcp<DefaultCodingTools> {
             web_fetcher: WebFetcher::new(),
             web_searcher: WebSearcher::try_new().ok(),
             roots: RwLock::new(Vec::new()),
+            read_rule_state: prompt_rule_matcher::PromptRuleMatcher::default(),
         }
     }
 }
@@ -185,6 +190,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             web_fetcher: WebFetcher::new(),
             web_searcher: WebSearcher::try_new().ok(),
             roots: RwLock::new(Vec::new()),
+            read_rule_state: prompt_rule_matcher::PromptRuleMatcher::default(),
         }
     }
 
@@ -199,6 +205,17 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
 
     /// Set workspace roots.
     pub fn with_roots(mut self, roots: Vec<PathBuf>) -> Self {
+        let catalog = match roots.first() {
+            Some(root) => {
+                let skills_dir = root.join(".aether").join("skills");
+                aether_project::PromptCatalog::from_dir(&skills_dir).unwrap_or_else(|e| {
+                    tracing::warn!("Failed to load skill catalog: {e}");
+                    aether_project::PromptCatalog::empty()
+                })
+            }
+            None => aether_project::PromptCatalog::empty(),
+        };
+        self.read_rule_state = prompt_rule_matcher::PromptRuleMatcher::new(catalog);
         self.roots = RwLock::new(roots);
         self
     }
@@ -292,12 +309,23 @@ When using tools that take file paths, always use absolute paths from:
         )
         .await;
         let file_path = args.file_path.clone();
-        let result = self
+        let mut result = self
             .tools
             .read_file(args)
             .await
             .map_err(|e| e.to_string())?;
-        self.files_read.write().await.insert(file_path);
+        self.files_read.write().await.insert(file_path.clone());
+
+        let roots = self.roots.read().await;
+        let matched = self.read_rule_state.get_matched_rules(&roots, &file_path);
+        for rule in &matched {
+            write!(
+                result.content,
+                "\n\n<system-reminder>\n{}\n</system-reminder>",
+                rule.body
+            )
+            .unwrap();
+        }
 
         Ok(Json(result))
     }
@@ -548,7 +576,7 @@ When using tools that take file paths, always use absolute paths from:
         let Parameters(request) = request;
         let preview_value = match &request.input {
             LspDiagnosticsInput::Workspace {} => "workspace".to_string(),
-            LspDiagnosticsInput::File { file_path } => basename(&file_path),
+            LspDiagnosticsInput::File { file_path } => basename(file_path),
         };
         notify_preview(&context, ToolDisplayMeta::new("LSP errors", preview_value)).await;
         let lsp = self.lsp.as_ref().ok_or("LSP not configured")?;

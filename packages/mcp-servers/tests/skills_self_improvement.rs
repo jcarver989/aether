@@ -339,7 +339,7 @@ async fn test_toc_includes_tags() {
     std::fs::create_dir_all(&skill_dir).unwrap();
     std::fs::write(
         skill_dir.join("SKILL.md"),
-        "---\ndescription: A tagged skill\ntags:\n  - convention\n  - testing\nagent_authored: true\n---\nContent.\n",
+        "---\ndescription: A tagged skill\nagent-invocable: true\ntags:\n  - convention\n  - testing\nagent_authored: true\n---\nContent.\n",
     )
     .unwrap();
 

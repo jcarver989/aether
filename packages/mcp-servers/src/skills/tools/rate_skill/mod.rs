@@ -3,9 +3,7 @@ use std::path::Path;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::skills::skill_file::{
-    SkillFileError, SkillsFrontmatter, read_and_parse, skill_exists, write_skill,
-};
+use aether_project::{PromptFile, PromptFileError, SKILL_FILENAME};
 
 const PRUNE_CONFIDENCE_THRESHOLD: f64 = 0.2;
 const PRUNE_MIN_EVALUATIONS: u32 = 3;
@@ -38,31 +36,31 @@ pub struct RateSkillOutput {
 pub fn rate_skill(
     input: &RateSkillInput,
     skills_dir: &Path,
-) -> Result<RateSkillOutput, SkillFileError> {
-    let dir = skills_dir.join(&input.name);
-    if !skill_exists(&dir) {
-        return Err(SkillFileError::NotFound(input.name.clone()));
+) -> Result<RateSkillOutput, PromptFileError> {
+    let skill_path = skills_dir.join(&input.name).join(SKILL_FILENAME);
+    if !skill_path.is_file() {
+        return Err(PromptFileError::NotFound(input.name.clone()));
     }
 
-    let (mut frontmatter, body) = read_and_parse(&dir)?;
+    let mut prompt = PromptFile::parse(&skill_path)?;
 
-    if !frontmatter.agent_authored {
-        return Err(SkillFileError::NotAgentAuthored(input.name.clone()));
+    if !prompt.agent_authored {
+        return Err(PromptFileError::NotAgentAuthored(input.name.clone()));
     }
 
     if input.helpful {
-        frontmatter.helpful += 1;
+        prompt.helpful += 1;
     } else {
-        frontmatter.harmful += 1;
+        prompt.harmful += 1;
     }
 
-    let confidence = frontmatter.confidence();
-    let total = frontmatter.helpful + frontmatter.harmful;
+    let confidence = prompt.confidence();
+    let total = prompt.helpful + prompt.harmful;
     let should_prune = confidence < PRUNE_CONFIDENCE_THRESHOLD && total >= PRUNE_MIN_EVALUATIONS;
 
     if should_prune {
-        archive_pruned_skill(skills_dir, &input.name, &frontmatter, &body)?;
-        std::fs::remove_dir_all(&dir)?;
+        archive_pruned_skill(skills_dir, &input.name, &prompt)?;
+        std::fs::remove_dir_all(skills_dir.join(&input.name))?;
 
         Ok(RateSkillOutput {
             name: input.name.clone(),
@@ -74,7 +72,7 @@ pub fn rate_skill(
             ),
         })
     } else {
-        write_skill(&dir, &frontmatter, &body)?;
+        prompt.write(&skill_path)?;
 
         let direction = if input.helpful { "helpful" } else { "harmful" };
         Ok(RateSkillOutput {
@@ -83,7 +81,7 @@ pub fn rate_skill(
             confidence,
             message: format!(
                 "Skill '{}' marked as {direction}. Confidence: {confidence:.2} (+{}/-{})",
-                input.name, frontmatter.helpful, frontmatter.harmful
+                input.name, prompt.helpful, prompt.harmful
             ),
         })
     }
@@ -92,9 +90,8 @@ pub fn rate_skill(
 fn archive_pruned_skill(
     skills_dir: &Path,
     skill_name: &str,
-    frontmatter: &SkillsFrontmatter,
-    body: &str,
-) -> Result<(), SkillFileError> {
+    prompt: &PromptFile,
+) -> Result<(), PromptFileError> {
     let archive_dir = skills_dir.join(".archived").join(skill_name);
     std::fs::create_dir_all(&archive_dir)?;
 
@@ -102,11 +99,11 @@ fn archive_pruned_skill(
     let log_entry = format!(
         "--- pruned skill '{}' (+{}/-{}, confidence: {:.2}) ---\n{}\n\n{}\n\n",
         skill_name,
-        frontmatter.helpful,
-        frontmatter.harmful,
-        frontmatter.confidence(),
-        frontmatter.description,
-        body,
+        prompt.helpful,
+        prompt.harmful,
+        prompt.confidence(),
+        prompt.description,
+        prompt.body,
     );
 
     let mut existing = std::fs::read_to_string(&log_path).unwrap_or_default();
@@ -119,14 +116,16 @@ fn archive_pruned_skill(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::skills::skill_file::SKILL_FILENAME;
+    use aether_project::SKILL_FILENAME;
     use std::fmt::Write;
     use tempfile::TempDir;
 
     fn create_agent_skill(skills_dir: &Path, name: &str, helpful: u32, harmful: u32) {
         let dir = skills_dir.join(name);
         std::fs::create_dir_all(&dir).unwrap();
-        let mut content = "---\ndescription: Test skill\nagent_authored: true\n".to_string();
+        let mut content =
+            "---\ndescription: Test skill\nagent-invocable: true\nagent_authored: true\n"
+                .to_string();
         if helpful > 0 {
             writeln!(content, "helpful: {helpful}").expect("write to String should not fail");
         }
@@ -152,7 +151,7 @@ mod tests {
         assert_eq!(output.status, RateSkillStatus::Scored);
         assert!(output.confidence > 0.0);
 
-        let (fm, _) = read_and_parse(&skills_dir.join("tips")).unwrap();
+        let fm = PromptFile::parse(&skills_dir.join("tips").join(SKILL_FILENAME)).unwrap();
         assert_eq!(fm.helpful, 1);
         assert_eq!(fm.harmful, 0);
     }
@@ -172,7 +171,7 @@ mod tests {
         assert_eq!(output.status, RateSkillStatus::Scored);
         assert!(output.confidence.abs() < f64::EPSILON);
 
-        let (fm, _) = read_and_parse(&skills_dir.join("tips")).unwrap();
+        let fm = PromptFile::parse(&skills_dir.join("tips").join(SKILL_FILENAME)).unwrap();
         assert_eq!(fm.helpful, 0);
         assert_eq!(fm.harmful, 1);
     }
