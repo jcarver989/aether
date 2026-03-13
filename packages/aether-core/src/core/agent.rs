@@ -285,8 +285,7 @@ impl Agent {
 
     fn clear_active_streams(&mut self) {
         self.streams.remove("llm");
-        let tool_stream_keys: Vec<String> = self.active_requests.keys().cloned().collect();
-        for stream_key in tool_stream_keys {
+        for stream_key in self.active_requests.keys().cloned().collect::<Vec<_>>() {
             self.streams.remove(&stream_key);
         }
     }
@@ -418,28 +417,33 @@ impl Agent {
     }
 
     async fn handle_tool_request_start(&mut self, id: String, name: String) {
+        let request = ToolCallRequest {
+            id: id.clone(),
+            name,
+            arguments: String::new(),
+        };
+        self.active_requests.insert(id, request.clone());
+
         let _ = self
             .message_tx
             .send(AgentMessage::ToolCall {
-                request: ToolCallRequest {
-                    id,
-                    name,
-                    arguments: String::new(),
-                },
+                request,
                 model_name: self.llm.display_name(),
             })
             .await;
     }
 
     async fn handle_tool_request_arg(&mut self, id: String, chunk: String) {
+        let Some(request) = self.active_requests.get_mut(&id) else {
+            return;
+        };
+        request.arguments.push_str(&chunk);
+
         let _ = self
             .message_tx
-            .send(AgentMessage::ToolCall {
-                request: ToolCallRequest {
-                    id,
-                    name: String::new(),
-                    arguments: chunk,
-                },
+            .send(AgentMessage::ToolCallUpdate {
+                tool_call_id: id,
+                chunk,
                 model_name: self.llm.display_name(),
             })
             .await;
@@ -451,13 +455,11 @@ impl Agent {
         state: &mut IterationState,
     ) {
         state.pending_tool_ids.insert(tool_call.id.clone());
-        self.active_requests
-            .insert(tool_call.id.clone(), tool_call.clone());
-
-        let msg_future = self.message_tx.send(AgentMessage::ToolCall {
-            request: tool_call.clone(),
-            model_name: self.llm.display_name(),
-        });
+        debug_assert!(
+            self.active_requests.contains_key(&tool_call.id),
+            "tool call {} should already be in active_requests from handle_tool_request_start",
+            tool_call.id
+        );
 
         let (tx, rx) = mpsc::channel(100);
         let stream = ReceiverStream::new(rx).map(StreamEvent::ToolExecution);
@@ -470,8 +472,7 @@ impl Agent {
                 timeout: self.tool_timeout,
                 tx,
             });
-            let (_, mcp_result) = tokio::join!(msg_future, mcp_future);
-            if let Err(e) = mcp_result {
+            if let Err(e) = mcp_future.await {
                 tracing::warn!("Failed to send tool request to MCP task: {:?}", e);
             }
         }

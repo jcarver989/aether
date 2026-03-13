@@ -11,6 +11,16 @@ use aether_core::{
 use llm::testing::llm_response;
 use llm::{ChatMessage, LlmResponse, StopReason};
 
+fn split_json_in_half(input: &str) -> (&str, &str) {
+    let split = input
+        .char_indices()
+        .nth(input.len() / 2)
+        .map_or(1, |(idx, _)| idx)
+        .max(1)
+        .min(input.len() - 1);
+    input.split_at(split)
+}
+
 #[tokio::test]
 async fn test_text_message() -> Result<(), Box<dyn Error>> {
     let id = "message_1";
@@ -62,6 +72,63 @@ async fn test_single_tool_call() -> Result<(), Box<dyn Error>> {
         .run()
         .await?;
     assert_eq!(messages, expected_messages);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_tool_request_arg_emits_tool_call_update() -> Result<(), Box<dyn Error>> {
+    let tool_request = AddNumbersRequest::new(3, 5);
+    let request_json = tool_request.json()?;
+    let (arg_chunk_1, arg_chunk_2) = split_json_in_half(&request_json);
+    let llm_responses = [llm_response("message_1")
+        .tool_call("call_1", "test__add_numbers", &[arg_chunk_1, arg_chunk_2])
+        .build()];
+
+    let messages = test_agent()
+        .llm_responses(&llm_responses)
+        .user_messages(vec![UserMessage::text("3+5 = ?")])
+        .run()
+        .await?;
+
+    let tool_call_count = messages
+        .iter()
+        .filter(|message| {
+            matches!(
+                message,
+                AgentMessage::ToolCall { request, .. }
+                    if request.id == "call_1" && request.name == "test__add_numbers"
+            )
+        })
+        .count();
+    assert_eq!(
+        tool_call_count, 1,
+        "only one start ToolCall should be emitted"
+    );
+
+    let update_chunks: Vec<String> = messages
+        .iter()
+        .filter_map(|message| match message {
+            AgentMessage::ToolCallUpdate {
+                tool_call_id,
+                chunk,
+                ..
+            } if tool_call_id == "call_1" => Some(chunk.clone()),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(update_chunks.len(), 2);
+    assert_eq!(update_chunks[0], arg_chunk_1);
+    assert_eq!(update_chunks[1], arg_chunk_2);
+
+    assert!(messages.iter().any(|message| {
+        matches!(
+            message,
+            AgentMessage::ToolResult { result, .. }
+                if result.id == "call_1" && result.result.contains("sum")
+        )
+    }));
+
     Ok(())
 }
 

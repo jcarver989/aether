@@ -43,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         use AgentMessage::{
             AutoContinue, Cancelled, ContextCleared, ContextCompactionResult,
             ContextCompactionStarted, ContextUsageUpdate, Done, Error, ModelSwitched, Text,
-            Thought, ToolCall, ToolError, ToolProgress, ToolResult,
+            Thought, ToolCall, ToolCallUpdate, ToolError, ToolProgress, ToolResult,
         };
         match rx.recv().await {
             Some(Text {
@@ -59,6 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(ToolCall { request, .. }) => {
                 println!("\nTool '{}' in progress", request.name);
             }
+            Some(ToolCallUpdate { .. }) => {}
             Some(ToolResult { result, .. }) => {
                 println!("\nTool '{}' completed successfully", result.name);
             }

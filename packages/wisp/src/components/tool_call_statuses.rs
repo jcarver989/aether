@@ -127,6 +127,68 @@ struct TrackedToolCall {
     status: ToolCallStatus,
 }
 
+impl TrackedToolCall {
+    fn new_running(name: impl Into<String>, arguments: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            arguments: arguments.into(),
+            result_meta: None,
+            status: ToolCallStatus::Running,
+        }
+    }
+
+    fn update_name(&mut self, name: &str) {
+        if !name.is_empty() {
+            self.name.clear();
+            self.name.push_str(name);
+        }
+    }
+
+    fn append_arguments(&mut self, fragment: &str) {
+        self.arguments.push_str(fragment);
+    }
+
+    fn apply_result_meta(&mut self, meta: ToolResultMeta) {
+        self.name.clone_from(&meta.display.title);
+        self.result_meta = Some(meta);
+    }
+
+    fn apply_status(&mut self, status: acp::ToolCallStatus) {
+        match status {
+            acp::ToolCallStatus::Completed => self.status = ToolCallStatus::Success,
+            acp::ToolCallStatus::Failed => {
+                self.status = ToolCallStatus::Error("failed".to_string());
+            }
+            acp::ToolCallStatus::InProgress | acp::ToolCallStatus::Pending => {
+                self.status = ToolCallStatus::Running;
+            }
+            _ => {}
+        }
+    }
+}
+
+fn raw_input_fragment(raw_input: &serde_json::Value) -> String {
+    raw_input
+        .as_str()
+        .map_or_else(|| raw_input.to_string(), str::to_string)
+}
+
+fn upsert_tracked_tool_call<'a>(
+    tool_order: &mut Vec<String>,
+    tool_calls: &'a mut HashMap<String, TrackedToolCall>,
+    id: &str,
+    default_name: &str,
+    default_arguments: String,
+) -> &'a mut TrackedToolCall {
+    if !tool_calls.contains_key(id) {
+        tool_order.push(id.to_string());
+    }
+
+    tool_calls
+        .entry(id.to_string())
+        .or_insert_with(|| TrackedToolCall::new_running(default_name, default_arguments))
+}
+
 impl ToolCallStatuses {
     pub fn new() -> Self {
         Self {
@@ -191,27 +253,19 @@ impl ToolCallStatuses {
         let arguments = tool_call
             .raw_input
             .as_ref()
-            .map(std::string::ToString::to_string)
+            .map(raw_input_fragment)
             .unwrap_or_default();
 
-        if let Some(existing) = self.tool_calls.get_mut(&id) {
-            if !tool_call.title.is_empty() {
-                existing.name.clone_from(&tool_call.title);
-            }
-            existing.arguments = arguments;
-            return;
-        }
-
-        self.tool_order.push(id.clone());
-        self.tool_calls.insert(
-            id,
-            TrackedToolCall {
-                name: tool_call.title.clone(),
-                arguments,
-                result_meta: None,
-                status: ToolCallStatus::Running,
-            },
+        let tracked = upsert_tracked_tool_call(
+            &mut self.tool_order,
+            &mut self.tool_calls,
+            &id,
+            &tool_call.title,
+            arguments.clone(),
         );
+        tracked.update_name(&tool_call.title);
+        tracked.arguments = arguments;
+        tracked.status = ToolCallStatus::Running;
     }
 
     /// Handle a tool call update from ACP `SessionUpdate::ToolCallUpdate`.
@@ -220,28 +274,18 @@ impl ToolCallStatuses {
 
         if let Some(tc) = self.tool_calls.get_mut(&id) {
             if let Some(title) = &update.fields.title {
-                tc.name.clone_from(title);
+                tc.update_name(title);
             }
             if let Some(raw_input) = &update.fields.raw_input {
-                tc.arguments = raw_input.to_string();
+                tc.append_arguments(&raw_input_fragment(raw_input));
             }
             if let Some(meta) = &update.meta
                 && let Some(tc_meta) = ToolResultMeta::from_map(meta)
             {
-                tc.name.clone_from(&tc_meta.display.title);
-                tc.result_meta = Some(tc_meta);
+                tc.apply_result_meta(tc_meta);
             }
-            if let Some(status) = &update.fields.status {
-                match status {
-                    acp::ToolCallStatus::Completed => tc.status = ToolCallStatus::Success,
-                    acp::ToolCallStatus::Failed => {
-                        tc.status = ToolCallStatus::Error("failed".to_string());
-                    }
-                    acp::ToolCallStatus::InProgress | acp::ToolCallStatus::Pending => {
-                        tc.status = ToolCallStatus::Running;
-                    }
-                    _ => {}
-                }
+            if let Some(status) = update.fields.status {
+                tc.apply_status(status);
             }
         }
     }
@@ -289,25 +333,33 @@ impl ToolCallStatuses {
 
         match &notification.event {
             SubAgentEvent::ToolCall { request } => {
-                if !agent.tool_calls.contains_key(&request.id) {
-                    agent.tool_order.push(request.id.clone());
-                }
-                agent.tool_calls.insert(
-                    request.id.clone(),
-                    TrackedToolCall {
-                        name: request.name.clone(),
-                        arguments: request.arguments.clone(),
-                        result_meta: None,
-                        status: ToolCallStatus::Running,
-                    },
+                let tracked = upsert_tracked_tool_call(
+                    &mut agent.tool_order,
+                    &mut agent.tool_calls,
+                    &request.id,
+                    &request.name,
+                    request.arguments.clone(),
                 );
+                tracked.update_name(&request.name);
+                tracked.arguments.clone_from(&request.arguments);
+                tracked.status = ToolCallStatus::Running;
+            }
+            SubAgentEvent::ToolCallUpdate { update } => {
+                let tracked = upsert_tracked_tool_call(
+                    &mut agent.tool_order,
+                    &mut agent.tool_calls,
+                    &update.id,
+                    "tool",
+                    String::new(),
+                );
+                tracked.append_arguments(&update.chunk);
+                tracked.status = ToolCallStatus::Running;
             }
             SubAgentEvent::ToolResult { result } => {
                 if let Some(tc) = agent.tool_calls.get_mut(&result.id) {
                     tc.status = ToolCallStatus::Success;
                     if let Some(result_meta) = &result.result_meta {
-                        tc.name.clone_from(&result_meta.display.title);
-                        tc.result_meta = Some(result_meta.clone());
+                        tc.apply_result_meta(result_meta.clone());
                     }
                 }
             }
@@ -840,6 +892,18 @@ mod tests {
     }
 
     #[test]
+    fn deserialize_tool_call_update_event() {
+        // "model_name" is present because the wire format comes from AgentMessage serialization;
+        // SubAgentEvent::ToolCallUpdate has no model_name field, so serde silently ignores it.
+        let n = make_sub_agent_notification(
+            "p1",
+            "explorer",
+            r#"{"ToolCallUpdate":{"update":{"id":"c1","chunk":"{\"pattern\":\"updated\"}"},"model_name":"m"}}"#,
+        );
+        assert!(matches!(n.event, SubAgentEvent::ToolCallUpdate { .. }));
+    }
+
+    #[test]
     fn deserialize_tool_result_event() {
         let n = make_sub_agent_notification(
             "p1",
@@ -881,6 +945,32 @@ mod tests {
         assert!(lines[0].plain_text().starts_with("  ")); // 2-space indent
         assert!(lines[1].plain_text().starts_with("  └─ ")); // tree connector
         assert!(lines[1].plain_text().contains("grep"));
+    }
+
+    #[test]
+    fn sub_agent_tool_call_update_appends_chunk() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":""},"model_name":"m"}}"#,
+        ));
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCallUpdate":{"update":{"id":"c1","chunk":"{\"pattern\":\"updated\"}"}}}"#,
+        ));
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolResult":{"result":{"id":"c1","name":"grep","arguments":"{}","result":"ok"},"model_name":"m"}}"#,
+        ));
+
+        let lines = statuses.render_tool("parent-1", &ctx());
+        assert_eq!(lines.len(), 2);
+        assert!(lines[1].plain_text().contains("updated"));
     }
 
     #[test]
@@ -1593,5 +1683,30 @@ mod tests {
         ));
 
         assert!(!statuses.progress().running_any);
+    }
+
+    #[test]
+    fn sub_agent_tool_call_update_without_preceding_call_does_not_double_arguments() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+
+        // ToolCallUpdate arrives WITHOUT a preceding ToolCall for "c1"
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCallUpdate":{"update":{"id":"c1","chunk":"ABC"}}}"#,
+        ));
+
+        // Complete so arguments render
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolResult":{"result":{"id":"c1","name":"tool","arguments":"{}","result":"ok"},"model_name":"m"}}"#,
+        ));
+
+        let lines = statuses.render_tool("parent-1", &ctx());
+        let text = lines[1].plain_text();
+        assert!(text.contains("ABC"), "should contain chunk");
+        assert!(!text.contains("ABCABC"), "arguments doubled: {text}");
     }
 }

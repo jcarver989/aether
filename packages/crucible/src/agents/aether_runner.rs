@@ -112,10 +112,28 @@ async fn stream_agent_messages(
             } => handle_text(chunk, *is_complete, &mut accumulated_text, &tx).await?,
 
             AgentMessage::ToolCall { request, .. } => {
-                handle_tool_call(request, &mut accumulated_tool_calls, &tx).await?;
+                handle_tool_call(request, &mut accumulated_tool_calls);
+            }
+
+            AgentMessage::ToolCallUpdate {
+                tool_call_id,
+                chunk,
+                ..
+            } => {
+                handle_tool_call_update(tool_call_id, chunk, &mut accumulated_tool_calls);
             }
 
             AgentMessage::ToolResult { result, .. } => {
+                if let Some(tool_call) = take_tool_call(
+                    &mut accumulated_tool_calls,
+                    &result.id,
+                    &result.name,
+                    &result.arguments,
+                ) {
+                    tx.send(tool_call)
+                        .await
+                        .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
+                }
                 tracing::debug!("Tool result for {}: {}", result.name, result.result);
                 tx.send(AgentRunnerMessage::ToolResult {
                     name: result.name.clone(),
@@ -126,6 +144,16 @@ async fn stream_agent_messages(
             }
 
             AgentMessage::ToolError { error, .. } => {
+                if let Some(tool_call) = take_tool_call(
+                    &mut accumulated_tool_calls,
+                    &error.id,
+                    &error.name,
+                    error.arguments.as_deref().unwrap_or_default(),
+                ) {
+                    tx.send(tool_call)
+                        .await
+                        .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
+                }
                 tracing::debug!("Tool error: {:?}", error);
                 tx.send(AgentRunnerMessage::ToolError(format!("{error:?}")))
                     .await
@@ -280,35 +308,65 @@ async fn handle_text(
     Ok(())
 }
 
-async fn handle_tool_call(
-    request: &ToolCallRequest,
-    accumulated_tool_calls: &mut HashMap<String, ToolCallRequest>,
-    tx: &Sender<AgentRunnerMessage>,
-) -> Result<(), RunError> {
-    let entry = accumulated_tool_calls
-        .entry(request.id.clone())
+fn upsert_tool_call<'a>(
+    accumulated: &'a mut HashMap<String, ToolCallRequest>,
+    id: &str,
+    name: Option<&str>,
+    arguments: Option<&str>,
+) -> &'a mut ToolCallRequest {
+    let entry = accumulated
+        .entry(id.to_string())
         .or_insert_with(|| ToolCallRequest {
-            id: request.id.clone(),
+            id: id.to_string(),
             name: String::new(),
             arguments: String::new(),
         });
 
-    if !request.name.is_empty() {
-        entry.name.push_str(&request.name);
+    if let Some(name) = name.filter(|n| !n.is_empty()) {
+        entry.name = name.to_string();
     }
-    entry.arguments.push_str(&request.arguments);
+    if let Some(args) = arguments {
+        entry.arguments.push_str(args);
+    }
+    entry
+}
 
-    if !entry.name.is_empty() && entry.arguments.ends_with('}') {
-        tracing::debug!("Tool call: {} with args: {}", entry.name, entry.arguments);
-        tx.send(AgentRunnerMessage::ToolCall {
-            name: entry.name.clone(),
-            arguments: entry.arguments.clone(),
-        })
-        .await
-        .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
-        accumulated_tool_calls.remove(&request.id);
-    }
-    Ok(())
+fn handle_tool_call(
+    request: &ToolCallRequest,
+    accumulated_tool_calls: &mut HashMap<String, ToolCallRequest>,
+) {
+    let name = (!request.name.is_empty()).then_some(request.name.as_str());
+    let args = (!request.arguments.is_empty()).then_some(request.arguments.as_str());
+    upsert_tool_call(accumulated_tool_calls, &request.id, name, args);
+}
+
+fn handle_tool_call_update(
+    tool_call_id: &str,
+    chunk: &str,
+    accumulated_tool_calls: &mut HashMap<String, ToolCallRequest>,
+) {
+    upsert_tool_call(accumulated_tool_calls, tool_call_id, None, Some(chunk));
+}
+
+fn take_tool_call(
+    accumulated_tool_calls: &mut HashMap<String, ToolCallRequest>,
+    tool_call_id: &str,
+    fallback_name: &str,
+    fallback_arguments: &str,
+) -> Option<AgentRunnerMessage> {
+    let request = accumulated_tool_calls.remove(tool_call_id)?;
+    let name = if request.name.is_empty() {
+        fallback_name.to_string()
+    } else {
+        request.name
+    };
+    let arguments = if request.arguments.is_empty() {
+        fallback_arguments.to_string()
+    } else {
+        request.arguments
+    };
+
+    Some(AgentRunnerMessage::ToolCall { name, arguments })
 }
 
 fn handle_tool_progress(
@@ -346,4 +404,140 @@ async fn handle_done(
         .await
         .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use llm::{ToolCallError, ToolCallResult};
+    use tokio::sync::mpsc;
+
+    #[tokio::test]
+    async fn stream_agent_messages_emits_tool_call_when_result_arrives() {
+        let (agent_tx, agent_rx) = mpsc::channel(8);
+        let (runner_tx, mut runner_rx) = mpsc::channel(8);
+
+        let task = tokio::spawn(async move { stream_agent_messages(agent_rx, runner_tx).await });
+
+        agent_tx
+            .send(AgentMessage::ToolCall {
+                request: ToolCallRequest {
+                    id: "call_1".to_string(),
+                    name: "coding__read_file".to_string(),
+                    arguments: String::new(),
+                },
+                model_name: "test".to_string(),
+            })
+            .await
+            .unwrap();
+        agent_tx
+            .send(AgentMessage::ToolCallUpdate {
+                tool_call_id: "call_1".to_string(),
+                chunk: r#"["Cargo.toml"]"#.to_string(),
+                model_name: "test".to_string(),
+            })
+            .await
+            .unwrap();
+        agent_tx
+            .send(AgentMessage::ToolResult {
+                result: ToolCallResult {
+                    id: "call_1".to_string(),
+                    name: "coding__read_file".to_string(),
+                    arguments: r#"["Cargo.toml"]"#.to_string(),
+                    result: "file contents".to_string(),
+                },
+                result_meta: None,
+                model_name: "test".to_string(),
+            })
+            .await
+            .unwrap();
+        agent_tx.send(AgentMessage::Done).await.unwrap();
+        drop(agent_tx);
+
+        let mut messages = Vec::new();
+        while let Some(message) = runner_rx.recv().await {
+            let is_done = matches!(message, AgentRunnerMessage::Done);
+            messages.push(message);
+            if is_done {
+                break;
+            }
+        }
+
+        task.await.unwrap().unwrap();
+
+        assert!(matches!(
+            &messages[0],
+            AgentRunnerMessage::ToolCall { name, arguments }
+                if name == "coding__read_file" && arguments == r#"["Cargo.toml"]"#
+        ));
+        assert!(matches!(
+            &messages[1],
+            AgentRunnerMessage::ToolResult { name, result }
+                if name == "coding__read_file" && result == "file contents"
+        ));
+        assert!(matches!(messages.last(), Some(AgentRunnerMessage::Done)));
+    }
+
+    #[tokio::test]
+    async fn stream_agent_messages_emits_tool_call_when_error_arrives() {
+        let (agent_tx, agent_rx) = mpsc::channel(8);
+        let (runner_tx, mut runner_rx) = mpsc::channel(8);
+
+        let task = tokio::spawn(async move { stream_agent_messages(agent_rx, runner_tx).await });
+
+        agent_tx
+            .send(AgentMessage::ToolCall {
+                request: ToolCallRequest {
+                    id: "call_1".to_string(),
+                    name: "coding__read_file".to_string(),
+                    arguments: String::new(),
+                },
+                model_name: "test".to_string(),
+            })
+            .await
+            .unwrap();
+        agent_tx
+            .send(AgentMessage::ToolCallUpdate {
+                tool_call_id: "call_1".to_string(),
+                chunk: r#"["Cargo.toml"]"#.to_string(),
+                model_name: "test".to_string(),
+            })
+            .await
+            .unwrap();
+        agent_tx
+            .send(AgentMessage::ToolError {
+                error: ToolCallError {
+                    id: "call_1".to_string(),
+                    name: "coding__read_file".to_string(),
+                    arguments: Some(r#"["Cargo.toml"]"#.to_string()),
+                    error: "boom".to_string(),
+                },
+                model_name: "test".to_string(),
+            })
+            .await
+            .unwrap();
+        agent_tx.send(AgentMessage::Done).await.unwrap();
+        drop(agent_tx);
+
+        let mut messages = Vec::new();
+        while let Some(message) = runner_rx.recv().await {
+            let is_done = matches!(message, AgentRunnerMessage::Done);
+            messages.push(message);
+            if is_done {
+                break;
+            }
+        }
+
+        task.await.unwrap().unwrap();
+
+        assert!(matches!(
+            &messages[0],
+            AgentRunnerMessage::ToolCall { name, arguments }
+                if name == "coding__read_file" && arguments == r#"["Cargo.toml"]"#
+        ));
+        assert!(
+            matches!(&messages[1], AgentRunnerMessage::ToolError(error) if error.contains("boom"))
+        );
+        assert!(matches!(messages.last(), Some(AgentRunnerMessage::Done)));
+    }
 }
