@@ -248,6 +248,7 @@ impl AgentExecutor {
 }
 
 /// Execute a single sub-agent and return its result
+#[allow(clippy::too_many_lines)]
 async fn execute_single_agent(
     task_id: String,
     task: SubAgentTask,

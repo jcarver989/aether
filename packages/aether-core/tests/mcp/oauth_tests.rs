@@ -1,7 +1,7 @@
 use aether_core::mcp::{McpSpawnResult, mcp};
 use aether_core::testing::{FakeMcpServer, fake_mcp};
 use futures::future::BoxFuture;
-use mcp_utils::client::oauth::{BrowserOAuthHandler, OAuthCallback, OAuthError, OAuthHandler};
+use mcp_utils::client::oauth::{OAuthCallback, OAuthError, OAuthHandler, accept_oauth_callback};
 use mcp_utils::client::{ElicitationRequest, McpManager, McpServerConfig, ServerConfig};
 use mcp_utils::status::McpServerStatus;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
@@ -173,11 +173,13 @@ async fn add_mcps_continues_on_oauth_failure() {
 }
 
 #[tokio::test]
-async fn browser_oauth_handler_callback_server() {
-    let handler = BrowserOAuthHandler::new().unwrap();
-    let callback_url = format!("{}?code=abc123&state=csrf_token", handler.redirect_uri());
+async fn accept_oauth_callback_parses_code_and_state() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let callback_url =
+        format!("http://127.0.0.1:{port}/oauth2callback?code=abc123&state=csrf_token");
 
-    let handle = tokio::spawn(async move { handler.authorize("https://example.com/auth").await });
+    let handle = tokio::spawn(async move { accept_oauth_callback(&listener).await });
 
     // Give the callback server time to start
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;

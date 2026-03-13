@@ -349,6 +349,7 @@ impl Component for ConfigOverlay {
         }
 
         let footer = self.footer_text();
+        #[allow(clippy::cast_possible_truncation)]
         let child_max_height = height.saturating_sub(4) as u16;
         let inner_w = Panel::inner_width(context.size.width);
         let child_context = context.with_size((inner_w, child_max_height));

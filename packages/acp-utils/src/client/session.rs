@@ -218,6 +218,7 @@ struct AcpThreadContext<F> {
     new_session_request: acp::NewSessionRequest,
 }
 
+#[allow(clippy::too_many_lines)]
 async fn run_acp_thread<F, C>(ctx: AcpThreadContext<F>)
 where
     F: FnOnce(mpsc::UnboundedSender<AcpEvent>) -> C,

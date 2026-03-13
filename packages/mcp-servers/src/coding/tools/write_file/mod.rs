@@ -34,6 +34,7 @@ pub struct WriteFileResponse {
 }
 
 pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileResponse, FileError> {
+    const MAX_DIFF_LINES: usize = 50;
     let file_path = Path::new(&args.file_path);
 
     if let Some(parent) = file_path.parent()
@@ -55,7 +56,6 @@ pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileRespons
     let bytes_written = args.content.len();
     let display_meta = ToolDisplayMeta::new("Write file", basename(&args.file_path));
 
-    const MAX_DIFF_LINES: usize = 50;
     let all_lines: Vec<_> = args.content.lines().collect();
     let is_truncated = all_lines.len() > MAX_DIFF_LINES;
 

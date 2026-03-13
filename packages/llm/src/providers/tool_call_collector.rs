@@ -51,6 +51,7 @@ impl<T: Eq + Ord + Copy + Display> ToolCallCollector<T> {
     }
 
     /// Complete the tool call at a specific index and return it, if present.
+    #[allow(dead_code)]
     pub fn complete_one(&mut self, index: T) -> Option<ToolCallRequest> {
         self.active_tool_calls.remove(&index).map(to_request)
     }

@@ -72,7 +72,7 @@ impl Session {
 
         let mut spec = runtime.spec;
         spec.prompts
-            .push(Prompt::system_env().with_cwd(roots_path.to_path_buf()));
+            .push(Prompt::system_env().with_cwd(roots_path.clone()));
         spec.prompts.push(Prompt::mcp_instructions(instructions));
 
         let mut agent_builder =

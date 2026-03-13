@@ -12,6 +12,7 @@ pub enum UserEvent {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "data", rename_all = "camelCase")]
+#[allow(clippy::large_enum_variant)]
 pub enum SessionEvent {
     User(UserEvent),
     Agent(AgentMessage),
@@ -65,14 +66,14 @@ fn apply_agent_event(ctx: &mut Context, event: &AgentMessage, acc: &mut TurnAccu
             is_complete: true,
             ..
         } => {
-            acc.text = chunk.clone();
+            acc.text.clone_from(chunk);
         }
         AgentMessage::Thought {
             chunk,
             is_complete: true,
             ..
         } => {
-            acc.reasoning = chunk.clone();
+            acc.reasoning.clone_from(chunk);
         }
         AgentMessage::ToolResult { result, .. } => {
             acc.tool_results.push(Ok(result.clone()));

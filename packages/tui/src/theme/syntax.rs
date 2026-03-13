@@ -63,6 +63,7 @@ impl Theme {
 }
 
 impl From<&syntect::highlighting::Theme> for Theme {
+    #[allow(clippy::similar_names)]
     fn from(syntect: &syntect::highlighting::Theme) -> Self {
         let accent = syntect
             .settings

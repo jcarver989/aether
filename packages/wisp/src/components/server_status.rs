@@ -65,10 +65,10 @@ impl Component for ServerStatusOverlay {
         match outcome.as_deref() {
             Some([SelectListMessage::Close]) => Some(vec![ServerStatusMessage::Close]),
             Some([SelectListMessage::Select(_)]) => {
-                if let Some(item) = self.list.selected_item() {
-                    if matches!(item.0.status, McpServerStatus::NeedsOAuth) {
-                        return Some(vec![ServerStatusMessage::Authenticate(item.0.name.clone())]);
-                    }
+                if let Some(item) = self.list.selected_item()
+                    && matches!(item.0.status, McpServerStatus::NeedsOAuth)
+                {
+                    return Some(vec![ServerStatusMessage::Authenticate(item.0.name.clone())]);
                 }
                 Some(vec![])
             }

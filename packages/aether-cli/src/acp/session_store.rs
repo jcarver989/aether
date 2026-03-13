@@ -85,9 +85,8 @@ impl SessionStore {
     }
 
     pub fn list(&self) -> Vec<SessionSummary> {
-        let entries = match fs::read_dir(&self.dir) {
-            Ok(entries) => entries,
-            Err(_) => return Vec::new(),
+        let Ok(entries) = fs::read_dir(&self.dir) else {
+            return Vec::new();
         };
 
         let mut sessions: Vec<SessionSummary> = entries
@@ -109,7 +108,7 @@ impl SessionStore {
                     .read_line(&mut second_line)
                     .ok()
                     .and_then(|n| (n > 0).then_some(()))
-                    .and_then(|_| serde_json::from_str::<SessionEvent>(second_line.trim()).ok())
+                    .and_then(|()| serde_json::from_str::<SessionEvent>(second_line.trim()).ok())
                     .and_then(|event| match event {
                         SessionEvent::User(UserEvent::Message { content }) => {
                             Some(extract_title(&content))
@@ -412,9 +411,7 @@ mod tests {
         store
             .append_event(
                 "s1",
-                &SessionEvent::User(UserEvent::Message {
-                    content: long_msg,
-                }),
+                &SessionEvent::User(UserEvent::Message { content: long_msg }),
             )
             .unwrap();
 

@@ -138,7 +138,8 @@ impl Context {
 
     /// Clear all non-system messages, retaining only system prompts.
     pub fn clear_conversation(&mut self) {
-        self.messages.retain(|msg| msg.is_system());
+        self.messages
+            .retain(super::chat_message::ChatMessage::is_system);
     }
 
     /// Get all non-system messages for summarization

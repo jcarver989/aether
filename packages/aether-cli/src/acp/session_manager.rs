@@ -122,9 +122,10 @@ pub struct SessionManager {
 impl SessionManager {
     pub fn new(actor_handle: AcpActorHandle) -> Self {
         info!("Creating SessionManager");
-        let session_store = SessionStore::new()
-            .map(Arc::new)
-            .unwrap_or_else(|e| panic!("Failed to initialize session store: {e}"));
+        let session_store = SessionStore::new().map_or_else(
+            |e| panic!("Failed to initialize session store: {e}"),
+            Arc::new,
+        );
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             actor_handle,
@@ -145,6 +146,7 @@ impl SessionManager {
         Ok(SessionModeCatalog { catalog, modes })
     }
 
+    #[allow(clippy::too_many_arguments, clippy::similar_names)]
     async fn register_session(
         &self,
         session: Session,
@@ -468,11 +470,11 @@ impl Agent for SessionManager {
         } else {
             mode_catalog
                 .catalog
-                .runtime_inputs_for_default(default_model.clone(), None, &args.cwd)
+                .runtime_inputs_for_default(default_model, None, &args.cwd)
         };
 
         let model_str = runtime.spec.model.clone();
-        let initial_reasoning_effort = mode_config.map(|(_, effort)| effort).flatten();
+        let initial_reasoning_effort = mode_config.and_then(|(_, effort)| effort);
 
         let session = Session::new(
             runtime,
@@ -563,8 +565,8 @@ impl Agent for SessionManager {
         let context = Context::from_events(&events);
         let mode_catalog = Self::load_mode_catalog(&args.cwd)?;
 
-        let runtime = match meta.selected_mode.as_deref() {
-            Some(mode_name) => mode_catalog
+        let runtime = if let Some(mode_name) = meta.selected_mode.as_deref() {
+            mode_catalog
                 .catalog
                 .runtime_inputs_for(mode_name, &args.cwd)
                 .map_err(|e| {
@@ -573,16 +575,15 @@ impl Agent for SessionManager {
                         mode_name
                     );
                     acp::Error::invalid_params()
-                })?,
-            None => {
-                let parsed_model: LlmModel = meta.model.parse().map_err(|e: String| {
-                    error!("Failed to parse restored model '{}': {e}", meta.model);
-                    acp::Error::invalid_params()
-                })?;
-                mode_catalog
-                    .catalog
-                    .runtime_inputs_for_default(parsed_model, None, &args.cwd)
-            }
+                })?
+        } else {
+            let parsed_model: LlmModel = meta.model.parse().map_err(|e: String| {
+                error!("Failed to parse restored model '{}': {e}", meta.model);
+                acp::Error::invalid_params()
+            })?;
+            mode_catalog
+                .catalog
+                .runtime_inputs_for_default(&parsed_model, None, &args.cwd)
         };
 
         let model = runtime.spec.model.clone();

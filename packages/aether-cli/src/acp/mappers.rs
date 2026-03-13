@@ -28,31 +28,20 @@ pub fn map_mcp_prompt_to_available_command(prompt: &McpPrompt) -> acp::Available
         .unwrap_or(prompt.name.as_ref())
         .to_string();
 
-    // Determine if the command takes input based on whether it has arguments
-    // For slash commands, we always allow input (arguments after the command name)
-    let input = if let Some(args) = &prompt.arguments {
-        if args.is_empty() {
-            // Even if no formal arguments, provide a generic hint
-            Some(acp::AvailableCommandInput::Unstructured(
-                acp::UnstructuredCommandInput::new("optional arguments"),
-            ))
-        } else {
-            // Create a hint from the argument names
-            let hint = args
-                .iter()
-                .map(|arg| arg.name.as_str())
-                .collect::<Vec<_>>()
-                .join(" ");
-            Some(acp::AvailableCommandInput::Unstructured(
-                acp::UnstructuredCommandInput::new(hint),
-            ))
-        }
-    } else {
-        // No arguments defined, provide a generic hint for optional input
-        Some(acp::AvailableCommandInput::Unstructured(
-            acp::UnstructuredCommandInput::new("optional arguments"),
-        ))
-    };
+    // Extract the input hint from the unified prompt format's ARGUMENTS parameter,
+    // falling back to a generic hint.
+    let hint = prompt
+        .arguments
+        .as_ref()
+        .and_then(|args| {
+            args.iter()
+                .find(|a| a.name.as_str() == "ARGUMENTS")
+                .and_then(|a| a.description.as_deref())
+        })
+        .unwrap_or("optional arguments");
+    let input = Some(acp::AvailableCommandInput::Unstructured(
+        acp::UnstructuredCommandInput::new(hint),
+    ));
 
     let description = prompt
         .description
@@ -439,7 +428,7 @@ pub async fn replay_to_client(
                 message,
                 NotificationMode::Replay,
             ),
-            _ => None,
+            SessionEvent::User(_) => None,
         };
 
         if let Some(notif) = notification

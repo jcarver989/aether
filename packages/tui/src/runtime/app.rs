@@ -331,7 +331,7 @@ pub(crate) async fn run_loop<A: App, W: Write>(
                 }
             }
 
-            _ = tick_fut => {
+            () = tick_fut => {
                 if handle_event(app, renderer, AppEvent::Tick(Instant::now())).await? {
                     return Ok(());
                 }

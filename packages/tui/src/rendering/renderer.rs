@@ -48,7 +48,7 @@ impl<W: Write> Renderer<W> {
 
     /// Render a frame using a closure.
     ///
-    /// The closure receives a ViewContext and returns a Frame.
+    /// The closure receives a `ViewContext` and returns a Frame.
     pub fn render_frame(&mut self, f: impl FnOnce(&ViewContext) -> Frame) -> io::Result<()> {
         let context = self.context();
         let frame = f(&context).clamp_cursor();

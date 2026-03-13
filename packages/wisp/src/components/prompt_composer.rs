@@ -140,7 +140,7 @@ impl PromptComposer {
     fn handle_file_picker_outcome(
         &mut self,
         outcome: Option<Vec<FilePickerMessage>>,
-    ) -> Option<Vec<PromptComposerMessage>> {
+    ) -> Vec<PromptComposerMessage> {
         let (close, confirmed) = self.handle_picker_outcome(outcome);
         if let Some(file_match) = confirmed {
             self.file_picker = None;
@@ -149,13 +149,13 @@ impl PromptComposer {
         } else if close {
             self.file_picker = None;
         }
-        Some(vec![])
+        vec![]
     }
 
     fn handle_command_picker_outcome(
         &mut self,
         outcome: Option<Vec<CommandPickerMessage>>,
-    ) -> Option<Vec<PromptComposerMessage>> {
+    ) -> Vec<PromptComposerMessage> {
         let (close, confirmed) = self.handle_picker_outcome(outcome);
         if let Some(cmd) = confirmed {
             self.command_picker = None;
@@ -163,18 +163,16 @@ impl PromptComposer {
         } else if close {
             self.command_picker = None;
         }
-        Some(vec![])
+        vec![]
     }
 
     fn handle_text_input_outcome(
         &mut self,
         outcome: Option<Vec<TextInputMessage>>,
     ) -> Option<Vec<PromptComposerMessage>> {
-        let Some(msgs) = outcome else {
-            return None;
-        };
+        let msgs = outcome?;
         match msgs.into_iter().next() {
-            Some(TextInputMessage::Submit) => self.prepare_submit(),
+            Some(TextInputMessage::Submit) => Some(self.prepare_submit()),
             Some(TextInputMessage::OpenCommandPicker) => {
                 let mut commands = builtin_commands();
                 commands.extend(self.available_commands.clone());
@@ -189,31 +187,31 @@ impl PromptComposer {
         }
     }
 
-    fn apply_command(&mut self, cmd: &CommandEntry) -> Option<Vec<PromptComposerMessage>> {
+    fn apply_command(&mut self, cmd: &CommandEntry) -> Vec<PromptComposerMessage> {
         if cmd.builtin && cmd.name == "clear" {
             self.text_input.clear();
             self.close_all();
-            Some(vec![PromptComposerMessage::ClearScreen])
+            vec![PromptComposerMessage::ClearScreen]
         } else if cmd.builtin && cmd.name == "config" {
             self.text_input.clear();
             self.close_all();
-            Some(vec![PromptComposerMessage::OpenConfig])
+            vec![PromptComposerMessage::OpenConfig]
         } else if cmd.builtin && cmd.name == "resume" {
             self.text_input.clear();
             self.close_all();
-            Some(vec![PromptComposerMessage::OpenSessionPicker])
+            vec![PromptComposerMessage::OpenSessionPicker]
         } else if cmd.has_input {
             self.text_input.set_input(format!("/{} ", cmd.name));
-            Some(vec![])
+            vec![]
         } else {
             self.text_input.set_input(format!("/{}", cmd.name));
             self.prepare_submit()
         }
     }
 
-    fn prepare_submit(&mut self) -> Option<Vec<PromptComposerMessage>> {
+    fn prepare_submit(&mut self) -> Vec<PromptComposerMessage> {
         if self.text_input.buffer().trim().is_empty() {
-            return Some(vec![]);
+            return vec![];
         }
 
         let user_input = self.text_input.buffer().trim().to_string();
@@ -221,10 +219,10 @@ impl PromptComposer {
         self.text_input.clear();
         self.close_all();
 
-        Some(vec![PromptComposerMessage::SubmitRequested {
+        vec![PromptComposerMessage::SubmitRequested {
             user_input,
             attachments,
-        }])
+        }]
     }
 }
 
@@ -242,7 +240,7 @@ impl Component for PromptComposer {
                 if let Some(ref mut picker) = self.file_picker {
                     let outcome = picker.on_event(event);
                     if outcome.is_some() {
-                        return self.handle_file_picker_outcome(outcome);
+                        return Some(self.handle_file_picker_outcome(outcome));
                     }
 
                     if matches!(
@@ -255,7 +253,7 @@ impl Component for PromptComposer {
 
                 if let Some(ref mut picker) = self.command_picker {
                     let outcome = picker.on_event(event);
-                    return self.handle_command_picker_outcome(outcome);
+                    return Some(self.handle_command_picker_outcome(outcome));
                 }
 
                 let outcome = self.text_input.on_event(event);
@@ -410,8 +408,7 @@ mod tests {
         composer.apply_file_selection(PathBuf::from("/tmp/skip.rs"), "skip.rs".to_string());
         composer.set_input("inspect @keep.rs now".to_string());
 
-        let outcome = composer.prepare_submit();
-        let messages = outcome.unwrap();
+        let messages = composer.prepare_submit();
         let [PromptComposerMessage::SubmitRequested { attachments, .. }] = messages.as_slice()
         else {
             panic!("expected submit request");

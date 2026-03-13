@@ -120,7 +120,7 @@ impl Prompt {
                 AgentError::IoError(format!("Invalid glob pattern '{pattern}': {e}"))
             })?;
 
-            let mut matched: Vec<PathBuf> = paths.filter_map(|p| p.ok()).collect();
+            let mut matched: Vec<PathBuf> = paths.filter_map(std::result::Result::ok).collect();
             matched.sort();
 
             for path in matched {

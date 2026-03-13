@@ -164,18 +164,17 @@ fn rename_failure(input: &LspRenameInput, error: String) -> LspRenameOutput {
     }
 }
 
-/// Convert LSP WorkspaceEdit to grouped raw text edits.
+/// Convert LSP `WorkspaceEdit` to grouped raw text edits.
 fn collect_workspace_text_edits(edit: &WorkspaceEdit) -> Result<Vec<LspFileEdit>, String> {
     let mut result = if let Some(doc_changes) = &edit.document_changes {
         collect_document_changes(doc_changes)?
     } else if let Some(changes) = &edit.changes {
         changes
             .iter()
-            .filter_map(|(uri, text_edits)| {
-                (!text_edits.is_empty()).then(|| LspFileEdit {
-                    file_path: uri_to_path(uri),
-                    edits: text_edits.clone(),
-                })
+            .filter(|&(_uri, text_edits)| !text_edits.is_empty())
+            .map(|(uri, text_edits)| LspFileEdit {
+                file_path: uri_to_path(uri),
+                edits: text_edits.clone(),
             })
             .collect()
     } else {
@@ -322,8 +321,7 @@ fn lsp_position_to_byte_offset(
 
     let line_end = content[line_start..]
         .find('\n')
-        .map(|idx| line_start + idx)
-        .unwrap_or(content.len());
+        .map_or(content.len(), |idx| line_start + idx);
     let line = &content[line_start..line_end];
 
     let mut utf16_units = 0usize;

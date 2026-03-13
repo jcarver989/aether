@@ -95,10 +95,10 @@ impl<T: SelectItem> Component for SelectList<T> {
                 Some(vec![])
             }
             KeyCode::Enter => {
-                if !self.items.is_empty() {
-                    Some(vec![SelectListMessage::Select(self.selected_index)])
-                } else {
+                if self.items.is_empty() {
                     Some(vec![])
+                } else {
+                    Some(vec![SelectListMessage::Select(self.selected_index)])
                 }
             }
             _ => Some(vec![]),

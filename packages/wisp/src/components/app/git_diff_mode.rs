@@ -353,26 +353,21 @@ impl GitDiffMode {
         self.state = GitDiffViewState::new(GitDiffLoadState::Empty);
     }
 
-    fn handle_messages(
-        &mut self,
-        outcome: Option<Vec<GitDiffViewMessage>>,
-    ) -> Option<Vec<AppAction>> {
-        Some(
-            outcome
-                .unwrap_or_default()
-                .into_iter()
-                .map(|message| match message {
-                    GitDiffViewMessage::Close => AppAction::CloseGitDiffViewer,
-                    GitDiffViewMessage::Refresh => {
-                        self.begin_refresh();
-                        AppAction::RefreshGitDiffViewer
-                    }
-                    GitDiffViewMessage::SubmitReview { comments } => {
-                        AppAction::SubmitDiffReview { comments }
-                    }
-                })
-                .collect(),
-        )
+    fn handle_messages(&mut self, outcome: Option<Vec<GitDiffViewMessage>>) -> Vec<AppAction> {
+        outcome
+            .unwrap_or_default()
+            .into_iter()
+            .map(|message| match message {
+                GitDiffViewMessage::Close => AppAction::CloseGitDiffViewer,
+                GitDiffViewMessage::Refresh => {
+                    self.begin_refresh();
+                    AppAction::RefreshGitDiffViewer
+                }
+                GitDiffViewMessage::SubmitReview { comments } => {
+                    AppAction::SubmitDiffReview { comments }
+                }
+            })
+            .collect()
     }
 }
 
@@ -386,7 +381,7 @@ impl Component for GitDiffMode {
                     state: &mut self.state,
                 };
                 let outcome = view.on_event(&Event::Key(*key_event));
-                self.handle_messages(outcome)
+                Some(self.handle_messages(outcome))
             }
             Event::Mouse(mouse) => match mouse.kind {
                 MouseEventKind::ScrollUp => {

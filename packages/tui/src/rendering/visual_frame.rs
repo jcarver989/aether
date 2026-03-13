@@ -20,7 +20,7 @@ pub struct VisualFrame {
 }
 
 impl VisualFrame {
-    /// Creates a VisualFrame from a logical Frame, applying soft-wrap and viewport split.
+    /// Creates a `VisualFrame` from a logical Frame, applying soft-wrap and viewport split.
     pub fn from_frame(
         frame: &super::frame::Frame,
         size: Size,
@@ -103,7 +103,7 @@ impl VisualFrame {
     }
 }
 
-/// Prepare logical lines for scrollback using the same width semantics as VisualFrame.
+/// Prepare logical lines for scrollback using the same width semantics as `VisualFrame`.
 pub fn prepare_lines_for_scrollback(lines: &[Line], width: u16) -> Vec<Line> {
     lines
         .iter()
