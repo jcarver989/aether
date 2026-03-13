@@ -10,7 +10,7 @@
 mod common;
 
 use aether_lspd::testing::{CargoProject, TestProject};
-use common::{connect_lsp, poll_lsp_tool};
+use common::{call_tool, connect_lsp, poll_lsp_tool};
 
 /// Test: hover returns type information for a Rust variable
 #[tokio::test]
@@ -180,10 +180,37 @@ async fn test_lsp_rename_applies_workspace_edits() {
         .expect("Failed to add main.rs");
 
     let lib_rs = project.file_path_str("src/lib.rs");
-    let main_rs = project.file_path_str("src/main.rs");
     let (_server_handle, client) = connect_lsp(&project).await;
 
-    let result = poll_lsp_tool(
+    // Wait for rust-analyzer to fully index both files before calling rename.
+    // Rename is a side-effecting operation that writes to disk, so it must not
+    // be polled — a partial rename on the first attempt would corrupt state for
+    // subsequent retries. We verify indexing is complete by polling references
+    // until rust-analyzer sees usages in main.rs.
+    poll_lsp_tool(
+        &client,
+        "lsp_symbol",
+        serde_json::json!({
+            "operation": "references",
+            "file_path": lib_rs,
+            "symbol": "greet",
+            "line": 1
+        }),
+        |r| {
+            r.get("locations")
+                .and_then(|v| v.as_array())
+                .is_some_and(|refs| {
+                    refs.iter().any(|loc| {
+                        loc.get("filePath")
+                            .and_then(|p| p.as_str())
+                            .is_some_and(|p| p.ends_with("main.rs"))
+                    })
+                })
+        },
+    )
+    .await;
+
+    let result = call_tool(
         &client,
         "lsp_rename",
         serde_json::json!({
@@ -192,24 +219,6 @@ async fn test_lsp_rename_applies_workspace_edits() {
             "new_name": "say_hello",
             "line": 1
         }),
-        |r| {
-            let lib_content = std::fs::read_to_string(&lib_rs).ok();
-            let main_content = std::fs::read_to_string(&main_rs).ok();
-
-            r.get("success").and_then(|v| v.as_bool()) == Some(true)
-                && r.get("filesAffected")
-                    .and_then(|v| v.as_u64())
-                    .is_some_and(|n| n >= 2)
-                && r.get("totalEdits")
-                    .and_then(|v| v.as_u64())
-                    .is_some_and(|n| n >= 3)
-                && lib_content.as_deref().is_some_and(|content| {
-                    content.contains("say_hello") && !content.contains("greet")
-                })
-                && main_content.as_deref().is_some_and(|content| {
-                    content.contains("say_hello") && !content.contains("greet")
-                })
-        },
     )
     .await;
 
