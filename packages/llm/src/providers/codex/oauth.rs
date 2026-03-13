@@ -2,12 +2,12 @@ use crate::LlmError;
 use crate::oauth::BrowserOAuthHandler;
 use crate::oauth::OAuthError;
 use crate::oauth::OAuthHandler;
-use crate::oauth::credential_store::OAuthCredentialStore;
+use crate::oauth::credential_store::{OAuthCredential, OAuthCredentialStore};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use oauth2::basic::BasicClient;
 use oauth2::{AuthUrl, AuthorizationCode, ClientId, PkceCodeChallenge, RedirectUrl, TokenUrl};
-use rmcp::transport::auth::{CredentialStore, StoredCredentials};
+use oauth2::TokenResponse;
 use tokio::sync::Mutex;
 use url::Url;
 
@@ -64,8 +64,8 @@ pub async fn perform_codex_oauth_flow() -> Result<(), LlmError> {
                 .map_err(|e| OAuthError::TokenExchange(format!("invalid redirect URI: {e}")))?,
         );
 
-    let http_client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
+    let http_client = oauth2::reqwest::Client::builder()
+        .redirect(oauth2::reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| OAuthError::TokenExchange(format!("failed to build HTTP client: {e}")))?;
 
@@ -76,12 +76,30 @@ pub async fn perform_codex_oauth_flow() -> Result<(), LlmError> {
         .await
         .map_err(|e| OAuthError::TokenExchange(e.to_string()))?;
 
+    let expires_at = token_response.expires_in().map(|duration| {
+        let now_ms = u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis(),
+        )
+        .unwrap_or(u64::MAX);
+        let duration_ms = u64::try_from(duration.as_millis()).unwrap_or(u64::MAX);
+        now_ms.saturating_add(duration_ms)
+    });
+
+    let credential = OAuthCredential {
+        client_id: CLIENT_ID.to_string(),
+        access_token: token_response.access_token().secret().clone(),
+        refresh_token: token_response
+            .refresh_token()
+            .map(|t| t.secret().clone()),
+        expires_at,
+    };
+
     let store = OAuthCredentialStore::new(super::PROVIDER_ID)?;
     store
-        .save(StoredCredentials {
-            client_id: CLIENT_ID.to_string(),
-            token_response: Some(token_response),
-        })
+        .save_credential(credential)
         .await
         .map_err(|e| OAuthError::CredentialStore(e.to_string()))?;
 

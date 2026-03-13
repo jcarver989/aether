@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use oauth2::{AccessToken, RefreshToken, TokenResponse};
-use rmcp::transport::auth::{AuthError, CredentialStore, StoredCredentials};
+use rmcp::transport::auth::{AuthError, CredentialStore, OAuthTokenResponse, StoredCredentials, VendorExtraTokenFields};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -137,6 +137,8 @@ impl CredentialStore for OAuthCredentialStore {
                 Ok(Some(StoredCredentials {
                     client_id: cred.client_id.clone(),
                     token_response: Some(token_response),
+                    granted_scopes: Vec::new(),
+                    token_received_at: None,
                 }))
             }
             None => Ok(None),
@@ -190,15 +192,11 @@ impl CredentialStore for OAuthCredentialStore {
 }
 
 /// Build an oauth2 token response from our stored credential
-fn build_token_response(
-    cred: &OAuthCredential,
-) -> oauth2::StandardTokenResponse<oauth2::EmptyExtraTokenFields, oauth2::basic::BasicTokenType> {
-    use oauth2::{EmptyExtraTokenFields, StandardTokenResponse, basic::BasicTokenType};
-
-    let mut response = StandardTokenResponse::new(
+fn build_token_response(cred: &OAuthCredential) -> OAuthTokenResponse {
+    let mut response = OAuthTokenResponse::new(
         AccessToken::new(cred.access_token.clone()),
-        BasicTokenType::Bearer,
-        EmptyExtraTokenFields {},
+        oauth2::basic::BasicTokenType::Bearer,
+        VendorExtraTokenFields::default(),
     );
 
     if let Some(ref refresh) = cred.refresh_token {
@@ -263,10 +261,10 @@ mod tests {
         let store = OAuthCredentialStore::with_path("test-server", path);
 
         // Create a token response
-        let mut token_response = oauth2::StandardTokenResponse::new(
+        let mut token_response = OAuthTokenResponse::new(
             AccessToken::new("test-access-token".to_string()),
             oauth2::basic::BasicTokenType::Bearer,
-            oauth2::EmptyExtraTokenFields {},
+            VendorExtraTokenFields::default(),
         );
         token_response.set_refresh_token(Some(RefreshToken::new("test-refresh-token".to_string())));
         token_response.set_expires_in(Some(&Duration::from_secs(3600)));
@@ -274,6 +272,8 @@ mod tests {
         let credentials = StoredCredentials {
             client_id: "test-client-id".to_string(),
             token_response: Some(token_response),
+            granted_scopes: Vec::new(),
+            token_received_at: None,
         };
 
         // Save and load
@@ -300,14 +300,16 @@ mod tests {
         let store = OAuthCredentialStore::with_path("test-server", path);
 
         // Save a credential
-        let token_response = oauth2::StandardTokenResponse::new(
+        let token_response = OAuthTokenResponse::new(
             AccessToken::new("token".to_string()),
             oauth2::basic::BasicTokenType::Bearer,
-            oauth2::EmptyExtraTokenFields {},
+            VendorExtraTokenFields::default(),
         );
         let credentials = StoredCredentials {
             client_id: "client".to_string(),
             token_response: Some(token_response),
+            granted_scopes: Vec::new(),
+            token_received_at: None,
         };
         store.save(credentials).await.unwrap();
 
@@ -361,14 +363,16 @@ mod tests {
         let path = temp_dir.path().join("mcp_credentials.json");
         let store = OAuthCredentialStore::with_path("test-server", path.clone());
 
-        let token_response = oauth2::StandardTokenResponse::new(
+        let token_response = OAuthTokenResponse::new(
             AccessToken::new("token".to_string()),
             oauth2::basic::BasicTokenType::Bearer,
-            oauth2::EmptyExtraTokenFields {},
+            VendorExtraTokenFields::default(),
         );
         let credentials = StoredCredentials {
             client_id: "client".to_string(),
             token_response: Some(token_response),
+            granted_scopes: Vec::new(),
+            token_received_at: None,
         };
         store.save(credentials).await.unwrap();
 

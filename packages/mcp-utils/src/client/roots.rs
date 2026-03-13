@@ -33,7 +33,11 @@ pub fn path_to_file_uri(path: &Path) -> String {
 /// The path is converted to an absolute file:// URI.
 pub fn root_from_path(path: &Path, name: Option<String>) -> Root {
     let uri = path_to_file_uri(path);
-    Root { uri, name }
+    let root = Root::new(uri);
+    match name {
+        Some(n) => root.with_name(n),
+        None => root,
+    }
 }
 
 #[cfg(test)]

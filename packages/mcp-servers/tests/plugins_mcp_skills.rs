@@ -35,17 +35,7 @@ async fn create_test_client(
     rmcp::service::RunningService<rmcp::RoleClient, rmcp::model::ClientInfo>,
 ) {
     let server_service = SkillsMcp::new(test_dir.to_path_buf());
-    let client_info = ClientInfo {
-        client_info: Implementation {
-            name: "test-client".to_string(),
-            version: "0.1.0".to_string(),
-            icons: None,
-            title: None,
-            website_url: None,
-            description: None,
-        },
-        ..Default::default()
-    };
+    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
 
     let (server_handle, client) = connect(server_service, client_info)
         .await
@@ -118,11 +108,8 @@ async fn test_load_skills_tool() {
 
     // Test loading multiple skills using new requests API
     let result = client
-        .call_tool(CallToolRequestParams {
-            name: "get_skills".into(),
-            meta: None,
-            task: None,
-            arguments: Some(
+        .call_tool(CallToolRequestParams::new("get_skills")
+            .with_arguments(
                 serde_json::json!({
                     "requests": [
                         { "name": "skill-1" },
@@ -134,7 +121,7 @@ async fn test_load_skills_tool() {
                 .unwrap()
                 .clone(),
             ),
-        })
+        )
         .await
         .expect("Failed to call get_skills tool");
 
@@ -185,11 +172,8 @@ async fn test_load_skills_with_missing() {
     let (_server_handle, client) = create_test_client(temp_dir.path()).await;
 
     let result = client
-        .call_tool(CallToolRequestParams {
-            name: "get_skills".into(),
-            meta: None,
-            task: None,
-            arguments: Some(
+        .call_tool(CallToolRequestParams::new("get_skills")
+            .with_arguments(
                 serde_json::json!({
                     "requests": [
                         { "name": "skill-1" },
@@ -201,7 +185,7 @@ async fn test_load_skills_with_missing() {
                 .unwrap()
                 .clone(),
             ),
-        })
+        )
         .await
         .expect("Failed to call get_skills tool");
 
@@ -249,11 +233,8 @@ async fn test_load_auxiliary_file() {
 
     // Load SKILL.md first - should get available_files
     let result = client
-        .call_tool(CallToolRequestParams {
-            name: "get_skills".into(),
-            meta: None,
-            task: None,
-            arguments: Some(
+        .call_tool(CallToolRequestParams::new("get_skills")
+            .with_arguments(
                 serde_json::json!({
                     "requests": [{ "name": "test-skill" }]
                 })
@@ -261,7 +242,7 @@ async fn test_load_auxiliary_file() {
                 .unwrap()
                 .clone(),
             ),
-        })
+        )
         .await
         .expect("Failed to call get_skills");
 
@@ -279,11 +260,8 @@ async fn test_load_auxiliary_file() {
 
     // Load auxiliary file
     let result_aux = client
-        .call_tool(CallToolRequestParams {
-            name: "get_skills".into(),
-            meta: None,
-            task: None,
-            arguments: Some(
+        .call_tool(CallToolRequestParams::new("get_skills")
+            .with_arguments(
                 serde_json::json!({
                     "requests": [{ "name": "test-skill", "path": "traits.md" }]
                 })
@@ -291,7 +269,7 @@ async fn test_load_auxiliary_file() {
                 .unwrap()
                 .clone(),
             ),
-        })
+        )
         .await
         .expect("Failed to call get_skills");
 
@@ -320,11 +298,8 @@ async fn test_reject_traversal() {
     let (_server_handle, client) = create_test_client(temp_dir.path()).await;
 
     let result = client
-        .call_tool(CallToolRequestParams {
-            name: "get_skills".into(),
-            meta: None,
-            task: None,
-            arguments: Some(
+        .call_tool(CallToolRequestParams::new("get_skills")
+            .with_arguments(
                 serde_json::json!({
                     "requests": [{ "name": "test-skill", "path": "../other-skill/SKILL.md" }]
                 })
@@ -332,7 +307,7 @@ async fn test_reject_traversal() {
                 .unwrap()
                 .clone(),
             ),
-        })
+        )
         .await
         .expect("Failed to call get_skills");
 
@@ -353,11 +328,8 @@ async fn test_reject_absolute_path() {
     let (_server_handle, client) = create_test_client(temp_dir.path()).await;
 
     let result = client
-        .call_tool(CallToolRequestParams {
-            name: "get_skills".into(),
-            meta: None,
-            task: None,
-            arguments: Some(
+        .call_tool(CallToolRequestParams::new("get_skills")
+            .with_arguments(
                 serde_json::json!({
                     "requests": [{ "name": "test-skill", "path": "/etc/passwd" }]
                 })
@@ -365,7 +337,7 @@ async fn test_reject_absolute_path() {
                 .unwrap()
                 .clone(),
             ),
-        })
+        )
         .await
         .expect("Failed to call get_skills");
 

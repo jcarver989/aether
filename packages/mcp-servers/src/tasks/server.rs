@@ -80,19 +80,9 @@ impl TasksMcp {
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for TasksMcp {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            server_info: Implementation {
-                name: "tasks-mcp".to_string(),
-                version: "0.1.0".to_string(),
-                title: None,
-                description: None,
-                icons: None,
-                website_url: None,
-            },
-            instructions: Some(include_str!("./instructions.md").to_string()),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            ..Default::default()
-        }
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new("tasks-mcp", "0.1.0"))
+            .with_instructions(include_str!("./instructions.md"))
     }
 }
 

@@ -128,19 +128,9 @@ pub struct CodingMcp<T: CodingTools = DefaultCodingTools> {
 impl<T: CodingTools + 'static> ServerHandler for CodingMcp<T> {
     fn get_info(&self) -> ServerInfo {
         let instructions = self.build_instructions();
-        ServerInfo {
-            server_info: Implementation {
-                name: "coding-mcp".to_string(),
-                version: "0.1.0".to_string(),
-                title: None,
-                description: None,
-                icons: None,
-                website_url: None,
-            },
-            instructions: Some(instructions),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            ..Default::default()
-        }
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new("coding-mcp", "0.1.0"))
+            .with_instructions(instructions)
     }
 }
 

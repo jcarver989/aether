@@ -28,17 +28,7 @@ async fn create_test_client(
 ) {
     let server_service = SubAgentsMcp::from_project_root(test_dir.to_path_buf())
         .expect("Failed to create SubAgentsMcp from project root");
-    let client_info = ClientInfo {
-        client_info: Implementation {
-            name: "test-client".to_string(),
-            version: "0.1.0".to_string(),
-            icons: None,
-            title: None,
-            website_url: None,
-            description: None,
-        },
-        ..Default::default()
-    };
+    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
 
     let (server_handle, client) = connect(server_service, client_info)
         .await
@@ -84,12 +74,9 @@ async fn test_spawn_subagents_empty_tasks() {
     let mut args = serde_json::Map::new();
     args.insert("tasks".to_string(), serde_json::json!([]));
     let result = client
-        .call_tool(CallToolRequestParams {
-            name: "spawn_subagent".into(),
-            meta: None,
-            task: None,
-            arguments: Some(args),
-        })
+        .call_tool(CallToolRequestParams::new("spawn_subagent")
+            .with_arguments(args),
+        )
         .await
         .expect("Failed to call spawn_subagent tool");
 
@@ -126,12 +113,9 @@ async fn test_spawn_subagent_agent_not_found() {
         }]),
     );
     let result = client
-        .call_tool(CallToolRequestParams {
-            name: "spawn_subagent".into(),
-            meta: None,
-            task: None,
-            arguments: Some(args),
-        })
+        .call_tool(CallToolRequestParams::new("spawn_subagent")
+            .with_arguments(args),
+        )
         .await
         .expect("Failed to call spawn_subagent tool");
 
@@ -185,12 +169,9 @@ async fn test_spawn_subagents_task_id_assignment() {
         ]),
     );
     let result = client
-        .call_tool(CallToolRequestParams {
-            name: "spawn_subagent".into(),
-            meta: None,
-            task: None,
-            arguments: Some(args),
-        })
+        .call_tool(CallToolRequestParams::new("spawn_subagent")
+            .with_arguments(args),
+        )
         .await
         .expect("Failed to call spawn_subagent tool");
 

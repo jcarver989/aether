@@ -30,12 +30,11 @@ pub fn tool_call_request_to_mcp(
         .as_object()
         .cloned();
 
-    Ok(CallToolRequestParams {
-        meta: None,
-        name: tool_name.into(),
-        arguments,
-        task: None,
-    })
+    let mut params = CallToolRequestParams::new(tool_name);
+    if let Some(args) = arguments {
+        params = params.with_arguments(args);
+    }
+    Ok(params)
 }
 
 /// Convert an rmcp `CallToolResult` and request to `ToolCallResult` or `ToolCallError`,
