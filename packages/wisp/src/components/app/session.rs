@@ -14,7 +14,7 @@ use tokio::sync::oneshot;
 use super::UiState;
 
 impl UiState {
-    pub(crate) fn on_session_update(&mut self, update: SessionUpdate) -> Option<Vec<AppAction>> {
+    pub(crate) fn on_session_update(&mut self, update: SessionUpdate) -> Vec<AppAction> {
         self.grid_loader.visible = false;
 
         match update {
@@ -83,10 +83,10 @@ impl UiState {
             }
         }
 
-        Some(vec![])
+        vec![]
     }
 
-    pub(crate) fn on_prompt_done(&mut self, context: &ViewContext) -> Option<Vec<AppAction>> {
+    pub(crate) fn on_prompt_done(&mut self, context: &ViewContext) -> Vec<AppAction> {
         self.waiting_for_response = false;
         self.grid_loader.visible = false;
         self.conversation.close_thought_block();
@@ -100,9 +100,9 @@ impl UiState {
         }
 
         if scrollback_lines.is_empty() {
-            Some(vec![])
+            vec![]
         } else {
-            Some(vec![AppAction::PushScrollback(scrollback_lines)])
+            vec![AppAction::PushScrollback(scrollback_lines)]
         }
     }
 
@@ -110,18 +110,15 @@ impl UiState {
         &mut self,
         params: ElicitationParams,
         response_tx: oneshot::Sender<ElicitationResponse>,
-    ) -> Option<Vec<AppAction>> {
+    ) -> Vec<AppAction> {
         self.config_overlay = None;
         self.elicitation_form = Some(ElicitationForm::from_params(params, response_tx));
         self.focus.focus(super::state::FOCUS_ELICITATION);
 
-        Some(vec![])
+        vec![]
     }
 
-    pub(crate) fn on_ext_notification(
-        &mut self,
-        notification: ExtNotification,
-    ) -> Option<Vec<AppAction>> {
+    pub(crate) fn on_ext_notification(&mut self, notification: &ExtNotification) -> Vec<AppAction> {
         match notification.method.as_ref() {
             CONTEXT_CLEARED_METHOD => {
                 self.reset_after_context_cleared();
@@ -149,7 +146,7 @@ impl UiState {
             }
             _ => {
                 if let Ok(McpNotification::ServerStatus { servers }) =
-                    McpNotification::try_from(&notification)
+                    McpNotification::try_from(notification)
                 {
                     self.server_statuses.clone_from(&servers);
                     if let Some(ref mut overlay) = self.config_overlay {
@@ -159,7 +156,7 @@ impl UiState {
             }
         }
 
-        Some(vec![])
+        vec![]
     }
 
     pub(crate) fn reset_after_context_cleared(&mut self) {
@@ -172,40 +169,40 @@ impl UiState {
         self.progress_indicator = ProgressIndicator::default();
     }
 
-    pub(crate) fn on_prompt_error(&mut self, error: &acp::Error) -> Option<Vec<AppAction>> {
+    pub(crate) fn on_prompt_error(&mut self, error: &acp::Error) -> Vec<AppAction> {
         tracing::error!("Prompt error: {error}");
         self.waiting_for_response = false;
         self.grid_loader.visible = false;
 
-        Some(vec![])
+        vec![]
     }
 
-    pub(crate) fn on_authenticate_complete(&mut self, method_id: &str) -> Option<Vec<AppAction>> {
+    pub(crate) fn on_authenticate_complete(&mut self, method_id: &str) -> Vec<AppAction> {
         self.auth_methods
             .retain(|method| method.id().0.as_ref() != method_id);
         if let Some(ref mut overlay) = self.config_overlay {
             overlay.remove_auth_method(method_id);
         }
 
-        Some(vec![])
+        vec![]
     }
 
     pub(crate) fn on_authenticate_failed(
         &mut self,
         method_id: &str,
         error: &str,
-    ) -> Option<Vec<AppAction>> {
+    ) -> Vec<AppAction> {
         tracing::warn!("Provider auth failed for {method_id}: {error}");
         if let Some(ref mut overlay) = self.config_overlay {
             overlay.on_authenticate_failed(method_id);
         }
 
-        Some(vec![])
+        vec![]
     }
 
-    pub(crate) fn on_connection_closed(&mut self) -> Option<Vec<AppAction>> {
+    pub(crate) fn on_connection_closed(&mut self) -> Vec<AppAction> {
         self.exit_requested = true;
-        Some(vec![])
+        vec![]
     }
 }
 

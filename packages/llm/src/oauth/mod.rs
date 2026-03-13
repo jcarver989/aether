@@ -4,7 +4,7 @@ pub mod error;
 pub mod handler;
 pub mod integration;
 
-pub use browser::BrowserOAuthHandler;
+pub use browser::{BrowserOAuthHandler, accept_oauth_callback};
 pub use credential_store::{OAuthCredential, OAuthCredentialStore};
 pub use error::OAuthError;
 pub use handler::{OAuthCallback, OAuthHandler};

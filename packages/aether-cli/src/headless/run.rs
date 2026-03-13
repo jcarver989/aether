@@ -23,7 +23,7 @@ pub async fn run(config: RunConfig) -> Result<ExitCode, CliError> {
         .model
         .parse()
         .map_err(|e: String| CliError::ModelError(e))?;
-    let runtime = catalog.runtime_inputs_for_default(parsed_model, None, &cwd);
+    let runtime = catalog.runtime_inputs_for_default(&parsed_model, None, &cwd);
 
     let mut builder = mcp().with_builtin_servers(cwd.clone(), &cwd);
     let mcp_config_path = config

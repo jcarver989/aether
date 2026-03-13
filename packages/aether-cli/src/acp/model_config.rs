@@ -38,7 +38,7 @@ pub(crate) fn effective_model<'a>(
 }
 
 /// Build the "Model" select config option with all models from all providers.
-/// Display names use "Provider: ModelName" format.
+/// Display names use "Provider: `ModelName`" format.
 /// Fully-unavailable providers are collapsed into a single summary line.
 struct ProviderGroup<'a> {
     models: Vec<&'a LlmModel>,

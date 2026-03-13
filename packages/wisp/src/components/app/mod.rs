@@ -186,21 +186,21 @@ impl TuiApp for App {
             AppEvent::Tick(_) => self.state.on_event(&Event::Tick),
             AppEvent::Resize(_) => Some(vec![]),
             AppEvent::External(event) => match event {
-                AcpEvent::SessionUpdate(update) => self.state.on_session_update(*update),
+                AcpEvent::SessionUpdate(update) => Some(self.state.on_session_update(*update)),
                 AcpEvent::ExtNotification(notification) => {
-                    self.state.on_ext_notification(notification)
+                    Some(self.state.on_ext_notification(&notification))
                 }
-                AcpEvent::PromptDone(_) => self.state.on_prompt_done(context),
-                AcpEvent::PromptError(error) => self.state.on_prompt_error(&error),
+                AcpEvent::PromptDone(_) => Some(self.state.on_prompt_done(context)),
+                AcpEvent::PromptError(error) => Some(self.state.on_prompt_error(&error)),
                 AcpEvent::ElicitationRequest {
                     params,
                     response_tx,
-                } => self.state.on_elicitation_request(params, response_tx),
+                } => Some(self.state.on_elicitation_request(params, response_tx)),
                 AcpEvent::AuthenticateComplete { method_id } => {
-                    self.state.on_authenticate_complete(&method_id)
+                    Some(self.state.on_authenticate_complete(&method_id))
                 }
                 AcpEvent::AuthenticateFailed { method_id, error } => {
-                    self.state.on_authenticate_failed(&method_id, &error)
+                    Some(self.state.on_authenticate_failed(&method_id, &error))
                 }
                 AcpEvent::SessionsListed { sessions } => {
                     self.state.open_session_picker(sessions);
@@ -214,7 +214,7 @@ impl TuiApp for App {
                     self.state.update_config_options(&config_options);
                     Some(vec![])
                 }
-                AcpEvent::ConnectionClosed => self.state.on_connection_closed(),
+                AcpEvent::ConnectionClosed => Some(self.state.on_connection_closed()),
             },
         };
 
@@ -464,9 +464,7 @@ mod tests {
             },
         ])]);
 
-        let effects = app.state.handle_config_overlay_messages(outcome);
-
-        let actions = effects.unwrap_or_default();
+        let actions = app.state.handle_config_overlay_messages(outcome);
         assert!(matches!(
             actions.as_slice(),
             [AppAction::SetTheme {
@@ -492,9 +490,7 @@ mod tests {
             },
         ])]);
 
-        let effects = app.state.handle_config_overlay_messages(outcome);
-
-        let actions = effects.unwrap_or_default();
+        let actions = app.state.handle_config_overlay_messages(outcome);
         assert!(matches!(
             actions.as_slice(),
             [AppAction::SetTheme { file: None }]
@@ -518,9 +514,7 @@ mod tests {
             },
         ])]);
 
-        let effects = app.state.handle_config_overlay_messages(outcome);
-
-        let actions = effects.unwrap_or_default();
+        let actions = app.state.handle_config_overlay_messages(outcome);
         assert!(matches!(
             actions.as_slice(),
             [AppAction::SetConfigOption {

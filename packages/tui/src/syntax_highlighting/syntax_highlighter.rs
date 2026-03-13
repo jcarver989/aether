@@ -20,6 +20,12 @@ pub struct SyntaxHighlighter {
     cache: Mutex<HashMap<String, HashMap<String, Vec<Line>>>>,
 }
 
+impl Default for SyntaxHighlighter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SyntaxHighlighter {
     pub fn new() -> Self {
         Self {

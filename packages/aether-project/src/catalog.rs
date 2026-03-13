@@ -103,7 +103,7 @@ impl AgentCatalog {
     /// - No agent-local MCP config
     pub fn runtime_inputs_for_default(
         &self,
-        model: LlmModel,
+        model: &LlmModel,
         reasoning_effort: Option<ReasoningEffort>,
         cwd: &Path,
     ) -> ResolvedRuntimeSpec {
@@ -307,7 +307,7 @@ mod tests {
         let catalog = create_test_catalog(dir.path().to_path_buf());
 
         let model: LlmModel = "anthropic:claude-sonnet-4-5".parse().unwrap();
-        let inputs = catalog.runtime_inputs_for_default(model.clone(), None, dir.path());
+        let inputs = catalog.runtime_inputs_for_default(&model, None, dir.path());
 
         assert_eq!(inputs.spec.name, "__default__");
         assert_eq!(inputs.spec.model, model.to_string());

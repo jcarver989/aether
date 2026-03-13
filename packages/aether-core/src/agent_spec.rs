@@ -27,7 +27,7 @@ pub struct AgentSpec {
     pub reasoning_effort: Option<ReasoningEffort>,
     /// The prompt stack for this agent.
     ///
-    /// For authored AgentSpecs resolved from settings, this contains only authored-safe
+    /// For authored `AgentSpec`s resolved from settings, this contains only authored-safe
     /// prompt variants (e.g., `Prompt::PromptGlobs`). Runtime-owned prompts like
     /// `Prompt::SystemEnv` and `Prompt::McpInstructions` are added separately during
     /// agent construction.

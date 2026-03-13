@@ -155,6 +155,7 @@ async fn resolve_line(
 }
 
 /// Execute the `lsp_symbol` operation
+#[allow(clippy::too_many_lines)]
 pub async fn execute_lsp_symbol(
     input: LspSymbolInput,
     registry: &LspRegistry,
@@ -256,7 +257,10 @@ pub async fn execute_lsp_symbol(
         }
     };
 
-    output._meta = Some(symbol_display_meta(&input, &output).into());
+    #[allow(clippy::used_underscore_binding)]
+    {
+        output._meta = Some(symbol_display_meta(&input, &output).into());
+    }
     Ok(output)
 }
 

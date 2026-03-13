@@ -235,7 +235,7 @@ impl Agent {
     async fn on_user_clear_context(&mut self, state: &mut IterationState) {
         self.clear_active_streams();
         self.active_requests.clear();
-        self.reset_context_preserving_system_messages();
+        self.context.clear_conversation();
         self.token_tracker.reset_current_usage();
         self.auto_continue.on_completion();
         *state = IterationState::new();
@@ -289,10 +289,6 @@ impl Agent {
         for stream_key in tool_stream_keys {
             self.streams.remove(&stream_key);
         }
-    }
-
-    fn reset_context_preserving_system_messages(&mut self) {
-        self.context.clear_conversation();
     }
 
     /// Inject a continuation prompt when the LLM stops due to a resumable reason.
@@ -528,6 +524,7 @@ impl Agent {
             return;
         };
         let estimated = self.context.estimated_token_count();
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let threshold = (f64::from(context_limit) * config.threshold).ceil() as u32;
         if estimated >= threshold {
             tracing::info!(

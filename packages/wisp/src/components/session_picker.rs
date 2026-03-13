@@ -95,40 +95,40 @@ impl Component for SessionPicker {
             .max()
             .unwrap_or(0);
 
-        let item_lines = self
-            .combobox
-            .render_items(context, |SessionEntry(info), is_selected, ctx| {
-                let prefix = if is_selected { "▶ " } else { "  " };
-                let title = display_title(info);
-                let relative = info
-                    .updated_at
-                    .as_deref()
-                    .map(|ts| format_relative_time(ts, now))
-                    .unwrap_or_default();
+        let item_lines =
+            self.combobox
+                .render_items(context, |SessionEntry(info), is_selected, ctx| {
+                    let prefix = if is_selected { "▶ " } else { "  " };
+                    let title = display_title(info);
+                    let relative = info
+                        .updated_at
+                        .as_deref()
+                        .map(|ts| format_relative_time(ts, now))
+                        .unwrap_or_default();
 
-                let title_part = format!("{prefix}{title}");
-                let padded_title = pad_text_to_width(&title_part, max_title_width);
-                let line_text = format!("{padded_title}  {relative}");
+                    let title_part = format!("{prefix}{title}");
+                    let padded_title = pad_text_to_width(&title_part, max_title_width);
+                    let line_text = format!("{padded_title}  {relative}");
 
-                let max_width = ctx.size.width as usize;
-                let truncated = truncate_text(&line_text, max_width);
+                    let max_width = ctx.size.width as usize;
+                    let truncated = truncate_text(&line_text, max_width);
 
-                if is_selected {
-                    let mut line = Line::with_style(truncated, ctx.theme.selected_row_style());
-                    line.extend_bg_to_width(max_width);
-                    line
-                } else {
-                    let boundary = padded_title.len().min(truncated.len());
-                    let mut line = Line::new(&truncated[..boundary]);
-                    if truncated.len() > boundary {
-                        line.push_with_style(
-                            &truncated[boundary..],
-                            Style::fg(ctx.theme.muted()),
-                        );
+                    if is_selected {
+                        let mut line = Line::with_style(truncated, ctx.theme.selected_row_style());
+                        line.extend_bg_to_width(max_width);
+                        line
+                    } else {
+                        let boundary = padded_title.len().min(truncated.len());
+                        let mut line = Line::new(&truncated[..boundary]);
+                        if truncated.len() > boundary {
+                            line.push_with_style(
+                                &truncated[boundary..],
+                                Style::fg(ctx.theme.muted()),
+                            );
+                        }
+                        line
                     }
-                    line
-                }
-            });
+                });
         lines.extend(item_lines);
         lines
     }
@@ -136,10 +136,10 @@ impl Component for SessionPicker {
 
 fn display_title(info: &acp::SessionInfo) -> String {
     info.title.clone().unwrap_or_else(|| {
-        info.cwd
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| info.cwd.display().to_string())
+        info.cwd.file_name().map_or_else(
+            || info.cwd.display().to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        )
     })
 }
 
@@ -191,10 +191,7 @@ mod tests {
     fn empty_sessions_shows_message() {
         let picker = SessionPicker::new(vec![]);
         let term = render_component(|ctx| picker.render(ctx), W, H);
-        assert_buffer_eq(
-            &term,
-            &["", "  No previous sessions found."],
-        );
+        assert_buffer_eq(&term, &["", "  No previous sessions found."]);
     }
 
     #[test]

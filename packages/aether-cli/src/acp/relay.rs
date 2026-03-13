@@ -192,7 +192,7 @@ async fn handle_prompt(
         log_event(
             ctx.session_store,
             &ctx.acp_session_id.0,
-            SessionEvent::User(UserEvent::ClearContext),
+            &SessionEvent::User(UserEvent::ClearContext),
         );
         return handle_clear_context(ctx).await;
     }
@@ -202,7 +202,7 @@ async fn handle_prompt(
     log_event(
         ctx.session_store,
         &ctx.acp_session_id.0,
-        SessionEvent::User(UserEvent::Message {
+        &SessionEvent::User(UserEvent::Message {
             content: text.clone(),
         }),
     );
@@ -267,7 +267,7 @@ where
                     log_event(
                         ctx.session_store,
                         &ctx.acp_session_id.0,
-                        SessionEvent::Agent(msg.clone()),
+                        &SessionEvent::Agent(msg.clone()),
                     );
                     forward_notification(ctx.actor_handle, ctx.acp_session_id, &msg).await;
                     if let Some(reason) = on_agent_message(&msg) {
@@ -330,8 +330,8 @@ async fn handle_in_flight_command(
     }
 }
 
-fn log_event(store: &SessionStore, session_id: &str, event: SessionEvent) {
-    if let Err(e) = store.append_event(session_id, &event) {
+fn log_event(store: &SessionStore, session_id: &str, event: &SessionEvent) {
+    if let Err(e) = store.append_event(session_id, event) {
         warn!("Failed to append session log entry: {e}");
     }
 }

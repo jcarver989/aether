@@ -79,13 +79,13 @@ fn process_event(
             }
         }
         ResponseStreamEvent::ResponseOutputItemDone(e) => {
-            if let OutputItem::Reasoning(reasoning) = e.item {
-                if let Some(encrypted) = reasoning.encrypted_content {
-                    responses.push(Ok(LlmResponse::EncryptedReasoning {
-                        id: reasoning.id,
-                        content: encrypted,
-                    }));
-                }
+            if let OutputItem::Reasoning(reasoning) = e.item
+                && let Some(encrypted) = reasoning.encrypted_content
+            {
+                responses.push(Ok(LlmResponse::EncryptedReasoning {
+                    id: reasoning.id,
+                    content: encrypted,
+                }));
             }
         }
         ResponseStreamEvent::ResponseCompleted(e) => {

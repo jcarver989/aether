@@ -78,7 +78,7 @@ impl Component for GitDiffView<'_> {
         };
 
         if self.state.focus == PatchFocus::CommentInput {
-            return self.on_comment_input(key.code);
+            return Some(self.on_comment_input(key.code));
         }
 
         match key.code {
@@ -128,7 +128,7 @@ impl Component for GitDiffView<'_> {
                 self.enter_comment_mode();
                 Some(vec![])
             }
-            KeyCode::Char('s') => self.submit_review(),
+            KeyCode::Char('s') => Some(self.submit_review()),
             KeyCode::Char('u') => {
                 self.state.queued_comments.pop();
                 Some(vec![])
@@ -183,21 +183,21 @@ impl GitDiffView<'_> {
         self.state.comment_cursor = 0;
     }
 
-    fn submit_review(&mut self) -> Option<Vec<GitDiffViewMessage>> {
+    fn submit_review(&mut self) -> Vec<GitDiffViewMessage> {
         if self.state.queued_comments.is_empty() {
-            return Some(vec![]);
+            return vec![];
         }
         let comments = std::mem::take(&mut self.state.queued_comments);
-        Some(vec![GitDiffViewMessage::SubmitReview { comments }])
+        vec![GitDiffViewMessage::SubmitReview { comments }]
     }
 
-    fn on_comment_input(&mut self, code: KeyCode) -> Option<Vec<GitDiffViewMessage>> {
+    fn on_comment_input(&mut self, code: KeyCode) -> Vec<GitDiffViewMessage> {
         match code {
             KeyCode::Esc => {
                 self.state.focus = PatchFocus::Patch;
                 self.state.comment_buffer.clear();
                 self.state.comment_cursor = 0;
-                Some(vec![])
+                vec![]
             }
             KeyCode::Enter => {
                 if let Some(comment) = build_queued_comment(self.state) {
@@ -206,14 +206,14 @@ impl GitDiffView<'_> {
                 self.state.focus = PatchFocus::Patch;
                 self.state.comment_buffer.clear();
                 self.state.comment_cursor = 0;
-                Some(vec![])
+                vec![]
             }
             KeyCode::Char(c) => {
                 let byte_pos =
                     char_to_byte_pos(&self.state.comment_buffer, self.state.comment_cursor);
                 self.state.comment_buffer.insert(byte_pos, c);
                 self.state.comment_cursor += 1;
-                Some(vec![])
+                vec![]
             }
             KeyCode::Backspace => {
                 if self.state.comment_cursor > 0 {
@@ -222,18 +222,18 @@ impl GitDiffView<'_> {
                         char_to_byte_pos(&self.state.comment_buffer, self.state.comment_cursor);
                     self.state.comment_buffer.remove(byte_pos);
                 }
-                Some(vec![])
+                vec![]
             }
             KeyCode::Left => {
                 self.state.comment_cursor = self.state.comment_cursor.saturating_sub(1);
-                Some(vec![])
+                vec![]
             }
             KeyCode::Right => {
                 let max = self.state.comment_buffer.chars().count();
                 self.state.comment_cursor = (self.state.comment_cursor + 1).min(max);
-                Some(vec![])
+                vec![]
             }
-            _ => Some(vec![]),
+            _ => vec![],
         }
     }
 }

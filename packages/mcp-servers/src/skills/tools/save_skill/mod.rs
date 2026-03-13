@@ -47,11 +47,11 @@ pub fn save_skill(
         }
 
         let mut updated = existing;
-        updated.description = input.description.clone();
+        updated.description.clone_from(&input.description);
         updated.agent_invocable = true;
-        updated.tags = input.tags.clone();
+        updated.tags.clone_from(&input.tags);
         updated.agent_authored = true;
-        updated.body = input.content.clone();
+        updated.body.clone_from(&input.content);
         (updated, SaveSkillStatus::Updated)
     } else {
         let new = PromptFile {

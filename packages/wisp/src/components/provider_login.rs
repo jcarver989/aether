@@ -50,12 +50,12 @@ impl Component for ProviderLoginOverlay {
         match outcome.as_deref() {
             Some([SelectListMessage::Close]) => Some(vec![ProviderLoginMessage::Close]),
             Some([SelectListMessage::Select(_)]) => {
-                if let Some(entry) = self.list.selected_item() {
-                    if entry.status == ProviderLoginStatus::NeedsLogin {
-                        return Some(vec![ProviderLoginMessage::Authenticate(
-                            entry.method_id.clone(),
-                        )]);
-                    }
+                if let Some(entry) = self.list.selected_item()
+                    && entry.status == ProviderLoginStatus::NeedsLogin
+                {
+                    return Some(vec![ProviderLoginMessage::Authenticate(
+                        entry.method_id.clone(),
+                    )]);
                 }
                 Some(vec![])
             }
