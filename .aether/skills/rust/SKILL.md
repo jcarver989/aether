@@ -87,20 +87,6 @@ See [error-handling.md](./error-handling.md) for detailed patterns.
 - Applications: use `anyhow` for convenience across heterogeneous errors
 - Always implement `std::error::Error` for your error types
 
-## Traits
-
-See [traits.md](./traits.md) for derive macros and trait implementation guidance.
-
-**Essential derives for most types:**
-```rust
-#[derive(Clone, Debug, PartialEq, Eq)]
-```
-
-**For hashable/orderable types:**
-```rust
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-```
-
 ## Memory and Ownership
 
 ### Prefer Owned Data in Structs
@@ -109,20 +95,6 @@ See [traits.md](./traits.md) for derive macros and trait implementation guidance
 - Allocating/cloning often leads to simpler, more maintainable code
 - Optimize only when benchmarking shows it's necessary
 
-### Smart Pointers for Complex Ownership
-
-- `Rc<RefCell<T>>` - single-threaded shared ownership with interior mutability
-- `Arc<Mutex<T>>` - multi-threaded shared ownership
-- `Weak<T>` - back-references that don't prevent cleanup
-
-### Avoid Self-Referential Structures
-
-- Fundamentally incompatible with Rust's move semantics
-- Use indexing or the `Pin` type if absolutely necessary
-
-## Concurrency
-
-See [concurrency.md](./concurrency.md) for detailed patterns.
 
 **Key points:**
 - Rust prevents data races but NOT deadlocks
@@ -150,43 +122,3 @@ let result: Vec<_> = collection
     .map(transform)
     .collect();
 ```
-
-### Common Patterns
-
-- `collect::<Result<Vec<_>, _>>()` to convert `Vec<Result>` to `Result<Vec>`
-
-## Tooling
-
-See [tooling.md](./tooling.md) for cargo, clippy, testing, and CI guidance.
-
-**Essential commands:**
-- `cargo fmt` - format code
-- `cargo clippy` - lint for issues
-- `cargo check` - fast syntax check
-- `cargo test` - run tests
-- `cargo doc` - generate documentation
-
-## Project Conventions (mcp-gateway)
-
-This project uses specific crates and patterns:
-
-| Layer | Crate | Notes |
-|-------|-------|-------|
-| HTTP | Axum | Handlers, extractors, middleware |
-| Database | sqlx | Run `just db prepare` after schema changes |
-| gRPC | Tonic | ConnectRPC for frontend communication |
-| MCP | rmcp | MCP protocol implementation |
-| Errors | thiserror | Structured error types in gateway |
-
-**Key patterns:**
-- Use `anyhow` in binary/main, `thiserror` in library code
-- Run `just ci` before committing (fmt, clippy, test)
-- Migrations in `/migrations` - see `/migrations/CLAUDE.md` for standards
-
-## Anti-Patterns to Avoid
-
-- **Don't use `.unwrap()` in library code** - prefer `?` or proper error handling
-- **Don't use `panic!` for expected errors** - reserve for programmer errors/invariant violations
-- **Don't write `unsafe` without exhausting safe alternatives**
-- **Don't obsess over zero-copy** - simple, correct code is often better
-- **Don't add lifetime annotations to structs unless necessary**
