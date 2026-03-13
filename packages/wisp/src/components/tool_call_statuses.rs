@@ -1,13 +1,13 @@
-use acp_utils::notifications::{
-    DiffPreview as AcpDiffPreview, SubAgentEvent, SubAgentProgressParams, ToolResultMeta,
-};
+use acp_utils::notifications::{SubAgentEvent, SubAgentProgressParams, ToolResultMeta};
 use agent_client_protocol as acp;
+use similar::{ChangeTag, TextDiff};
+use std::collections::HashMap;
+use std::path::Path;
+use std::time::Instant;
 
 use crate::tui::BRAILLE_FRAMES as FRAMES;
 use crate::tui::highlight_diff;
 use crate::tui::{DiffLine, DiffPreview, DiffTag, Line, ViewContext};
-use std::collections::HashMap;
-use std::time::Instant;
 
 const MAX_TOOL_ARG_LENGTH: usize = 200;
 const SUB_AGENT_VISIBLE_TOOL_LIMIT: usize = 3;
@@ -124,6 +124,7 @@ struct TrackedToolCall {
     name: String,
     arguments: String,
     result_meta: Option<ToolResultMeta>,
+    diff_preview: Option<DiffPreview>,
     status: ToolCallStatus,
 }
 
@@ -133,6 +134,7 @@ impl TrackedToolCall {
             name: name.into(),
             arguments: arguments.into(),
             result_meta: None,
+            diff_preview: None,
             status: ToolCallStatus::Running,
         }
     }
@@ -283,6 +285,13 @@ impl ToolCallStatuses {
                 && let Some(tc_meta) = ToolResultMeta::from_map(meta)
             {
                 tc.apply_result_meta(tc_meta);
+            }
+            if let Some(content) = &update.fields.content {
+                for item in content {
+                    if let acp::ToolCallContent::Diff(diff) = item {
+                        tc.diff_preview = Some(compute_diff_preview(diff));
+                    }
+                }
             }
             if let Some(status) = update.fields.status {
                 tc.apply_status(status);
@@ -514,10 +523,7 @@ impl ToolCallStatuses {
             name: tc.name.clone(),
             arguments: tc.arguments.clone(),
             display_value: tc.result_meta.as_ref().map(|rm| rm.display.value.clone()),
-            diff_preview: tc
-                .result_meta
-                .as_ref()
-                .and_then(|rm| rm.diff_preview.as_ref().map(convert_diff_preview)),
+            diff_preview: tc.diff_preview.clone(),
             status: tc.status.clone(),
             tick,
         }
@@ -546,22 +552,51 @@ impl SubAgentState {
     }
 }
 
-fn convert_diff_preview(acp: &AcpDiffPreview) -> DiffPreview {
+/// Compute a visual diff preview from an ACP `Diff` (full old/new text).
+fn compute_diff_preview(diff: &acp::Diff) -> DiffPreview {
+    let old_text = diff.old_text.as_deref().unwrap_or("");
+    let text_diff = TextDiff::from_lines(old_text, &diff.new_text);
+
+    let mut lines = Vec::new();
+    let mut first_change_line: Option<usize> = None;
+    let mut current_old_line: usize = 0;
+
+    for change in text_diff.iter_all_changes() {
+        let tag = match change.tag() {
+            ChangeTag::Equal => {
+                current_old_line += 1;
+                DiffTag::Context
+            }
+            ChangeTag::Delete => {
+                if first_change_line.is_none() {
+                    first_change_line = Some(current_old_line + 1);
+                }
+                current_old_line += 1;
+                DiffTag::Removed
+            }
+            ChangeTag::Insert => {
+                if first_change_line.is_none() {
+                    first_change_line = Some(current_old_line + 1);
+                }
+                DiffTag::Added
+            }
+        };
+        lines.push(DiffLine {
+            tag,
+            content: change.value().trim_end_matches('\n').to_string(),
+        });
+    }
+
+    let lang_hint = Path::new(&diff.path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
     DiffPreview {
-        lines: acp
-            .lines
-            .iter()
-            .map(|l| DiffLine {
-                tag: match l.tag {
-                    acp_utils::notifications::DiffTag::Context => DiffTag::Context,
-                    acp_utils::notifications::DiffTag::Removed => DiffTag::Removed,
-                    acp_utils::notifications::DiffTag::Added => DiffTag::Added,
-                },
-                content: l.content.clone(),
-            })
-            .collect(),
-        lang_hint: acp.lang_hint.clone(),
-        start_line: acp.start_line,
+        lines,
+        lang_hint,
+        start_line: first_change_line,
     }
 }
 
@@ -569,9 +604,7 @@ fn convert_diff_preview(acp: &AcpDiffPreview) -> DiffPreview {
 mod tests {
     use super::*;
     use crate::tui::Line;
-    use acp_utils::notifications::{
-        DiffLine as AcpDiffLine, DiffTag as AcpDiffTag, ToolDisplayMeta,
-    };
+    use acp_utils::notifications::ToolDisplayMeta;
 
     fn ctx() -> ViewContext {
         ViewContext::new((80, 24))
@@ -1472,33 +1505,25 @@ mod tests {
         let mut statuses = ToolCallStatuses::new();
         statuses.on_tool_call(&make_tool_call("tool-1", "coding__edit_file", None));
 
-        // Complete with diff_preview in meta
-        let rm = ToolResultMeta::with_diff_preview(
-            ToolDisplayMeta::new("Edit file", "main.rs"),
-            AcpDiffPreview {
-                lines: vec![
-                    AcpDiffLine {
-                        tag: AcpDiffTag::Removed,
-                        content: "old".to_string(),
-                    },
-                    AcpDiffLine {
-                        tag: AcpDiffTag::Added,
-                        content: "new".to_string(),
-                    },
-                ],
-                lang_hint: String::new(),
-                start_line: None,
-            },
-        );
+        // Complete with ACP Diff content + display meta
+        let rm = ToolResultMeta::from(ToolDisplayMeta::new("Edit file", "main.rs"));
+        let diff = acp::Diff::new("/tmp/main.rs", "new\n").old_text("old\n".to_string());
         let update = acp::ToolCallUpdate::new(
             "tool-1".to_string(),
-            acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::Completed),
+            acp::ToolCallUpdateFields::new()
+                .status(acp::ToolCallStatus::Completed)
+                .content(vec![
+                    acp::ToolCallContent::Content(acp::Content::new(acp::ContentBlock::Text(
+                        acp::TextContent::new("ok"),
+                    ))),
+                    acp::ToolCallContent::Diff(diff),
+                ]),
         )
         .meta(rm.into_map());
         statuses.on_tool_call_update(&update);
 
         let lines = statuses.render_tool("tool-1", &ctx());
-        // 1 status line + 2 diff lines
+        // 1 status line + 2 diff lines (1 removed + 1 added)
         assert_eq!(lines.len(), 3);
         assert!(lines[0].plain_text().contains("Edit file"));
         assert!(lines[1].plain_text().contains("- old"));

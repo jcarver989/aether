@@ -134,7 +134,7 @@ fn extract_result_meta(value: &mut serde_json::Value) -> Option<ToolResultMeta> 
 
     let meta_empty = {
         let meta = obj.get_mut("_meta")?.as_object_mut()?;
-        for key in ["display", "diff_preview", "plan"] {
+        for key in ["display", "file_diff", "plan"] {
             meta.remove(key);
         }
         meta.is_empty()
@@ -190,11 +190,11 @@ mod tests {
         let rm = result_meta.expect("result_meta should be present");
         assert_eq!(rm.display.title, "Read file");
         assert_eq!(rm.display.value, "file.rs, 50 lines");
-        assert!(rm.diff_preview.is_none());
+        assert!(rm.file_diff.is_none());
     }
 
     #[test]
-    fn test_extracts_meta_with_diff_preview() {
+    fn test_extracts_meta_with_file_diff() {
         let request = make_request();
 
         let structured = json!({
@@ -204,12 +204,10 @@ mod tests {
                     "title": "Edit file",
                     "value": "main.rs"
                 },
-                "diff_preview": {
-                    "lines": [
-                        { "tag": "removed", "content": "old line" },
-                        { "tag": "added", "content": "new line" }
-                    ],
-                    "lang_hint": "rs"
+                "file_diff": {
+                    "path": "/tmp/main.rs",
+                    "old_text": "old content",
+                    "new_text": "new content"
                 }
             }
         });
@@ -222,13 +220,10 @@ mod tests {
 
         let rm = result_meta.expect("result_meta should be present");
         assert_eq!(rm.display.title, "Edit file");
-        let dp = rm.diff_preview.expect("diff_preview should be present");
-        assert_eq!(dp.lines.len(), 2);
-        assert_eq!(dp.lines[0].tag, mcp_utils::display_meta::DiffTag::Removed);
-        assert_eq!(dp.lines[0].content, "old line");
-        assert_eq!(dp.lines[1].tag, mcp_utils::display_meta::DiffTag::Added);
-        assert_eq!(dp.lines[1].content, "new line");
-        assert_eq!(dp.lang_hint, "rs");
+        let fd = rm.file_diff.expect("file_diff should be present");
+        assert_eq!(fd.path, "/tmp/main.rs");
+        assert_eq!(fd.old_text.as_deref(), Some("old content"));
+        assert_eq!(fd.new_text, "new content");
     }
 
     #[test]
@@ -242,12 +237,10 @@ mod tests {
                     "title": "Edit file",
                     "value": "main.rs"
                 },
-                "diff_preview": {
-                    "lines": [
-                        { "tag": "removed", "content": "old line" },
-                        { "tag": "added", "content": "new line" }
-                    ],
-                    "lang_hint": "rs"
+                "file_diff": {
+                    "path": "/tmp/main.rs",
+                    "old_text": "old",
+                    "new_text": "new"
                 },
                 "trace_id": "trace-123",
                 "duration_ms": 18
@@ -260,9 +253,9 @@ mod tests {
         let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
         let rm = result_meta.expect("result_meta should be present");
         assert_eq!(rm.display.title, "Edit file");
-        assert!(rm.diff_preview.is_some());
+        assert!(rm.file_diff.is_some());
         assert!(!result.result.contains("display:"));
-        assert!(!result.result.contains("diff_preview:"));
+        assert!(!result.result.contains("file_diff:"));
         assert!(result.result.contains("trace_id:"));
         assert!(result.result.contains("trace-123"));
         assert!(result.result.contains("duration_ms:"));

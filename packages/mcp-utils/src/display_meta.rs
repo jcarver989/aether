@@ -26,30 +26,16 @@ impl ToolDisplayMeta {
     }
 }
 
-/// Tag indicating the kind of change a diff line represents.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum DiffTag {
-    Context,
-    Removed,
-    Added,
-}
-
-/// A single line in a diff, tagged with its change type.
+/// Full file contents for a diff, sent as metadata so the ACP layer
+/// can emit a first-class `ToolCallContent::Diff`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct DiffLine {
-    pub tag: DiffTag,
-    pub content: String,
-}
-
-/// A preview of changed lines for an edit operation.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct DiffPreview {
-    pub lines: Vec<DiffLine>,
-    pub lang_hint: String,
-    /// 1-indexed line number where the edit begins in the original file.
+pub struct FileDiff {
+    pub path: String,
+    /// Original file content (`None` for new files).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub start_line: Option<usize>,
+    pub old_text: Option<String>,
+    /// Content after the edit/write.
+    pub new_text: String,
 }
 
 /// A snapshot of the agent's current task plan.
@@ -82,7 +68,7 @@ pub enum PlanMetaStatus {
 pub struct ToolResultMeta {
     pub display: ToolDisplayMeta,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub diff_preview: Option<DiffPreview>,
+    pub file_diff: Option<FileDiff>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plan: Option<PlanMeta>,
 }
@@ -98,7 +84,7 @@ impl ToolResultMeta {
     pub fn new(display: ToolDisplayMeta) -> Self {
         Self {
             display,
-            diff_preview: None,
+            file_diff: None,
             plan: None,
         }
     }
@@ -107,16 +93,16 @@ impl ToolResultMeta {
     pub fn with_plan(display: ToolDisplayMeta, plan: PlanMeta) -> Self {
         Self {
             display,
-            diff_preview: None,
+            file_diff: None,
             plan: Some(plan),
         }
     }
 
-    /// Create a metadata wrapper with a diff preview.
-    pub fn with_diff_preview(display: ToolDisplayMeta, diff_preview: DiffPreview) -> Self {
+    /// Create a metadata wrapper with a file diff.
+    pub fn with_file_diff(display: ToolDisplayMeta, file_diff: FileDiff) -> Self {
         Self {
             display,
-            diff_preview: Some(diff_preview),
+            file_diff: Some(file_diff),
             plan: None,
         }
     }
@@ -238,82 +224,48 @@ mod tests {
             meta,
             ToolResultMeta {
                 display,
-                diff_preview: None,
+                file_diff: None,
                 plan: None,
             }
         );
     }
 
     #[test]
-    fn test_diff_preview_serde_roundtrip() {
-        let preview = DiffPreview {
-            lines: vec![
-                DiffLine {
-                    tag: DiffTag::Removed,
-                    content: "old line".to_string(),
-                },
-                DiffLine {
-                    tag: DiffTag::Added,
-                    content: "new line".to_string(),
-                },
-            ],
-            lang_hint: "rs".to_string(),
-            start_line: None,
+    fn test_file_diff_serde_roundtrip() {
+        let diff = FileDiff {
+            path: "/tmp/main.rs".to_string(),
+            old_text: Some("old content".to_string()),
+            new_text: "new content".to_string(),
         };
-        let json = serde_json::to_string(&preview).unwrap();
-        let parsed: DiffPreview = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, preview);
+        let json = serde_json::to_string(&diff).unwrap();
+        let parsed: FileDiff = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, diff);
     }
 
     #[test]
-    fn test_tool_result_meta_with_diff_preview() {
-        let meta = ToolResultMeta::with_diff_preview(
+    fn test_file_diff_new_file_omits_old_text() {
+        let diff = FileDiff {
+            path: "/tmp/new.rs".to_string(),
+            old_text: None,
+            new_text: "content".to_string(),
+        };
+        let json = serde_json::to_value(&diff).unwrap();
+        assert!(json.get("old_text").is_none());
+    }
+
+    #[test]
+    fn test_tool_result_meta_with_file_diff() {
+        let meta = ToolResultMeta::with_file_diff(
             ToolDisplayMeta::new("Edit file", "main.rs"),
-            DiffPreview {
-                lines: vec![
-                    DiffLine {
-                        tag: DiffTag::Removed,
-                        content: "old".to_string(),
-                    },
-                    DiffLine {
-                        tag: DiffTag::Added,
-                        content: "new".to_string(),
-                    },
-                ],
-                lang_hint: "rs".to_string(),
-                start_line: None,
+            FileDiff {
+                path: "/tmp/main.rs".to_string(),
+                old_text: Some("old".to_string()),
+                new_text: "new".to_string(),
             },
         );
         let map = meta.clone().into_map();
         let parsed = ToolResultMeta::from_map(&map).expect("should deserialize");
         assert_eq!(parsed, meta);
-    }
-
-    #[test]
-    fn diff_line_serde_roundtrip() {
-        let line = DiffLine {
-            tag: DiffTag::Context,
-            content: "unchanged".to_string(),
-        };
-        let json = serde_json::to_string(&line).unwrap();
-        let parsed: DiffLine = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, line);
-    }
-
-    #[test]
-    fn diff_tag_serde_snake_case() {
-        assert_eq!(
-            serde_json::to_value(DiffTag::Context).unwrap(),
-            serde_json::Value::String("context".to_string()),
-        );
-        assert_eq!(
-            serde_json::to_value(DiffTag::Removed).unwrap(),
-            serde_json::Value::String("removed".to_string()),
-        );
-        assert_eq!(
-            serde_json::to_value(DiffTag::Added).unwrap(),
-            serde_json::Value::String("added".to_string()),
-        );
     }
 
     #[test]
@@ -429,41 +381,9 @@ mod tests {
     }
 
     #[test]
-    fn test_diff_preview_start_line_roundtrip() {
-        let preview = DiffPreview {
-            lines: vec![
-                DiffLine {
-                    tag: DiffTag::Removed,
-                    content: "old".to_string(),
-                },
-                DiffLine {
-                    tag: DiffTag::Added,
-                    content: "new".to_string(),
-                },
-            ],
-            lang_hint: "rs".to_string(),
-            start_line: Some(42),
-        };
-        let json = serde_json::to_string(&preview).unwrap();
-        let parsed: DiffPreview = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.start_line, Some(42));
-    }
-
-    #[test]
-    fn test_diff_preview_start_line_omitted_when_none() {
-        let preview = DiffPreview {
-            lines: vec![],
-            lang_hint: String::new(),
-            start_line: None,
-        };
-        let json = serde_json::to_value(&preview).unwrap();
-        assert!(json.get("start_line").is_none());
-    }
-
-    #[test]
-    fn test_diff_preview_missing_start_line_defaults_to_none() {
-        let json = r#"{"lines":[],"lang_hint":"rs"}"#;
-        let parsed: DiffPreview = serde_json::from_str(json).unwrap();
-        assert_eq!(parsed.start_line, None);
+    fn test_file_diff_missing_old_text_defaults_to_none() {
+        let json = r#"{"path":"/tmp/f.rs","new_text":"content"}"#;
+        let parsed: FileDiff = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.old_text, None);
     }
 }
