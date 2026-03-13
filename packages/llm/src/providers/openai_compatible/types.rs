@@ -78,6 +78,8 @@ pub struct CompatibleChatRequest {
     pub stream: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<ChatCompletionTools>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_options: Option<ChatCompletionStreamOptions>,
 }
 
 pub fn map_messages(messages: &[ChatMessage]) -> Vec<CompatibleChatMessage> {
@@ -326,6 +328,23 @@ mod tests {
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["messages"][1]["role"], "assistant");
         assert_eq!(json["messages"][1]["reasoning_content"], "trace chunk");
+    }
+
+    #[test]
+    fn test_build_request_includes_stream_options_with_usage() {
+        let context = crate::Context::new(
+            vec![ChatMessage::User {
+                content: "hello".to_string(),
+                timestamp: IsoString::now(),
+            }],
+            vec![],
+        );
+        let request =
+            crate::providers::openai_compatible::build_chat_request("test-model", &context)
+                .unwrap();
+
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["stream_options"]["include_usage"], true);
     }
 
     #[test]
