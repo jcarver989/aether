@@ -1,4 +1,4 @@
-use aether_core::context::ext::SessionEvent;
+use aether_core::context::ext::{SessionEvent, UserEvent};
 use aether_core::events::AgentMessage;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
@@ -15,6 +15,12 @@ pub struct SessionMeta {
     #[serde(default)]
     pub selected_mode: Option<String>,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SessionSummary {
+    pub meta: SessionMeta,
+    pub title: Option<String>,
 }
 
 pub struct SessionStore {
@@ -78,13 +84,13 @@ impl SessionStore {
         Some((meta, events))
     }
 
-    pub fn list(&self) -> Vec<SessionMeta> {
+    pub fn list(&self) -> Vec<SessionSummary> {
         let entries = match fs::read_dir(&self.dir) {
             Ok(entries) => entries,
             Err(_) => return Vec::new(),
         };
 
-        let mut sessions: Vec<SessionMeta> = entries
+        let mut sessions: Vec<SessionSummary> = entries
             .filter_map(|entry| {
                 let entry = entry.ok()?;
                 let path = entry.path();
@@ -93,13 +99,29 @@ impl SessionStore {
                 }
                 let file = File::open(&path).ok()?;
                 let mut reader = BufReader::new(file);
+
                 let mut first_line = String::new();
                 reader.read_line(&mut first_line).ok()?;
-                serde_json::from_str::<SessionMeta>(first_line.trim()).ok()
+                let meta = serde_json::from_str::<SessionMeta>(first_line.trim()).ok()?;
+
+                let mut second_line = String::new();
+                let title = reader
+                    .read_line(&mut second_line)
+                    .ok()
+                    .and_then(|n| (n > 0).then_some(()))
+                    .and_then(|_| serde_json::from_str::<SessionEvent>(second_line.trim()).ok())
+                    .and_then(|event| match event {
+                        SessionEvent::User(UserEvent::Message { content }) => {
+                            Some(extract_title(&content))
+                        }
+                        _ => None,
+                    });
+
+                Some(SessionSummary { meta, title })
             })
             .collect();
 
-        sessions.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        sessions.sort_by(|a, b| b.meta.created_at.cmp(&a.meta.created_at));
         sessions
     }
 
@@ -115,6 +137,18 @@ impl SessionStore {
 
     fn session_path(&self, session_id: &str) -> PathBuf {
         self.dir.join(format!("{session_id}.jsonl"))
+    }
+}
+
+const MAX_TITLE_LEN: usize = 80;
+
+fn extract_title(content: &str) -> String {
+    let first_line = content.lines().next().unwrap_or("").trim();
+    if first_line.len() > MAX_TITLE_LEN {
+        let end = first_line.floor_char_boundary(MAX_TITLE_LEN);
+        format!("{}…", &first_line[..end])
+    } else {
+        first_line.to_string()
     }
 }
 
@@ -310,8 +344,8 @@ mod tests {
 
         let listed = store.list();
         assert_eq!(listed.len(), 2);
-        assert_eq!(listed[0].session_id, "s-new");
-        assert_eq!(listed[1].session_id, "s-old");
+        assert_eq!(listed[0].meta.session_id, "s-new");
+        assert_eq!(listed[1].meta.session_id, "s-old");
     }
 
     #[test]
@@ -329,6 +363,83 @@ mod tests {
 
         let listed = store.list();
         assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].session_id, "s1");
+        assert_eq!(listed[0].meta.session_id, "s1");
+    }
+
+    #[test]
+    fn list_extracts_title_from_first_user_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::from_path(dir.path().to_path_buf());
+
+        store.append_meta("s1", &test_meta()).unwrap();
+        store
+            .append_event(
+                "s1",
+                &SessionEvent::User(UserEvent::Message {
+                    content: "Fix the login page redirect bug".to_string(),
+                }),
+            )
+            .unwrap();
+
+        let listed = store.list();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(
+            listed[0].title.as_deref(),
+            Some("Fix the login page redirect bug")
+        );
+    }
+
+    #[test]
+    fn list_returns_none_title_when_no_user_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::from_path(dir.path().to_path_buf());
+
+        store.append_meta("s1", &test_meta()).unwrap();
+        // No events appended — only meta line exists
+
+        let listed = store.list();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].title, None);
+    }
+
+    #[test]
+    fn list_truncates_long_title() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::from_path(dir.path().to_path_buf());
+
+        let long_msg = "a".repeat(120);
+        store.append_meta("s1", &test_meta()).unwrap();
+        store
+            .append_event(
+                "s1",
+                &SessionEvent::User(UserEvent::Message {
+                    content: long_msg,
+                }),
+            )
+            .unwrap();
+
+        let listed = store.list();
+        let title = listed[0].title.as_deref().unwrap();
+        assert!(title.len() <= 84); // 80 chars + "…" (3 bytes)
+        assert!(title.ends_with('…'));
+    }
+
+    #[test]
+    fn list_uses_first_line_of_multiline_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::from_path(dir.path().to_path_buf());
+
+        store.append_meta("s1", &test_meta()).unwrap();
+        store
+            .append_event(
+                "s1",
+                &SessionEvent::User(UserEvent::Message {
+                    content: "First line\nSecond line\nThird line".to_string(),
+                }),
+            )
+            .unwrap();
+
+        let listed = store.list();
+        assert_eq!(listed[0].title.as_deref(), Some("First line"));
     }
 }

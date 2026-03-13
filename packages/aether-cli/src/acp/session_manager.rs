@@ -529,15 +529,19 @@ impl Agent for SessionManager {
         args: ListSessionsRequest,
     ) -> Result<ListSessionsResponse, acp::Error> {
         info!("Listing sessions, cwd filter: {:?}", args.cwd);
-        let mut metas = self.session_store.list();
+        let mut summaries = self.session_store.list();
 
         if let Some(ref cwd) = args.cwd {
-            metas.retain(|m| m.cwd == *cwd);
+            summaries.retain(|s| s.meta.cwd == *cwd);
         }
 
-        let sessions: Vec<acp::SessionInfo> = metas
+        let sessions: Vec<acp::SessionInfo> = summaries
             .into_iter()
-            .map(|m| acp::SessionInfo::new(m.session_id, m.cwd).updated_at(m.created_at))
+            .map(|s| {
+                acp::SessionInfo::new(s.meta.session_id, s.meta.cwd)
+                    .updated_at(s.meta.created_at)
+                    .title(s.title)
+            })
             .collect();
 
         info!("Found {} sessions", sessions.len());
