@@ -37,7 +37,7 @@ Commands are exposed as **MCP Prompts** (via `list_prompts` / `get_prompt`) rath
 
 - Omit `path` → loads `SKILL.md`
 - Provide `path` → loads that file relative to the skill root
-- When loading `SKILL.md`, the response includes `availableFiles` (manifest of auxiliary files) and `referencedFiles` (files linked from the body)
+- When loading `SKILL.md`, the response includes `availableFiles` (manifest of auxiliary files)
 
 ### Examples
 
@@ -61,7 +61,6 @@ Load auxiliary files:
 - `content` — file content (null if error)
 - `error` — error message if loading failed
 - `availableFiles` — auxiliary files in the skill (only for `SKILL.md`)
-- `referencedFiles` — files linked from `SKILL.md` body
 
 ### Security
 
@@ -115,4 +114,4 @@ See [error-handling](./error-handling.md) for error patterns.
 
 Skills support multi-file content. The `SKILL.md` is the primary file loaded by `get_skills`. Auxiliary files (like `traits.md`, `error-handling.md`) can be loaded on-demand by providing the `path` parameter.
 
-The agent discovers auxiliary files via the `availableFiles` field when loading `SKILL.md`, and via `referencedFiles` which extracts relative markdown links from the body.
+The agent discovers auxiliary files via the `availableFiles` field when loading `SKILL.md`.
