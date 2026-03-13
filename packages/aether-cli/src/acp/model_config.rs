@@ -305,10 +305,10 @@ mod tests {
     #[test]
     fn build_mode_config_option_from_modes_has_mode_category() {
         let specs = test_specs_with_modes();
-        let models = test_models();
-        let modes = validated_modes_from_specs(&specs, &models);
+        let available_models = test_models();
+        let validated_modes = validated_modes_from_specs(&specs, &available_models);
 
-        let option = build_mode_config_option_from_modes(&modes, Some("Planner"))
+        let option = build_mode_config_option_from_modes(&validated_modes, Some("Planner"))
             .expect("mode option should exist");
 
         assert_eq!(option.id.0.as_ref(), "mode");
@@ -327,11 +327,11 @@ mod tests {
     #[test]
     fn mode_name_for_state_from_modes_matches_valid_tuple() {
         let specs = test_specs_with_modes();
-        let models = test_models();
-        let modes = validated_modes_from_specs(&specs, &models);
+        let available_models = test_models();
+        let validated_modes = validated_modes_from_specs(&specs, &available_models);
 
         let selected = mode_name_for_state_from_modes(
-            &modes,
+            &validated_modes,
             "anthropic:claude-sonnet-4-5",
             Some(ReasoningEffort::High),
         );
@@ -342,12 +342,12 @@ mod tests {
     #[test]
     fn build_config_options_from_modes_includes_mode_option_when_configured() {
         let specs = test_specs_with_modes();
-        let models = test_models();
-        let modes = validated_modes_from_specs(&specs, &models);
+        let available_models = test_models();
+        let validated_modes = validated_modes_from_specs(&specs, &available_models);
 
         let options = build_config_options_from_modes(
-            &modes,
-            &models,
+            &validated_modes,
+            &available_models,
             Some("Planner"),
             "anthropic:claude-sonnet-4-5",
             Some(ReasoningEffort::High),
@@ -492,12 +492,12 @@ mod tests {
 
     #[test]
     fn build_config_options_from_modes_includes_reasoning_for_reasoning_model() {
-        let models = test_models();
+        let available_models = test_models();
         let specs = test_specs_with_modes();
-        let modes = validated_modes_from_specs(&specs, &models);
+        let validated_modes = validated_modes_from_specs(&specs, &available_models);
         let opts = build_config_options_from_modes(
-            &modes,
-            &models,
+            &validated_modes,
+            &available_models,
             None,
             "anthropic:claude-opus-4-6",
             Some(ReasoningEffort::High),
@@ -518,11 +518,16 @@ mod tests {
 
     #[test]
     fn build_config_options_from_modes_hides_reasoning_for_non_reasoning_model() {
-        let models = test_models();
+        let available_models = test_models();
         let specs = test_specs_with_modes();
-        let modes = validated_modes_from_specs(&specs, &models);
-        let opts =
-            build_config_options_from_modes(&modes, &models, None, "deepseek:deepseek-chat", None);
+        let validated_modes = validated_modes_from_specs(&specs, &available_models);
+        let opts = build_config_options_from_modes(
+            &validated_modes,
+            &available_models,
+            None,
+            "deepseek:deepseek-chat",
+            None,
+        );
         assert!(
             !opts.iter().any(|o| o.id.0.as_ref() == "reasoning_effort"),
             "Non-reasoning model should not have reasoning_effort option"
@@ -531,13 +536,13 @@ mod tests {
 
     #[test]
     fn reasoning_option_removed_when_switching_to_non_reasoning_model() {
-        let models = test_models();
+        let available_models = test_models();
         let specs = test_specs_with_modes();
-        let modes = validated_modes_from_specs(&specs, &models);
+        let validated_modes = validated_modes_from_specs(&specs, &available_models);
 
         let opts_with = build_config_options_from_modes(
-            &modes,
-            &models,
+            &validated_modes,
+            &available_models,
             None,
             "anthropic:claude-opus-4-6",
             Some(ReasoningEffort::High),
@@ -549,8 +554,13 @@ mod tests {
             "reasoning_effort should be present for claude-opus-4-6"
         );
 
-        let opts_without =
-            build_config_options_from_modes(&modes, &models, None, "deepseek:deepseek-chat", None);
+        let opts_without = build_config_options_from_modes(
+            &validated_modes,
+            &available_models,
+            None,
+            "deepseek:deepseek-chat",
+            None,
+        );
         assert!(
             !opts_without
                 .iter()

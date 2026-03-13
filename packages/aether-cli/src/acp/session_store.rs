@@ -286,6 +286,11 @@ mod tests {
             result_meta: None,
             model_name: "test".to_string(),
         });
+        let tool_call_update = SessionEvent::Agent(AgentMessage::ToolCallUpdate {
+            tool_call_id: "1".to_string(),
+            chunk: r#"{"filePath":"Cargo.toml"}"#.to_string(),
+            model_name: "test".to_string(),
+        });
 
         // Streaming chunks should be silently dropped
         store.append_event("s1", &streaming_text).unwrap();
@@ -296,13 +301,34 @@ mod tests {
         store.append_event("s1", &error).unwrap();
         store.append_event("s1", &done).unwrap();
         store.append_event("s1", &tool_result).unwrap();
+        store.append_event("s1", &tool_call_update).unwrap();
 
         let (_, events) = store.load("s1").unwrap();
-        assert_eq!(events.len(), 4);
+        assert_eq!(events.len(), 5);
         assert_eq!(events[0], complete_text);
         assert_eq!(events[1], error);
         assert_eq!(events[2], done);
         assert_eq!(events[3], tool_result);
+        assert_eq!(events[4], tool_call_update);
+    }
+
+    #[test]
+    fn append_persists_tool_call_updates() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::from_path(dir.path().to_path_buf());
+
+        store.append_meta("s1", &test_meta()).unwrap();
+
+        let update = SessionEvent::Agent(AgentMessage::ToolCallUpdate {
+            tool_call_id: "call_1".to_string(),
+            chunk: r#"{"filePath":"Cargo.toml"}"#.to_string(),
+            model_name: "test".to_string(),
+        });
+
+        store.append_event("s1", &update).unwrap();
+
+        let (_, events) = store.load("s1").unwrap();
+        assert_eq!(events, vec![update]);
     }
 
     #[test]

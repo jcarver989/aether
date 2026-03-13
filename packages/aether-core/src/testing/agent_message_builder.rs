@@ -44,40 +44,12 @@ impl AgentMessageBuilder {
         result: &U,
     ) -> Self {
         let request_json = serde_json::to_string(request).expect("Failed to serialize request");
-        // Match mcp_result_to_tool_call_result which serializes to YAML
         let result_value = serde_json::to_value(result).expect("Failed to serialize result");
         let result_yaml =
             serde_yml::to_string(&result_value).unwrap_or_else(|_| result_value.to_string());
 
-        // Tool call start
-        self.chunks.push(AgentMessage::ToolCall {
-            request: ToolCallRequest {
-                id: tool_call_id.to_string(),
-                name: name.to_string(),
-                arguments: String::new(),
-            },
-            model_name: self.model_name.clone(),
-        });
-
-        // Tool call streaming arguments
-        self.chunks.push(AgentMessage::ToolCall {
-            request: ToolCallRequest {
-                id: tool_call_id.to_string(),
-                name: String::new(),
-                arguments: request_json.clone(),
-            },
-            model_name: self.model_name.clone(),
-        });
-
-        // Tool call streaming arguments finished
-        self.chunks.push(AgentMessage::ToolCall {
-            request: ToolCallRequest {
-                id: tool_call_id.to_string(),
-                name: name.to_string(),
-                arguments: request_json.clone(),
-            },
-            model_name: self.model_name.clone(),
-        });
+        self.push_tool_call_start(tool_call_id, name);
+        self.push_tool_call_chunk(tool_call_id, &request_json);
 
         self.chunks.push(AgentMessage::ToolResult {
             result: ToolCallResult {
@@ -102,40 +74,12 @@ impl AgentMessageBuilder {
     ) -> Self {
         let request_json = serde_json::to_string(request).expect("Failed to serialize request");
 
-        // Format error like the MCP run task does
         let error_result = format!(
             "Tool execution error: Annotated {{ raw: Text(RawTextContent {{ text: \"{error_message}\", meta: None }}), annotations: None }}"
         );
 
-        // Tool call start
-        self.chunks.push(AgentMessage::ToolCall {
-            request: ToolCallRequest {
-                id: tool_call_id.to_string(),
-                name: name.to_string(),
-                arguments: String::new(),
-            },
-            model_name: self.model_name.clone(),
-        });
-
-        // Tool call streaming arguments
-        self.chunks.push(AgentMessage::ToolCall {
-            request: ToolCallRequest {
-                id: tool_call_id.to_string(),
-                name: String::new(),
-                arguments: request_json.clone(),
-            },
-            model_name: self.model_name.clone(),
-        });
-
-        // Tool call streaming arguments finished
-        self.chunks.push(AgentMessage::ToolCall {
-            request: ToolCallRequest {
-                id: tool_call_id.to_string(),
-                name: name.to_string(),
-                arguments: request_json.clone(),
-            },
-            model_name: self.model_name.clone(),
-        });
+        self.push_tool_call_start(tool_call_id, name);
+        self.push_tool_call_chunk(tool_call_id, &request_json);
 
         self.chunks.push(AgentMessage::ToolError {
             error: ToolCallError {
@@ -159,5 +103,24 @@ impl AgentMessageBuilder {
         ));
 
         self.chunks
+    }
+
+    fn push_tool_call_start(&mut self, tool_call_id: &str, name: &str) {
+        self.chunks.push(AgentMessage::ToolCall {
+            request: ToolCallRequest {
+                id: tool_call_id.to_string(),
+                name: name.to_string(),
+                arguments: String::new(),
+            },
+            model_name: self.model_name.clone(),
+        });
+    }
+
+    fn push_tool_call_chunk(&mut self, tool_call_id: &str, chunk: &str) {
+        self.chunks.push(AgentMessage::ToolCallUpdate {
+            tool_call_id: tool_call_id.to_string(),
+            chunk: chunk.to_string(),
+            model_name: self.model_name.clone(),
+        });
     }
 }

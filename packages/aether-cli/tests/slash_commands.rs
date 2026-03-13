@@ -3,7 +3,7 @@ use rmcp::model::{Prompt, PromptArgument};
 
 /// Create an MCP prompt with no arguments.
 fn create_prompt(name: &str, description: Option<&str>) -> Prompt {
-    Prompt::new(name.to_string(), description.map(|s| s.to_string()), None)
+    Prompt::new(name.to_string(), description.map(str::to_string), None)
 }
 
 /// Create an MCP prompt with an ARGUMENTS parameter (unified prompt format).
@@ -13,11 +13,7 @@ fn create_prompt_with_hint(name: &str, description: Option<&str>, hint: &str) ->
             .with_description(hint)
             .with_required(false),
     ]);
-    Prompt::new(
-        name.to_string(),
-        description.map(|s| s.to_string()),
-        arguments,
-    )
+    Prompt::new(name.to_string(), description.map(str::to_string), arguments)
 }
 
 #[test]

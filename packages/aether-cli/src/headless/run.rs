@@ -110,7 +110,7 @@ fn format_text(msg: &AgentMessage) -> Option<String> {
             ..
         } => Some(format!("Thought: {chunk}")),
 
-        AgentMessage::ToolCall { request, .. } if !request.name.is_empty() => Some(format!(
+        AgentMessage::ToolCall { request, .. } => Some(format!(
             "Tool call: {}({})",
             request.name, request.arguments
         )),
@@ -164,7 +164,7 @@ fn emit_event(msg: &AgentMessage) {
             ..
         } => tracing::info!(target: "agent", thought = %chunk),
 
-        AgentMessage::ToolCall { request, .. } if !request.name.is_empty() => {
+        AgentMessage::ToolCall { request, .. } => {
             tracing::info!(target: "agent", tool = %request.name, arguments = %request.arguments);
         }
 
@@ -349,13 +349,10 @@ mod tests {
     }
 
     #[test]
-    fn emit_event_skips_arg_streaming_tool_call() {
-        let msg = AgentMessage::ToolCall {
-            request: llm::ToolCallRequest {
-                id: "tc1".to_string(),
-                name: String::new(),
-                arguments: "{\"partial".to_string(),
-            },
+    fn emit_event_skips_tool_call_updates() {
+        let msg = AgentMessage::ToolCallUpdate {
+            tool_call_id: "tc1".to_string(),
+            chunk: "{\"partial".to_string(),
             model_name: "test".to_string(),
         };
         let output = with_test_subscriber(|| {
@@ -456,13 +453,10 @@ mod tests {
     }
 
     #[test]
-    fn emit_text_skips_arg_streaming_tool_call() {
-        let msg = AgentMessage::ToolCall {
-            request: llm::ToolCallRequest {
-                id: "tc1".to_string(),
-                name: String::new(),
-                arguments: "partial".to_string(),
-            },
+    fn emit_text_skips_tool_call_updates() {
+        let msg = AgentMessage::ToolCallUpdate {
+            tool_call_id: "tc1".to_string(),
+            chunk: "partial".to_string(),
             model_name: "test".to_string(),
         };
         assert_eq!(format_text(&msg), None);

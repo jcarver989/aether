@@ -162,6 +162,7 @@ impl From<SubAgentProgressParams> for ExtNotification {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SubAgentEvent {
     ToolCall { request: SubAgentToolRequest },
+    ToolCallUpdate { update: SubAgentToolCallUpdate },
     ToolResult { result: SubAgentToolResult },
     ToolError { error: SubAgentToolError },
     Done,
@@ -173,6 +174,12 @@ pub struct SubAgentToolRequest {
     pub id: String,
     pub name: String,
     pub arguments: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubAgentToolCallUpdate {
+    pub id: String,
+    pub chunk: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -329,6 +336,15 @@ mod tests {
         let json = r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{\"pattern\":\"test\"}"},"model_name":"m"}}"#;
         let event: SubAgentEvent = serde_json::from_str(json).unwrap();
         assert!(matches!(event, SubAgentEvent::ToolCall { .. }));
+    }
+
+    #[test]
+    fn deserialize_tool_call_update_event() {
+        // "model_name" is present because the wire format comes from AgentMessage serialization;
+        // SubAgentEvent::ToolCallUpdate has no model_name field, so serde silently ignores it.
+        let json = r#"{"ToolCallUpdate":{"update":{"id":"c1","chunk":"{\"pattern\":\"test\"}"},"model_name":"m"}}"#;
+        let event: SubAgentEvent = serde_json::from_str(json).unwrap();
+        assert!(matches!(event, SubAgentEvent::ToolCallUpdate { .. }));
     }
 
     #[test]

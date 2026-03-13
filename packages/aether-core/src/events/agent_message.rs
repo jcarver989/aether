@@ -1,5 +1,6 @@
 use acp_utils::notifications::{
-    SubAgentEvent, SubAgentToolError, SubAgentToolRequest, SubAgentToolResult,
+    SubAgentEvent, SubAgentToolCallUpdate, SubAgentToolError, SubAgentToolRequest,
+    SubAgentToolResult,
 };
 use llm::{ToolCallError, ToolCallRequest, ToolCallResult};
 use mcp_utils::display_meta::ToolResultMeta;
@@ -24,6 +25,12 @@ pub enum AgentMessage {
 
     ToolCall {
         request: ToolCallRequest,
+        model_name: String,
+    },
+
+    ToolCallUpdate {
+        tool_call_id: String,
+        chunk: String,
         model_name: String,
     },
 
@@ -102,6 +109,16 @@ impl From<&AgentMessage> for SubAgentEvent {
                     id: request.id.clone(),
                     name: request.name.clone(),
                     arguments: request.arguments.clone(),
+                },
+            },
+            AgentMessage::ToolCallUpdate {
+                tool_call_id,
+                chunk,
+                ..
+            } => SubAgentEvent::ToolCallUpdate {
+                update: SubAgentToolCallUpdate {
+                    id: tool_call_id.clone(),
+                    chunk: chunk.clone(),
                 },
             },
             AgentMessage::ToolResult {
@@ -239,6 +256,24 @@ mod tests {
                 assert_eq!(result_meta.display.value, "Cargo.toml, 156 lines");
             }
             other => panic!("Expected ToolResult, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_sub_agent_tool_call_update_includes_updated_fields() {
+        let msg = AgentMessage::ToolCallUpdate {
+            tool_call_id: "call_1".to_string(),
+            chunk: r#"{"filePath":"Cargo.toml"}"#.to_string(),
+            model_name: "test-model".to_string(),
+        };
+
+        let event: SubAgentEvent = (&msg).into();
+        match event {
+            SubAgentEvent::ToolCallUpdate { update } => {
+                assert_eq!(update.id, "call_1");
+                assert_eq!(update.chunk, r#"{"filePath":"Cargo.toml"}"#);
+            }
+            other => panic!("Expected ToolCallUpdate, got {other:?}"),
         }
     }
 }

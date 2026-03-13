@@ -142,6 +142,16 @@ fn map_agent_message_to_notification(
             Some(map_tool_call_to_notification(session_id, request))
         }
 
+        AgentMessage::ToolCallUpdate {
+            tool_call_id,
+            chunk,
+            ..
+        } => Some(map_tool_call_update_to_notification(
+            session_id,
+            tool_call_id,
+            chunk,
+        )),
+
         AgentMessage::ToolResult {
             result,
             result_meta,
@@ -310,6 +320,28 @@ fn map_tool_call_to_notification(
             .status(acp::ToolCallStatus::InProgress)
             .raw_input(raw_input),
         ),
+    )
+}
+
+fn parse_tool_call_chunk(chunk: &str) -> serde_json::Value {
+    serde_json::from_str(chunk).unwrap_or_else(|_| serde_json::Value::String(chunk.to_string()))
+}
+
+fn map_tool_call_update_to_notification(
+    session_id: SessionId,
+    tool_call_id: &str,
+    chunk: &str,
+) -> SessionNotification {
+    let fields = ToolCallUpdateFields::new()
+        .status(ToolCallStatus::InProgress)
+        .raw_input(parse_tool_call_chunk(chunk));
+
+    SessionNotification::new(
+        session_id,
+        SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+            ToolCallId::new(tool_call_id.to_string()),
+            fields,
+        )),
     )
 }
 
@@ -488,7 +520,7 @@ mod tests {
             },
             progress: 42.0,
             total: Some(100.0),
-            message: Some(serialized_msg.to_string()),
+            message: Some(serialized_msg.clone()),
         };
 
         let notification =
@@ -529,6 +561,85 @@ mod tests {
                 other => panic!("Expected text content, got {other:?}"),
             },
             other => panic!("Expected AgentThoughtChunk, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_tool_call_maps_to_tool_call_notification() {
+        let session_id = acp::SessionId::new("test-session");
+        let message = AgentMessage::ToolCall {
+            request: ToolCallRequest {
+                id: "call_1".to_string(),
+                name: "coding__read_file".to_string(),
+                arguments: "{}".to_string(),
+            },
+            model_name: "TestModel".to_string(),
+        };
+
+        let notification =
+            map_agent_message_to_session_notification(session_id, &message).expect("notification");
+
+        match notification.update {
+            acp::SessionUpdate::ToolCall(tool_call) => {
+                assert_eq!(tool_call.tool_call_id.0.as_ref(), "call_1");
+                assert_eq!(tool_call.title, "Read file");
+                assert_eq!(tool_call.status, acp::ToolCallStatus::InProgress);
+            }
+            other => panic!("Expected ToolCall, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_tool_call_update_maps_to_tool_call_update_notification() {
+        let session_id = acp::SessionId::new("test-session");
+        let message = AgentMessage::ToolCallUpdate {
+            tool_call_id: "call_1".to_string(),
+            chunk: r#"{"filePath":"Cargo.toml"}"#.to_string(),
+            model_name: "TestModel".to_string(),
+        };
+
+        let notification =
+            map_agent_message_to_session_notification(session_id, &message).expect("notification");
+
+        match notification.update {
+            acp::SessionUpdate::ToolCallUpdate(update) => {
+                assert_eq!(update.tool_call_id.0.as_ref(), "call_1");
+                assert_eq!(update.fields.status, Some(acp::ToolCallStatus::InProgress));
+                assert_eq!(
+                    update.fields.raw_input,
+                    Some(serde_json::json!({ "filePath": "Cargo.toml" }))
+                );
+            }
+            other => panic!("Expected ToolCallUpdate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_tool_call_update_has_same_live_and_replay_mapping() {
+        let session_id = acp::SessionId::new("test-session");
+        let message = AgentMessage::ToolCallUpdate {
+            tool_call_id: "call_1".to_string(),
+            chunk: r#"{"filePath":"Cargo.toml"}"#.to_string(),
+            model_name: "TestModel".to_string(),
+        };
+
+        let live =
+            map_agent_message_to_notification(session_id.clone(), &message, NotificationMode::Live)
+                .expect("live notification");
+        let replay =
+            map_agent_message_to_notification(session_id, &message, NotificationMode::Replay)
+                .expect("replay notification");
+
+        match (live.update, replay.update) {
+            (
+                acp::SessionUpdate::ToolCallUpdate(live),
+                acp::SessionUpdate::ToolCallUpdate(replay),
+            ) => {
+                assert_eq!(live.tool_call_id.0, replay.tool_call_id.0);
+                assert_eq!(live.fields.status, replay.fields.status);
+                assert_eq!(live.fields.raw_input, replay.fields.raw_input);
+            }
+            other => panic!("Expected ToolCallUpdate pair, got {other:?}"),
         }
     }
 
@@ -634,13 +745,12 @@ mod tests {
         let notification = notification.unwrap();
         match notification.update {
             acp::SessionUpdate::ToolCallUpdate(update) => {
-                if let Some(content) = &update.fields.content {
-                    if let acp::ToolCallContent::Content(c) = &content[0] {
-                        if let acp::ContentBlock::Text(text) = &c.content {
-                            // Should contain the original message
-                            assert!(text.text.contains("not valid json"));
-                        }
-                    }
+                if let Some(content) = &update.fields.content
+                    && let acp::ToolCallContent::Content(c) = &content[0]
+                    && let acp::ContentBlock::Text(text) = &c.content
+                {
+                    // Should contain the original message
+                    assert!(text.text.contains("not valid json"));
                 }
             }
             _ => panic!("Expected ToolCallUpdate"),
@@ -670,7 +780,7 @@ mod tests {
                 assert_eq!(args, &["--port", "8080"]);
                 assert_eq!(env.get("FOO").unwrap(), "bar");
             }
-            other => panic!("Expected Stdio, got {:?}", other),
+            other => panic!("Expected Stdio, got {other:?}"),
         }
     }
 
@@ -691,7 +801,7 @@ mod tests {
                 assert_eq!(config.uri.as_ref(), "https://example.com/mcp");
                 assert_eq!(config.auth_header.as_deref(), Some("Bearer token123"));
             }
-            other => panic!("Expected Http, got {:?}", other),
+            other => panic!("Expected Http, got {other:?}"),
         }
     }
 
@@ -711,7 +821,7 @@ mod tests {
                 assert_eq!(config.uri.as_ref(), "https://example.com/sse");
                 assert_eq!(config.auth_header, None);
             }
-            other => panic!("Expected Http, got {:?}", other),
+            other => panic!("Expected Http, got {other:?}"),
         }
     }
 
