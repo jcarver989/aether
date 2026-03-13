@@ -2,13 +2,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::fs::write;
 
-use similar::{ChangeTag, TextDiff};
-
 use crate::coding::error::FileError;
 use crate::coding::tools::file_io::read_text_file;
-use mcp_utils::display_meta::{
-    DiffLine, DiffPreview, DiffTag, ToolDisplayMeta, ToolResultMeta, basename, extension_hint,
-};
+use mcp_utils::display_meta::{FileDiff, ToolDisplayMeta, ToolResultMeta, basename};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -50,23 +46,20 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
     // Read current file content
     let current_content = read_text_file(&args.file_path).await?;
 
-    // Perform string replacement, capturing the first match offset for diff preview
-    let (updated_content, replacements_made, first_match_offset) = if args.replace_all {
-        let first_offset = current_content.find(&args.old_string);
+    // Perform string replacement
+    let (updated_content, replacements_made) = if args.replace_all {
         let count = current_content.matches(&args.old_string).count();
         (
             current_content.replace(&args.old_string, &args.new_string),
             count,
-            first_offset,
         )
-    } else if let Some(offset) = current_content.find(&args.old_string) {
+    } else if current_content.contains(&args.old_string) {
         (
             current_content.replacen(&args.old_string, &args.new_string, 1),
             1,
-            Some(offset),
         )
     } else {
-        (current_content.clone(), 0, None)
+        (current_content.clone(), 0)
     };
 
     // Check if any replacement actually occurred
@@ -88,29 +81,11 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
     // Count lines for response
     let total_lines = updated_content.lines().count();
 
-    let start_line =
-        first_match_offset.map(|byte_offset| current_content[..byte_offset].lines().count() + 1);
-
     let display_meta = ToolDisplayMeta::new("Edit file", basename(&args.file_path));
-    let diff = TextDiff::from_lines(&args.old_string, &args.new_string);
-    let lines: Vec<DiffLine> = diff
-        .iter_all_changes()
-        .map(|change| {
-            let tag = match change.tag() {
-                ChangeTag::Equal => DiffTag::Context,
-                ChangeTag::Delete => DiffTag::Removed,
-                ChangeTag::Insert => DiffTag::Added,
-            };
-            DiffLine {
-                tag,
-                content: change.value().trim_end_matches('\n').to_string(),
-            }
-        })
-        .collect();
-    let diff_preview = DiffPreview {
-        lines,
-        lang_hint: extension_hint(&args.file_path),
-        start_line,
+    let file_diff = FileDiff {
+        path: args.file_path.clone(),
+        old_text: Some(current_content),
+        new_text: updated_content.clone(),
     };
 
     Ok(EditFileResponse {
@@ -119,10 +94,7 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
         total_lines,
         replacements_made,
         content: updated_content,
-        meta: Some(ToolResultMeta::with_diff_preview(
-            display_meta,
-            diff_preview,
-        )),
+        meta: Some(ToolResultMeta::with_file_diff(display_meta, file_diff)),
     })
 }
 
@@ -130,7 +102,6 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mcp_utils::display_meta::DiffTag;
     use std::fs;
     use tempfile::TempDir;
 
@@ -168,10 +139,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn edit_file_sets_start_line_in_diff_preview() {
+    async fn edit_file_produces_file_diff_with_full_contents() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("lines.txt");
-        fs::write(&file_path, "line1\nline2\nline3\nline4\n").unwrap();
+        let original = "line1\nline2\nline3\nline4\n";
+        fs::write(&file_path, original).unwrap();
 
         let result = edit_file_contents(EditFileArgs {
             file_path: file_path.to_string_lossy().to_string(),
@@ -183,15 +155,18 @@ mod tests {
         .unwrap();
 
         let meta = result.meta.unwrap();
-        let diff = meta.diff_preview.unwrap();
-        assert_eq!(diff.start_line, Some(3));
+        let diff = meta.file_diff.unwrap();
+        assert_eq!(diff.old_text.as_deref(), Some(original));
+        assert!(diff.new_text.contains("replaced"));
+        assert!(!diff.new_text.contains("line3"));
+        assert_eq!(diff.path, file_path.to_string_lossy().to_string());
     }
 
     #[tokio::test]
-    async fn edit_file_start_line_is_one_for_first_line() {
+    async fn edit_file_file_diff_has_correct_path() {
         let temp_dir = TempDir::new().unwrap();
-        let file_path = temp_dir.path().join("first.txt");
-        fs::write(&file_path, "hello world\nsecond line\n").unwrap();
+        let file_path = temp_dir.path().join("test.rs");
+        fs::write(&file_path, "hello world").unwrap();
 
         let result = edit_file_contents(EditFileArgs {
             file_path: file_path.to_string_lossy().to_string(),
@@ -202,108 +177,8 @@ mod tests {
         .await
         .unwrap();
 
-        let meta = result.meta.unwrap();
-        let diff = meta.diff_preview.unwrap();
-        assert_eq!(diff.start_line, Some(1));
-    }
-
-    #[tokio::test]
-    async fn edit_file_diff_preview_only_marks_changed_lines() {
-        let temp_dir = TempDir::new().unwrap();
-        let file_path = temp_dir.path().join("multi.rs");
-        let content = "fn main() {\n    let x = 1;\n    let y = 2;\n    let z = 3;\n}\n";
-        fs::write(&file_path, content).unwrap();
-
-        let old_string = "    let x = 1;\n    let y = 2;\n    let z = 3;\n";
-        let new_string = "    let x = 1;\n    let y = 99;\n    let z = 3;\n";
-
-        let result = edit_file_contents(EditFileArgs {
-            file_path: file_path.to_string_lossy().to_string(),
-            old_string: old_string.to_string(),
-            new_string: new_string.to_string(),
-            replace_all: false,
-        })
-        .await
-        .unwrap();
-
-        let diff = result.meta.unwrap().diff_preview.unwrap();
-        let tags: Vec<DiffTag> = diff.lines.iter().map(|l| l.tag).collect();
-        assert_eq!(
-            tags,
-            vec![
-                DiffTag::Context, // let x = 1;
-                DiffTag::Removed, // let y = 2;
-                DiffTag::Added,   // let y = 99;
-                DiffTag::Context, // let z = 3;
-            ],
-        );
-    }
-
-    #[tokio::test]
-    async fn edit_file_diff_preview_all_lines_differ() {
-        let temp_dir = TempDir::new().unwrap();
-        let file_path = temp_dir.path().join("all_diff.txt");
-        fs::write(&file_path, "aaa\nbbb\n").unwrap();
-
-        let result = edit_file_contents(EditFileArgs {
-            file_path: file_path.to_string_lossy().to_string(),
-            old_string: "aaa\nbbb\n".to_string(),
-            new_string: "xxx\nyyy\n".to_string(),
-            replace_all: false,
-        })
-        .await
-        .unwrap();
-
-        let diff = result.meta.unwrap().diff_preview.unwrap();
-        for line in &diff.lines {
-            assert_ne!(line.tag, DiffTag::Context, "no context lines expected");
-        }
-    }
-
-    #[tokio::test]
-    async fn edit_file_diff_preview_pure_insertion() {
-        let temp_dir = TempDir::new().unwrap();
-        let file_path = temp_dir.path().join("insert.txt");
-        fs::write(&file_path, "before\nafter\n").unwrap();
-
-        let result = edit_file_contents(EditFileArgs {
-            file_path: file_path.to_string_lossy().to_string(),
-            old_string: "before\nafter".to_string(),
-            new_string: "before\nnew line\nafter".to_string(),
-            replace_all: false,
-        })
-        .await
-        .unwrap();
-
-        let diff = result.meta.unwrap().diff_preview.unwrap();
-        let tags: Vec<DiffTag> = diff.lines.iter().map(|l| l.tag).collect();
-        assert!(tags.contains(&DiffTag::Added));
-        // The unchanged lines should be context
-        assert!(tags.contains(&DiffTag::Context));
-        // No lines should be removed
-        assert!(!tags.contains(&DiffTag::Removed));
-    }
-
-    #[tokio::test]
-    async fn edit_file_diff_preview_pure_deletion() {
-        let temp_dir = TempDir::new().unwrap();
-        let file_path = temp_dir.path().join("delete.txt");
-        fs::write(&file_path, "keep\nremove me\nkeep too\n").unwrap();
-
-        let result = edit_file_contents(EditFileArgs {
-            file_path: file_path.to_string_lossy().to_string(),
-            old_string: "keep\nremove me\nkeep too".to_string(),
-            new_string: "keep\nkeep too".to_string(),
-            replace_all: false,
-        })
-        .await
-        .unwrap();
-
-        let diff = result.meta.unwrap().diff_preview.unwrap();
-        let tags: Vec<DiffTag> = diff.lines.iter().map(|l| l.tag).collect();
-        assert!(tags.contains(&DiffTag::Removed));
-        assert!(tags.contains(&DiffTag::Context));
-        assert!(!tags.contains(&DiffTag::Added));
+        let diff = result.meta.unwrap().file_diff.unwrap();
+        assert_eq!(diff.path, file_path.to_string_lossy().to_string());
     }
 
     #[test]

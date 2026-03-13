@@ -4,9 +4,7 @@ use std::path::Path;
 use tokio::fs::{create_dir_all, write};
 
 use crate::coding::error::FileError;
-use mcp_utils::display_meta::{
-    DiffLine, DiffPreview, DiffTag, ToolDisplayMeta, ToolResultMeta, basename, extension_hint,
-};
+use mcp_utils::display_meta::{FileDiff, ToolDisplayMeta, ToolResultMeta, basename};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -34,7 +32,6 @@ pub struct WriteFileResponse {
 }
 
 pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileResponse, FileError> {
-    const MAX_DIFF_LINES: usize = 50;
     let file_path = Path::new(&args.file_path);
 
     if let Some(parent) = file_path.parent()
@@ -55,30 +52,10 @@ pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileRespons
 
     let bytes_written = args.content.len();
     let display_meta = ToolDisplayMeta::new("Write file", basename(&args.file_path));
-
-    let all_lines: Vec<_> = args.content.lines().collect();
-    let is_truncated = all_lines.len() > MAX_DIFF_LINES;
-
-    let mut lines: Vec<DiffLine> = all_lines
-        .iter()
-        .take(MAX_DIFF_LINES)
-        .map(|&line| DiffLine {
-            tag: DiffTag::Added,
-            content: line.to_string(),
-        })
-        .collect();
-
-    if is_truncated {
-        lines.push(DiffLine {
-            tag: DiffTag::Context,
-            content: format!("... ({} more lines)", all_lines.len() - MAX_DIFF_LINES),
-        });
-    }
-
-    let diff_preview = DiffPreview {
-        lines,
-        lang_hint: extension_hint(&args.file_path),
-        start_line: Some(1), // Write always starts at line 1
+    let file_diff = FileDiff {
+        path: args.file_path.clone(),
+        old_text: None,
+        new_text: args.content.clone(),
     };
 
     Ok(WriteFileResponse {
@@ -88,22 +65,18 @@ pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileRespons
         ),
         bytes_written,
         file_path: args.file_path,
-        meta: Some(ToolResultMeta::with_diff_preview(
-            display_meta,
-            diff_preview,
-        )),
+        meta: Some(ToolResultMeta::with_file_diff(display_meta, file_diff)),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mcp_utils::display_meta::DiffTag;
     use std::fs;
     use tempfile::TempDir;
 
     #[tokio::test]
-    async fn write_file_creates_diff_preview_with_all_lines_added() {
+    async fn write_file_produces_file_diff_with_no_old_text() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("new_file.rs");
 
@@ -115,24 +88,18 @@ mod tests {
         .await
         .unwrap();
 
-        // Verify file was written
         assert!(file_path.exists());
         assert_eq!(fs::read_to_string(&file_path).unwrap(), content);
 
-        // Verify diff preview
         let meta = result.meta.unwrap();
-        let diff = meta.diff_preview.unwrap();
-
-        // All lines should be marked as Added
-        assert_eq!(diff.lines.len(), 3);
-        assert!(diff.lines.iter().all(|l| l.tag == DiffTag::Added));
-        assert_eq!(diff.lines[0].content, "fn main() {");
-        assert_eq!(diff.lines[1].content, "    println!(\"Hello\");");
-        assert_eq!(diff.lines[2].content, "}");
+        let diff = meta.file_diff.unwrap();
+        assert!(diff.old_text.is_none());
+        assert_eq!(diff.new_text, content);
+        assert_eq!(diff.path, file_path.to_string_lossy().to_string());
     }
 
     #[tokio::test]
-    async fn write_file_diff_preview_has_correct_lang_hint() {
+    async fn write_file_file_diff_has_correct_path() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.rs");
 
@@ -143,28 +110,12 @@ mod tests {
         .await
         .unwrap();
 
-        let diff = result.meta.unwrap().diff_preview.unwrap();
-        assert_eq!(diff.lang_hint, "rs");
+        let diff = result.meta.unwrap().file_diff.unwrap();
+        assert_eq!(diff.path, file_path.to_string_lossy().to_string());
     }
 
     #[tokio::test]
-    async fn write_file_diff_preview_start_line_is_one() {
-        let temp_dir = TempDir::new().unwrap();
-        let file_path = temp_dir.path().join("test.txt");
-
-        let result = write_file_contents(WriteFileArgs {
-            file_path: file_path.to_string_lossy().to_string(),
-            content: "line1\nline2\n".to_string(),
-        })
-        .await
-        .unwrap();
-
-        let diff = result.meta.unwrap().diff_preview.unwrap();
-        assert_eq!(diff.start_line, Some(1));
-    }
-
-    #[tokio::test]
-    async fn write_file_diff_preview_handles_empty_content() {
+    async fn write_file_handles_empty_content() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("empty.txt");
 
@@ -175,8 +126,9 @@ mod tests {
         .await
         .unwrap();
 
-        let diff = result.meta.unwrap().diff_preview.unwrap();
-        assert!(diff.lines.is_empty());
+        let diff = result.meta.unwrap().file_diff.unwrap();
+        assert_eq!(diff.new_text, "");
+        assert!(diff.old_text.is_none());
     }
 
     #[tokio::test]
@@ -193,43 +145,11 @@ mod tests {
         .await
         .unwrap();
 
-        // Verify file was overwritten
         assert_eq!(fs::read_to_string(&file_path).unwrap(), new_content);
 
-        // Diff should show new content as added (not old as removed - this is write, not edit)
-        let diff = result.meta.unwrap().diff_preview.unwrap();
-        assert_eq!(diff.lines.len(), 2);
-        assert!(diff.lines.iter().all(|l| l.tag == DiffTag::Added));
-    }
-
-    #[tokio::test]
-    async fn write_file_truncates_large_diff_preview() {
-        let temp_dir = TempDir::new().unwrap();
-        let file_path = temp_dir.path().join("large.txt");
-
-        // Create content with more than MAX_DIFF_LINES
-        let lines: Vec<&str> = (1..=100).map(|_| "line of content").collect();
-        let content = lines.join("\n");
-
-        let result = write_file_contents(WriteFileArgs {
-            file_path: file_path.to_string_lossy().to_string(),
-            content: content.clone(),
-        })
-        .await
-        .unwrap();
-
-        // Verify full content was written to disk
-        assert_eq!(fs::read_to_string(&file_path).unwrap(), content);
-
-        // Verify diff preview is truncated
-        let diff = result.meta.unwrap().diff_preview.unwrap();
-        assert_eq!(diff.lines.len(), 51); // 50 content lines + 1 truncation indicator
-
-        // Last line should be truncation indicator
-        let last_line = &diff.lines[50];
-        assert_eq!(last_line.tag, DiffTag::Context);
-        assert!(last_line.content.starts_with("... ("));
-        assert!(last_line.content.contains("50 more lines"));
+        let diff = result.meta.unwrap().file_diff.unwrap();
+        assert!(diff.old_text.is_none());
+        assert_eq!(diff.new_text, new_content);
     }
 
     #[test]

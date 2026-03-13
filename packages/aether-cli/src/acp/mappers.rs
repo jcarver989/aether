@@ -2,7 +2,7 @@ use acp_utils::notifications::{ContextClearedParams, ContextUsageParams, SubAgen
 use acp_utils::server::AcpActorHandle;
 use aether_core::events::{AgentMessage, SubAgentProgressPayload};
 use agent_client_protocol::{
-    self as acp, Content, ContentBlock, ContentChunk, HttpHeader, McpServer, PlanEntry,
+    self as acp, Content, ContentBlock, ContentChunk, Diff, HttpHeader, McpServer, PlanEntry,
     PlanEntryPriority, PlanEntryStatus, SessionId, SessionNotification, SessionUpdate, StopReason,
     TextContent, ToolCall, ToolCallContent, ToolCallId, ToolCallStatus, ToolCallUpdate,
     ToolCallUpdateFields,
@@ -361,16 +361,31 @@ fn map_tool_result_to_notification(
     result: &ToolCallResult,
     result_meta: Option<&ToolResultMeta>,
 ) -> SessionNotification {
+    let mut content = vec![ToolCallContent::Content(Content::new(ContentBlock::Text(
+        TextContent::new(result.result.clone()),
+    )))];
+
+    if let Some(rm) = result_meta
+        && let Some(fd) = &rm.file_diff
+    {
+        let mut diff = Diff::new(&fd.path, &fd.new_text);
+        if let Some(old) = &fd.old_text {
+            diff = diff.old_text(old.clone());
+        }
+        content.push(ToolCallContent::Diff(diff));
+    }
+
     let fields = ToolCallUpdateFields::new()
         .status(ToolCallStatus::Completed)
-        .content(vec![ToolCallContent::Content(Content::new(
-            ContentBlock::Text(TextContent::new(result.result.clone())),
-        ))]);
+        .content(content);
 
     let mut update = ToolCallUpdate::new(ToolCallId::new(result.id.clone()), fields);
 
     if let Some(rm) = result_meta {
-        update = update.meta(rm.clone().into_map());
+        // Strip file_diff from the meta map to avoid duplication
+        let mut meta_without_diff = rm.clone();
+        meta_without_diff.file_diff = None;
+        update = update.meta(meta_without_diff.into_map());
     }
 
     SessionNotification::new(session_id, SessionUpdate::ToolCallUpdate(update))
