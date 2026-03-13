@@ -2,6 +2,9 @@
 default:
     @just --list
 
+run:
+    cargo run -p wisp -- -a 'cargo run -p aether-cli acp'
+
 # Build the workspace
 build:
     cargo build
