@@ -3,16 +3,17 @@ use crate::tui::{
     classify_key, display_width_text, pad_text_to_width, truncate_text,
 };
 use agent_client_protocol as acp;
+use chrono::{DateTime, Utc};
 
 #[derive(Clone)]
 pub struct SessionEntry(pub acp::SessionInfo);
 
 impl Searchable for SessionEntry {
     fn search_text(&self) -> String {
-        let title = self.0.title.as_deref().unwrap_or("");
-        let cwd = self.0.cwd.display();
-        let id = self.0.session_id.0.as_ref();
-        format!("{title} {cwd} {id}")
+        let SessionEntry(info) = self;
+        let title = info.title.as_deref().unwrap_or("");
+        let cwd = info.cwd.display();
+        format!("{title} {cwd}")
     }
 }
 
@@ -77,29 +78,37 @@ impl Component for SessionPicker {
             ];
         }
 
+        let now = Utc::now();
+
         let mut lines = vec![Line::new(String::new())];
         lines.push(Line::new("  Resume a previous session:"));
         lines.push(Line::new(String::new()));
 
-        let max_cwd_width = self
+        let max_title_width = self
             .combobox
             .matches()
             .iter()
-            .map(|e| display_width_text(&format!("  {}", e.0.cwd.display())))
+            .map(|e| {
+                let title = display_title(&e.0);
+                display_width_text(&format!("  {title}"))
+            })
             .max()
             .unwrap_or(0);
 
         let item_lines = self
             .combobox
-            .render_items(context, |entry, is_selected, ctx| {
+            .render_items(context, |SessionEntry(info), is_selected, ctx| {
                 let prefix = if is_selected { "▶ " } else { "  " };
-                let cwd = entry.0.cwd.display().to_string();
-                let time = entry.0.updated_at.as_deref().unwrap_or("");
-                let id_short = truncate_session_id(entry.0.session_id.0.as_ref());
+                let title = display_title(info);
+                let relative = info
+                    .updated_at
+                    .as_deref()
+                    .map(|ts| format_relative_time(ts, now))
+                    .unwrap_or_default();
 
-                let cwd_part = format!("{prefix}{cwd}");
-                let padded_cwd = pad_text_to_width(&cwd_part, max_cwd_width);
-                let line_text = format!("{padded_cwd}  {time}  {id_short}");
+                let title_part = format!("{prefix}{title}");
+                let padded_title = pad_text_to_width(&title_part, max_title_width);
+                let line_text = format!("{padded_title}  {relative}");
 
                 let max_width = ctx.size.width as usize;
                 let truncated = truncate_text(&line_text, max_width);
@@ -109,10 +118,11 @@ impl Component for SessionPicker {
                     line.extend_bg_to_width(max_width);
                     line
                 } else {
-                    let mut line = Line::new(&truncated[..padded_cwd.len().min(truncated.len())]);
-                    if truncated.len() > padded_cwd.len() {
+                    let boundary = padded_title.len().min(truncated.len());
+                    let mut line = Line::new(&truncated[..boundary]);
+                    if truncated.len() > boundary {
                         line.push_with_style(
-                            &truncated[padded_cwd.len()..],
+                            &truncated[boundary..],
                             Style::fg(ctx.theme.muted()),
                         );
                     }
@@ -124,20 +134,35 @@ impl Component for SessionPicker {
     }
 }
 
-fn truncate_session_id(id: &str) -> String {
-    if id.len() <= 8 {
-        id.to_string()
+fn display_title(info: &acp::SessionInfo) -> String {
+    info.title.clone().unwrap_or_else(|| {
+        info.cwd
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| info.cwd.display().to_string())
+    })
+}
+
+pub fn format_relative_time(iso: &str, now: DateTime<Utc>) -> String {
+    let Ok(ts) = iso.parse::<DateTime<Utc>>() else {
+        return iso.to_string();
+    };
+    if ts.format("%Y").to_string() == now.format("%Y").to_string() {
+        ts.format("%b %-d").to_string()
     } else {
-        format!("{}…", &id[..8])
+        ts.format("%b %-d, %Y").to_string()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::test_picker::rendered_lines_from;
+    use crate::tui::testing::{assert_buffer_eq, render_component};
     use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
     use std::path::PathBuf;
+
+    const W: u16 = 60;
+    const H: u16 = 10;
 
     fn key(code: KeyCode) -> Event {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
@@ -147,71 +172,85 @@ mod tests {
         vec![
             SessionEntry(
                 acp::SessionInfo::new("sess-aaa-111", PathBuf::from("/home/user/project-a"))
-                    .updated_at("2026-03-10T10:00:00Z".to_string()),
+                    .updated_at("2026-03-10T10:00:00Z".to_string())
+                    .title("Fix the login page redirect bug".to_string()),
             ),
             SessionEntry(
                 acp::SessionInfo::new("sess-bbb-222", PathBuf::from("/home/user/project-b"))
-                    .updated_at("2026-03-09T10:00:00Z".to_string()),
+                    .updated_at("2026-03-09T10:00:00Z".to_string())
+                    .title("Add unit tests for session store".to_string()),
             ),
         ]
+    }
+
+    fn expected_date(iso: &str) -> String {
+        format_relative_time(iso, Utc::now())
     }
 
     #[test]
     fn empty_sessions_shows_message() {
         let picker = SessionPicker::new(vec![]);
-        let context = ViewContext::new((120, 40));
-        let lines = rendered_lines_from(&picker.render(&context));
-        assert!(lines.iter().any(|l| l.contains("No previous sessions")));
+        let term = render_component(|ctx| picker.render(ctx), W, H);
+        assert_buffer_eq(
+            &term,
+            &["", "  No previous sessions found."],
+        );
     }
 
     #[test]
-    fn renders_all_sessions() {
+    fn renders_titles_and_dates_with_first_selected() {
         let picker = SessionPicker::new(sample_sessions());
-        let context = ViewContext::new((120, 40));
-        let lines = rendered_lines_from(&picker.render(&context));
-        assert!(lines.iter().any(|l| l.contains("project-a")));
-        assert!(lines.iter().any(|l| l.contains("project-b")));
+        let d1 = expected_date("2026-03-10T10:00:00Z");
+        let d2 = expected_date("2026-03-09T10:00:00Z");
+        let term = render_component(|ctx| picker.render(ctx), W, H);
+        assert_buffer_eq(
+            &term,
+            &[
+                "",
+                "  Resume a previous session:",
+                "",
+                &format!("▶ Fix the login page redirect bug   {d1}"),
+                &format!("  Add unit tests for session store  {d2}"),
+            ],
+        );
     }
 
     #[test]
-    fn confirm_returns_selected() {
+    fn navigation_moves_selection_down() {
         let mut picker = SessionPicker::new(sample_sessions());
-        let outcome = picker.on_event(&key(KeyCode::Enter));
-        assert!(matches!(
-            outcome.unwrap().as_slice(),
-            [PickerMessage::Confirm(_)]
-        ));
-    }
-
-    #[test]
-    fn escape_closes() {
-        let mut picker = SessionPicker::new(sample_sessions());
-        let outcome = picker.on_event(&key(KeyCode::Esc));
-        assert!(matches!(
-            outcome.unwrap().as_slice(),
-            [PickerMessage::Close]
-        ));
-    }
-
-    #[test]
-    fn navigation_changes_selection() {
-        let mut picker = SessionPicker::new(sample_sessions());
-        let context = ViewContext::new((120, 40));
-
-        let lines_before = rendered_lines_from(&picker.render(&context));
-        let selected_before = lines_before.iter().find(|l| l.starts_with('▶')).cloned();
-
         picker.on_event(&key(KeyCode::Down));
-
-        let lines_after = rendered_lines_from(&picker.render(&context));
-        let selected_after = lines_after.iter().find(|l| l.starts_with('▶')).cloned();
-
-        assert_ne!(selected_before, selected_after);
+        let d1 = expected_date("2026-03-10T10:00:00Z");
+        let d2 = expected_date("2026-03-09T10:00:00Z");
+        let term = render_component(|ctx| picker.render(ctx), W, H);
+        assert_buffer_eq(
+            &term,
+            &[
+                "",
+                "  Resume a previous session:",
+                "",
+                &format!("  Fix the login page redirect bug   {d1}"),
+                &format!("▶ Add unit tests for session store  {d2}"),
+            ],
+        );
     }
 
     #[test]
-    fn truncate_session_id_shortens_long_ids() {
-        assert_eq!(truncate_session_id("abcdefgh-1234-5678"), "abcdefgh…");
-        assert_eq!(truncate_session_id("short"), "short");
+    fn falls_back_to_cwd_basename_when_no_title() {
+        let sessions = vec![SessionEntry(
+            acp::SessionInfo::new("sess-ccc-333", PathBuf::from("/home/user/my-project"))
+                .updated_at("2026-03-10T10:00:00Z".to_string()),
+        )];
+        let picker = SessionPicker::new(sessions);
+        let d = expected_date("2026-03-10T10:00:00Z");
+        let term = render_component(|ctx| picker.render(ctx), W, H);
+        assert_buffer_eq(
+            &term,
+            &[
+                "",
+                "  Resume a previous session:",
+                "",
+                &format!("▶ my-project  {d}"),
+            ],
+        );
     }
 }

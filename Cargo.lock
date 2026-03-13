@@ -4885,6 +4885,7 @@ version = "0.1.0"
 dependencies = [
  "acp_utils",
  "agent-client-protocol",
+ "chrono",
  "clap",
  "ignore",
  "mime_guess",

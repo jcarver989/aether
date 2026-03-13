@@ -22,6 +22,7 @@ ignore = { workspace = true }
 url = { workspace = true }
 unicode-width = { workspace = true }
 serde = { workspace = true }
+chrono = { workspace = true }
 
 [dev-dependencies]
 tui = { path = "../tui", features = ["testing"] }
