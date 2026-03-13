@@ -4,9 +4,10 @@ use agent_client_protocol::{
     self as acp, Agent, AgentCapabilities, AuthMethod, AuthenticateRequest, AuthenticateResponse,
     AvailableCommandsUpdate, ConfigOptionUpdate, Implementation, InitializeRequest,
     InitializeResponse, ListSessionsRequest, ListSessionsResponse, LoadSessionRequest,
-    LoadSessionResponse, NewSessionRequest, NewSessionResponse, PromptCapabilities, PromptResponse,
-    ProtocolVersion, SessionId, SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
-    SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse,
+    LoadSessionResponse, McpCapabilities, NewSessionRequest, NewSessionResponse,
+    PromptCapabilities, PromptResponse, ProtocolVersion, SessionId, SessionNotification,
+    SessionUpdate, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse,
+    SetSessionModeRequest, SetSessionModeResponse,
 };
 use llm::ReasoningEffort;
 use llm::catalog::{self, LlmModel};
@@ -386,6 +387,7 @@ impl Agent for SessionManager {
             .agent_capabilities(
                 AgentCapabilities::new()
                     .load_session(true)
+                    .mcp_capabilities(McpCapabilities::new().http(true).sse(true))
                     .session_capabilities(
                         acp::SessionCapabilities::new().list(acp::SessionListCapabilities::new()),
                     )
