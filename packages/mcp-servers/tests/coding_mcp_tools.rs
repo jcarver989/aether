@@ -7,7 +7,10 @@ use std::fs;
 async fn test_read_file_tool() {
     // Create server and client
     let server_service = CodingMcp::new();
-    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
+    let client_info = ClientInfo::new(
+        Default::default(),
+        Implementation::new("test-client", "0.1.0"),
+    );
 
     let (_server_handle, client) = connect(server_service, client_info)
         .await
@@ -21,8 +24,8 @@ async fn test_read_file_tool() {
 
     // Test read_file tool
     let result = client
-        .call_tool(CallToolRequestParams::new("read_file")
-            .with_arguments(
+        .call_tool(
+            CallToolRequestParams::new("read_file").with_arguments(
                 serde_json::json!({
                     "filePath": "/tmp/test_read_file.txt"
                 })
@@ -62,7 +65,10 @@ async fn test_read_file_tool() {
 async fn test_write_file_tool() {
     // Create server and client
     let server_service = CodingMcp::new();
-    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
+    let client_info = ClientInfo::new(
+        Default::default(),
+        Implementation::new("test-client", "0.1.0"),
+    );
 
     let (_server_handle, client) = connect(server_service, client_info)
         .await
@@ -73,8 +79,8 @@ async fn test_write_file_tool() {
 
     // Test write_file tool with new simplified API
     let result = client
-        .call_tool(CallToolRequestParams::new("write_file")
-            .with_arguments(
+        .call_tool(
+            CallToolRequestParams::new("write_file").with_arguments(
                 serde_json::json!({
                     "filePath": test_path,
                     "content": test_content
@@ -122,7 +128,10 @@ async fn test_write_file_tool() {
 async fn test_bash_tool() {
     // Create server and client
     let server_service = CodingMcp::new();
-    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
+    let client_info = ClientInfo::new(
+        Default::default(),
+        Implementation::new("test-client", "0.1.0"),
+    );
 
     let (_server_handle, client) = connect(server_service, client_info)
         .await
@@ -130,8 +139,8 @@ async fn test_bash_tool() {
 
     // Test bash tool with a simple command
     let result = client
-        .call_tool(CallToolRequestParams::new("bash")
-            .with_arguments(
+        .call_tool(
+            CallToolRequestParams::new("bash").with_arguments(
                 serde_json::json!({
                     "command": "echo 'Hello from bash'"
                 })
@@ -169,7 +178,10 @@ async fn test_bash_tool() {
 async fn test_edit_file_tool() {
     // Create server and client
     let server_service = CodingMcp::new();
-    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
+    let client_info = ClientInfo::new(
+        Default::default(),
+        Implementation::new("test-client", "0.1.0"),
+    );
 
     let (_server_handle, client) = connect(server_service, client_info)
         .await
@@ -185,8 +197,8 @@ async fn test_edit_file_tool() {
 
     // First, read the file (required by safety check)
     client
-        .call_tool(CallToolRequestParams::new("read_file")
-            .with_arguments(
+        .call_tool(
+            CallToolRequestParams::new("read_file").with_arguments(
                 serde_json::json!({
                     "filePath": test_path
                 })
@@ -200,8 +212,8 @@ async fn test_edit_file_tool() {
 
     // Test edit_file tool - replace single occurrence
     let result = client
-        .call_tool(CallToolRequestParams::new("edit_file")
-            .with_arguments(
+        .call_tool(
+            CallToolRequestParams::new("edit_file").with_arguments(
                 serde_json::json!({
                     "filePath": test_path,
                     "oldString": "World",
@@ -243,8 +255,8 @@ async fn test_edit_file_tool() {
 
     // Read the file again before editing
     client
-        .call_tool(CallToolRequestParams::new("read_file")
-            .with_arguments(
+        .call_tool(
+            CallToolRequestParams::new("read_file").with_arguments(
                 serde_json::json!({
                     "filePath": test_path
                 })
@@ -257,8 +269,8 @@ async fn test_edit_file_tool() {
         .expect("Failed to read file before second edit");
 
     let result = client
-        .call_tool(CallToolRequestParams::new("edit_file")
-            .with_arguments(
+        .call_tool(
+            CallToolRequestParams::new("edit_file").with_arguments(
                 serde_json::json!({
                     "filePath": test_path,
                     "oldString": "test",
@@ -294,7 +306,10 @@ async fn test_edit_file_tool() {
 async fn test_list_files_tool() {
     // Create server and client
     let server_service = CodingMcp::new();
-    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
+    let client_info = ClientInfo::new(
+        Default::default(),
+        Implementation::new("test-client", "0.1.0"),
+    );
 
     let (_server_handle, client) = connect(server_service, client_info)
         .await
@@ -315,8 +330,8 @@ async fn test_list_files_tool() {
 
     // Test list_files tool
     let result = client
-        .call_tool(CallToolRequestParams::new("list_files")
-            .with_arguments(
+        .call_tool(
+            CallToolRequestParams::new("list_files").with_arguments(
                 serde_json::json!({
                     "path": test_dir
                 })
@@ -358,8 +373,8 @@ async fn test_list_files_tool() {
 
     // Test including hidden files
     let result_with_hidden = client
-        .call_tool(CallToolRequestParams::new("list_files")
-            .with_arguments(
+        .call_tool(
+            CallToolRequestParams::new("list_files").with_arguments(
                 serde_json::json!({
                     "path": test_dir,
                     "includeHidden": true

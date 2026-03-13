@@ -299,9 +299,11 @@ impl ServerHandler for SkillsMcp {
             .slash_commands()
             .map(|s| {
                 let arguments = s.argument_hint.as_ref().map(|hint| {
-                    vec![PromptArgument::new("ARGUMENTS")
-                        .with_description(hint.clone())
-                        .with_required(false)]
+                    vec![
+                        PromptArgument::new("ARGUMENTS")
+                            .with_description(hint.clone())
+                            .with_required(false),
+                    ]
                 });
 
                 Prompt::new(s.name.clone(), Some(s.description.clone()), arguments)

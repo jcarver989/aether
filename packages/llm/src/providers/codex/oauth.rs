@@ -5,9 +5,9 @@ use crate::oauth::OAuthHandler;
 use crate::oauth::credential_store::{OAuthCredential, OAuthCredentialStore};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use oauth2::TokenResponse;
 use oauth2::basic::BasicClient;
 use oauth2::{AuthUrl, AuthorizationCode, ClientId, PkceCodeChallenge, RedirectUrl, TokenUrl};
-use oauth2::TokenResponse;
 use tokio::sync::Mutex;
 use url::Url;
 
@@ -91,9 +91,7 @@ pub async fn perform_codex_oauth_flow() -> Result<(), LlmError> {
     let credential = OAuthCredential {
         client_id: CLIENT_ID.to_string(),
         access_token: token_response.access_token().secret().clone(),
-        refresh_token: token_response
-            .refresh_token()
-            .map(|t| t.secret().clone()),
+        refresh_token: token_response.refresh_token().map(|t| t.secret().clone()),
         expires_at,
     };
 
