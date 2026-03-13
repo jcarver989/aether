@@ -30,6 +30,7 @@ coding = [
 ]
 skills = [
     "dep:aether-project",
+    "dep:regex",
     "dep:serde_yml",
     "dep:tracing",
 ]
