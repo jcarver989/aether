@@ -375,17 +375,22 @@ fn map_tool_result_to_notification(
         content.push(ToolCallContent::Diff(diff));
     }
 
-    let fields = ToolCallUpdateFields::new()
+    let mut fields = ToolCallUpdateFields::new()
         .status(ToolCallStatus::Completed)
         .content(content);
 
+    if let Some(rm) = result_meta {
+        fields = fields.title(&rm.display.title);
+    }
+
     let mut update = ToolCallUpdate::new(ToolCallId::new(result.id.clone()), fields);
 
-    if let Some(rm) = result_meta {
-        // Strip file_diff from the meta map to avoid duplication
-        let mut meta_without_diff = rm.clone();
-        meta_without_diff.file_diff = None;
-        update = update.meta(meta_without_diff.into_map());
+    if let Some(rm) = result_meta
+        && !rm.display.value.is_empty()
+    {
+        let mut meta_map = serde_json::Map::new();
+        meta_map.insert("display_value".into(), rm.display.value.clone().into());
+        update = update.meta(meta_map);
     }
 
     SessionNotification::new(session_id, SessionUpdate::ToolCallUpdate(update))
@@ -425,15 +430,21 @@ fn map_tool_progress_to_notification(
     }
 
     if let Some(result_meta) = message.and_then(|m| try_parse_display_meta(m)) {
+        let fields = ToolCallUpdateFields::new()
+            .status(ToolCallStatus::InProgress)
+            .title(&result_meta.display.title);
+
+        let mut update = ToolCallUpdate::new(ToolCallId::new(request.id.clone()), fields);
+
+        if !result_meta.display.value.is_empty() {
+            let mut meta_map = serde_json::Map::new();
+            meta_map.insert("display_value".into(), result_meta.display.value.into());
+            update = update.meta(meta_map);
+        }
+
         return Some(SessionNotification::new(
             session_id,
-            SessionUpdate::ToolCallUpdate(
-                ToolCallUpdate::new(
-                    ToolCallId::new(request.id.clone()),
-                    ToolCallUpdateFields::new().status(ToolCallStatus::InProgress),
-                )
-                .meta(result_meta.into_map()),
-            ),
+            SessionUpdate::ToolCallUpdate(update),
         ));
     }
 
@@ -879,12 +890,21 @@ mod tests {
         let notification = map_tool_result_to_notification(session_id, &result, Some(&rm));
         match notification.update {
             acp::SessionUpdate::ToolCallUpdate(update) => {
-                assert!(update.fields.title.is_none());
+                assert_eq!(
+                    update.fields.title.as_deref(),
+                    Some("Read file"),
+                    "native title should be set"
+                );
                 let meta = update.meta.expect("meta should be present");
-                let tc_meta =
-                    ToolResultMeta::from_map(&meta).expect("should deserialize to ToolResultMeta");
-                assert_eq!(tc_meta.display.title, "Read file");
-                assert_eq!(tc_meta.display.value, "Cargo.toml, 156 lines");
+                assert_eq!(
+                    meta.get("display_value").and_then(|v| v.as_str()),
+                    Some("Cargo.toml, 156 lines"),
+                    "display_value should be a flat key in _meta"
+                );
+                assert!(
+                    meta.get("display").is_none(),
+                    "old nested display object should not be in _meta"
+                );
             }
             other => panic!("Expected ToolCallUpdate, got {other:?}"),
         }
@@ -981,11 +1001,21 @@ mod tests {
         match notification.update {
             acp::SessionUpdate::ToolCallUpdate(update) => {
                 assert_eq!(&*update.tool_call_id.0, "call_789");
+                assert_eq!(
+                    update.fields.title.as_deref(),
+                    Some("Read file"),
+                    "native title should be set"
+                );
                 let meta_map = update.meta.expect("meta should be present");
-                let parsed =
-                    ToolResultMeta::from_map(&meta_map).expect("should parse as ToolResultMeta");
-                assert_eq!(parsed.display.title, "Read file");
-                assert_eq!(parsed.display.value, "main.rs");
+                assert_eq!(
+                    meta_map.get("display_value").and_then(|v| v.as_str()),
+                    Some("main.rs"),
+                    "display_value should be a flat key in _meta"
+                );
+                assert!(
+                    meta_map.get("display").is_none(),
+                    "old nested display object should not be in _meta"
+                );
                 assert_eq!(update.fields.status, Some(acp::ToolCallStatus::InProgress));
                 // Should NOT have content (no text progress fallback)
                 assert!(update.fields.content.is_none());

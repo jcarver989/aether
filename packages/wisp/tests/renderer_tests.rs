@@ -675,18 +675,24 @@ fn tool_complete(id: &str) -> TestEvent {
 }
 
 fn tool_complete_with_display_meta(id: &str, display_meta: &serde_json::Value) -> TestEvent {
-    let meta_map =
-        serde_json::from_value::<serde_json::Map<String, serde_json::Value>>(serde_json::json!({
-            "display": display_meta
-        }))
-        .unwrap();
-    TestEvent::Update(Box::new(acp::SessionUpdate::ToolCallUpdate(
-        acp::ToolCallUpdate::new(
-            id.to_string(),
-            acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::Completed),
-        )
-        .meta(meta_map),
-    )))
+    let title = display_meta["title"].as_str().unwrap_or("");
+    let value = display_meta["value"].as_str().unwrap_or("");
+
+    let mut meta_map = serde_json::Map::new();
+    if !value.is_empty() {
+        meta_map.insert("display_value".into(), value.into());
+    }
+
+    let mut update = acp::ToolCallUpdate::new(
+        id.to_string(),
+        acp::ToolCallUpdateFields::new()
+            .title(title)
+            .status(acp::ToolCallStatus::Completed),
+    );
+    if !meta_map.is_empty() {
+        update = update.meta(meta_map);
+    }
+    TestEvent::Update(Box::new(acp::SessionUpdate::ToolCallUpdate(update)))
 }
 
 fn tool_update_with_args(id: &str, args: &str) -> TestEvent {

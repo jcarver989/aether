@@ -123,7 +123,7 @@ pub struct ToolProgress {
 struct TrackedToolCall {
     name: String,
     arguments: String,
-    result_meta: Option<ToolResultMeta>,
+    display_value: Option<String>,
     diff_preview: Option<DiffPreview>,
     status: ToolCallStatus,
 }
@@ -133,7 +133,7 @@ impl TrackedToolCall {
         Self {
             name: name.into(),
             arguments: arguments.into(),
-            result_meta: None,
+            display_value: None,
             diff_preview: None,
             status: ToolCallStatus::Running,
         }
@@ -152,7 +152,7 @@ impl TrackedToolCall {
 
     fn apply_result_meta(&mut self, meta: ToolResultMeta) {
         self.name.clone_from(&meta.display.title);
-        self.result_meta = Some(meta);
+        self.display_value = Some(meta.display.value);
     }
 
     fn apply_status(&mut self, status: acp::ToolCallStatus) {
@@ -282,9 +282,9 @@ impl ToolCallStatuses {
                 tc.append_arguments(&raw_input_fragment(raw_input));
             }
             if let Some(meta) = &update.meta
-                && let Some(tc_meta) = ToolResultMeta::from_map(meta)
+                && let Some(dv) = meta.get("display_value").and_then(|v| v.as_str())
             {
-                tc.apply_result_meta(tc_meta);
+                tc.display_value = Some(dv.to_string());
             }
             if let Some(content) = &update.fields.content {
                 for item in content {
@@ -522,7 +522,7 @@ impl ToolCallStatuses {
         ToolCallStatusView {
             name: tc.name.clone(),
             arguments: tc.arguments.clone(),
-            display_value: tc.result_meta.as_ref().map(|rm| rm.display.value.clone()),
+            display_value: tc.display_value.clone(),
             diff_preview: tc.diff_preview.clone(),
             status: tc.status.clone(),
             tick,
@@ -604,7 +604,6 @@ fn compute_diff_preview(diff: &acp::Diff) -> DiffPreview {
 mod tests {
     use super::*;
     use crate::tui::Line;
-    use acp_utils::notifications::ToolDisplayMeta;
 
     fn ctx() -> ViewContext {
         ViewContext::new((80, 24))
@@ -1276,14 +1275,15 @@ mod tests {
         let mut statuses = ToolCallStatuses::new();
         statuses.on_tool_call(&make_tool_call("tool-1", "coding__read_file", None));
 
-        // Complete with display title/value in meta
-        let meta = ToolResultMeta::from(ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines"))
-            .into_map();
+        let mut meta_map = serde_json::Map::new();
+        meta_map.insert("display_value".into(), "Cargo.toml, 156 lines".into());
         let update = acp::ToolCallUpdate::new(
             "tool-1".to_string(),
-            acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::Completed),
+            acp::ToolCallUpdateFields::new()
+                .title("Read file")
+                .status(acp::ToolCallStatus::Completed),
         )
-        .meta(meta);
+        .meta(meta_map);
         statuses.on_tool_call_update(&update);
 
         let lines = statuses.render(&ctx());
@@ -1308,13 +1308,15 @@ mod tests {
             Some(r#"{"filePath":"Cargo.toml"}"#),
         ));
 
-        // Send an update with display_value but keep running (preview meta)
-        let meta = ToolResultMeta::from(ToolDisplayMeta::new("Read file", "Cargo.toml")).into_map();
+        let mut meta_map = serde_json::Map::new();
+        meta_map.insert("display_value".into(), "Cargo.toml".into());
         let update = acp::ToolCallUpdate::new(
             "tool-1".to_string(),
-            acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::InProgress),
+            acp::ToolCallUpdateFields::new()
+                .title("Read file")
+                .status(acp::ToolCallStatus::InProgress),
         )
-        .meta(meta);
+        .meta(meta_map);
         statuses.on_tool_call_update(&update);
 
         let lines = statuses.render(&ctx());
@@ -1335,25 +1337,26 @@ mod tests {
             Some(r#"{"filePath":"Cargo.toml"}"#),
         ));
 
-        // Send preview meta while running
-        let preview_meta =
-            ToolResultMeta::from(ToolDisplayMeta::new("Read file", "Cargo.toml")).into_map();
+        let mut preview_map = serde_json::Map::new();
+        preview_map.insert("display_value".into(), "Cargo.toml".into());
         let update = acp::ToolCallUpdate::new(
             "tool-1".to_string(),
-            acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::InProgress),
+            acp::ToolCallUpdateFields::new()
+                .title("Read file")
+                .status(acp::ToolCallStatus::InProgress),
         )
-        .meta(preview_meta);
+        .meta(preview_map);
         statuses.on_tool_call_update(&update);
 
-        // Complete with richer meta
-        let result_meta =
-            ToolResultMeta::from(ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines"))
-                .into_map();
+        let mut result_map = serde_json::Map::new();
+        result_map.insert("display_value".into(), "Cargo.toml, 156 lines".into());
         let update = acp::ToolCallUpdate::new(
             "tool-1".to_string(),
-            acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::Completed),
+            acp::ToolCallUpdateFields::new()
+                .title("Read file")
+                .status(acp::ToolCallStatus::Completed),
         )
-        .meta(result_meta);
+        .meta(result_map);
         statuses.on_tool_call_update(&update);
 
         let lines = statuses.render(&ctx());
@@ -1388,7 +1391,7 @@ mod tests {
     }
 
     #[test]
-    fn test_display_meta_title_overrides_update_title() {
+    fn test_native_title_used_directly() {
         let mut statuses = ToolCallStatuses::new();
         statuses.on_tool_call(&make_tool_call(
             "tool-1",
@@ -1396,28 +1399,21 @@ mod tests {
             Some(r#"{"filePath":"Cargo.toml"}"#),
         ));
 
-        let meta = ToolResultMeta::from(ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines"))
-            .into_map();
+        let mut meta_map = serde_json::Map::new();
+        meta_map.insert("display_value".into(), "Cargo.toml, 156 lines".into());
         let update = acp::ToolCallUpdate::new(
             "tool-1".to_string(),
             acp::ToolCallUpdateFields::new()
-                .title("Fallback title")
+                .title("Read file")
                 .status(acp::ToolCallStatus::Completed),
         )
-        .meta(meta);
+        .meta(meta_map);
         statuses.on_tool_call_update(&update);
 
         let lines = statuses.render(&ctx());
         assert_eq!(lines.len(), 1);
         let text = lines[0].plain_text();
-        assert!(
-            text.contains("Read file"),
-            "Expected display_meta title: {text}"
-        );
-        assert!(
-            !text.contains("Fallback title"),
-            "Meta should win over title: {text}"
-        );
+        assert!(text.contains("Read file"), "Expected native title: {text}");
     }
 
     #[test]
@@ -1505,12 +1501,13 @@ mod tests {
         let mut statuses = ToolCallStatuses::new();
         statuses.on_tool_call(&make_tool_call("tool-1", "coding__edit_file", None));
 
-        // Complete with ACP Diff content + display meta
-        let rm = ToolResultMeta::from(ToolDisplayMeta::new("Edit file", "main.rs"));
+        let mut meta_map = serde_json::Map::new();
+        meta_map.insert("display_value".into(), "main.rs".into());
         let diff = acp::Diff::new("/tmp/main.rs", "new\n").old_text("old\n".to_string());
         let update = acp::ToolCallUpdate::new(
             "tool-1".to_string(),
             acp::ToolCallUpdateFields::new()
+                .title("Edit file")
                 .status(acp::ToolCallStatus::Completed)
                 .content(vec![
                     acp::ToolCallContent::Content(acp::Content::new(acp::ContentBlock::Text(
@@ -1519,7 +1516,7 @@ mod tests {
                     acp::ToolCallContent::Diff(diff),
                 ]),
         )
-        .meta(rm.into_map());
+        .meta(meta_map);
         statuses.on_tool_call_update(&update);
 
         let lines = statuses.render_tool("tool-1", &ctx());
