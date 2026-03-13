@@ -49,7 +49,11 @@ pub struct ListFilesResult {
 pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, ListFilesError> {
     use std::os::unix::fs::PermissionsExt;
 
-    let target_path = args.path.as_deref().unwrap_or(".");
+    let target_path = args
+        .path
+        .as_deref()
+        .filter(|p| !p.is_empty())
+        .unwrap_or(".");
     let include_hidden = args.include_hidden.unwrap_or(false);
 
     let mut files = Vec::new();
@@ -193,5 +197,26 @@ mod tests {
 
         assert_eq!(args.path, Some("/tmp".to_string()));
         assert_eq!(args.include_hidden, Some(true));
+    }
+
+    #[tokio::test]
+    async fn list_files_handles_empty_path_as_current_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::write(temp_dir.path().join("test.txt"), "hello").unwrap();
+
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp_dir.path()).unwrap();
+
+        let result = list_files(ListFilesArgs {
+            path: Some("".to_string()),
+            include_hidden: None,
+        })
+        .await
+        .unwrap();
+
+        std::env::set_current_dir(original_dir).unwrap();
+
+        assert_eq!(result.directory, ".");
+        assert!(result.files.iter().any(|f| f.name == "test.txt"));
     }
 }
