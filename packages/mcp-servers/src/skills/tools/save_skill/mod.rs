@@ -3,9 +3,7 @@ use std::path::Path;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::skills::skill_file::{
-    SkillFileError, SkillsFrontmatter, read_and_parse, skill_exists, write_skill,
-};
+use aether_project::{PromptFile, PromptFileError, PromptTriggers, SKILL_FILENAME};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -38,28 +36,34 @@ pub struct SaveSkillOutput {
 pub fn save_skill(
     input: &SaveSkillInput,
     skills_dir: &Path,
-) -> Result<SaveSkillOutput, SkillFileError> {
-    let dir = skills_dir.join(&input.name);
+) -> Result<SaveSkillOutput, PromptFileError> {
+    let skill_path = skills_dir.join(&input.name).join(SKILL_FILENAME);
 
-    let (frontmatter, status) = if skill_exists(&dir) {
-        let (existing, _body) = read_and_parse(&dir)?;
+    let (prompt, status) = if skill_path.is_file() {
+        let existing = PromptFile::parse(&skill_path)?;
 
         if !existing.agent_authored {
-            return Err(SkillFileError::NotAgentAuthored(input.name.clone()));
+            return Err(PromptFileError::NotAgentAuthored(input.name.clone()));
         }
 
-        let updated = SkillsFrontmatter {
-            description: input.description.clone(),
-            tags: input.tags.clone(),
-            agent_authored: true,
-            helpful: existing.helpful,
-            harmful: existing.harmful,
-        };
+        let mut updated = existing;
+        updated.description = input.description.clone();
+        updated.agent_invocable = true;
+        updated.tags = input.tags.clone();
+        updated.agent_authored = true;
+        updated.body = input.content.clone();
         (updated, SaveSkillStatus::Updated)
     } else {
-        let new = SkillsFrontmatter {
+        let new = PromptFile {
+            name: input.name.clone(),
             description: input.description.clone(),
+            body: input.content.clone(),
+            path: skill_path.clone(),
+            user_invocable: false,
+            agent_invocable: true,
+            argument_hint: None,
             tags: input.tags.clone(),
+            triggers: PromptTriggers::default(),
             agent_authored: true,
             helpful: 0,
             harmful: 0,
@@ -67,7 +71,7 @@ pub fn save_skill(
         (new, SaveSkillStatus::Created)
     };
 
-    write_skill(&dir, &frontmatter, &input.content)?;
+    prompt.write(&skill_path)?;
 
     Ok(SaveSkillOutput {
         name: input.name.clone(),
@@ -78,7 +82,7 @@ pub fn save_skill(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::skills::skill_file::SKILL_FILENAME;
+    use aether_project::SKILL_FILENAME;
     use tempfile::TempDir;
 
     #[test]
@@ -120,11 +124,11 @@ mod tests {
         save_skill(&input, skills_dir).unwrap();
 
         // Simulate some scoring happened
-        let dir = skills_dir.join("my-skill");
-        let (mut fm, _body) = read_and_parse(&dir).unwrap();
-        fm.helpful = 3;
-        fm.harmful = 1;
-        write_skill(&dir, &fm, "Original content.").unwrap();
+        let skill_path = skills_dir.join("my-skill").join(SKILL_FILENAME);
+        let mut parsed = PromptFile::parse(&skill_path).unwrap();
+        parsed.helpful = 3;
+        parsed.harmful = 1;
+        parsed.write(&skill_path).unwrap();
 
         // Update
         let input2 = SaveSkillInput {
@@ -137,12 +141,28 @@ mod tests {
         assert_eq!(output.status, SaveSkillStatus::Updated);
 
         // Verify counters preserved
-        let (fm2, body) = read_and_parse(&dir).unwrap();
-        assert_eq!(fm2.description, "Updated");
-        assert_eq!(fm2.tags, vec!["rust", "convention"]);
-        assert_eq!(fm2.helpful, 3);
-        assert_eq!(fm2.harmful, 1);
-        assert!(body.contains("Updated content."));
+        let updated = PromptFile::parse(&skill_path).unwrap();
+        assert_eq!(updated.description, "Updated");
+        assert_eq!(updated.tags, vec!["rust", "convention"]);
+        assert_eq!(updated.helpful, 3);
+        assert_eq!(updated.harmful, 1);
+        assert!(updated.body.contains("Updated content."));
+    }
+
+    #[test]
+    fn test_reject_empty_description() {
+        let temp_dir = TempDir::new().unwrap();
+        let skills_dir = temp_dir.path();
+
+        let input = SaveSkillInput {
+            name: "bad-skill".to_string(),
+            description: String::new(),
+            tags: vec![],
+            content: "Some content.".to_string(),
+        };
+
+        let result = save_skill(&input, skills_dir);
+        assert!(result.is_err());
     }
 
     #[test]

@@ -82,4 +82,8 @@ pub enum SettingsError {
     /// An agent was not found in the catalog.
     #[error("Agent '{name}' not found")]
     AgentNotFound { name: String },
+
+    /// Duplicate prompt names in the catalog.
+    #[error("Duplicate prompt name: '{name}'")]
+    DuplicatePromptName { name: String },
 }

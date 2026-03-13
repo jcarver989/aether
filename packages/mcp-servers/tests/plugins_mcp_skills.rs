@@ -111,15 +111,15 @@ async fn test_load_skills_tool() {
     let test_files = vec![
         (
             "skills/skill-1/SKILL.md",
-            "---\ndescription: First skill for testing\n---\n# Skill 1\n\nThis is the content for skill 1.",
+            "---\ndescription: First skill for testing\nagent-invocable: true\n---\n# Skill 1\n\nThis is the content for skill 1.",
         ),
         (
             "skills/skill-2/SKILL.md",
-            "# Skill 2\n\nThis is the content for skill 2 with no frontmatter.",
+            "---\ndescription: Second skill\nagent-invocable: true\n---\n# Skill 2\n\nThis is the content for skill 2.",
         ),
         (
             "skills/skill-3/SKILL.md",
-            "---\ndescription: Third skill\n---\n# Skill 3\n\nThis is skill 3.",
+            "---\ndescription: Third skill\nagent-invocable: true\n---\n# Skill 3\n\nThis is skill 3.",
         ),
     ];
 
@@ -171,7 +171,7 @@ async fn test_load_skills_tool() {
                 skill2["content"]
                     .as_str()
                     .unwrap()
-                    .contains("This is the content for skill 2")
+                    .contains("This is the content for skill 2.")
             );
 
             // Verify skill-3

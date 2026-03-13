@@ -10,6 +10,7 @@ workspace = true
 default = ["coding", "skills", "tasks", "subagents"]
 test-helpers = []
 coding = [
+    "dep:aether-project",
     "dep:aether-lspd",
     "dep:futures",
     "dep:glob",
@@ -28,6 +29,7 @@ coding = [
     "dep:url",
 ]
 skills = [
+    "dep:aether-project",
     "dep:serde_yml",
     "dep:tracing",
 ]
