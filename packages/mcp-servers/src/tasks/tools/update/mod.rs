@@ -74,7 +74,7 @@ pub struct TaskUpdateOutput {
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 /// Update an existing task's fields
@@ -166,7 +166,7 @@ pub fn execute_task_update(
         message,
         changes,
         newly_ready,
-        _meta: Some(task_result_meta(store, &task.title)),
+        meta: Some(task_result_meta(store, &task.title)),
     })
 }
 

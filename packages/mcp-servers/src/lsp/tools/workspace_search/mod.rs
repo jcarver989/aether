@@ -59,7 +59,7 @@ pub struct LspWorkspaceSearchOutput {
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 /// Execute the `lsp_workspace_search` operation
@@ -127,6 +127,6 @@ pub async fn execute_lsp_workspace_search(
         results: all_results,
         total_count,
         truncated: if truncated { Some(true) } else { None },
-        _meta: Some(display_meta.into()),
+        meta: Some(display_meta.into()),
     })
 }

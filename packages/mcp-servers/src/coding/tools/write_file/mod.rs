@@ -30,7 +30,7 @@ pub struct WriteFileResponse {
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileResponse, FileError> {
@@ -88,7 +88,7 @@ pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileRespons
         ),
         bytes_written,
         file_path: args.file_path,
-        _meta: Some(ToolResultMeta::with_diff_preview(
+        meta: Some(ToolResultMeta::with_diff_preview(
             display_meta,
             diff_preview,
         )),
@@ -120,7 +120,7 @@ mod tests {
         assert_eq!(fs::read_to_string(&file_path).unwrap(), content);
 
         // Verify diff preview
-        let meta = result._meta.unwrap();
+        let meta = result.meta.unwrap();
         let diff = meta.diff_preview.unwrap();
 
         // All lines should be marked as Added
@@ -143,7 +143,7 @@ mod tests {
         .await
         .unwrap();
 
-        let diff = result._meta.unwrap().diff_preview.unwrap();
+        let diff = result.meta.unwrap().diff_preview.unwrap();
         assert_eq!(diff.lang_hint, "rs");
     }
 
@@ -159,7 +159,7 @@ mod tests {
         .await
         .unwrap();
 
-        let diff = result._meta.unwrap().diff_preview.unwrap();
+        let diff = result.meta.unwrap().diff_preview.unwrap();
         assert_eq!(diff.start_line, Some(1));
     }
 
@@ -175,7 +175,7 @@ mod tests {
         .await
         .unwrap();
 
-        let diff = result._meta.unwrap().diff_preview.unwrap();
+        let diff = result.meta.unwrap().diff_preview.unwrap();
         assert!(diff.lines.is_empty());
     }
 
@@ -197,7 +197,7 @@ mod tests {
         assert_eq!(fs::read_to_string(&file_path).unwrap(), new_content);
 
         // Diff should show new content as added (not old as removed - this is write, not edit)
-        let diff = result._meta.unwrap().diff_preview.unwrap();
+        let diff = result.meta.unwrap().diff_preview.unwrap();
         assert_eq!(diff.lines.len(), 2);
         assert!(diff.lines.iter().all(|l| l.tag == DiffTag::Added));
     }
@@ -222,7 +222,7 @@ mod tests {
         assert_eq!(fs::read_to_string(&file_path).unwrap(), content);
 
         // Verify diff preview is truncated
-        let diff = result._meta.unwrap().diff_preview.unwrap();
+        let diff = result.meta.unwrap().diff_preview.unwrap();
         assert_eq!(diff.lines.len(), 51); // 50 content lines + 1 truncation indicator
 
         // Last line should be truncation indicator

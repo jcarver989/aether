@@ -61,7 +61,7 @@ pub struct TaskCreateOutput {
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 /// Create a new task or subtask
@@ -116,7 +116,7 @@ pub fn execute_task_create(
         status: "success".to_string(),
         message: format!("Created {} '{}' with ID {}", task_type, task.title, task.id),
         task: TaskSummary::from(&task),
-        _meta: Some(task_result_meta(store, &task.title)),
+        meta: Some(task_result_meta(store, &task.title)),
     })
 }
 

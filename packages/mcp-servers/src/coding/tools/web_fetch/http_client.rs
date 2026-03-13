@@ -47,7 +47,7 @@ pub struct WebFetchOutput {
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<mcp_utils::display_meta::ToolResultMeta>,
+    pub meta: Option<mcp_utils::display_meta::ToolResultMeta>,
 }
 
 /// Response from an HTTP client fetch operation

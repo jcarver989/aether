@@ -26,7 +26,7 @@ pub struct GrepContentOutput {
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -39,7 +39,7 @@ pub struct GrepFilesOutput {
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -59,7 +59,7 @@ pub struct GrepCountOutput {
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -515,17 +515,17 @@ fn build_grep_output(
         OutputMode::Content => GrepOutput::Content(GrepContentOutput {
             matches: results.matches,
             total_matches: match_count,
-            _meta: meta,
+            meta,
         }),
         OutputMode::FilesWithMatches => GrepOutput::Files(GrepFilesOutput {
             files: results.files_with_matches,
             count: match_count,
-            _meta: meta,
+            meta,
         }),
         OutputMode::Count => GrepOutput::Count(GrepCountOutput {
             counts: results.file_counts,
             total: match_count,
-            _meta: meta,
+            meta,
         }),
     }
 }

@@ -43,7 +43,7 @@ pub struct ListFilesResult {
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, ListFilesError> {
@@ -126,7 +126,7 @@ pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, ListFile
         directory: target_path.to_string(),
         files,
         total_count,
-        _meta: Some(display_meta.into()),
+        meta: Some(display_meta.into()),
     })
 }
 

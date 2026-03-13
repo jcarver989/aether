@@ -72,7 +72,7 @@ impl<C: HttpClient> WebFetcher<C> {
             status_code: response.status_code,
             truncated,
             title,
-            _meta: Some(display_meta.into()),
+            meta: Some(display_meta.into()),
         })
     }
 }

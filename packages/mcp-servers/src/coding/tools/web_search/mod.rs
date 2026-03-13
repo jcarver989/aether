@@ -47,7 +47,7 @@ pub struct WebSearchOutput {
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
-    pub _meta: Option<ToolResultMeta>,
+    pub meta: Option<ToolResultMeta>,
 }
 
 /// Individual search result
@@ -127,7 +127,7 @@ impl<C: SearchClient> WebSearcher<C> {
         Ok(WebSearchOutput {
             results,
             query: query.to_string(),
-            _meta: Some(display_meta.into()),
+            meta: Some(display_meta.into()),
         })
     }
 }
