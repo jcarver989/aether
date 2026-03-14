@@ -48,6 +48,17 @@ sweep DAYS="7":
 sweep-installed:
     cargo sweep --installed
 
+# Build the sandbox Docker image
+build-sandbox:
+    cargo build --release -p aether-cli
+    cp target/release/aether docker/
+    docker build -t aether-sandbox:latest -f docker/Dockerfile.sandbox docker/
+    rm docker/aether
+
+# Run inside the sandbox container
+run-sandbox *ARGS:
+    cargo run -p aether-cli -- --sandbox {{ARGS}}
+
 # Clean everything
 clean:
     cargo clean

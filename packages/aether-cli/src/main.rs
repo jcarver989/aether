@@ -9,6 +9,10 @@ use aether_cli::headless::HeadlessArgs;
 #[command(name = "aether")]
 #[command(about = "Aether AI coding agent")]
 struct Cli {
+    /// Run the CLI inside a Docker container for filesystem isolation
+    #[arg(long, global = true)]
+    sandbox: bool,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -23,6 +27,11 @@ enum Command {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+
+    if cli.sandbox {
+        return aether_cli::sandbox::exec_in_container();
+    }
+
     let rt = Runtime::new().expect("Failed to create tokio runtime");
     let result: Result<ExitCode, String> = match cli.command {
         Command::Headless(args) => rt
