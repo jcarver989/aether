@@ -8,7 +8,7 @@ use crate::components::git_diff_view::GitDiffViewMessage;
 use crate::components::prompt_composer::PromptComposerMessage;
 use crate::error::AppError;
 use crate::keybindings::Keybindings;
-use crate::tui::{Component, Event, FormMessage, KeyEvent, Line, PickerMessage, ViewContext};
+use crate::tui::{Component, Event, FormMessage, KeyEvent, Line, PickerMessage};
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use agent_client_protocol::{
@@ -37,7 +37,6 @@ impl UiStateController {
     pub async fn handle_event(
         &mut self,
         state: &mut UiState,
-        context: &ViewContext,
         event: WispEvent,
     ) -> Result<Vec<ViewEffect>, AppError> {
         let mut effects = Vec::new();
@@ -47,7 +46,7 @@ impl UiStateController {
                     .await?;
             }
             WispEvent::Acp(acp_event) => {
-                self.handle_acp_event(state, &mut effects, acp_event, context)?;
+                self.handle_acp_event(state, &mut effects, acp_event)?;
             }
         }
         Ok(effects)
@@ -378,14 +377,13 @@ impl UiStateController {
         state: &mut UiState,
         effects: &mut Vec<ViewEffect>,
         event: AcpEvent,
-        context: &ViewContext,
     ) -> Result<(), AppError> {
         match event {
             AcpEvent::SessionUpdate(update) => self.on_session_update(state, *update),
             AcpEvent::ExtNotification(notification) => {
                 self.on_ext_notification(state, &notification);
             }
-            AcpEvent::PromptDone(_) => self.on_prompt_done(state, effects, context)?,
+            AcpEvent::PromptDone(_) => self.on_prompt_done(state, effects)?,
             AcpEvent::PromptError(error) => self.on_prompt_error(state, &error),
             AcpEvent::ElicitationRequest {
                 params,
@@ -498,24 +496,11 @@ impl UiStateController {
         &self,
         state: &mut UiState,
         effects: &mut Vec<ViewEffect>,
-        context: &ViewContext,
     ) -> Result<(), AppError> {
         state.waiting_for_response = false;
         state.grid_loader.visible = false;
         state.conversation.close_thought_block();
-
-        let (scrollback_lines, completed_tool_ids) = state
-            .conversation
-            .flush_completed(&state.tool_call_statuses, context);
-
-        for id in completed_tool_ids {
-            state.tool_call_statuses.remove_tool(&id);
-        }
-
-        if !scrollback_lines.is_empty() {
-            effects.push(ViewEffect::PushToScrollback(scrollback_lines));
-        }
-
+        effects.push(ViewEffect::FlushCompleted);
         Ok(())
     }
 
@@ -645,7 +630,7 @@ fn theme_file_from_picker_value(value: &str) -> Option<String> {
 mod tests {
     use super::*;
     use crate::keybindings::KeyBinding;
-    use crate::tui::{Event, KeyCode, KeyModifiers, MouseEvent, MouseEventKind};
+    use crate::tui::{Event, KeyCode, KeyModifiers, MouseEvent, MouseEventKind, ViewContext};
 
     fn make_controller() -> UiStateController {
         UiStateController::new(SessionId::new("test"), AcpPromptHandle::noop())
@@ -953,14 +938,12 @@ mod tests {
         let mut controller = make_controller();
         let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
         let mut effects = Vec::new();
-        let context = ViewContext::new((80, 24));
 
         controller
             .handle_acp_event(
                 &mut state,
                 &mut effects,
                 AcpEvent::ConnectionClosed,
-                &context,
             )
             .unwrap();
 

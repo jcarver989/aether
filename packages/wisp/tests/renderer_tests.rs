@@ -119,9 +119,8 @@ impl Renderer {
         &mut self,
         event: WispEvent,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
-        let context = self.frame_renderer.context();
         let effects = self.controller
-            .handle_event(&mut self.state, &context, event)
+            .handle_event(&mut self.state, event)
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
 
@@ -130,6 +129,13 @@ impl Renderer {
                 ViewEffect::ClearScreen => self.frame_renderer.clear_screen()?,
                 ViewEffect::PushToScrollback(lines) => self.frame_renderer.push_to_scrollback(&lines)?,
                 ViewEffect::SetTheme(theme) => self.frame_renderer.set_theme(theme),
+                ViewEffect::FlushCompleted => {
+                    let context = self.frame_renderer.context();
+                    let scrollback_lines = self.state.flush_completed(&context);
+                    if !scrollback_lines.is_empty() {
+                        self.frame_renderer.push_to_scrollback(&scrollback_lines)?;
+                    }
+                }
             }
         }
 

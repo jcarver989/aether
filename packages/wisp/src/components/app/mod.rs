@@ -15,6 +15,7 @@ pub enum ViewEffect {
     ClearScreen,
     PushToScrollback(Vec<Line>),
     SetTheme(Theme),
+    FlushCompleted,
 }
 
 
@@ -311,7 +312,6 @@ mod tests {
         controller
             .handle_event(
                 &mut state,
-                &ViewContext::new((60, 10)),
                 WispEvent::Acp(AcpEvent::SessionsListed { sessions }),
             )
             .await
