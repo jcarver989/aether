@@ -5,7 +5,7 @@ use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::tui::{Component, Line, Spinner, ViewContext, render_markdown};
 
 #[derive(Debug, Clone)]
-pub(crate) enum SegmentContent {
+ pub enum SegmentContent {
     Text(String),
     Thought(String),
     ToolCall(String),
@@ -14,7 +14,6 @@ pub(crate) enum SegmentContent {
 #[derive(Debug)]
 struct Segment {
     content: SegmentContent,
-    lines: Option<Vec<Line>>,
 }
 
 pub(crate) struct ConversationBuffer {
@@ -39,10 +38,7 @@ impl ConversationBuffer {
     pub(crate) fn set_segments(&mut self, segments: Vec<SegmentContent>) {
         self.segments = segments
             .into_iter()
-            .map(|content| Segment {
-                content,
-                lines: None,
-            })
+            .map(|content| Segment { content })
             .collect();
     }
 
@@ -57,11 +53,9 @@ impl ConversationBuffer {
             && let SegmentContent::Text(existing) = &mut segment.content
         {
             existing.push_str(chunk);
-            segment.lines = None;
         } else {
             self.segments.push(Segment {
                 content: SegmentContent::Text(chunk.to_string()),
-                lines: None,
             });
         }
     }
@@ -76,14 +70,11 @@ impl ConversationBuffer {
             && let SegmentContent::Thought(existing) = &mut segment.content
         {
             existing.push_str(chunk);
-            segment.lines = None;
-
             return;
         }
 
         self.segments.push(Segment {
             content: SegmentContent::Thought(chunk.to_string()),
-            lines: None,
         });
         self.thought_block_open = true;
     }
@@ -106,16 +97,7 @@ impl ConversationBuffer {
         if !has_segment {
             self.segments.push(Segment {
                 content: SegmentContent::ToolCall(tool_id.to_string()),
-                lines: None,
             });
-        }
-    }
-
-    pub(crate) fn invalidate_tool_segment(&mut self, tool_id: &str) {
-        for segment in &mut self.segments {
-            if matches!(&segment.content, SegmentContent::ToolCall(id) if id == tool_id) {
-                segment.lines = None;
-            }
         }
     }
 
@@ -129,108 +111,36 @@ impl ConversationBuffer {
         removed
     }
 
-    pub(crate) fn flush_completed(
+    pub(crate) fn drain_completed(
         &mut self,
         tool_call_statuses: &ToolCallStatuses,
-        context: &ViewContext,
-    ) -> (Vec<Line>, Vec<String>) {
+    ) -> (Vec<SegmentContent>, Vec<String>) {
         let drained = self.drain_segments_except(|seg| {
             matches!(seg, SegmentContent::ToolCall(id) if tool_call_statuses.is_tool_running(id))
         });
 
-        let mut scrollback_lines: Vec<Line> = Vec::new();
-        let mut last_segment_kind = None;
+        let mut content = Vec::new();
         let mut completed_tool_ids = Vec::new();
 
         for segment in drained {
-            let kind = discriminant(&segment.content);
-            let lines = segment.lines.unwrap_or_else(|| {
-                render_stream_segment(&segment.content, tool_call_statuses, context)
-            });
-            extend_with_vertical_margin(
-                &mut scrollback_lines,
-                &mut last_segment_kind,
-                kind,
-                &lines,
-            );
-            if let SegmentContent::ToolCall(id) = segment.content {
-                completed_tool_ids.push(id);
+            if let SegmentContent::ToolCall(ref id) = segment.content {
+                completed_tool_ids.push(id.clone());
             }
+            content.push(segment.content);
         }
 
-        (scrollback_lines, completed_tool_ids)
+        (content, completed_tool_ids)
     }
 
     fn segments_len(&self) -> usize {
         self.segments.len()
-    }
-
-    /// Pre-renders all segments so that `get_cached` can serve them
-    /// from an immutable reference during `render()`.
-    pub(crate) fn ensure_all_rendered(
-        &mut self,
-        tool_call_statuses: &ToolCallStatuses,
-        context: &ViewContext,
-    ) {
-        self.invalidate_active_tool_lines(tool_call_statuses);
-        for i in 0..self.segments.len() {
-            self.get_or_render(i, tool_call_statuses, context);
-        }
-    }
-
-    /// Returns cached rendered lines for segment `i`.
-    /// Panics if `ensure_all_rendered` was not called first.
-    fn get_cached(&self, i: usize) -> (Discriminant<SegmentContent>, &[Line]) {
-        let segment = &self.segments[i];
-        (
-            discriminant(&segment.content),
-            segment
-                .lines
-                .as_deref()
-                .expect("ensure_all_rendered must be called before render"),
-        )
-    }
-
-    /// Clears cached lines for active `ToolCall` segments so spinners keep
-    /// animating while completed tool output stays cached.
-    fn invalidate_active_tool_lines(&mut self, tool_call_statuses: &ToolCallStatuses) {
-        for segment in &mut self.segments {
-            if let SegmentContent::ToolCall(ref id) = segment.content
-                && tool_call_statuses.is_tool_active_for_render(id)
-            {
-                segment.lines = None;
-            }
-        }
-    }
-
-    /// Populates and returns the cached rendered lines for segment `i`,
-    /// along with its discriminant for vertical-margin logic.
-    fn get_or_render(
-        &mut self,
-        i: usize,
-        tool_call_statuses: &ToolCallStatuses,
-        context: &ViewContext,
-    ) -> (Discriminant<SegmentContent>, &[Line]) {
-        if self.segments[i].lines.is_none() {
-            let rendered =
-                render_stream_segment(&self.segments[i].content, tool_call_statuses, context);
-            self.segments[i].lines = Some(rendered);
-        }
-        (
-            discriminant(&self.segments[i].content),
-            self.segments[i].lines.as_deref().unwrap(),
-        )
-    }
-
-    #[cfg(test)]
-    fn cached_lines(&self, index: usize) -> Option<&[Line]> {
-        self.segments.get(index)?.lines.as_deref()
     }
 }
 
 pub(crate) struct ConversationWindow<'a> {
     pub loader: &'a Spinner,
     pub conversation: &'a ConversationBuffer,
+    pub tool_call_statuses: &'a ToolCallStatuses,
 }
 
 impl ConversationWindow<'_> {
@@ -238,9 +148,10 @@ impl ConversationWindow<'_> {
         let mut lines = self.loader.render(context);
         let mut last_segment_kind = None;
 
-        for i in 0..self.conversation.segments_len() {
-            let (kind, cached) = self.conversation.get_cached(i);
-            extend_with_vertical_margin(&mut lines, &mut last_segment_kind, kind, cached);
+        for segment in &self.conversation.segments {
+            let kind = discriminant(&segment.content);
+            let rendered = render_stream_segment(&segment.content, self.tool_call_statuses, context);
+            extend_with_vertical_margin(&mut lines, &mut last_segment_kind, kind, &rendered);
         }
 
         lines
@@ -257,6 +168,23 @@ fn render_stream_segment(
         SegmentContent::Text(text) => render_markdown(text, context),
         SegmentContent::ToolCall(id) => tool_call_statuses.render_tool(id, context),
     }
+}
+
+pub fn render_segments_to_lines(
+    segments: &[SegmentContent],
+    tool_call_statuses: &ToolCallStatuses,
+    context: &ViewContext,
+) -> Vec<Line> {
+    let mut lines = Vec::new();
+    let mut last_segment_kind = None;
+
+    for segment in segments {
+        let kind = discriminant(segment);
+        let rendered = render_stream_segment(segment, tool_call_statuses, context);
+        extend_with_vertical_margin(&mut lines, &mut last_segment_kind, kind, &rendered);
+    }
+
+    lines
 }
 
 fn extend_with_vertical_margin(
@@ -287,13 +215,13 @@ mod tests {
     #[test]
     fn renders_empty_when_loader_and_segments_are_empty() {
         let loader = Spinner::default();
-        let mut conversation = ConversationBuffer::new();
+        let conversation = ConversationBuffer::new();
         let statuses = ToolCallStatuses::new();
         let context = ViewContext::new((80, 24));
-        conversation.ensure_all_rendered(&statuses, &context);
         let view = ConversationWindow {
             loader: &loader,
             conversation: &conversation,
+            tool_call_statuses: &statuses,
         };
 
         let lines = view.render(&context);
@@ -311,10 +239,10 @@ mod tests {
         ]);
         let statuses = ToolCallStatuses::new();
         let context = ViewContext::new((80, 24));
-        conversation.ensure_all_rendered(&statuses, &context);
         let view = ConversationWindow {
             loader: &loader,
             conversation: &conversation,
+            tool_call_statuses: &statuses,
         };
 
         let lines = view.render(&context);
@@ -337,10 +265,10 @@ mod tests {
         ]);
         let statuses = ToolCallStatuses::new();
         let context = ViewContext::new((80, 24));
-        conversation.ensure_all_rendered(&statuses, &context);
         let view = ConversationWindow {
             loader: &loader,
             conversation: &conversation,
+            tool_call_statuses: &statuses,
         };
 
         let lines = view.render(&context);
@@ -357,10 +285,10 @@ mod tests {
         conversation.append_text_chunk("hello");
         let statuses = ToolCallStatuses::new();
         let context = ViewContext::new((80, 24));
-        conversation.ensure_all_rendered(&statuses, &context);
         let view = ConversationWindow {
             loader: &loader,
             conversation: &conversation,
+            tool_call_statuses: &statuses,
         };
 
         let lines = view.render(&context);
@@ -403,228 +331,6 @@ mod tests {
     }
 
     #[test]
-    fn get_or_render_populates_cache_for_all_segments() {
-        let mut buffer = ConversationBuffer::new();
-        buffer.append_text_chunk("hello");
-        buffer.append_thought_chunk("thinking");
-        buffer.append_text_chunk("world");
-
-        let statuses = ToolCallStatuses::new();
-        let context = ViewContext::new((80, 24));
-
-        assert!(
-            !buffer.get_or_render(0, &statuses, &context).1.is_empty(),
-            "text segment should return lines"
-        );
-        assert!(
-            !buffer.get_or_render(1, &statuses, &context).1.is_empty(),
-            "thought segment should return lines"
-        );
-        assert!(
-            !buffer.get_or_render(2, &statuses, &context).1.is_empty(),
-            "text segment should return lines"
-        );
-
-        // Verify lines are cached for subsequent reads.
-        assert!(buffer.cached_lines(0).is_some());
-        assert!(buffer.cached_lines(1).is_some());
-        assert!(buffer.cached_lines(2).is_some());
-    }
-
-    #[test]
-    fn append_text_chunk_invalidates_cache() {
-        let mut buffer = ConversationBuffer::new();
-        buffer.append_text_chunk("hello");
-        let statuses = ToolCallStatuses::new();
-        let context = ViewContext::new((80, 24));
-        buffer.get_or_render(0, &statuses, &context);
-        assert!(buffer.cached_lines(0).is_some());
-
-        // Append more text to the same segment — cache should be cleared.
-        buffer.append_text_chunk(" world");
-        assert!(buffer.cached_lines(0).is_none());
-    }
-
-    #[test]
-    fn flush_completed_clears_cache() {
-        let mut buffer = ConversationBuffer::new();
-        buffer.append_text_chunk("hello");
-        let statuses = ToolCallStatuses::new();
-        let context = ViewContext::new((80, 24));
-        buffer.get_or_render(0, &statuses, &context);
-
-        let _ = buffer.flush_completed(&statuses, &context);
-        assert!(buffer.cached_lines(0).is_none());
-    }
-
-    #[test]
-    fn set_segments_resets_cache() {
-        let mut buffer = ConversationBuffer::new();
-        buffer.append_text_chunk("hello");
-        let statuses = ToolCallStatuses::new();
-        let context = ViewContext::new((80, 24));
-        buffer.get_or_render(0, &statuses, &context);
-
-        buffer.set_segments(vec![
-            SegmentContent::Text("a".to_string()),
-            SegmentContent::Text("b".to_string()),
-        ]);
-
-        assert!(buffer.cached_lines(0).is_none());
-        assert!(buffer.cached_lines(1).is_none());
-    }
-
-    #[test]
-    fn render_uses_cached_lines() {
-        let loader = Spinner::default();
-        let mut buffer = ConversationBuffer::new();
-        buffer.append_text_chunk("cached text");
-        let statuses = ToolCallStatuses::new();
-        let context = ViewContext::new((80, 24));
-        buffer.get_or_render(0, &statuses, &context);
-        buffer.ensure_all_rendered(&statuses, &context);
-        let view = ConversationWindow {
-            loader: &loader,
-            conversation: &buffer,
-        };
-
-        let lines = view.render(&context);
-        assert!(!lines.is_empty());
-        assert!(lines[0].plain_text().contains("cached text"));
-    }
-
-    #[test]
-    fn invalidate_active_tool_lines_clears_only_running_tool_segments() {
-        let mut buffer = ConversationBuffer::new();
-        buffer.append_text_chunk("text");
-        buffer.append_thought_chunk("thought");
-        buffer.ensure_tool_segment("tool-1");
-        buffer.ensure_tool_segment("tool-2");
-
-        let mut statuses = ToolCallStatuses::new();
-        statuses.on_tool_call(&agent_client_protocol::ToolCall::new("tool-1", "Read file"));
-        statuses.on_tool_call(&agent_client_protocol::ToolCall::new("tool-2", "Read file"));
-        statuses.on_tool_call_update(&agent_client_protocol::ToolCallUpdate::new(
-            "tool-2",
-            agent_client_protocol::ToolCallUpdateFields::new()
-                .status(agent_client_protocol::ToolCallStatus::Completed),
-        ));
-        let context = ViewContext::new((80, 24));
-        buffer.get_or_render(0, &statuses, &context);
-        buffer.get_or_render(1, &statuses, &context);
-        buffer.get_or_render(2, &statuses, &context);
-        buffer.get_or_render(3, &statuses, &context);
-        assert!(buffer.cached_lines(0).is_some());
-        assert!(buffer.cached_lines(1).is_some());
-        assert!(buffer.cached_lines(2).is_some());
-        assert!(buffer.cached_lines(3).is_some());
-
-        buffer.invalidate_active_tool_lines(&statuses);
-
-        assert!(
-            buffer.cached_lines(0).is_some(),
-            "text cache should survive"
-        );
-        assert!(
-            buffer.cached_lines(1).is_some(),
-            "thought cache should survive"
-        );
-        assert!(
-            buffer.cached_lines(2).is_none(),
-            "running tool cache should be cleared"
-        );
-        assert!(
-            buffer.cached_lines(3).is_some(),
-            "completed tool cache should survive"
-        );
-    }
-
-    #[test]
-    fn invalidate_active_tool_lines_keeps_completed_sub_agent_segments_cached() {
-        let mut buffer = ConversationBuffer::new();
-        buffer.ensure_tool_segment("parent-1");
-
-        let mut statuses = ToolCallStatuses::new();
-        statuses.on_tool_call(&agent_client_protocol::ToolCall::new(
-            "parent-1",
-            "spawn_subagent",
-        ));
-        statuses.on_tool_call_update(&agent_client_protocol::ToolCallUpdate::new(
-            "parent-1",
-            agent_client_protocol::ToolCallUpdateFields::new()
-                .status(agent_client_protocol::ToolCallStatus::Completed),
-        ));
-        statuses.on_sub_agent_progress(
-            &serde_json::from_str(
-                r#"{"parent_tool_id":"parent-1","task_id":"task-1","agent_name":"explorer","event":{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}}"#,
-            )
-            .unwrap(),
-        );
-        statuses.on_sub_agent_progress(
-            &serde_json::from_str(
-                r#"{"parent_tool_id":"parent-1","task_id":"task-1","agent_name":"explorer","event":{"ToolResult":{"result":{"id":"c1","name":"grep","arguments":"{}","result":"ok"},"model_name":"m"}}}"#,
-            )
-            .unwrap(),
-        );
-        statuses.on_sub_agent_progress(
-            &serde_json::from_str(
-                r#"{"parent_tool_id":"parent-1","task_id":"task-1","agent_name":"explorer","event":"Done"}"#,
-            )
-            .unwrap(),
-        );
-
-        let context = ViewContext::new((80, 24));
-        buffer.get_or_render(0, &statuses, &context);
-        assert!(buffer.cached_lines(0).is_some());
-
-        buffer.invalidate_active_tool_lines(&statuses);
-
-        assert!(
-            buffer.cached_lines(0).is_some(),
-            "completed sub-agent segment should stay cached"
-        );
-    }
-
-    #[test]
-    fn append_thought_chunk_invalidates_cache() {
-        let mut buffer = ConversationBuffer::new();
-        buffer.append_thought_chunk("first");
-
-        let statuses = ToolCallStatuses::new();
-        let context = ViewContext::new((80, 24));
-        buffer.get_or_render(0, &statuses, &context);
-        assert!(buffer.cached_lines(0).is_some());
-
-        buffer.append_thought_chunk(" more");
-        assert!(
-            buffer.cached_lines(0).is_none(),
-            "cache should be cleared on append"
-        );
-    }
-
-    #[test]
-    fn invalidate_tool_segment_clears_only_matching_tool_cache() {
-        let mut buffer = ConversationBuffer::new();
-        buffer.ensure_tool_segment("tool-1");
-        buffer.ensure_tool_segment("tool-2");
-
-        let mut statuses = ToolCallStatuses::new();
-        statuses.on_tool_call(&agent_client_protocol::ToolCall::new("tool-1", "Read file"));
-        statuses.on_tool_call(&agent_client_protocol::ToolCall::new("tool-2", "Read file"));
-        let context = ViewContext::new((80, 24));
-
-        buffer.get_or_render(0, &statuses, &context);
-        buffer.get_or_render(1, &statuses, &context);
-        assert!(buffer.cached_lines(0).is_some());
-        assert!(buffer.cached_lines(1).is_some());
-
-        buffer.invalidate_tool_segment("tool-2");
-
-        assert!(buffer.cached_lines(0).is_some());
-        assert!(buffer.cached_lines(1).is_none());
-    }
-
-    #[test]
     fn clear_removes_segments_and_resets_state() {
         let mut buffer = ConversationBuffer::new();
         buffer.append_thought_chunk("thinking");
@@ -639,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn flush_completed_returns_lines_and_tool_ids() {
+    fn drain_completed_returns_content_and_tool_ids() {
         use agent_client_protocol as acp;
 
         let mut buffer = ConversationBuffer::new();
@@ -655,16 +361,17 @@ mod tests {
         );
         statuses.on_tool_call_update(&update);
 
-        let context = ViewContext::new((80, 24));
-        let (lines, tool_ids) = buffer.flush_completed(&statuses, &context);
+        let (content, tool_ids) = buffer.drain_completed(&statuses);
 
-        assert!(!lines.is_empty(), "should produce scrollback lines");
+        assert_eq!(content.len(), 2, "should have text and tool content");
+        assert!(matches!(content[0], SegmentContent::Text(_)));
+        assert!(matches!(content[1], SegmentContent::ToolCall(_)));
         assert_eq!(tool_ids, vec!["tool-1"]);
         assert_eq!(buffer.segments().len(), 0, "all segments should be drained");
     }
 
     #[test]
-    fn flush_completed_keeps_running_tools() {
+    fn drain_completed_keeps_running_tools() {
         use agent_client_protocol as acp;
 
         let mut buffer = ConversationBuffer::new();
@@ -676,10 +383,10 @@ mod tests {
         statuses.on_tool_call(&tc);
         // tool-1 stays Running (no completion update)
 
-        let context = ViewContext::new((80, 24));
-        let (lines, tool_ids) = buffer.flush_completed(&statuses, &context);
+        let (content, tool_ids) = buffer.drain_completed(&statuses);
 
-        assert!(!lines.is_empty(), "text segment should still produce lines");
+        assert_eq!(content.len(), 1, "text segment should still be drained");
+        assert!(matches!(content[0], SegmentContent::Text(_)));
         assert!(tool_ids.is_empty(), "running tool should not be drained");
         let segments: Vec<_> = buffer.segments().collect();
         assert_eq!(segments.len(), 1, "running tool should remain");
@@ -687,35 +394,5 @@ mod tests {
             segments[0],
             SegmentContent::ToolCall(id) if id == "tool-1"
         ));
-    }
-
-    #[test]
-    fn flush_completed_reuses_cached_lines() {
-        use agent_client_protocol as acp;
-
-        let mut buffer = ConversationBuffer::new();
-        buffer.append_text_chunk("cached");
-
-        let mut statuses = ToolCallStatuses::new();
-        let tc = acp::ToolCall::new("tool-1", "Read file");
-        statuses.on_tool_call(&tc);
-        buffer.ensure_tool_segment("tool-1");
-        let update = acp::ToolCallUpdate::new(
-            "tool-1",
-            acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::Completed),
-        );
-        statuses.on_tool_call_update(&update);
-
-        let context = ViewContext::new((80, 24));
-
-        // Pre-render to populate cache for the text segment.
-        buffer.get_or_render(0, &statuses, &context);
-        assert!(buffer.cached_lines(0).is_some());
-
-        let (lines, tool_ids) = buffer.flush_completed(&statuses, &context);
-
-        assert!(!lines.is_empty());
-        assert!(lines.iter().any(|l| l.plain_text().contains("cached")));
-        assert_eq!(tool_ids, vec!["tool-1"]);
     }
 }

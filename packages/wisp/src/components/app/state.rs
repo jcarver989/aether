@@ -1,7 +1,7 @@
 use super::{GitDiffMode, ScreenMode};
 use crate::components::config_menu::ConfigMenu;
 use crate::components::config_overlay::ConfigOverlay;
-use crate::components::conversation_window::ConversationBuffer;
+use crate::components::conversation_window::{ConversationBuffer, SegmentContent};
 use crate::components::elicitation_form::ElicitationForm;
 use crate::components::plan_tracker::PlanTracker;
 use crate::components::progress_indicator::ProgressIndicator;
@@ -11,30 +11,21 @@ use crate::components::session_picker::{SessionEntry, SessionPicker};
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::keybindings::Keybindings;
 use crate::settings::{list_theme_files, load_or_create_settings};
-use crate::tui::{FocusRing, Line, Spinner, ViewContext};
-use acp_utils::config_option_id::ConfigOptionId;
+use crate::tui::{FocusRing, Spinner, ViewContext};
 use acp_utils::notifications::McpServerStatusEntry;
-use agent_client_protocol::{
-    self as acp, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
-    SessionConfigSelectOptions,
-};
+use agent_client_protocol::{self as acp, SessionConfigOption};
 use std::path::PathBuf;
-use std::time::Instant;
-use utils::ReasoningEffort;
 
 pub(super) const FOCUS_COMPOSER: usize = 0;
 pub(super) const FOCUS_CONFIG_OVERLAY: usize = 1;
 pub(super) const FOCUS_ELICITATION: usize = 2;
 
 pub struct UiState {
-    pub(crate) tool_call_statuses: ToolCallStatuses,
+    pub tool_call_statuses: ToolCallStatuses,
     pub(crate) grid_loader: Spinner,
     pub(crate) conversation: ConversationBuffer,
     pub(crate) prompt_composer: PromptComposer,
     pub(crate) agent_name: String,
-    pub(crate) mode_display: Option<String>,
-    pub(crate) model_display: Option<String>,
-    pub(crate) reasoning_effort: Option<ReasoningEffort>,
     pub(crate) config_options: Vec<SessionConfigOption>,
     pub(crate) waiting_for_response: bool,
     pub(crate) context_usage_pct: Option<u8>,
@@ -47,9 +38,6 @@ pub struct UiState {
     pub(crate) plan_tracker: PlanTracker,
     pub(crate) screen_mode: ScreenMode,
     pub git_diff_mode: GitDiffMode,
-    pub cached_visible_plan_entries: Vec<acp::PlanEntry>,
-    pub(crate) cached_plan_version: u64,
-    pub(crate) cached_plan_tick: Instant,
     pub exit_requested: bool,
     pub(super) focus: FocusRing,
 }
@@ -68,9 +56,6 @@ impl UiState {
             conversation: ConversationBuffer::new(),
             prompt_composer: PromptComposer::new(keybindings.clone()),
             agent_name,
-            mode_display: extract_mode_display(config_options),
-            model_display: extract_model_display(config_options),
-            reasoning_effort: extract_reasoning_effort(config_options),
             config_options: config_options.to_vec(),
             waiting_for_response: false,
             context_usage_pct: None,
@@ -83,9 +68,6 @@ impl UiState {
             plan_tracker: PlanTracker::default(),
             screen_mode: ScreenMode::Conversation,
             git_diff_mode: GitDiffMode::new(working_dir),
-            cached_visible_plan_entries: Vec::new(),
-            cached_plan_version: 0,
-            cached_plan_tick: Instant::now(),
             exit_requested: false,
             focus: FocusRing::new(3),
         }
@@ -116,9 +98,6 @@ impl UiState {
     }
 
     pub(crate) fn update_config_options(&mut self, config_options: &[SessionConfigOption]) {
-        self.mode_display = extract_mode_display(config_options);
-        self.model_display = extract_model_display(config_options);
-        self.reasoning_effort = extract_reasoning_effort(config_options);
         self.config_options = config_options.to_vec();
     }
 
@@ -159,8 +138,6 @@ impl UiState {
         let progress = self.tool_call_statuses.progress();
         self.progress_indicator
             .update(progress.completed_top_level, progress.total_top_level);
-        self.conversation
-            .ensure_all_rendered(&self.tool_call_statuses, context);
 
         if matches!(self.screen_mode, ScreenMode::GitDiff) {
             self.git_diff_mode.refresh_caches(context);
@@ -177,15 +154,7 @@ impl UiState {
             }
         }
 
-        let plan_version = self.plan_tracker.version();
-        let last_tick = self.plan_tracker.last_tick();
-        if plan_version != self.cached_plan_version || last_tick != self.cached_plan_tick {
-            let grace_period = self.plan_tracker.grace_period;
-            self.cached_visible_plan_entries =
-                self.plan_tracker.visible_entries(last_tick, grace_period);
-            self.cached_plan_version = plan_version;
-            self.cached_plan_tick = last_tick;
-        }
+        self.plan_tracker.cached_visible_entries();
     }
 
     #[allow(dead_code)]
@@ -195,16 +164,15 @@ impl UiState {
         }
     }
 
-    pub fn flush_completed(&mut self, context: &ViewContext) -> Vec<Line> {
-        let (scrollback_lines, completed_tool_ids) = self
-            .conversation
-            .flush_completed(&self.tool_call_statuses, context);
+    pub fn drain_completed(&mut self) -> (Vec<SegmentContent>, Vec<String>) {
+        self.conversation
+            .drain_completed(&self.tool_call_statuses)
+    }
 
-        for id in completed_tool_ids {
-            self.tool_call_statuses.remove_tool(&id);
+    pub fn remove_tools(&mut self, tool_ids: &[String]) {
+        for id in tool_ids {
+            self.tool_call_statuses.remove_tool(id);
         }
-
-        scrollback_lines
     }
 
     pub(crate) fn reset_after_context_cleared(&mut self) {
@@ -218,157 +186,9 @@ impl UiState {
     }
 }
 
-pub(super) fn is_cycleable_mode_option(option: &SessionConfigOption) -> bool {
-    matches!(option.kind, SessionConfigKind::Select(_))
-        && option.category == Some(SessionConfigOptionCategory::Mode)
-}
-
-pub(super) fn option_display_name(
-    options: &SessionConfigSelectOptions,
-    current_value: &acp::SessionConfigValueId,
-) -> Option<String> {
-    match options {
-        SessionConfigSelectOptions::Ungrouped(options) => options
-            .iter()
-            .find(|option| &option.value == current_value)
-            .map(|option| option.name.clone()),
-        SessionConfigSelectOptions::Grouped(groups) => groups
-            .iter()
-            .flat_map(|group| group.options.iter())
-            .find(|option| &option.value == current_value)
-            .map(|option| option.name.clone()),
-        _ => None,
-    }
-}
-
-pub(super) fn extract_select_display(
-    config_options: &[SessionConfigOption],
-    id: ConfigOptionId,
-) -> Option<String> {
-    let option = config_options
-        .iter()
-        .find(|option| option.id.0.as_ref() == id.as_str())?;
-
-    let SessionConfigKind::Select(ref select) = option.kind else {
-        return None;
-    };
-
-    option_display_name(&select.options, &select.current_value)
-}
-
-pub(super) fn extract_mode_display(config_options: &[SessionConfigOption]) -> Option<String> {
-    extract_select_display(config_options, ConfigOptionId::Mode)
-}
-
-pub(super) fn extract_model_display(config_options: &[SessionConfigOption]) -> Option<String> {
-    let option = config_options
-        .iter()
-        .find(|option| option.id.0.as_ref() == ConfigOptionId::Model.as_str())?;
-
-    let SessionConfigKind::Select(ref select) = option.kind else {
-        return None;
-    };
-
-    let options = match &select.options {
-        SessionConfigSelectOptions::Ungrouped(options) => options,
-        SessionConfigSelectOptions::Grouped(_) => {
-            return extract_select_display(config_options, ConfigOptionId::Model);
-        }
-        _ => return None,
-    };
-
-    let current = select.current_value.0.as_ref();
-    if current.contains(',') {
-        let names: Vec<&str> = current
-            .split(',')
-            .filter_map(|part| {
-                let trimmed = part.trim();
-                options
-                    .iter()
-                    .find(|option| option.value.0.as_ref() == trimmed)
-                    .map(|option| option.name.as_str())
-            })
-            .collect();
-        if names.is_empty() {
-            None
-        } else {
-            Some(names.join(" + "))
-        }
-    } else {
-        extract_select_display(config_options, ConfigOptionId::Model)
-    }
-}
-
-pub(super) fn extract_reasoning_effort(
-    config_options: &[SessionConfigOption],
-) -> Option<ReasoningEffort> {
-    let option = config_options
-        .iter()
-        .find(|option| option.id.0.as_ref() == ConfigOptionId::ReasoningEffort.as_str())?;
-
-    let SessionConfigKind::Select(ref select) = option.kind else {
-        return None;
-    };
-
-    ReasoningEffort::parse(&select.current_value.0).unwrap_or(None)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_client_protocol::SessionConfigOptionCategory;
-
-    #[test]
-    fn ui_state_new_initializes_derived_displays() {
-        let config_options = vec![
-            SessionConfigOption::select(
-                "mode",
-                "Mode",
-                "planner",
-                vec![
-                    acp::SessionConfigSelectOption::new("planner", "Planner"),
-                    acp::SessionConfigSelectOption::new("coder", "Coder"),
-                ],
-            )
-            .category(SessionConfigOptionCategory::Mode),
-            SessionConfigOption::select(
-                "model",
-                "Model",
-                "a:x,b:y",
-                vec![
-                    acp::SessionConfigSelectOption::new("a:x", "Alpha / X"),
-                    acp::SessionConfigSelectOption::new("b:y", "Beta / Y"),
-                ],
-            )
-            .category(SessionConfigOptionCategory::Model),
-            SessionConfigOption::select(
-                ConfigOptionId::ReasoningEffort.as_str(),
-                "Reasoning",
-                "high",
-                vec![
-                    acp::SessionConfigSelectOption::new("none", "None"),
-                    acp::SessionConfigSelectOption::new("high", "High"),
-                ],
-            ),
-        ];
-
-        let state = UiState::new(
-            "test-agent".to_string(),
-            &config_options,
-            vec![acp::AuthMethod::Agent(acp::AuthMethodAgent::new(
-                "anthropic",
-                "Anthropic",
-            ))],
-            PathBuf::from("."),
-        );
-
-        assert_eq!(state.agent_name, "test-agent");
-        assert_eq!(state.mode_display.as_deref(), Some("Planner"));
-        assert_eq!(state.model_display.as_deref(), Some("Alpha / X + Beta / Y"));
-        assert_eq!(state.reasoning_effort, Some(ReasoningEffort::High));
-        assert_eq!(state.config_options.len(), 3);
-        assert_eq!(state.auth_methods.len(), 1);
-    }
 
     #[test]
     fn ui_state_new_initializes_defaults() {

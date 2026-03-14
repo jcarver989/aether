@@ -6,51 +6,23 @@ use crate::components::plan_view::PlanView;
 use crate::components::status_line::StatusLine;
 use crate::tui::{Component, Cursor, Frame, Layout, ViewContext};
 use acp_utils::notifications::McpServerStatus;
-use agent_client_protocol as acp;
-use utils::ReasoningEffort;
 
-struct StatusLineProps {
-    agent_name: String,
-    mode_display: Option<String>,
-    model_display: Option<String>,
-    reasoning_effort: Option<ReasoningEffort>,
-    context_pct_left: Option<u8>,
-    waiting_for_response: bool,
-    unhealthy_server_count: usize,
-}
-
-fn status_line_props(state: &UiState) -> StatusLineProps {
+pub fn build_frame(
+    state: &UiState,
+    git_diff_mode: &GitDiffMode,
+    context: &ViewContext,
+) -> Frame {
     let unhealthy_count = state
         .server_statuses
         .iter()
         .filter(|status| !matches!(status.status, McpServerStatus::Connected { .. }))
         .count();
-    StatusLineProps {
-        agent_name: state.agent_name.clone(),
-        mode_display: state.mode_display.clone(),
-        model_display: state.model_display.clone(),
-        reasoning_effort: state.reasoning_effort,
+    let status_line = StatusLine {
+        agent_name: &state.agent_name,
+        config_options: &state.config_options,
         context_pct_left: state.context_usage_pct,
         waiting_for_response: state.waiting_for_response,
         unhealthy_server_count: unhealthy_count,
-    }
-}
-
-pub fn build_frame(
-    state: &UiState,
-    git_diff_mode: &GitDiffMode,
-    plan_entries: &[acp::PlanEntry],
-    context: &ViewContext,
-) -> Frame {
-    let s = status_line_props(state);
-    let status_line = StatusLine {
-        agent_name: &s.agent_name,
-        mode_display: s.mode_display.as_deref(),
-        model_display: s.model_display.as_deref(),
-        reasoning_effort: s.reasoning_effort,
-        context_pct_left: s.context_pct_left,
-        waiting_for_response: s.waiting_for_response,
-        unhealthy_server_count: s.unhealthy_server_count,
     };
 
     if let Some(ref overlay) = state.config_overlay {
@@ -95,9 +67,10 @@ pub fn build_frame(
     let conversation_window = ConversationWindow {
         loader: &state.grid_loader,
         conversation: &state.conversation,
+        tool_call_statuses: &state.tool_call_statuses,
     };
     let plan_view = PlanView {
-        entries: plan_entries,
+        entries: state.plan_tracker.cached_entries(),
     };
 
     let mut layout = Layout::new();
@@ -112,7 +85,7 @@ pub fn build_frame(
         layout.section(session_picker.render(context));
     }
     if let Some(ref elicitation_form) = state.elicitation_form {
-        layout.section(elicitation_form.form.render(context));
+        layout.section(elicitation_form.render(context));
     }
     layout.section(status_line.render(context));
     layout.into_frame()

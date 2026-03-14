@@ -8,10 +8,10 @@ use crate::components::provider_login::{
 use crate::components::server_status::{
     ServerStatusMessage, ServerStatusOverlay, server_status_summary,
 };
-use crate::settings::{list_theme_files, load_or_create_settings};
+use crate::settings::{list_theme_files, load_or_create_settings, save_settings};
 use crate::tui::Panel;
 use crate::tui::{Component, Event, FocusRing, Line, ViewContext};
-use acp_utils::config_option_id::ConfigOptionId;
+use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use acp_utils::notifications::McpServerStatusEntry;
 use agent_client_protocol::{self as acp, SessionConfigKind, SessionConfigOption};
 use unicode_width::UnicodeWidthStr;
@@ -46,7 +46,8 @@ pub struct ConfigOverlay {
 #[derive(Debug)]
 pub enum ConfigOverlayMessage {
     Close,
-    ApplyConfigChanges(Vec<ConfigChange>),
+    SetConfigOption { config_id: String, value: String },
+    SetTheme(crate::tui::Theme),
     AuthenticateServer(String),
     AuthenticateProvider(String),
 }
@@ -200,6 +201,28 @@ impl ConfigOverlay {
         self.picker.is_some()
     }
 
+    fn process_config_changes(&self, changes: Vec<ConfigChange>) -> Vec<ConfigOverlayMessage> {
+        let mut messages = Vec::new();
+        for change in changes {
+            if change.config_id == THEME_CONFIG_ID {
+                let file = theme_file_from_picker_value(&change.new_value);
+                let mut settings = load_or_create_settings();
+                settings.theme.file = file;
+                if let Err(err) = save_settings(&settings) {
+                    tracing::warn!("Failed to persist theme setting: {err}");
+                }
+                let theme = crate::settings::load_theme(&settings);
+                messages.push(ConfigOverlayMessage::SetTheme(theme));
+            } else {
+                messages.push(ConfigOverlayMessage::SetConfigOption {
+                    config_id: change.config_id,
+                    value: change.new_value,
+                });
+            }
+        }
+        messages
+    }
+
     fn footer_text(&self) -> &'static str {
         match self.focus.focused() {
             FOCUS_MODEL_SELECTOR => {
@@ -265,7 +288,7 @@ impl Component for ConfigOverlay {
                         if changes.is_empty() {
                             Some(vec![])
                         } else {
-                            Some(vec![ConfigOverlayMessage::ApplyConfigChanges(changes)])
+                            Some(self.process_config_changes(changes))
                         }
                     }
                     None => Some(vec![]),
@@ -286,7 +309,7 @@ impl Component for ConfigOverlay {
                         match change {
                             Some(change) => {
                                 self.menu.apply_change(&change);
-                                Some(vec![ConfigOverlayMessage::ApplyConfigChanges(vec![change])])
+                                Some(self.process_config_changes(vec![change]))
                             }
                             None => Some(vec![]),
                         }
@@ -381,6 +404,15 @@ impl Component for ConfigOverlay {
             .gap(GAP);
         container.push(child_lines);
         container.render(context)
+    }
+}
+
+fn theme_file_from_picker_value(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
     }
 }
 
@@ -731,12 +763,11 @@ mod tests {
 
         let messages = outcome.unwrap();
         match messages.as_slice() {
-            [ConfigOverlayMessage::ApplyConfigChanges(changes)] => {
-                assert_eq!(changes.len(), 1);
-                assert_eq!(changes[0].config_id, "provider");
-                assert_eq!(changes[0].new_value, "ollama");
+            [ConfigOverlayMessage::SetConfigOption { config_id, value }] => {
+                assert_eq!(config_id, "provider");
+                assert_eq!(value, "ollama");
             }
-            other => panic!("expected ApplyConfigChanges, got: {other:?}"),
+            other => panic!("expected SetConfigOption, got: {other:?}"),
         }
     }
 
@@ -1102,20 +1133,118 @@ mod tests {
         let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc)));
 
         let messages = outcome.unwrap();
-        match messages.as_slice() {
-            [ConfigOverlayMessage::ApplyConfigChanges(changes)] => {
-                let reasoning_change = changes.iter().find(|c| c.config_id == "reasoning_effort");
-                assert!(
-                    reasoning_change.is_some(),
-                    "should have reasoning_effort change; got: {changes:?}"
-                );
+        let reasoning_msg = messages.iter().find(|m| {
+            matches!(m, ConfigOverlayMessage::SetConfigOption { config_id, .. } if config_id == "reasoning_effort")
+        });
+        assert!(
+            reasoning_msg.is_some(),
+            "should have reasoning_effort SetConfigOption; got: {messages:?}"
+        );
+        match reasoning_msg.unwrap() {
+            ConfigOverlayMessage::SetConfigOption { value, .. } => {
                 assert_eq!(
-                    reasoning_change.unwrap().new_value,
-                    "high",
+                    value, "high",
                     "reasoning should be high after one right from medium"
                 );
             }
-            other => panic!("expected ApplyConfigChanges, got: {other:?}"),
+            other => panic!("expected SetConfigOption, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn theme_default_value_maps_to_none() {
+        assert_eq!(theme_file_from_picker_value("   "), None);
+    }
+
+    #[test]
+    fn theme_value_maps_to_some() {
+        assert_eq!(
+            theme_file_from_picker_value("catppuccin.tmTheme"),
+            Some("catppuccin.tmTheme".to_string())
+        );
+    }
+
+    #[test]
+    fn process_theme_change_persists_and_produces_set_theme() {
+        use crate::test_helpers::{CUSTOM_TMTHEME, with_wisp_home};
+        use crate::tui::Color;
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let themes_dir = temp_dir.path().join("themes");
+        fs::create_dir_all(&themes_dir).unwrap();
+        fs::write(themes_dir.join("custom.tmTheme"), CUSTOM_TMTHEME).unwrap();
+
+        with_wisp_home(temp_dir.path(), || {
+            let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+            let messages = overlay.process_config_changes(vec![ConfigChange {
+                config_id: THEME_CONFIG_ID.to_string(),
+                new_value: "custom.tmTheme".to_string(),
+            }]);
+
+            let theme_msg = messages.iter().find_map(|m| {
+                if let ConfigOverlayMessage::SetTheme(theme) = m {
+                    Some(theme)
+                } else {
+                    None
+                }
+            });
+            assert!(theme_msg.is_some(), "should produce SetTheme message");
+            assert_eq!(
+                theme_msg.unwrap().text_primary(),
+                Color::Rgb {
+                    r: 0x11,
+                    g: 0x22,
+                    b: 0x33
+                }
+            );
+
+            let loaded = crate::settings::load_or_create_settings();
+            assert_eq!(loaded.theme.file.as_deref(), Some("custom.tmTheme"));
+        });
+    }
+
+    #[test]
+    fn process_theme_change_persists_default_as_none() {
+        use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings};
+        use crate::test_helpers::with_wisp_home;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        with_wisp_home(temp_dir.path(), || {
+            save_settings(&WispSettings {
+                theme: WispThemeSettings {
+                    file: Some("old.tmTheme".to_string()),
+                },
+            })
+            .unwrap();
+
+            let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+            let _messages = overlay.process_config_changes(vec![ConfigChange {
+                config_id: THEME_CONFIG_ID.to_string(),
+                new_value: "   ".to_string(),
+            }]);
+
+            let loaded = crate::settings::load_or_create_settings();
+            assert_eq!(loaded.theme.file, None);
+        });
+    }
+
+    #[test]
+    fn process_non_theme_change_produces_set_config_option() {
+        let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+        let messages = overlay.process_config_changes(vec![ConfigChange {
+            config_id: "provider".to_string(),
+            new_value: "ollama".to_string(),
+        }]);
+
+        match messages.as_slice() {
+            [ConfigOverlayMessage::SetConfigOption { config_id, value }] => {
+                assert_eq!(config_id, "provider");
+                assert_eq!(value, "ollama");
+            }
+            other => panic!("expected SetConfigOption, got: {other:?}"),
         }
     }
 }

@@ -12,6 +12,7 @@ mod tui;
 use crate::cli::Cli;
 use crate::components::app::view::build_frame;
 use crate::components::app::{UiState, UiStateController, ViewEffect, WispEvent};
+use crate::components::conversation_window::render_segments_to_lines;
 use crate::error::AppError;
 use crate::runtime_state::RuntimeState;
 use crate::tui::Event;
@@ -65,12 +66,37 @@ async fn main() -> ExitCode {
     }
 }
 
-fn apply_effects(renderer: &mut Renderer<impl io::Write>, effects: Vec<ViewEffect>) -> Result<(), AppError> {
+fn apply_effects(
+    renderer: &mut Renderer<impl io::Write>,
+    state: &mut UiState,
+    effects: Vec<ViewEffect>,
+) -> Result<(), AppError> {
     for effect in effects {
         match effect {
             ViewEffect::ClearScreen => renderer.clear_screen()?,
-            ViewEffect::PushToScrollback(lines) => renderer.push_to_scrollback(&lines)?,
             ViewEffect::SetTheme(theme) => renderer.set_theme(theme),
+            ViewEffect::PushToScrollbackContent { content, completed_tool_ids } => {
+                let context = renderer.context();
+                let lines = render_segments_to_lines(&content, &state.tool_call_statuses, &context);
+                if !lines.is_empty() {
+                    renderer.push_to_scrollback(&lines)?;
+                }
+                state.remove_tools(&completed_tool_ids);
+            }
+            ViewEffect::PromptSubmitted { user_input } => {
+                let lines = vec![
+                    tui::Line::new(String::new()),
+                    tui::Line::new(user_input),
+                ];
+                renderer.push_to_scrollback(&lines)?;
+            }
+            ViewEffect::AttachmentWarnings(warnings) => {
+                let lines: Vec<tui::Line> = warnings
+                    .into_iter()
+                    .map(|w| tui::Line::new(format!("[wisp] {w}")))
+                    .collect();
+                renderer.push_to_scrollback(&lines)?;
+            }
         }
     }
     Ok(())
@@ -81,7 +107,7 @@ fn render(renderer: &mut Renderer<impl io::Write>, state: &mut UiState) -> Resul
     state.prepare_for_render(&context);
     let state: &UiState = state;
     renderer.render_frame(|ctx| {
-        build_frame(state, &state.git_diff_mode, &state.cached_visible_plan_entries, ctx)
+        build_frame(state, &state.git_diff_mode, ctx)
     })?;
     Ok(())
 }
@@ -123,9 +149,8 @@ async fn run_app(
                     renderer.on_resize((*cols, *rows));
                 }
                 if let Ok(tui_event) = Event::try_from(event) {
-                    let context = renderer.context();
-                    let effects = controller.handle_event(&mut state, &context, WispEvent::Terminal(tui_event)).await?;
-                    apply_effects(&mut renderer, effects)?;
+                    let effects = controller.handle_event(&mut state, WispEvent::Terminal(tui_event)).await?;
+                    apply_effects(&mut renderer, &mut state, effects)?;
                     if state.exit_requested { return Ok(()); }
                     render(&mut renderer, &mut state)?;
                 }
@@ -134,9 +159,8 @@ async fn run_app(
             app_event = external_fut => {
                 match app_event {
                     Some(event) => {
-                        let context = renderer.context();
-                        let effects = controller.handle_event(&mut state, &context, WispEvent::Acp(event)).await?;
-                        apply_effects(&mut renderer, effects)?;
+                        let effects = controller.handle_event(&mut state, WispEvent::Acp(event)).await?;
+                        apply_effects(&mut renderer, &mut state, effects)?;
                         if state.exit_requested { return Ok(()); }
                         render(&mut renderer, &mut state)?;
                     }
@@ -145,9 +169,8 @@ async fn run_app(
             }
 
             () = tick_fut => {
-                let context = renderer.context();
-                let effects = controller.handle_event(&mut state, &context, WispEvent::Terminal(Event::Tick)).await?;
-                apply_effects(&mut renderer, effects)?;
+                let effects = controller.handle_event(&mut state, WispEvent::Terminal(Event::Tick)).await?;
+                apply_effects(&mut renderer, &mut state, effects)?;
                 if state.exit_requested { return Ok(()); }
                 render(&mut renderer, &mut state)?;
             }

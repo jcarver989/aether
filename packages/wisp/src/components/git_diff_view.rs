@@ -1,4 +1,4 @@
-use crate::components::app::git_diff_mode::{PatchLineRef, QueuedComment};
+use crate::components::app::git_diff_mode::{PatchLineRef, QueuedComment, format_review_prompt};
 use crate::components::app::{GitDiffLoadState, GitDiffViewState, PatchFocus};
 use crate::git_diff::{FileDiff, FileStatus, PatchLineKind};
 use crate::tui::{Component, Event, KeyCode, Line, Span, Style, ViewContext, truncate_text};
@@ -6,7 +6,7 @@ use crate::tui::{Component, Event, KeyCode, Line, Span, Style, ViewContext, trun
 pub enum GitDiffViewMessage {
     Close,
     Refresh,
-    SubmitReview { comments: Vec<QueuedComment> },
+    SubmitPrompt(String),
 }
 
 pub struct GitDiffView<'a> {
@@ -188,7 +188,8 @@ impl GitDiffView<'_> {
             return vec![];
         }
         let comments = std::mem::take(&mut self.state.queued_comments);
-        vec![GitDiffViewMessage::SubmitReview { comments }]
+        let prompt = format_review_prompt(&comments);
+        vec![GitDiffViewMessage::SubmitPrompt(prompt)]
     }
 
     fn on_comment_input(&mut self, code: KeyCode) -> Vec<GitDiffViewMessage> {
@@ -1041,7 +1042,7 @@ mod tests {
             result
                 .unwrap_or_default()
                 .iter()
-                .any(|m| matches!(m, GitDiffViewMessage::SubmitReview { .. }))
+                .any(|m| matches!(m, GitDiffViewMessage::SubmitPrompt(_)))
         );
     }
 
