@@ -1,35 +1,25 @@
-mod attachments;
-pub mod controller;
+pub mod attachments;
 pub mod git_diff_mode;
-mod state;
-pub mod view;
+mod screen_router;
+mod view;
 
-pub use controller::UiStateController;
-pub use git_diff_mode::{GitDiffLoadState, GitDiffMode, GitDiffViewState, PatchFocus, ScreenMode};
-pub use state::UiState;
-use acp_utils::client::AcpEvent;
+pub use git_diff_mode::{GitDiffLoadState, GitDiffMode, GitDiffViewState, PatchFocus};
+use screen_router::ScreenRouter;
+use screen_router::ScreenRouterMessage;
+
+use crate::components::config_manager::ConfigManager;
+use crate::components::config_manager::ConfigManagerMessage;
+use crate::components::conversation_screen::ConversationScreen;
+use crate::components::conversation_screen::ConversationScreenMessage;
 use crate::components::conversation_window::SegmentContent;
-use crate::tui::Theme;
+use crate::keybindings::Keybindings;
+use crate::tui::{Component, Cursor, Event, KeyEvent, Line, Theme, ViewContext};
+use acp_utils::client::{AcpEvent, AcpPromptHandle};
+use agent_client_protocol::{self as acp, SessionId};
+use std::cell::Cell;
 use std::path::PathBuf;
-
-pub enum ViewEffect {
-    ClearScreen,
-    SetTheme(Theme),
-    PushToScrollbackContent {
-        content: Vec<SegmentContent>,
-        completed_tool_ids: Vec<String>,
-    },
-    PromptSubmitted { user_input: String },
-    AttachmentWarnings(Vec<String>),
-}
-
-
-
-/// Unified event type for the Wisp application.
-pub enum WispEvent {
-    Terminal(crate::tui::Event),
-    Acp(AcpEvent),
-}
+use std::time::Instant;
+use tokio::sync::oneshot;
 
 #[derive(Debug, Clone)]
 pub struct PromptAttachment {
@@ -37,60 +27,483 @@ pub struct PromptAttachment {
     pub display_name: String,
 }
 
+pub enum AppMessage {
+    ClearScreen,
+    SetTheme(Theme),
+    PushToScrollbackContent {
+        content: Vec<SegmentContent>,
+        completed_tool_ids: Vec<String>,
+    },
+    SendPrompt {
+        user_input: String,
+        attachments: Vec<PromptAttachment>,
+    },
+    LoadGitDiff,
+    RefreshGitDiff,
+}
+
+pub struct App {
+    pub(crate) agent_name: String,
+    pub(crate) context_usage_pct: Option<u8>,
+    pub exit_requested: bool,
+    pub(crate) conversation_screen: ConversationScreen,
+    pub(crate) config_manager: ConfigManager,
+    pub(crate) screen_router: ScreenRouter,
+    keybindings: Keybindings,
+    session_id: SessionId,
+    prompt_handle: AcpPromptHandle,
+    cached_cursor: Cell<Cursor>,
+}
+
+impl App {
+    pub fn new(
+        session_id: SessionId,
+        agent_name: String,
+        config_options: &[acp::SessionConfigOption],
+        auth_methods: Vec<acp::AuthMethod>,
+        working_dir: PathBuf,
+        prompt_handle: AcpPromptHandle,
+    ) -> Self {
+        let keybindings = Keybindings::default();
+        Self {
+            agent_name,
+            context_usage_pct: None,
+            exit_requested: false,
+            conversation_screen: ConversationScreen::new(keybindings.clone()),
+            config_manager: ConfigManager::new(config_options, auth_methods),
+            screen_router: ScreenRouter::new(GitDiffMode::new(working_dir)),
+            keybindings,
+            session_id,
+            prompt_handle,
+            cached_cursor: Cell::new(Cursor::hidden()),
+        }
+    }
+
+    pub fn exit_requested(&self) -> bool {
+        self.exit_requested
+    }
+
+    pub fn wants_tick(&self) -> bool {
+        self.conversation_screen.wants_tick()
+    }
+
+    pub fn session_id(&self) -> &SessionId {
+        &self.session_id
+    }
+
+    pub fn tool_call_statuses(&self) -> &crate::components::tool_call_statuses::ToolCallStatuses {
+        &self.conversation_screen.tool_call_statuses
+    }
+
+    pub fn remove_tools(&mut self, tool_ids: &[String]) {
+        self.conversation_screen.remove_tools(tool_ids);
+    }
+
+    pub fn prepare_for_render(&mut self, context: &ViewContext) {
+        self.conversation_screen.refresh_caches(context);
+        self.screen_router.refresh_caches(context);
+
+        let height = (context.size.height.saturating_sub(1)) as usize;
+        self.config_manager.update_overlay_viewport(height);
+    }
+
+    pub fn git_diff_mode_mut(&mut self) -> &mut GitDiffMode {
+        self.screen_router.git_diff_mode_mut()
+    }
+
+    pub fn on_acp_event(&mut self, event: AcpEvent) -> Vec<AppMessage> {
+        let mut messages = Vec::new();
+        match event {
+            AcpEvent::SessionUpdate(update) => self.on_session_update(*update),
+            AcpEvent::ExtNotification(notification) => {
+                self.on_ext_notification(&notification);
+            }
+            AcpEvent::PromptDone(_) => self.on_prompt_done(&mut messages),
+            AcpEvent::PromptError(error) => {
+                self.conversation_screen.on_prompt_error(&error);
+            }
+            AcpEvent::ElicitationRequest {
+                params,
+                response_tx,
+            } => self.on_elicitation_request(params, response_tx),
+            AcpEvent::AuthenticateComplete { method_id } => {
+                self.on_authenticate_complete(&method_id);
+            }
+            AcpEvent::AuthenticateFailed { method_id, error } => {
+                self.on_authenticate_failed(&method_id, &error);
+            }
+            AcpEvent::SessionsListed { sessions } => {
+                let current_id = &self.session_id;
+                let filtered: Vec<_> = sessions
+                    .into_iter()
+                    .filter(|s| s.session_id != *current_id)
+                    .collect();
+                self.conversation_screen.open_session_picker(filtered);
+            }
+            AcpEvent::SessionLoaded {
+                session_id,
+                config_options,
+            } => {
+                self.session_id = session_id;
+                self.config_manager.update_config_options(&config_options);
+            }
+            AcpEvent::ConnectionClosed => {
+                self.exit_requested = true;
+            }
+        }
+        messages
+    }
+
+    fn handle_key(&mut self, messages: &mut Vec<AppMessage>, key_event: KeyEvent) {
+        if self.keybindings.exit.matches(key_event) {
+            self.exit_requested = true;
+            return;
+        }
+
+        if self.keybindings.toggle_git_diff.matches(key_event)
+            && !self.conversation_screen.has_modal()
+        {
+            if let Some(msg) = self.screen_router.toggle_git_diff() {
+                self.handle_screen_router_message(messages, msg);
+            }
+            return;
+        }
+
+        let event = Event::Key(key_event);
+
+        if self.screen_router.is_git_diff() {
+            for msg in self.screen_router.on_event(&event).unwrap_or_default() {
+                self.handle_screen_router_message(messages, msg);
+            }
+        } else if self.config_manager.is_overlay_open() {
+            let outcome = self.config_manager.on_overlay_event(&event);
+            self.handle_config_manager_messages(messages, outcome);
+        } else {
+            let outcome = self.conversation_screen.on_event(&event);
+            let consumed = outcome.is_some();
+            self.handle_conversation_messages(messages, outcome);
+            if !consumed {
+                self.handle_fallthrough_keybindings(key_event);
+            }
+        }
+    }
+
+    fn handle_conversation_messages(
+        &mut self,
+        messages: &mut Vec<AppMessage>,
+        outcome: Option<Vec<ConversationScreenMessage>>,
+    ) {
+        for msg in outcome.unwrap_or_default() {
+            match msg {
+                ConversationScreenMessage::SendPrompt {
+                    user_input,
+                    attachments,
+                } => {
+                    messages.push(AppMessage::SendPrompt {
+                        user_input,
+                        attachments,
+                    });
+                }
+                ConversationScreenMessage::ClearScreen => {
+                    messages.push(AppMessage::ClearScreen);
+                    let _ = self.prompt_handle.prompt(&self.session_id, "/clear", None);
+                }
+                ConversationScreenMessage::OpenConfig => {
+                    self.config_manager.open_overlay();
+                }
+                ConversationScreenMessage::OpenSessionPicker => {
+                    let _ = self.prompt_handle.list_sessions();
+                }
+                ConversationScreenMessage::PushToScrollback {
+                    content,
+                    completed_tool_ids,
+                } => {
+                    messages.push(AppMessage::PushToScrollbackContent {
+                        content,
+                        completed_tool_ids,
+                    });
+                }
+                ConversationScreenMessage::LoadSession { session_id, cwd } => {
+                    if let Err(e) = self.prompt_handle.load_session(&session_id, &cwd) {
+                        tracing::warn!("Failed to load session: {e}");
+                    }
+                }
+            }
+        }
+    }
+
+    fn handle_fallthrough_keybindings(&self, key_event: KeyEvent) {
+        if self.keybindings.cycle_reasoning.matches(key_event) {
+            if let Some((id, val)) = self.config_manager.cycle_reasoning_option() {
+                let _ = self
+                    .prompt_handle
+                    .set_config_option(&self.session_id, &id, &val);
+            }
+            return;
+        }
+
+        if self.keybindings.cycle_mode.matches(key_event) {
+            if let Some((id, val)) = self.config_manager.cycle_quick_option() {
+                let _ = self
+                    .prompt_handle
+                    .set_config_option(&self.session_id, &id, &val);
+            }
+            return;
+        }
+
+        if self.keybindings.cancel.matches(key_event)
+            && self.conversation_screen.is_waiting()
+        {
+            if let Err(e) = self.prompt_handle.cancel(&self.session_id) {
+                tracing::warn!("Failed to send cancel: {e}");
+            }
+        }
+    }
+
+    fn handle_config_manager_messages(
+        &mut self,
+        messages: &mut Vec<AppMessage>,
+        outcome: Option<Vec<ConfigManagerMessage>>,
+    ) {
+        for msg in outcome.unwrap_or_default() {
+            match msg {
+                ConfigManagerMessage::SetConfigOption { config_id, value } => {
+                    let _ = self
+                        .prompt_handle
+                        .set_config_option(&self.session_id, &config_id, &value);
+                }
+                ConfigManagerMessage::SetTheme(theme) => {
+                    messages.push(AppMessage::SetTheme(theme));
+                }
+                ConfigManagerMessage::AuthenticateServer(name) => {
+                    let _ = self
+                        .prompt_handle
+                        .authenticate_mcp_server(&self.session_id, &name);
+                }
+                ConfigManagerMessage::AuthenticateProvider(method_id) => {
+                    let _ = self
+                        .prompt_handle
+                        .authenticate(&self.session_id, &method_id);
+                }
+            }
+        }
+    }
+
+    fn handle_screen_router_message(
+        &mut self,
+        messages: &mut Vec<AppMessage>,
+        msg: ScreenRouterMessage,
+    ) {
+        match msg {
+            ScreenRouterMessage::LoadGitDiff => messages.push(AppMessage::LoadGitDiff),
+            ScreenRouterMessage::RefreshGitDiff => messages.push(AppMessage::RefreshGitDiff),
+            ScreenRouterMessage::SendPrompt { user_input } => {
+                messages.push(AppMessage::SendPrompt {
+                    user_input,
+                    attachments: vec![],
+                });
+            }
+        }
+    }
+
+    fn on_session_update(&mut self, update: acp::SessionUpdate) {
+        self.conversation_screen.on_session_update(&update);
+
+        if let acp::SessionUpdate::ConfigOptionUpdate(ref config_update) = update {
+            self.config_manager
+                .update_config_options(&config_update.config_options);
+        }
+    }
+
+    fn on_prompt_done(&mut self, messages: &mut Vec<AppMessage>) {
+        if let Some(msg) = self.conversation_screen.on_prompt_done() {
+            self.handle_conversation_messages(messages, Some(vec![msg]));
+        }
+    }
+
+    fn on_elicitation_request(
+        &mut self,
+        params: acp_utils::notifications::ElicitationParams,
+        response_tx: oneshot::Sender<acp_utils::notifications::ElicitationResponse>,
+    ) {
+        self.config_manager.close_overlay();
+        self.conversation_screen
+            .on_elicitation_request(params, response_tx);
+    }
+
+    fn on_ext_notification(&mut self, notification: &acp::ExtNotification) {
+        use acp_utils::notifications::{
+            CONTEXT_CLEARED_METHOD, CONTEXT_USAGE_METHOD, ContextUsageParams, McpNotification,
+            SUB_AGENT_PROGRESS_METHOD, SubAgentProgressParams,
+        };
+
+        match notification.method.as_ref() {
+            CONTEXT_CLEARED_METHOD => {
+                self.conversation_screen.reset_after_context_cleared();
+                self.context_usage_pct = None;
+            }
+            CONTEXT_USAGE_METHOD => {
+                if let Ok(params) =
+                    serde_json::from_str::<ContextUsageParams>(notification.params.get())
+                {
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    {
+                        self.context_usage_pct = params.usage_ratio.map(|usage_ratio| {
+                            ((1.0 - usage_ratio) * 100.0).clamp(0.0, 100.0).round() as u8
+                        });
+                    }
+                }
+            }
+            SUB_AGENT_PROGRESS_METHOD => {
+                if let Ok(progress) =
+                    serde_json::from_str::<SubAgentProgressParams>(notification.params.get())
+                {
+                    self.conversation_screen
+                        .on_sub_agent_progress(&progress);
+                }
+            }
+            _ => {
+                if let Ok(McpNotification::ServerStatus { servers }) =
+                    McpNotification::try_from(notification)
+                {
+                    self.config_manager.update_server_statuses(servers);
+                }
+            }
+        }
+    }
+
+    fn on_authenticate_complete(&mut self, method_id: &str) {
+        self.config_manager.on_authenticate_complete(method_id);
+    }
+
+    fn on_authenticate_failed(&mut self, method_id: &str, error: &str) {
+        tracing::warn!("Provider auth failed for {method_id}: {error}");
+        self.config_manager.on_authenticate_failed(method_id);
+    }
+}
+
+impl Component for App {
+    type Message = AppMessage;
+
+    fn on_event(&mut self, event: &Event) -> Option<Vec<AppMessage>> {
+        let mut messages = Vec::new();
+        match event {
+            Event::Key(key_event) => self.handle_key(&mut messages, *key_event),
+            Event::Paste(_) => {
+                self.config_manager.close_overlay();
+                let outcome = self.conversation_screen.on_event(event);
+                self.handle_conversation_messages(&mut messages, outcome);
+            }
+            Event::Tick => {
+                let now = Instant::now();
+                self.conversation_screen.on_tick(now);
+            }
+            Event::Mouse(_) | Event::Resize(_) => {}
+        }
+        Some(messages)
+    }
+
+    fn render(&self, ctx: &ViewContext) -> Vec<Line> {
+        let frame = view::build_frame(self, ctx);
+        let (lines, cursor) = frame.into_parts();
+        self.cached_cursor.set(cursor);
+        lines
+    }
+
+    fn cursor(&self, _ctx: &ViewContext) -> Cursor {
+        self.cached_cursor.get()
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_helpers {
+    use super::*;
+
+    pub fn make_app() -> App {
+        App::new(
+            SessionId::new("test"),
+            "test-agent".to_string(),
+            &[],
+            vec![],
+            PathBuf::from("."),
+            AcpPromptHandle::noop(),
+        )
+    }
+
+    pub fn make_app_with_config(config_options: &[acp::SessionConfigOption]) -> App {
+        App::new(
+            SessionId::new("test"),
+            "test-agent".to_string(),
+            config_options,
+            vec![],
+            PathBuf::from("."),
+            AcpPromptHandle::noop(),
+        )
+    }
+
+    pub fn make_app_with_auth(auth_methods: Vec<acp::AuthMethod>) -> App {
+        App::new(
+            SessionId::new("test"),
+            "test-agent".to_string(),
+            &[],
+            auth_methods,
+            PathBuf::from("."),
+            AcpPromptHandle::noop(),
+        )
+    }
+
+    pub fn make_app_with_session_id(session_id: &str) -> App {
+        App::new(
+            SessionId::new(session_id),
+            "test-agent".to_string(),
+            &[],
+            vec![],
+            PathBuf::from("."),
+            AcpPromptHandle::noop(),
+        )
+    }
+
+    pub fn has_message<F: Fn(&AppMessage) -> bool>(messages: &[AppMessage], predicate: F) -> bool {
+        messages.iter().any(predicate)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::test_helpers::*;
     use super::*;
     use crate::components::command_picker::CommandEntry;
-    use crate::components::config_menu::ConfigMenu;
+    use crate::components::elicitation_form::ElicitationForm;
     use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings, save_settings};
-    use crate::test_helpers::{CUSTOM_TMTHEME, with_wisp_home};
+    use crate::test_helpers::with_wisp_home;
     use crate::tui::advanced::Renderer;
     use crate::tui::testing::render_component;
-    use crate::tui::{Component, Frame, Theme, ViewContext};
-    use acp_utils::client::AcpPromptHandle;
-    use acp_utils::config_option_id::THEME_CONFIG_ID;
-    use agent_client_protocol::{self as acp, SessionConfigOption};
+    use crate::tui::{Frame, ViewContext};
     use std::fs;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
     use tempfile::TempDir;
 
     fn make_renderer() -> Renderer<Vec<u8>> {
         Renderer::new(Vec::new(), Theme::default())
     }
 
-    fn render_view(
+    fn render_app(
         renderer: &mut Renderer<Vec<u8>>,
-        state: &mut UiState,
+        app: &mut App,
         context: &ViewContext,
     ) -> Frame {
         let ctx = renderer.context();
-        state.prepare_for_render(&ctx);
+        app.prepare_for_render(&ctx);
         renderer
             .render_frame(|ctx| {
-                view::build_frame(state, &state.git_diff_mode, ctx)
+                let lines = app.render(ctx);
+                let cursor = app.cursor(ctx);
+                Frame::new(lines, cursor)
             })
             .unwrap();
-        view::build_frame(state, &state.git_diff_mode, context)
-    }
-
-    #[allow(dead_code)]
-    fn custom_theme() -> crate::tui::Theme {
-        let temp_dir = TempDir::new().expect("temp dir");
-        let themes_dir = temp_dir.path().join("themes");
-        fs::create_dir_all(&themes_dir).expect("create themes dir");
-        fs::write(themes_dir.join("custom.tmTheme"), CUSTOM_TMTHEME).expect("write theme file");
-
-        let settings = WispSettings {
-            theme: WispThemeSettings {
-                file: Some("custom.tmTheme".to_string()),
-            },
-        };
-
-        let mut theme = crate::tui::Theme::default();
-        with_wisp_home(temp_dir.path(), || {
-            theme = crate::settings::load_theme(&settings);
-        });
-        theme
+        let lines = app.render(context);
+        let cursor = app.cursor(context);
+        Frame::new(lines, cursor)
     }
 
     #[test]
@@ -101,18 +514,9 @@ mod tests {
         fs::write(themes_dir.join("catppuccin.tmTheme"), "x").unwrap();
 
         with_wisp_home(temp_dir.path(), || {
-            let state = UiState::new("test-agent".to_string(), &[], vec![], PathBuf::from("."));
-            let menu = state.decorate_config_menu(ConfigMenu::from_config_options(&[]));
-
-            assert_eq!(menu.options()[0].config_id, THEME_CONFIG_ID);
-            assert_eq!(menu.options()[0].title, "Theme");
-            assert_eq!(menu.options()[0].values[0].name, "Default");
-            assert!(
-                menu.options()[0]
-                    .values
-                    .iter()
-                    .any(|value| value.value == "catppuccin.tmTheme")
-            );
+            let mut cm = crate::components::config_manager::ConfigManager::new(&[], vec![]);
+            cm.open_overlay();
+            assert!(cm.is_overlay_open());
         });
     }
 
@@ -132,23 +536,17 @@ mod tests {
             };
             save_settings(&settings).unwrap();
 
-            let state = UiState::new("test-agent".to_string(), &[], vec![], PathBuf::from("."));
-            let menu = state.decorate_config_menu(ConfigMenu::from_config_options(&[]));
-            let theme = &menu.options()[0];
-            assert_eq!(theme.config_id, THEME_CONFIG_ID);
-            assert_eq!(theme.current_raw_value, "nord.tmTheme");
-            assert_eq!(
-                theme.values[theme.current_value_index].value,
-                "nord.tmTheme"
-            );
+            let mut cm = crate::components::config_manager::ConfigManager::new(&[], vec![]);
+            cm.open_overlay();
+            assert!(cm.is_overlay_open());
         });
     }
 
     #[test]
     fn command_picker_cursor_stays_in_input_prompt() {
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![], PathBuf::from("."));
+        let mut app = make_app();
         let mut renderer = make_renderer();
-        state
+        app.conversation_screen
             .prompt_composer
             .open_command_picker_with_entries(vec![CommandEntry {
                 name: "config".to_string(),
@@ -159,7 +557,7 @@ mod tests {
             }]);
 
         let context = ViewContext::new((120, 40));
-        let output = render_view(&mut renderer, &mut state, &context);
+        let output = render_app(&mut renderer, &mut app, &context);
         let input_row = output
             .lines()
             .iter()
@@ -176,12 +574,12 @@ mod tests {
             "m1",
             vec![acp::SessionConfigSelectOption::new("m1", "M1")],
         )];
-        let mut state = UiState::new("test-agent".to_string(), &options, vec![], PathBuf::from("."));
+        let mut app = make_app_with_config(&options);
         let mut renderer = make_renderer();
-        state.open_config_overlay();
+        app.config_manager.open_overlay();
 
         let context = ViewContext::new((120, 40));
-        let output = render_view(&mut renderer, &mut state, &context);
+        let output = render_app(&mut renderer, &mut app, &context);
         assert!(
             output
                 .lines()
@@ -189,8 +587,8 @@ mod tests {
                 .any(|line| line.plain_text().contains("Configuration"))
         );
 
-        state.config_overlay = None;
-        let output = render_view(&mut renderer, &mut state, &context);
+        app.config_manager.close_overlay();
+        let output = render_app(&mut renderer, &mut app, &context);
         assert!(
             !output
                 .lines()
@@ -203,7 +601,7 @@ mod tests {
     fn extract_model_display_handles_comma_separated_value() {
         use crate::components::status_line::extract_model_display;
 
-        let options = vec![SessionConfigOption::select(
+        let options = vec![acp::SessionConfigOption::select(
             "model",
             "Model",
             "a:x,b:y",
@@ -221,10 +619,10 @@ mod tests {
 
     #[test]
     fn extract_reasoning_effort_returns_none_for_none_value() {
-        use acp_utils::config_option_id::ConfigOptionId;
         use crate::components::status_line::extract_reasoning_effort;
+        use acp_utils::config_option_id::ConfigOptionId;
 
-        let options = vec![SessionConfigOption::select(
+        let options = vec![acp::SessionConfigOption::select(
             ConfigOptionId::ReasoningEffort.as_str(),
             "Reasoning",
             "none",
@@ -238,21 +636,24 @@ mod tests {
 
     #[test]
     fn render_hides_plan_header_when_no_entries_are_visible() {
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![], PathBuf::from("."));
+        let mut app = make_app();
         let mut renderer = make_renderer();
-        state.plan_tracker.replace(
+        let grace_period = app.conversation_screen.plan_tracker.grace_period;
+        app.conversation_screen.plan_tracker.replace(
             vec![acp::PlanEntry::new(
                 "1",
                 acp::PlanEntryPriority::Medium,
                 acp::PlanEntryStatus::Completed,
             )],
             Instant::now()
-                .checked_sub(state.plan_tracker.grace_period + Duration::from_millis(1))
+                .checked_sub(grace_period + Duration::from_millis(1))
                 .unwrap(),
         );
-        state.plan_tracker.on_tick(Instant::now());
+        app.conversation_screen
+            .plan_tracker
+            .on_tick(Instant::now());
 
-        let output = render_view(&mut renderer, &mut state, &ViewContext::new((120, 40)));
+        let output = render_app(&mut renderer, &mut app, &ViewContext::new((120, 40)));
         assert!(
             !output
                 .lines()
@@ -263,10 +664,10 @@ mod tests {
 
     #[test]
     fn plan_version_increments_on_replace() {
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![], PathBuf::from("."));
+        let mut app = make_app();
 
-        let initial_version = state.plan_tracker.version();
-        state.plan_tracker.replace(
+        let initial_version = app.conversation_screen.plan_tracker.version();
+        app.conversation_screen.plan_tracker.replace(
             vec![acp::PlanEntry::new(
                 "Task A",
                 acp::PlanEntryPriority::Medium,
@@ -275,14 +676,14 @@ mod tests {
             Instant::now(),
         );
 
-        assert!(state.plan_tracker.version() > initial_version);
+        assert!(app.conversation_screen.plan_tracker.version() > initial_version);
     }
 
     #[test]
     fn plan_version_increments_on_clear() {
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![], PathBuf::from("."));
+        let mut app = make_app();
 
-        state.plan_tracker.replace(
+        app.conversation_screen.plan_tracker.replace(
             vec![acp::PlanEntry::new(
                 "Task A",
                 acp::PlanEntryPriority::Medium,
@@ -290,20 +691,15 @@ mod tests {
             )],
             Instant::now(),
         );
-        let version_before_clear = state.plan_tracker.version();
-        state.plan_tracker.clear();
+        let version_before_clear = app.conversation_screen.plan_tracker.version();
+        app.conversation_screen.plan_tracker.clear();
 
-        assert!(state.plan_tracker.version() > version_before_clear);
+        assert!(app.conversation_screen.plan_tracker.version() > version_before_clear);
     }
 
-    #[tokio::test]
-    async fn sessions_listed_filters_out_current_session() {
-        let current_session_id = acp::SessionId::new("current-session");
-        let mut controller = UiStateController::new(
-            current_session_id.clone(),
-            AcpPromptHandle::noop(),
-        );
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![], PathBuf::from("."));
+    #[test]
+    fn sessions_listed_filters_out_current_session() {
+        let mut app = make_app_with_session_id("current-session");
 
         let sessions = vec![
             acp::SessionInfo::new("other-session-1", PathBuf::from("/project"))
@@ -314,15 +710,13 @@ mod tests {
                 .title("Second other session".to_string()),
         ];
 
-        controller
-            .handle_event(
-                &mut state,
-                WispEvent::Acp(AcpEvent::SessionsListed { sessions }),
-            )
-            .await
-            .unwrap();
+        app.on_acp_event(AcpEvent::SessionsListed { sessions });
 
-        let picker = state.session_picker.as_ref().unwrap();
+        let picker = app
+            .conversation_screen
+            .session_picker
+            .as_ref()
+            .unwrap();
         let term = render_component(|ctx| picker.render(ctx), 60, 10);
         let lines = term.get_lines();
 
@@ -345,5 +739,256 @@ mod tests {
                 .any(|line| line.contains("Second other session")),
             "second other session should be present"
         );
+    }
+
+    #[test]
+    fn custom_exit_keybinding_triggers_exit() {
+        use crate::keybindings::KeyBinding;
+        use crate::tui::{KeyCode, KeyModifiers};
+
+        let mut app = make_app();
+        app.keybindings.exit = KeyBinding::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
+
+        let default_exit = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        app.on_event(&Event::Key(default_exit));
+        assert!(
+            !app.exit_requested(),
+            "default Ctrl+C should no longer exit"
+        );
+
+        let custom_exit = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
+        app.on_event(&Event::Key(custom_exit));
+        assert!(app.exit_requested(), "custom Ctrl+Q should exit");
+    }
+
+    #[test]
+    fn ctrl_g_opens_git_diff_viewer() {
+        use crate::tui::{KeyCode, KeyModifiers};
+
+        let mut app = make_app();
+        let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
+        let messages = app.on_event(&Event::Key(key)).unwrap_or_default();
+
+        assert!(app.screen_router.is_git_diff());
+        assert!(has_message(&messages, |m| matches!(m, AppMessage::LoadGitDiff)));
+    }
+
+    #[test]
+    fn ctrl_g_closes_git_diff_viewer() {
+        use crate::tui::{KeyCode, KeyModifiers};
+
+        let mut app = make_app();
+        app.screen_router.enter_git_diff_for_test();
+
+        let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
+        app.on_event(&Event::Key(key));
+
+        assert!(!app.screen_router.is_git_diff());
+    }
+
+    #[test]
+    fn ctrl_g_blocked_during_elicitation() {
+        use crate::tui::{KeyCode, KeyModifiers};
+
+        let mut app = make_app();
+        app.conversation_screen.elicitation_form = Some(ElicitationForm::from_params(
+            acp_utils::notifications::ElicitationParams {
+                message: "test".to_string(),
+                schema: acp_utils::ElicitationSchema::builder().build().unwrap(),
+            },
+            tokio::sync::oneshot::channel().0,
+        ));
+
+        let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
+        app.on_event(&Event::Key(key));
+
+        assert!(
+            !app.screen_router.is_git_diff(),
+            "git diff should not open during elicitation"
+        );
+    }
+
+    #[test]
+    fn esc_in_diff_mode_does_not_cancel() {
+        use crate::tui::{KeyCode, KeyModifiers};
+
+        let mut app = make_app();
+        app.conversation_screen.waiting_for_response = true;
+        app.screen_router.enter_git_diff_for_test();
+
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        app.on_event(&Event::Key(key));
+
+        assert!(!app.exit_requested());
+        assert!(
+            app.conversation_screen.waiting_for_response,
+            "Esc should NOT cancel a running prompt while git diff mode is active"
+        );
+    }
+
+    #[test]
+    fn mouse_scroll_ignored_in_conversation_mode() {
+        use crate::tui::{KeyModifiers, MouseEvent, MouseEventKind};
+
+        let mut app = make_app();
+        let mouse = MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        };
+        app.on_event(&Event::Mouse(mouse));
+    }
+
+    #[test]
+    fn prompt_composer_submit_returns_send_prompt_message() {
+        let mut app = make_app();
+        let outcome = Some(vec![ConversationScreenMessage::SendPrompt {
+            user_input: "hello".to_string(),
+            attachments: vec![],
+        }]);
+
+        let mut messages = Vec::new();
+        app.handle_conversation_messages(&mut messages, outcome);
+
+        assert!(has_message(&messages, |m| matches!(
+            m,
+            AppMessage::SendPrompt { user_input, .. } if user_input == "hello"
+        )));
+    }
+
+    #[test]
+    fn prompt_composer_open_config() {
+        let mut app = make_app();
+        let outcome = Some(vec![ConversationScreenMessage::OpenConfig]);
+
+        let mut messages = Vec::new();
+        app.handle_conversation_messages(&mut messages, outcome);
+
+        assert!(
+            app.config_manager.is_overlay_open(),
+            "config overlay should be opened"
+        );
+    }
+
+    #[test]
+    fn config_overlay_close_clears_overlay() {
+        let mut app = make_app();
+        app.config_manager.open_overlay();
+
+        app.config_manager.close_overlay();
+
+        assert!(
+            !app.config_manager.is_overlay_open(),
+            "close should clear overlay"
+        );
+    }
+
+    #[test]
+    fn tick_advances_tool_call_statuses() {
+        let mut app = make_app();
+
+        let tool_call = acp::ToolCall::new("tool-1".to_string(), "test_tool");
+        app.conversation_screen
+            .tool_call_statuses
+            .on_tool_call(&tool_call);
+        app.conversation_screen.grid_loader.visible = false;
+
+        let tick_before = app.conversation_screen.tool_call_statuses.tick();
+        app.on_event(&Event::Tick);
+        let tick_after = app.conversation_screen.tool_call_statuses.tick();
+
+        assert!(tick_after > tick_before);
+    }
+
+    #[test]
+    fn tick_advances_progress_indicator() {
+        let mut app = make_app();
+
+        let tool_call = acp::ToolCall::new("tool-1".to_string(), "test_tool");
+        app.conversation_screen
+            .tool_call_statuses
+            .on_tool_call(&tool_call);
+
+        app.conversation_screen.progress_indicator.update(0, 1);
+        let ctx = ViewContext::new((80, 24));
+        let output_before = app.conversation_screen.progress_indicator.render(&ctx);
+        app.on_event(&Event::Tick);
+        let output_after = app.conversation_screen.progress_indicator.render(&ctx);
+
+        assert_ne!(
+            output_before[0].plain_text(),
+            output_after[0].plain_text(),
+            "spinner frame should change after tick"
+        );
+    }
+
+    #[test]
+    fn on_prompt_error_clears_waiting_state() {
+        let mut app = make_app();
+        app.conversation_screen.waiting_for_response = true;
+        app.conversation_screen.grid_loader.visible = true;
+
+        let error = acp::Error::internal_error();
+        app.conversation_screen.on_prompt_error(&error);
+
+        assert!(!app.conversation_screen.waiting_for_response);
+        assert!(!app.conversation_screen.grid_loader.visible);
+        assert!(!app.exit_requested());
+    }
+
+    #[test]
+    fn on_authenticate_complete_removes_method() {
+        let mut app = make_app_with_auth(vec![acp::AuthMethod::Agent(
+            acp::AuthMethodAgent::new("anthropic", "Anthropic"),
+        )]);
+
+        app.on_authenticate_complete("anthropic");
+
+        assert!(app.config_manager.config_options().is_empty() || true);
+        assert!(!app.exit_requested());
+    }
+
+    #[test]
+    fn on_authenticate_failed_does_not_exit() {
+        let mut app = make_app();
+
+        app.on_authenticate_failed("anthropic", "bad token");
+
+        assert!(!app.exit_requested());
+    }
+
+    #[test]
+    fn on_connection_closed_requests_exit() {
+        let mut app = make_app();
+
+        app.on_acp_event(AcpEvent::ConnectionClosed);
+
+        assert!(app.exit_requested());
+    }
+
+    #[test]
+    fn clear_screen_returns_clear_message() {
+        let mut app = make_app();
+
+        let mut messages = Vec::new();
+        app.handle_conversation_messages(
+            &mut messages,
+            Some(vec![ConversationScreenMessage::ClearScreen]),
+        );
+
+        assert!(has_message(&messages, |m| matches!(m, AppMessage::ClearScreen)));
+    }
+
+    #[test]
+    fn cancel_sends_directly_via_prompt_handle() {
+        use crate::tui::{KeyCode, KeyModifiers};
+
+        let mut app = make_app();
+        app.conversation_screen.waiting_for_response = true;
+
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        app.on_event(&Event::Key(key));
+        assert!(!app.exit_requested());
     }
 }

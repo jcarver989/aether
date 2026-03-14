@@ -47,7 +47,7 @@ impl PromptComposer {
         self.available_commands = commands;
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn has_active_picker(&self) -> bool {
         self.file_picker.is_some() || self.command_picker.is_some()
     }

@@ -124,7 +124,7 @@ impl ModelSelector {
         self.combobox.query()
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn selected_count(&self) -> usize {
         self.selected_models.len()
     }

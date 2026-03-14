@@ -71,7 +71,7 @@ impl ConfigOverlay {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn with_server_overlay(mut self) -> Self {
         self.server_overlay = Some(ServerStatusOverlay::new(self.server_statuses.clone()));
         self.focus.focus(FOCUS_SERVER_OVERLAY);

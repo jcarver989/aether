@@ -31,7 +31,7 @@ impl CommandPicker {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn query(&self) -> &str {
         self.combobox.query()
     }

@@ -90,7 +90,7 @@ impl InputPrompt<'_> {
 }
 
 impl InputPrompt<'_> {
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn render(&self, context: &ViewContext) -> Vec<Line> {
         self.layout(context).lines
     }

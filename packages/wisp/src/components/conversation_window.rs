@@ -132,9 +132,6 @@ impl ConversationBuffer {
         (content, completed_tool_ids)
     }
 
-    fn segments_len(&self) -> usize {
-        self.segments.len()
-    }
 }
 
 pub(crate) struct ConversationWindow<'a> {

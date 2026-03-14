@@ -53,7 +53,7 @@ impl TextInput {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn mentions(&self) -> &[SelectedFileMention] {
         &self.mentions
     }
@@ -66,7 +66,7 @@ impl TextInput {
         self.field.set_value(s);
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn set_cursor_pos(&mut self, pos: usize) {
         self.field.set_cursor_pos(pos);
     }

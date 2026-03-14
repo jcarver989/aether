@@ -1,7 +1,9 @@
 pub mod app;
 pub mod command_picker;
+pub(crate) mod config_manager;
 pub mod config_menu;
 pub mod config_overlay;
+pub(crate) mod conversation_screen;
 pub mod config_picker;
 
 pub mod conversation_window;
@@ -21,6 +23,7 @@ pub(crate) mod session_picker;
 pub mod status_line;
 pub mod text_input;
 pub mod thought_message;
+pub mod tool_call_status_view;
 pub mod tool_call_statuses;
 
 pub use tui::wrap_selection;
