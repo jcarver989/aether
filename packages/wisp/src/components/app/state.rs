@@ -11,7 +11,7 @@ use crate::components::session_picker::{SessionEntry, SessionPicker};
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::keybindings::Keybindings;
 use crate::settings::{list_theme_files, load_or_create_settings};
-use crate::tui::{FocusRing, Spinner, ViewContext};
+use crate::tui::{FocusRing, Line, Spinner, ViewContext};
 use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::McpServerStatusEntry;
 use agent_client_protocol::{
@@ -193,6 +193,18 @@ impl UiState {
         if let Some(ref mut overlay) = self.config_overlay {
             overlay.on_authenticate_started(method_id);
         }
+    }
+
+    pub fn flush_completed(&mut self, context: &ViewContext) -> Vec<Line> {
+        let (scrollback_lines, completed_tool_ids) = self
+            .conversation
+            .flush_completed(&self.tool_call_statuses, context);
+
+        for id in completed_tool_ids {
+            self.tool_call_statuses.remove_tool(&id);
+        }
+
+        scrollback_lines
     }
 
     pub(crate) fn reset_after_context_cleared(&mut self) {
