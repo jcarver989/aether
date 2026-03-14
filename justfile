@@ -36,6 +36,10 @@ lint:
 # Format + lint
 check-all: fmt-check lint
 
+# Update packages/llm/models.json from models.dev
+update-models:
+    ./packages/llm/scripts/fetch-models.sh
+
 # Sweep build artifacts older than N days (default: 7)
 sweep DAYS="7":
     cargo sweep --time {{DAYS}}

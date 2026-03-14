@@ -1,6 +1,7 @@
 ---
 name: writing-rust
 description: Rust best practices, idiomatic patterns, and project conventions. Use when writing Rust code, reviewing PRs, debugging issues, or working with error handling, traits, concurrency, or cargo tooling.
+agent-invocable: false
 triggers:
   read:
     - "**/*.rs"
@@ -20,7 +21,6 @@ Core principles for writing idiomatic, safe, and efficient Rust code.
 - [Concurrency](#concurrency) → [concurrency.md](./concurrency.md)
 - [Iterators](#iterators)
 - [Tooling](#tooling) → [tooling.md](./tooling.md)
-- [Project Conventions](#project-conventions-mcp-gateway)
 - [Anti-Patterns](#anti-patterns-to-avoid)
 - [Testing](./testing-fakes.md)
 - [Builders](./builder-pattern.md)
