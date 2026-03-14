@@ -10,7 +10,8 @@ mod test_helpers;
 mod tui;
 
 use crate::cli::Cli;
-use crate::components::app::{GitDiffMode, UiState, UiStateController, UiView, WispEvent};
+use crate::components::app::view::build_frame;
+use crate::components::app::{UiState, UiStateController, ViewEffect, WispEvent};
 use crate::error::AppError;
 use crate::runtime_state::RuntimeState;
 use crate::tui::Event;
@@ -52,11 +53,10 @@ async fn main() -> ExitCode {
         working_dir,
     } = state;
 
-    let ui_state = UiState::new(agent_name, &config_options, auth_methods);
+    let ui_state = UiState::new(agent_name, &config_options, auth_methods, working_dir);
     let controller = UiStateController::new(session_id, prompt_handle);
-    let git_diff_mode = GitDiffMode::new(working_dir);
 
-    match run_app(ui_state, controller, git_diff_mode, theme, event_rx).await {
+    match run_app(ui_state, controller, theme, event_rx).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("Fatal error: {e}");
@@ -65,20 +65,40 @@ async fn main() -> ExitCode {
     }
 }
 
+fn apply_effects(renderer: &mut Renderer<impl io::Write>, effects: Vec<ViewEffect>) -> Result<(), AppError> {
+    for effect in effects {
+        match effect {
+            ViewEffect::ClearScreen => renderer.clear_screen()?,
+            ViewEffect::PushToScrollback(lines) => renderer.push_to_scrollback(&lines)?,
+            ViewEffect::SetTheme(theme) => renderer.set_theme(theme),
+        }
+    }
+    Ok(())
+}
+
+fn render(renderer: &mut Renderer<impl io::Write>, state: &mut UiState) -> Result<(), AppError> {
+    let context = renderer.context();
+    state.prepare_for_render(&context);
+    let state: &UiState = state;
+    renderer.render_frame(|ctx| {
+        build_frame(state, &state.git_diff_mode, &state.cached_visible_plan_entries, ctx)
+    })?;
+    Ok(())
+}
+
 async fn run_app(
     mut state: UiState,
     mut controller: UiStateController,
-    git_diff_mode: GitDiffMode,
     theme: tui::Theme,
     mut event_rx: mpsc::UnboundedReceiver<acp_utils::client::AcpEvent>,
 ) -> Result<(), AppError> {
     let _session = TerminalSession::enter(true, MouseCapture::Disabled)?;
-    let mut view = UiView::new(Renderer::new(io::stdout(), theme), git_diff_mode);
+    let mut renderer = Renderer::new(io::stdout(), theme);
     let size = terminal_size().unwrap_or((80, 24));
-    view.on_resize(size);
+    renderer.on_resize(size);
 
     let mut terminal_rx = spawn_terminal_event_task();
-    view.render(&mut state)?;
+    render(&mut renderer, &mut state)?;
 
     let tick_rate = Duration::from_millis(100);
     let mut tick_interval = time::interval(tick_rate);
@@ -100,30 +120,36 @@ async fn run_app(
                     return Ok(());
                 };
                 if let CrosstermEvent::Resize(cols, rows) = &event {
-                    view.on_resize((*cols, *rows));
+                    renderer.on_resize((*cols, *rows));
                 }
                 if let Ok(tui_event) = Event::try_from(event) {
-                    controller.handle_event(&mut state, &mut view, WispEvent::Terminal(tui_event)).await?;
+                    let context = renderer.context();
+                    let effects = controller.handle_event(&mut state, &context, WispEvent::Terminal(tui_event)).await?;
+                    apply_effects(&mut renderer, effects)?;
                     if state.exit_requested { return Ok(()); }
-                    view.render(&mut state)?;
+                    render(&mut renderer, &mut state)?;
                 }
             }
 
             app_event = external_fut => {
                 match app_event {
                     Some(event) => {
-                        controller.handle_event(&mut state, &mut view, WispEvent::Acp(event)).await?;
+                        let context = renderer.context();
+                        let effects = controller.handle_event(&mut state, &context, WispEvent::Acp(event)).await?;
+                        apply_effects(&mut renderer, effects)?;
                         if state.exit_requested { return Ok(()); }
-                        view.render(&mut state)?;
+                        render(&mut renderer, &mut state)?;
                     }
                     None => return Ok(()),
                 }
             }
 
             () = tick_fut => {
-                controller.handle_event(&mut state, &mut view, WispEvent::Terminal(Event::Tick)).await?;
+                let context = renderer.context();
+                let effects = controller.handle_event(&mut state, &context, WispEvent::Terminal(Event::Tick)).await?;
+                apply_effects(&mut renderer, effects)?;
                 if state.exit_requested { return Ok(()); }
-                view.render(&mut state)?;
+                render(&mut renderer, &mut state)?;
             }
         }
     }

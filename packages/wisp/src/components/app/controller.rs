@@ -1,8 +1,7 @@
 use super::attachments::build_attachment_blocks;
 use super::git_diff_mode::format_review_prompt;
 use super::state::{FOCUS_COMPOSER, FOCUS_CONFIG_OVERLAY, FOCUS_ELICITATION, is_cycleable_mode_option};
-use super::view::UiView;
-use super::{PromptAttachment, ScreenMode, UiState, WispEvent};
+use super::{PromptAttachment, ScreenMode, UiState, ViewEffect, WispEvent};
 use crate::components::config_overlay::ConfigOverlayMessage;
 use crate::components::elicitation_form::ElicitationForm;
 use crate::components::git_diff_view::GitDiffViewMessage;
@@ -15,7 +14,6 @@ use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use agent_client_protocol::{
     self as acp, SessionConfigKind, SessionConfigSelectOptions, SessionId,
 };
-use std::io::Write;
 use std::time::Instant;
 use tokio::sync::oneshot;
 use utils::ReasoningEffort;
@@ -36,36 +34,37 @@ impl UiStateController {
         }
     }
 
-    pub async fn handle_event<W: Write>(
+    pub async fn handle_event(
         &mut self,
         state: &mut UiState,
-        view: &mut UiView<W>,
+        context: &ViewContext,
         event: WispEvent,
-    ) -> Result<(), AppError> {
+    ) -> Result<Vec<ViewEffect>, AppError> {
+        let mut effects = Vec::new();
         match event {
             WispEvent::Terminal(ref terminal_event) => {
-                self.handle_terminal_event(state, view, terminal_event)
-                    .await
+                self.handle_terminal_event(state, &mut effects, terminal_event)
+                    .await?;
             }
             WispEvent::Acp(acp_event) => {
-                let context = view.context();
-                self.handle_acp_event(state, view, acp_event, &context)
+                self.handle_acp_event(state, &mut effects, acp_event, context)?;
             }
         }
+        Ok(effects)
     }
 
-    async fn handle_terminal_event<W: Write>(
+    async fn handle_terminal_event(
         &mut self,
         state: &mut UiState,
-        view: &mut UiView<W>,
+        effects: &mut Vec<ViewEffect>,
         event: &Event,
     ) -> Result<(), AppError> {
         match event {
-            Event::Key(key_event) => self.handle_key(state, view, *key_event).await,
+            Event::Key(key_event) => self.handle_key(state, effects, *key_event).await,
             Event::Paste(_) => {
                 state.config_overlay = None;
                 let outcome = state.prompt_composer.on_event(event);
-                self.handle_prompt_composer_messages(state, view, outcome)
+                self.handle_prompt_composer_messages(state, effects, outcome)
                     .await
             }
             Event::Tick => {
@@ -80,10 +79,10 @@ impl UiStateController {
         }
     }
 
-    async fn handle_key<W: Write>(
+    async fn handle_key(
         &mut self,
         state: &mut UiState,
-        view: &mut UiView<W>,
+        effects: &mut Vec<ViewEffect>,
         key_event: KeyEvent,
     ) -> Result<(), AppError> {
         if self.keybindings.exit.matches(key_event) {
@@ -97,17 +96,17 @@ impl UiStateController {
         }
 
         if state.session_picker.is_some() {
-            return self.handle_session_picker_key(state, view, key_event);
+            return self.handle_session_picker_key(state, effects, key_event);
         }
 
         if self.keybindings.toggle_git_diff.matches(key_event) {
             if matches!(state.screen_mode, ScreenMode::GitDiff) {
-                view.git_diff_mode.close();
+                state.git_diff_mode.close();
                 state.exit_git_diff();
             } else {
                 state.enter_git_diff();
-                view.git_diff_mode.begin_open();
-                view.git_diff_mode.complete_load().await;
+                state.git_diff_mode.begin_open();
+                state.git_diff_mode.complete_load().await;
             }
             return Ok(());
         }
@@ -120,13 +119,13 @@ impl UiStateController {
                 .as_mut()
                 .expect("config overlay")
                 .on_event(&event);
-            return self.handle_config_overlay_messages(state, view, outcome);
+            return self.handle_config_overlay_messages(state, effects, outcome);
         }
 
         if matches!(state.screen_mode, ScreenMode::GitDiff) {
-            let messages = view.git_diff_mode.on_key_event(&event);
+            let messages = state.git_diff_mode.on_key_event(&event);
             for msg in messages {
-                self.handle_git_diff_message(state, view, msg).await?;
+                self.handle_git_diff_message(state, effects, msg).await?;
             }
             return Ok(());
         }
@@ -134,7 +133,7 @@ impl UiStateController {
         let composer_outcome = state.prompt_composer.on_event(&event);
         if composer_outcome.is_some() {
             return self
-                .handle_prompt_composer_messages(state, view, composer_outcome)
+                .handle_prompt_composer_messages(state, effects, composer_outcome)
                 .await;
         }
 
@@ -183,10 +182,10 @@ impl UiStateController {
         }
     }
 
-    fn handle_session_picker_key<W: Write>(
+    fn handle_session_picker_key(
         &self,
         state: &mut UiState,
-        view: &mut UiView<W>,
+        effects: &mut Vec<ViewEffect>,
         key_event: KeyEvent,
     ) -> Result<(), AppError> {
         let Some(picker) = state.session_picker.as_mut() else {
@@ -204,7 +203,7 @@ impl UiStateController {
                     state.session_picker = None;
                     let info = entry.0;
                     state.reset_after_context_cleared();
-                    view.clear_screen()?;
+                    effects.push(ViewEffect::ClearScreen);
                     self.prompt_handle
                         .load_session(&acp::SessionId::new(info.session_id.0.to_string()), &info.cwd)?;
                 }
@@ -214,17 +213,17 @@ impl UiStateController {
         Ok(())
     }
 
-    async fn handle_prompt_composer_messages<W: Write>(
+    async fn handle_prompt_composer_messages(
         &self,
         state: &mut UiState,
-        view: &mut UiView<W>,
+        effects: &mut Vec<ViewEffect>,
         outcome: Option<Vec<PromptComposerMessage>>,
     ) -> Result<(), AppError> {
         for msg in outcome.unwrap_or_default() {
             match msg {
                 PromptComposerMessage::ClearScreen => {
                     state.reset_after_context_cleared();
-                    view.clear_screen()?;
+                    effects.push(ViewEffect::ClearScreen);
                     self.prompt_handle
                         .prompt(&self.session_id, "/clear", None)?;
                 }
@@ -240,10 +239,9 @@ impl UiStateController {
                 } => {
                     state.waiting_for_response = true;
                     state.grid_loader.reset();
-                    view.push_scrollback(&[Line::new(String::new())])?;
-                    view.push_scrollback(&[Line::new(user_input.clone())])?;
-                    view.render(state)?;
-                    self.submit_prompt(view, &user_input, attachments).await?;
+                    effects.push(ViewEffect::PushToScrollback(vec![Line::new(String::new())]));
+                    effects.push(ViewEffect::PushToScrollback(vec![Line::new(user_input.clone())]));
+                    self.submit_prompt(effects, &user_input, attachments).await?;
                 }
             }
         }
@@ -251,10 +249,10 @@ impl UiStateController {
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    fn handle_config_overlay_messages<W: Write>(
+    fn handle_config_overlay_messages(
         &self,
         state: &mut UiState,
-        view: &mut UiView<W>,
+        effects: &mut Vec<ViewEffect>,
         outcome: Option<Vec<ConfigOverlayMessage>>,
     ) -> Result<(), AppError> {
         for message in outcome.unwrap_or_default() {
@@ -267,7 +265,13 @@ impl UiStateController {
                     for change in changes {
                         if change.config_id == THEME_CONFIG_ID {
                             let file = theme_file_from_picker_value(&change.new_value);
-                            view.apply_theme_selection(file);
+                            let mut settings = crate::settings::load_or_create_settings();
+                            settings.theme.file = file;
+                            if let Err(err) = crate::settings::save_settings(&settings) {
+                                tracing::warn!("Failed to persist theme setting: {err}");
+                            }
+                            let theme = crate::settings::load_theme(&settings);
+                            effects.push(ViewEffect::SetTheme(theme));
                         } else {
                             let _ = self.prompt_handle.set_config_option(
                                 &self.session_id,
@@ -344,35 +348,35 @@ impl UiStateController {
         }
     }
 
-    async fn handle_git_diff_message<W: Write>(
+    async fn handle_git_diff_message(
         &self,
         state: &mut UiState,
-        view: &mut UiView<W>,
+        effects: &mut Vec<ViewEffect>,
         msg: GitDiffViewMessage,
     ) -> Result<(), AppError> {
         match msg {
             GitDiffViewMessage::Close => {
-                view.git_diff_mode.close();
+                state.git_diff_mode.close();
                 state.exit_git_diff();
             }
             GitDiffViewMessage::Refresh => {
-                view.git_diff_mode.begin_refresh();
-                view.git_diff_mode.complete_load().await;
+                state.git_diff_mode.begin_refresh();
+                state.git_diff_mode.complete_load().await;
             }
             GitDiffViewMessage::SubmitReview { comments } => {
                 let prompt = format_review_prompt(&comments);
-                view.git_diff_mode.close();
+                state.git_diff_mode.close();
                 state.exit_git_diff();
-                self.submit_prompt(view, &prompt, vec![]).await?;
+                self.submit_prompt(effects, &prompt, vec![]).await?;
             }
         }
         Ok(())
     }
 
-    fn handle_acp_event<W: Write>(
+    fn handle_acp_event(
         &mut self,
         state: &mut UiState,
-        view: &mut UiView<W>,
+        effects: &mut Vec<ViewEffect>,
         event: AcpEvent,
         context: &ViewContext,
     ) -> Result<(), AppError> {
@@ -381,7 +385,7 @@ impl UiStateController {
             AcpEvent::ExtNotification(notification) => {
                 self.on_ext_notification(state, &notification);
             }
-            AcpEvent::PromptDone(_) => self.on_prompt_done(state, view, context)?,
+            AcpEvent::PromptDone(_) => self.on_prompt_done(state, effects, context)?,
             AcpEvent::PromptError(error) => self.on_prompt_error(state, &error),
             AcpEvent::ElicitationRequest {
                 params,
@@ -489,10 +493,11 @@ impl UiStateController {
         }
     }
 
-    fn on_prompt_done<W: Write>(
+    #[allow(clippy::unnecessary_wraps)]
+    fn on_prompt_done(
         &self,
         state: &mut UiState,
-        view: &mut UiView<W>,
+        effects: &mut Vec<ViewEffect>,
         context: &ViewContext,
     ) -> Result<(), AppError> {
         state.waiting_for_response = false;
@@ -508,7 +513,7 @@ impl UiStateController {
         }
 
         if !scrollback_lines.is_empty() {
-            view.push_scrollback(&scrollback_lines)?;
+            effects.push(ViewEffect::PushToScrollback(scrollback_lines));
         }
 
         Ok(())
@@ -596,9 +601,9 @@ impl UiStateController {
         }
     }
 
-    async fn submit_prompt<W: Write>(
+    async fn submit_prompt(
         &self,
-        view: &mut UiView<W>,
+        effects: &mut Vec<ViewEffect>,
         user_input: &str,
         attachments: Vec<PromptAttachment>,
     ) -> Result<(), AppError> {
@@ -610,7 +615,7 @@ impl UiStateController {
                 .into_iter()
                 .map(|warning| Line::new(format!("[wisp] {warning}")))
                 .collect();
-            view.push_scrollback(&warning_lines)?;
+            effects.push(ViewEffect::PushToScrollback(warning_lines));
         }
 
         self.prompt_handle.prompt(
@@ -646,25 +651,17 @@ mod tests {
         UiStateController::new(SessionId::new("test"), AcpPromptHandle::noop())
     }
 
-    fn make_view() -> UiView<Vec<u8>> {
-        use crate::tui::advanced::Renderer;
-        use crate::tui::Theme;
-        let renderer = Renderer::new(Vec::new(), Theme::default());
-        let git_diff_mode = super::super::GitDiffMode::new(std::path::PathBuf::from("."));
-        UiView::new(renderer, git_diff_mode)
-    }
-
     #[tokio::test]
     async fn custom_exit_keybinding_triggers_exit() {
         let mut controller = make_controller();
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let mut view = make_view();
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
+        let mut effects = Vec::new();
         controller.keybindings.exit =
             KeyBinding::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
 
         let default_exit = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
         controller
-            .handle_terminal_event(&mut state, &mut view, &Event::Key(default_exit))
+            .handle_terminal_event(&mut state, &mut effects, &Event::Key(default_exit))
             .await
             .unwrap();
         assert!(
@@ -675,7 +672,7 @@ mod tests {
         state.exit_requested = false;
         let custom_exit = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
         controller
-            .handle_terminal_event(&mut state, &mut view, &Event::Key(custom_exit))
+            .handle_terminal_event(&mut state, &mut effects, &Event::Key(custom_exit))
             .await
             .unwrap();
         assert!(state.exit_requested, "custom Ctrl+Q should exit");
@@ -684,11 +681,11 @@ mod tests {
     #[tokio::test]
     async fn ctrl_g_opens_git_diff_viewer() {
         let mut controller = make_controller();
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let mut view = make_view();
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
+        let mut effects = Vec::new();
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
         controller
-            .handle_terminal_event(&mut state, &mut view, &Event::Key(key))
+            .handle_terminal_event(&mut state, &mut effects, &Event::Key(key))
             .await
             .unwrap();
         assert!(matches!(state.screen_mode, ScreenMode::GitDiff));
@@ -697,13 +694,13 @@ mod tests {
     #[tokio::test]
     async fn ctrl_g_closes_git_diff_viewer() {
         let mut controller = make_controller();
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let mut view = make_view();
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
+        let mut effects = Vec::new();
         state.screen_mode = ScreenMode::GitDiff;
 
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
         controller
-            .handle_terminal_event(&mut state, &mut view, &Event::Key(key))
+            .handle_terminal_event(&mut state, &mut effects, &Event::Key(key))
             .await
             .unwrap();
 
@@ -713,8 +710,8 @@ mod tests {
     #[tokio::test]
     async fn ctrl_g_blocked_during_elicitation() {
         let mut controller = make_controller();
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let mut view = make_view();
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
+        let mut effects = Vec::new();
         state.elicitation_form = Some(ElicitationForm::from_params(
             acp_utils::notifications::ElicitationParams {
                 message: "test".to_string(),
@@ -725,7 +722,7 @@ mod tests {
 
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
         controller
-            .handle_terminal_event(&mut state, &mut view, &Event::Key(key))
+            .handle_terminal_event(&mut state, &mut effects, &Event::Key(key))
             .await
             .unwrap();
 
@@ -738,14 +735,14 @@ mod tests {
     #[tokio::test]
     async fn esc_in_diff_mode_does_not_cancel() {
         let mut controller = make_controller();
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let mut view = make_view();
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
+        let mut effects = Vec::new();
         state.waiting_for_response = true;
         state.screen_mode = ScreenMode::GitDiff;
 
         let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
         controller
-            .handle_terminal_event(&mut state, &mut view, &Event::Key(key))
+            .handle_terminal_event(&mut state, &mut effects, &Event::Key(key))
             .await
             .unwrap();
 
@@ -759,8 +756,8 @@ mod tests {
     #[tokio::test]
     async fn mouse_scroll_ignored_in_conversation_mode() {
         let mut controller = make_controller();
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let mut view = make_view();
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
+        let mut effects = Vec::new();
 
         let mouse = MouseEvent {
             kind: MouseEventKind::ScrollDown,
@@ -769,7 +766,7 @@ mod tests {
             modifiers: KeyModifiers::NONE,
         };
         controller
-            .handle_terminal_event(&mut state, &mut view, &Event::Mouse(mouse))
+            .handle_terminal_event(&mut state, &mut effects, &Event::Mouse(mouse))
             .await
             .unwrap();
     }
@@ -777,15 +774,15 @@ mod tests {
     #[tokio::test]
     async fn prompt_composer_submit_sends_prompt() {
         let controller = make_controller();
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let mut view = make_view();
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
+        let mut effects = Vec::new();
         let outcome = Some(vec![PromptComposerMessage::SubmitRequested {
             user_input: "hello".to_string(),
             attachments: vec![],
         }]);
 
         controller
-            .handle_prompt_composer_messages(&mut state, &mut view, outcome)
+            .handle_prompt_composer_messages(&mut state, &mut effects, outcome)
             .await
             .unwrap();
 
@@ -798,12 +795,12 @@ mod tests {
     #[tokio::test]
     async fn prompt_composer_open_config() {
         let controller = make_controller();
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let mut view = make_view();
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
+        let mut effects = Vec::new();
         let outcome = Some(vec![PromptComposerMessage::OpenConfig]);
 
         controller
-            .handle_prompt_composer_messages(&mut state, &mut view, outcome)
+            .handle_prompt_composer_messages(&mut state, &mut effects, outcome)
             .await
             .unwrap();
 
@@ -816,13 +813,13 @@ mod tests {
     #[test]
     fn config_overlay_close_clears_overlay() {
         let controller = make_controller();
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let mut view = make_view();
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
+        let mut effects = Vec::new();
         state.open_config_overlay();
         let outcome = Some(vec![ConfigOverlayMessage::Close]);
 
         controller
-            .handle_config_overlay_messages(&mut state, &mut view, outcome)
+            .handle_config_overlay_messages(&mut state, &mut effects, outcome)
             .unwrap();
 
         assert!(
@@ -834,8 +831,8 @@ mod tests {
     #[test]
     fn theme_config_change_applies_theme() {
         let controller = make_controller();
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let mut view = make_view();
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
+        let mut effects = Vec::new();
         use crate::components::config_menu::ConfigChange;
         let outcome = Some(vec![ConfigOverlayMessage::ApplyConfigChanges(vec![
             ConfigChange {
@@ -845,10 +842,8 @@ mod tests {
         ])]);
 
         controller
-            .handle_config_overlay_messages(&mut state, &mut view, outcome)
+            .handle_config_overlay_messages(&mut state, &mut effects, outcome)
             .unwrap();
-        // Theme was applied (we can't easily verify the exact theme without a temp dir,
-        // but the test passes without error).
     }
 
     #[test]
@@ -867,8 +862,8 @@ mod tests {
     #[tokio::test]
     async fn tick_advances_tool_call_statuses() {
         let mut controller = make_controller();
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let mut view = make_view();
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
+        let mut effects = Vec::new();
 
         let tool_call = acp::ToolCall::new("tool-1".to_string(), "test_tool");
         state.tool_call_statuses.on_tool_call(&tool_call);
@@ -876,7 +871,7 @@ mod tests {
 
         let tick_before = state.tool_call_statuses.tick();
         controller
-            .handle_terminal_event(&mut state, &mut view, &Event::Tick)
+            .handle_terminal_event(&mut state, &mut effects, &Event::Tick)
             .await
             .unwrap();
         let tick_after = state.tool_call_statuses.tick();
@@ -887,8 +882,8 @@ mod tests {
     #[tokio::test]
     async fn tick_advances_progress_indicator() {
         let mut controller = make_controller();
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let mut view = make_view();
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
+        let mut effects = Vec::new();
 
         let tool_call = acp::ToolCall::new("tool-1".to_string(), "test_tool");
         state.tool_call_statuses.on_tool_call(&tool_call);
@@ -897,7 +892,7 @@ mod tests {
         let ctx = ViewContext::new((80, 24));
         let output_before = state.progress_indicator.render(&ctx);
         controller
-            .handle_terminal_event(&mut state, &mut view, &Event::Tick)
+            .handle_terminal_event(&mut state, &mut effects, &Event::Tick)
             .await
             .unwrap();
         let output_after = state.progress_indicator.render(&ctx);
@@ -912,7 +907,7 @@ mod tests {
     #[test]
     fn on_prompt_error_clears_waiting_state() {
         let controller = make_controller();
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
         state.waiting_for_response = true;
         state.grid_loader.visible = true;
 
@@ -934,6 +929,7 @@ mod tests {
                 "anthropic",
                 "Anthropic",
             ))],
+            std::path::PathBuf::from("."),
         );
 
         controller.on_authenticate_complete(&mut state, "anthropic");
@@ -945,7 +941,7 @@ mod tests {
     #[test]
     fn on_authenticate_failed_does_not_exit() {
         let controller = make_controller();
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
 
         controller.on_authenticate_failed(&mut state, "anthropic", "bad token");
 
@@ -955,14 +951,14 @@ mod tests {
     #[test]
     fn on_connection_closed_requests_exit() {
         let mut controller = make_controller();
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let mut view = make_view();
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
+        let mut effects = Vec::new();
         let context = ViewContext::new((80, 24));
 
         controller
             .handle_acp_event(
                 &mut state,
-                &mut view,
+                &mut effects,
                 AcpEvent::ConnectionClosed,
                 &context,
             )
@@ -974,13 +970,13 @@ mod tests {
     #[tokio::test]
     async fn clear_screen_sends_clear_prompt_to_agent() {
         let controller = make_controller();
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let mut view = make_view();
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
+        let mut effects = Vec::new();
 
         controller
             .handle_prompt_composer_messages(
                 &mut state,
-                &mut view,
+                &mut effects,
                 Some(vec![PromptComposerMessage::ClearScreen]),
             )
             .await
@@ -992,19 +988,110 @@ mod tests {
     #[tokio::test]
     async fn submit_prompt_with_missing_attachment_pushes_warning() {
         let controller = make_controller();
-        let mut view = make_view();
+        let mut effects = Vec::new();
         let attachment = PromptAttachment {
             path: std::path::PathBuf::from("missing-file.txt"),
             display_name: "missing-file.txt".to_string(),
         };
 
         controller
-            .submit_prompt(&mut view, "hello", vec![attachment])
+            .submit_prompt(&mut effects, "hello", vec![attachment])
             .await
             .unwrap();
 
-        let output = String::from_utf8_lossy(view.renderer().writer());
-        assert!(output.contains("[wisp]"));
-        assert!(output.contains("missing-file.txt"));
+        let has_warning = effects.iter().any(|effect| {
+            if let ViewEffect::PushToScrollback(lines) = effect {
+                lines.iter().any(|line| {
+                    let text = line.plain_text();
+                    text.contains("[wisp]") && text.contains("missing-file.txt")
+                })
+            } else {
+                false
+            }
+        });
+        assert!(has_warning, "should push warning about missing attachment");
+    }
+
+    #[test]
+    fn theme_selection_persists_and_applies_theme_file() {
+        use crate::test_helpers::{CUSTOM_TMTHEME, with_wisp_home};
+        use crate::tui::Color;
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let themes_dir = temp_dir.path().join("themes");
+        fs::create_dir_all(&themes_dir).unwrap();
+        fs::write(themes_dir.join("custom.tmTheme"), CUSTOM_TMTHEME).unwrap();
+
+        with_wisp_home(temp_dir.path(), || {
+            let controller = make_controller();
+            let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
+            let mut effects = Vec::new();
+            let outcome = Some(vec![ConfigOverlayMessage::ApplyConfigChanges(vec![
+                crate::components::config_menu::ConfigChange {
+                    config_id: THEME_CONFIG_ID.to_string(),
+                    new_value: "custom.tmTheme".to_string(),
+                },
+            ])]);
+
+            controller
+                .handle_config_overlay_messages(&mut state, &mut effects, outcome)
+                .unwrap();
+
+            let theme_effect = effects.iter().find_map(|effect| {
+                if let ViewEffect::SetTheme(theme) = effect {
+                    Some(theme)
+                } else {
+                    None
+                }
+            });
+            assert!(theme_effect.is_some(), "should produce SetTheme effect");
+            assert_eq!(
+                theme_effect.unwrap().text_primary(),
+                Color::Rgb {
+                    r: 0x11,
+                    g: 0x22,
+                    b: 0x33
+                }
+            );
+
+            let loaded = crate::settings::load_or_create_settings();
+            assert_eq!(loaded.theme.file.as_deref(), Some("custom.tmTheme"));
+        });
+    }
+
+    #[test]
+    fn theme_selection_persists_default_theme_as_none() {
+        use crate::settings::{WispSettings, ThemeSettings as WispThemeSettings, save_settings};
+        use crate::test_helpers::with_wisp_home;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        with_wisp_home(temp_dir.path(), || {
+            save_settings(&WispSettings {
+                theme: WispThemeSettings {
+                    file: Some("old.tmTheme".to_string()),
+                },
+            })
+            .unwrap();
+
+            let controller = make_controller();
+            let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
+            let mut effects = Vec::new();
+            let outcome = Some(vec![ConfigOverlayMessage::ApplyConfigChanges(vec![
+                crate::components::config_menu::ConfigChange {
+                    config_id: THEME_CONFIG_ID.to_string(),
+                    new_value: "   ".to_string(),
+                },
+            ])]);
+
+            controller
+                .handle_config_overlay_messages(&mut state, &mut effects, outcome)
+                .unwrap();
+
+            let loaded = crate::settings::load_or_create_settings();
+            assert_eq!(loaded.theme.file, None);
+        });
     }
 }

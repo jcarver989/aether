@@ -2,7 +2,8 @@ use agent_client_protocol as acp;
 use tui::Theme;
 use tui::advanced::Renderer as FrameRenderer;
 use tui::testing::{TestTerminal, assert_buffer_eq};
-use wisp::components::app::{GitDiffMode, UiState, UiStateController, UiView, WispEvent};
+use wisp::components::app::view::build_frame;
+use wisp::components::app::{UiState, UiStateController, ViewEffect, WispEvent};
 
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
 use tui::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
@@ -19,7 +20,7 @@ enum LoopAction {
 struct Renderer {
     state: UiState,
     controller: UiStateController,
-    view: UiView<TestTerminal>,
+    frame_renderer: FrameRenderer<TestTerminal>,
 }
 
 impl Renderer {
@@ -28,32 +29,38 @@ impl Renderer {
         agent_name: String,
         config_options: &[acp::SessionConfigOption],
     ) -> Self {
-        let state = UiState::new(agent_name, config_options, vec![]);
+        let state = UiState::new(agent_name, config_options, vec![], std::path::PathBuf::from("."));
         let controller = UiStateController::new(
             acp::SessionId::new("test"),
             AcpPromptHandle::noop(),
         );
-        let renderer = FrameRenderer::new(terminal, Theme::default());
-        let git_diff_mode = GitDiffMode::new(std::path::PathBuf::from("."));
-        let view = UiView::new(renderer, git_diff_mode);
-        Self { state, controller, view }
+        let frame_renderer = FrameRenderer::new(terminal, Theme::default());
+        Self { state, controller, frame_renderer }
     }
 
     fn writer(&self) -> &TestTerminal {
-        self.view.renderer().writer()
+        self.frame_renderer.writer()
     }
 
     fn test_writer_mut(&mut self) -> &mut TestTerminal {
-        self.view.renderer_mut().test_writer_mut()
+        self.frame_renderer.test_writer_mut()
     }
 
     fn on_resize(&mut self, size: (u16, u16)) {
-        self.view.on_resize(size);
+        self.frame_renderer.on_resize(size);
+    }
+
+    fn render(&mut self) -> std::io::Result<()> {
+        let context = self.frame_renderer.context();
+        self.state.prepare_for_render(&context);
+        let state = &self.state;
+        self.frame_renderer.render_frame(|ctx| {
+            build_frame(state, &state.git_diff_mode, &state.cached_visible_plan_entries, ctx)
+        })
     }
 
     fn initial_render(&mut self) -> std::io::Result<()> {
-        self.view.render(&mut self.state)?;
-        Ok(())
+        self.render()
     }
 
     async fn on_key_event(
@@ -91,7 +98,7 @@ impl Renderer {
         cols: u16,
         rows: u16,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.view.on_resize((cols, rows));
+        self.frame_renderer.on_resize((cols, rows));
         self.handle_event(WispEvent::Terminal(Event::Resize((cols, rows).into()))).await?;
         Ok(())
     }
@@ -112,16 +119,25 @@ impl Renderer {
         &mut self,
         event: WispEvent,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
-        self.controller
-            .handle_event(&mut self.state, &mut self.view, event)
+        let context = self.frame_renderer.context();
+        let effects = self.controller
+            .handle_event(&mut self.state, &context, event)
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+
+        for effect in effects {
+            match effect {
+                ViewEffect::ClearScreen => self.frame_renderer.clear_screen()?,
+                ViewEffect::PushToScrollback(lines) => self.frame_renderer.push_to_scrollback(&lines)?,
+                ViewEffect::SetTheme(theme) => self.frame_renderer.set_theme(theme),
+            }
+        }
 
         if self.state.exit_requested {
             return Ok(LoopAction::Exit);
         }
 
-        self.view.render(&mut self.state)?;
+        self.render()?;
         Ok(LoopAction::Continue)
     }
 }

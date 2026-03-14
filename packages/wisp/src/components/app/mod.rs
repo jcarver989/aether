@@ -7,10 +7,15 @@ pub mod view;
 pub use controller::UiStateController;
 pub use git_diff_mode::{GitDiffLoadState, GitDiffMode, GitDiffViewState, PatchFocus, ScreenMode};
 pub use state::UiState;
-pub use view::UiView;
-
 use acp_utils::client::AcpEvent;
+use crate::tui::{Line, Theme};
 use std::path::PathBuf;
+
+pub enum ViewEffect {
+    ClearScreen,
+    PushToScrollback(Vec<Line>),
+    SetTheme(Theme),
+}
 
 
 
@@ -43,20 +48,23 @@ mod tests {
     use std::time::{Duration, Instant};
     use tempfile::TempDir;
 
-    fn make_view() -> UiView<Vec<u8>> {
-        let renderer = Renderer::new(Vec::new(), Theme::default());
-        let git_diff_mode = GitDiffMode::new(PathBuf::from("."));
-        UiView::new(renderer, git_diff_mode)
+    fn make_renderer() -> Renderer<Vec<u8>> {
+        Renderer::new(Vec::new(), Theme::default())
     }
 
     fn render_view(
-        view: &mut UiView<Vec<u8>>,
+        renderer: &mut Renderer<Vec<u8>>,
         state: &mut UiState,
         context: &ViewContext,
     ) -> Frame {
-        view.render(state).unwrap();
-        // Build frame for assertion using the same logic
-        view::build_frame(state, &view.git_diff_mode, &[], context)
+        let ctx = renderer.context();
+        state.prepare_for_render(&ctx);
+        renderer
+            .render_frame(|ctx| {
+                view::build_frame(state, &state.git_diff_mode, &state.cached_visible_plan_entries, ctx)
+            })
+            .unwrap();
+        view::build_frame(state, &state.git_diff_mode, &state.cached_visible_plan_entries, context)
     }
 
     #[allow(dead_code)]
@@ -87,7 +95,7 @@ mod tests {
         fs::write(themes_dir.join("catppuccin.tmTheme"), "x").unwrap();
 
         with_wisp_home(temp_dir.path(), || {
-            let state = UiState::new("test-agent".to_string(), &[], vec![]);
+            let state = UiState::new("test-agent".to_string(), &[], vec![], PathBuf::from("."));
             let menu = state.decorate_config_menu(ConfigMenu::from_config_options(&[]));
 
             assert_eq!(menu.options()[0].config_id, THEME_CONFIG_ID);
@@ -118,7 +126,7 @@ mod tests {
             };
             save_settings(&settings).unwrap();
 
-            let state = UiState::new("test-agent".to_string(), &[], vec![]);
+            let state = UiState::new("test-agent".to_string(), &[], vec![], PathBuf::from("."));
             let menu = state.decorate_config_menu(ConfigMenu::from_config_options(&[]));
             let theme = &menu.options()[0];
             assert_eq!(theme.config_id, THEME_CONFIG_ID);
@@ -132,8 +140,8 @@ mod tests {
 
     #[test]
     fn command_picker_cursor_stays_in_input_prompt() {
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let mut view = make_view();
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], PathBuf::from("."));
+        let mut renderer = make_renderer();
         state
             .prompt_composer
             .open_command_picker_with_entries(vec![CommandEntry {
@@ -145,7 +153,7 @@ mod tests {
             }]);
 
         let context = ViewContext::new((120, 40));
-        let output = render_view(&mut view, &mut state, &context);
+        let output = render_view(&mut renderer, &mut state, &context);
         let input_row = output
             .lines()
             .iter()
@@ -162,12 +170,12 @@ mod tests {
             "m1",
             vec![acp::SessionConfigSelectOption::new("m1", "M1")],
         )];
-        let mut state = UiState::new("test-agent".to_string(), &options, vec![]);
-        let mut view = make_view();
+        let mut state = UiState::new("test-agent".to_string(), &options, vec![], PathBuf::from("."));
+        let mut renderer = make_renderer();
         state.open_config_overlay();
 
         let context = ViewContext::new((120, 40));
-        let output = render_view(&mut view, &mut state, &context);
+        let output = render_view(&mut renderer, &mut state, &context);
         assert!(
             output
                 .lines()
@@ -176,7 +184,7 @@ mod tests {
         );
 
         state.config_overlay = None;
-        let output = render_view(&mut view, &mut state, &context);
+        let output = render_view(&mut renderer, &mut state, &context);
         assert!(
             !output
                 .lines()
@@ -224,8 +232,8 @@ mod tests {
 
     #[test]
     fn render_hides_plan_header_when_no_entries_are_visible() {
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let mut view = make_view();
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], PathBuf::from("."));
+        let mut renderer = make_renderer();
         state.plan_tracker.replace(
             vec![acp::PlanEntry::new(
                 "1",
@@ -236,8 +244,9 @@ mod tests {
                 .checked_sub(state.plan_tracker.grace_period + Duration::from_millis(1))
                 .unwrap(),
         );
+        state.plan_tracker.on_tick(Instant::now());
 
-        let output = render_view(&mut view, &mut state, &ViewContext::new((120, 40)));
+        let output = render_view(&mut renderer, &mut state, &ViewContext::new((120, 40)));
         assert!(
             !output
                 .lines()
@@ -248,7 +257,7 @@ mod tests {
 
     #[test]
     fn plan_version_increments_on_replace() {
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], PathBuf::from("."));
 
         let initial_version = state.plan_tracker.version();
         state.plan_tracker.replace(
@@ -265,7 +274,7 @@ mod tests {
 
     #[test]
     fn plan_version_increments_on_clear() {
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], PathBuf::from("."));
 
         state.plan_tracker.replace(
             vec![acp::PlanEntry::new(
@@ -288,8 +297,7 @@ mod tests {
             current_session_id.clone(),
             AcpPromptHandle::noop(),
         );
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![]);
-        let mut view = make_view();
+        let mut state = UiState::new("test-agent".to_string(), &[], vec![], PathBuf::from("."));
 
         let sessions = vec![
             acp::SessionInfo::new("other-session-1", PathBuf::from("/project"))
@@ -303,7 +311,7 @@ mod tests {
         controller
             .handle_event(
                 &mut state,
-                &mut view,
+                &ViewContext::new((60, 10)),
                 WispEvent::Acp(AcpEvent::SessionsListed { sessions }),
             )
             .await
