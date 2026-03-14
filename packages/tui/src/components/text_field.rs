@@ -2,6 +2,7 @@ use crossterm::event::KeyCode;
 
 use crate::components::{Component, Event, ViewContext};
 use crate::line::Line;
+use crate::rendering::frame::Frame;
 
 /// Single-line text input with cursor tracking and navigation.
 pub struct TextField {
@@ -126,8 +127,8 @@ impl Component for TextField {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Vec<Line> {
-        self.render_field(context, true)
+    fn render(&self, context: &ViewContext) -> Frame {
+        Frame::new(self.render_field(context, true))
     }
 }
 

@@ -7,9 +7,8 @@ use crate::components::prompt_composer::{PromptComposer, PromptComposerMessage};
 use crate::components::session_picker::{SessionEntry, SessionPicker, SessionPickerMessage};
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::keybindings::Keybindings;
-use crate::tui::{Component, Cursor, Event, Layout, Line, Spinner, ViewContext};
+use crate::tui::{Component, Event, Frame, Layout, Spinner, ViewContext};
 use agent_client_protocol::{self as acp, SessionId};
-use std::cell::Cell;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -41,7 +40,6 @@ pub struct ConversationScreen {
     pub(crate) waiting_for_response: bool,
     pub(crate) elicitation_form: Option<ElicitationForm>,
     pub(crate) session_picker: Option<SessionPicker>,
-    cached_cursor: Cell<Cursor>,
 }
 
 impl ConversationScreen {
@@ -56,7 +54,6 @@ impl ConversationScreen {
             waiting_for_response: false,
             elicitation_form: None,
             session_picker: None,
-            cached_cursor: Cell::new(Cursor::hidden()),
         }
     }
 
@@ -303,7 +300,7 @@ impl Component for ConversationScreen {
         None
     }
 
-    fn render(&self, ctx: &ViewContext) -> Vec<Line> {
+    fn render(&self, ctx: &ViewContext) -> Frame {
         let conversation_window = ConversationWindow {
             loader: &self.grid_loader,
             conversation: &self.conversation,
@@ -317,22 +314,14 @@ impl Component for ConversationScreen {
         layout.section(conversation_window.render(ctx));
         layout.section(plan_view.render(ctx));
         layout.section(self.progress_indicator.render(ctx));
-        layout.section_with_cursor(
-            self.prompt_composer.render(ctx),
-            self.prompt_composer.cursor(ctx),
-        );
+        let prompt_frame = self.prompt_composer.render(ctx);
+        layout.section_with_cursor(prompt_frame.lines().to_vec(), prompt_frame.cursor());
         if let Some(ref session_picker) = self.session_picker {
-            layout.section(session_picker.render(ctx));
+            layout.section(session_picker.render(ctx).into_lines());
         }
         if let Some(ref elicitation_form) = self.elicitation_form {
-            layout.section(elicitation_form.render(ctx));
+            layout.section(elicitation_form.render(ctx).into_lines());
         }
-        let (lines, cursor) = layout.into_frame().into_parts();
-        self.cached_cursor.set(cursor);
-        lines
-    }
-
-    fn cursor(&self, _ctx: &ViewContext) -> Cursor {
-        self.cached_cursor.get()
+        layout.into_frame()
     }
 }

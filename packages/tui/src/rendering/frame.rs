@@ -32,8 +32,11 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub fn new(lines: Vec<Line>, cursor: Cursor) -> Self {
-        Self { lines, cursor }
+    pub fn new(lines: Vec<Line>) -> Self {
+        Self {
+            lines,
+            cursor: Cursor::hidden(),
+        }
     }
 
     pub fn lines(&self) -> &[Line] {
@@ -48,6 +51,10 @@ impl Frame {
     pub fn with_cursor(mut self, cursor: Cursor) -> Self {
         self.cursor = cursor;
         self
+    }
+
+    pub fn into_lines(self) -> Vec<Line> {
+        self.lines
     }
 
     pub fn into_parts(self) -> (Vec<Line>, Cursor) {
@@ -84,7 +91,7 @@ mod tests {
 
     #[test]
     fn clamp_cursor_clamps_out_of_bounds_row() {
-        let frame = Frame::new(vec![Line::new("a")], Cursor::visible(10, 100));
+        let frame = Frame::new(vec![Line::new("a")]).with_cursor(Cursor::visible(10, 100));
 
         let frame = frame.clamp_cursor();
 
@@ -94,7 +101,7 @@ mod tests {
 
     #[test]
     fn with_cursor_replaces_cursor_without_cloning_lines() {
-        let frame = Frame::new(vec![Line::new("hello")], Cursor::hidden());
+        let frame = Frame::new(vec![Line::new("hello")]);
         let new_cursor = Cursor::visible(0, 3);
         let frame = frame.with_cursor(new_cursor);
 

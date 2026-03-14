@@ -2,6 +2,7 @@ use crossterm::event::KeyCode;
 
 use crate::components::{Component, Event, ViewContext};
 use crate::line::Line;
+use crate::rendering::frame::Frame;
 
 /// Boolean toggle rendered as `[x]` / `[ ]`.
 pub struct Checkbox {
@@ -34,8 +35,8 @@ impl Component for Checkbox {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Vec<Line> {
-        self.render_field(context, true)
+    fn render(&self, context: &ViewContext) -> Frame {
+        Frame::new(self.render_field(context, true))
     }
 }
 

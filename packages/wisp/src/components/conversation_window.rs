@@ -142,7 +142,7 @@ pub(crate) struct ConversationWindow<'a> {
 
 impl ConversationWindow<'_> {
     pub fn render(&self, context: &ViewContext) -> Vec<Line> {
-        let mut lines = self.loader.render(context);
+        let mut lines = self.loader.render(context).into_lines();
         let mut last_segment_kind = None;
 
         for segment in &self.conversation.segments {

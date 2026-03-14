@@ -1,6 +1,7 @@
 use crate::Component;
 use crate::components::{Event, ViewContext};
 use crate::line::Line;
+use crate::rendering::frame::Frame;
 use crate::size::Size;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -13,22 +14,22 @@ pub fn type_query<P: Component>(picker: &mut P, text: &str) {
     }
 }
 
-pub fn rendered_lines_from(lines: &[Line]) -> Vec<String> {
-    lines.iter().map(Line::plain_text).collect()
+pub fn rendered_lines_from(frame: &Frame) -> Vec<String> {
+    frame.lines().iter().map(Line::plain_text).collect()
 }
 
 pub fn rendered_lines_with_context(
-    render: impl FnOnce(&ViewContext) -> Vec<Line>,
+    render: impl FnOnce(&ViewContext) -> Frame,
     size: impl Into<Size>,
 ) -> Vec<String> {
     let context = ViewContext::new(size);
-    render(&context).iter().map(Line::plain_text).collect()
+    render(&context).lines().iter().map(Line::plain_text).collect()
 }
 
 pub fn rendered_raw_lines_with_context(
-    render: impl FnOnce(&ViewContext) -> Vec<Line>,
+    render: impl FnOnce(&ViewContext) -> Frame,
     size: impl Into<Size>,
 ) -> Vec<Line> {
     let context = ViewContext::new(size);
-    render(&context)
+    render(&context).into_lines()
 }

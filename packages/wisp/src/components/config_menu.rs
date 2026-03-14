@@ -1,4 +1,6 @@
-use crate::tui::{Component, Event, Line, SelectItem, SelectList, SelectListMessage, ViewContext};
+use crate::tui::{
+    Component, Event, Frame, Line, SelectItem, SelectList, SelectListMessage, ViewContext,
+};
 use acp_utils::config_meta::{ConfigOptionMeta, SelectOptionMeta};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use agent_client_protocol::{SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions};
@@ -100,7 +102,7 @@ impl Component for ConfigMenu {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Vec<Line> {
+    fn render(&self, context: &ViewContext) -> Frame {
         self.list.render(context)
     }
 }
@@ -464,15 +466,15 @@ mod tests {
         let menu = ConfigMenu::from_config_options(&opts);
 
         let context = ViewContext::new((80, 24));
-        let lines = menu.render(&context);
+        let frame = menu.render(&context);
 
-        assert_eq!(lines.len(), 2);
-        assert!(lines[0].plain_text().contains("▶"));
-        assert!(lines[0].plain_text().contains("Model"));
-        assert!(lines[0].plain_text().contains("GPT-4o"));
-        assert!(lines[1].plain_text().contains("Mode"));
-        assert!(lines[1].plain_text().contains("Code"));
-        assert!(!lines[1].plain_text().contains("▶"));
+        assert_eq!(frame.lines().len(), 2);
+        assert!(frame.lines()[0].plain_text().contains("▶"));
+        assert!(frame.lines()[0].plain_text().contains("Model"));
+        assert!(frame.lines()[0].plain_text().contains("GPT-4o"));
+        assert!(frame.lines()[1].plain_text().contains("Mode"));
+        assert!(frame.lines()[1].plain_text().contains("Code"));
+        assert!(!frame.lines()[1].plain_text().contains("▶"));
     }
 
     #[test]
@@ -480,9 +482,9 @@ mod tests {
         let menu = ConfigMenu::from_config_options(&[]);
 
         let context = ViewContext::new((80, 24));
-        let lines = menu.render(&context);
-        assert_eq!(lines.len(), 1);
-        assert!(lines[0].plain_text().contains("no config options"));
+        let frame = menu.render(&context);
+        assert_eq!(frame.lines().len(), 1);
+        assert!(frame.lines()[0].plain_text().contains("no config options"));
     }
 
     #[test]
@@ -618,8 +620,8 @@ mod tests {
         };
 
         let context = ViewContext::new((80, 24));
-        let lines = menu.render(&context);
-        let has_highlight = lines[0]
+        let frame = menu.render(&context);
+        let has_highlight = frame.lines()[0]
             .spans()
             .iter()
             .any(|s| s.style().bg == Some(context.theme.highlight_bg()));

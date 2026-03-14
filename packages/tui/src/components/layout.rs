@@ -56,7 +56,7 @@ impl Layout {
             },
         };
 
-        Frame::new(all_lines, cursor)
+        Frame::new(all_lines).with_cursor(cursor)
     }
 }
 

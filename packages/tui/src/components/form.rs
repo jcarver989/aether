@@ -1,6 +1,7 @@
 use crate::components::{Component, Event, ViewContext};
 use crate::focus::FocusRing;
 use crate::line::Line;
+use crate::rendering::frame::Frame;
 use crate::style::Style;
 
 use super::checkbox::Checkbox;
@@ -179,11 +180,11 @@ impl Component for Form {
         Some(vec![])
     }
 
-    fn render(&self, context: &ViewContext) -> Vec<Line> {
+    fn render(&self, context: &ViewContext) -> Frame {
         let mut lines = vec![self.render_title(context)];
         lines.extend(self.render_fields(context));
         lines.extend(Self::render_footer(context));
-        lines
+        Frame::new(lines)
     }
 }
 
@@ -206,7 +207,7 @@ mod tests {
         let context = ViewContext::new((10, 10));
 
         // Should not panic with "attempt to subtract with overflow"
-        let lines = form.render(&context);
-        assert!(!lines.is_empty());
+        let frame = form.render(&context);
+        assert!(!frame.lines().is_empty());
     }
 }

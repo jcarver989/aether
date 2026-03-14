@@ -13,10 +13,9 @@ use crate::components::conversation_screen::ConversationScreen;
 use crate::components::conversation_screen::ConversationScreenMessage;
 use crate::components::conversation_window::SegmentContent;
 use crate::keybindings::Keybindings;
-use crate::tui::{Component, Cursor, Event, KeyEvent, Line, Theme, ViewContext};
+use crate::tui::{Component, Event, Frame, KeyEvent, Theme, ViewContext};
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
 use agent_client_protocol::{self as acp, SessionId};
-use std::cell::Cell;
 use std::path::PathBuf;
 use std::time::Instant;
 use tokio::sync::oneshot;
@@ -52,7 +51,6 @@ pub struct App {
     keybindings: Keybindings,
     session_id: SessionId,
     prompt_handle: AcpPromptHandle,
-    cached_cursor: Cell<Cursor>,
 }
 
 impl App {
@@ -75,7 +73,6 @@ impl App {
             keybindings,
             session_id,
             prompt_handle,
-            cached_cursor: Cell::new(Cursor::hidden()),
         }
     }
 
@@ -403,15 +400,8 @@ impl Component for App {
         Some(messages)
     }
 
-    fn render(&self, ctx: &ViewContext) -> Vec<Line> {
-        let frame = view::build_frame(self, ctx);
-        let (lines, cursor) = frame.into_parts();
-        self.cached_cursor.set(cursor);
-        lines
-    }
-
-    fn cursor(&self, _ctx: &ViewContext) -> Cursor {
-        self.cached_cursor.get()
+    fn render(&self, ctx: &ViewContext) -> Frame {
+        view::build_frame(self, ctx)
     }
 }
 
@@ -495,15 +485,9 @@ mod tests {
         let ctx = renderer.context();
         app.prepare_for_render(&ctx);
         renderer
-            .render_frame(|ctx| {
-                let lines = app.render(ctx);
-                let cursor = app.cursor(ctx);
-                Frame::new(lines, cursor)
-            })
+            .render_frame(|ctx| app.render(ctx))
             .unwrap();
-        let lines = app.render(context);
-        let cursor = app.cursor(context);
-        Frame::new(lines, cursor)
+        app.render(context)
     }
 
     #[test]

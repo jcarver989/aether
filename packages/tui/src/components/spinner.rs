@@ -1,5 +1,6 @@
 use crate::components::{Component, Event, ViewContext};
 use crate::line::Line;
+use crate::rendering::frame::Frame;
 
 pub const BRAILLE_FRAMES: &[char] = &['⠒', '⠮', '⠷', '⢷', '⡾', '⣯', '⣽', '⣿', '⣭', '⢯'];
 
@@ -61,15 +62,15 @@ impl Component for Spinner {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Vec<Line> {
+    fn render(&self, context: &ViewContext) -> Frame {
         if !self.visible {
-            return vec![];
+            return Frame::new(vec![]);
         }
 
-        let frame = self.current_frame();
+        let ch = self.current_frame();
         let mut line = Line::default();
-        line.push_styled(frame.to_string(), context.theme.info());
-        vec![line]
+        line.push_styled(ch.to_string(), context.theme.info());
+        Frame::new(vec![line])
     }
 }
 
@@ -87,8 +88,8 @@ mod tests {
     fn invisible_renders_empty() {
         let spinner = Spinner::default();
         let ctx = ViewContext::new((80, 24));
-        let lines = spinner.render(&ctx);
-        assert!(lines.is_empty());
+        let frame = spinner.render(&ctx);
+        assert!(frame.lines().is_empty());
     }
 
     #[test]
@@ -96,8 +97,8 @@ mod tests {
         let mut spinner = Spinner::default();
         spinner.visible = true;
         let ctx = ViewContext::new((80, 24));
-        let lines = spinner.render(&ctx);
-        assert_eq!(lines.len(), 1);
+        let frame = spinner.render(&ctx);
+        assert_eq!(frame.lines().len(), 1);
     }
 
     #[test]
@@ -111,8 +112,8 @@ mod tests {
         spinner_b.visible = true;
         spinner_b.set_tick(1);
 
-        let a = spinner_a.render(&ctx)[0].plain_text();
-        let b = spinner_b.render(&ctx)[0].plain_text();
+        let a = spinner_a.render(&ctx).lines()[0].plain_text();
+        let b = spinner_b.render(&ctx).lines()[0].plain_text();
 
         assert_ne!(a, b);
     }
@@ -129,8 +130,8 @@ mod tests {
         #[allow(clippy::cast_possible_truncation)]
         spinner_b.set_tick(BRAILLE_FRAMES.len() as u16);
 
-        let a = spinner_a.render(&ctx)[0].plain_text();
-        let b = spinner_b.render(&ctx)[0].plain_text();
+        let a = spinner_a.render(&ctx).lines()[0].plain_text();
+        let b = spinner_b.render(&ctx).lines()[0].plain_text();
 
         assert_eq!(a, b);
     }

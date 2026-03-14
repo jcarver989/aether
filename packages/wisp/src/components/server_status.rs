@@ -1,4 +1,6 @@
-use crate::tui::{Component, Event, Line, SelectItem, SelectList, SelectListMessage, ViewContext};
+use crate::tui::{
+    Component, Event, Frame, Line, SelectItem, SelectList, SelectListMessage, ViewContext,
+};
 use acp_utils::notifications::{McpServerStatus, McpServerStatusEntry};
 
 struct ServerItem(McpServerStatusEntry);
@@ -76,7 +78,7 @@ impl Component for ServerStatusOverlay {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Vec<Line> {
+    fn render(&self, context: &ViewContext) -> Frame {
         self.list.render(context)
     }
 }
@@ -145,19 +147,19 @@ mod tests {
     fn renders_all_entries_with_status_indicators() {
         let overlay = ServerStatusOverlay::new(sample_entries());
         let ctx = ViewContext::new((80, 24));
-        let lines = overlay.render(&ctx);
+        let frame = overlay.render(&ctx);
 
-        assert_eq!(lines.len(), 3);
-        let text0 = lines[0].plain_text();
+        assert_eq!(frame.lines().len(), 3);
+        let text0 = frame.lines()[0].plain_text();
         assert!(text0.contains("github"), "should contain server name");
         assert!(text0.contains("✓"), "connected should show checkmark");
         assert!(text0.contains("5 tools"), "should show tool count");
 
-        let text1 = lines[1].plain_text();
+        let text1 = frame.lines()[1].plain_text();
         assert!(text1.contains("linear"), "should contain server name");
         assert!(text1.contains("⚡"), "needs auth should show bolt");
 
-        let text2 = lines[2].plain_text();
+        let text2 = frame.lines()[2].plain_text();
         assert!(text2.contains("slack"), "should contain server name");
         assert!(text2.contains("✗"), "failed should show X");
         assert!(text2.contains("connection timeout"), "should show error");
@@ -167,10 +169,10 @@ mod tests {
     fn selected_entry_has_pointer() {
         let overlay = ServerStatusOverlay::new(sample_entries());
         let ctx = ViewContext::new((80, 24));
-        let lines = overlay.render(&ctx);
+        let frame = overlay.render(&ctx);
 
-        assert!(lines[0].plain_text().starts_with("▶"));
-        assert!(lines[1].plain_text().starts_with("  "));
+        assert!(frame.lines()[0].plain_text().starts_with("▶"));
+        assert!(frame.lines()[1].plain_text().starts_with("  "));
     }
 
     #[test]
@@ -233,9 +235,9 @@ mod tests {
     fn empty_entries_shows_placeholder() {
         let overlay = ServerStatusOverlay::new(vec![]);
         let ctx = ViewContext::new((80, 24));
-        let lines = overlay.render(&ctx);
-        assert_eq!(lines.len(), 1);
-        assert!(lines[0].plain_text().contains("no MCP servers configured"));
+        let frame = overlay.render(&ctx);
+        assert_eq!(frame.lines().len(), 1);
+        assert!(frame.lines()[0].plain_text().contains("no MCP servers configured"));
     }
 
     #[test]

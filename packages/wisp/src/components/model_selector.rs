@@ -1,7 +1,7 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry};
 use crate::components::reasoning_bar::reasoning_bar;
 use crate::tui::{
-    Combobox, Component, Event, Line, PickerKey, Searchable, ViewContext, classify_key,
+    Combobox, Component, Event, Frame, Line, PickerKey, Searchable, ViewContext, classify_key,
 };
 use acp_utils::config_option_id::ConfigOptionId;
 use std::cmp::Ordering;
@@ -233,7 +233,7 @@ impl Component for ModelSelector {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Vec<Line> {
+    fn render(&self, context: &ViewContext) -> Frame {
         let mut lines = Vec::new();
         let header = format!("  Model search: {}", self.combobox.query());
         lines.push(Line::new(header));
@@ -312,7 +312,7 @@ impl Component for ModelSelector {
         item_lines.truncate(available_for_items);
         lines.extend(item_lines);
 
-        lines
+        Frame::new(lines)
     }
 }
 
@@ -649,8 +649,9 @@ mod tests {
         let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
         let context = ViewContext::new((120, 6));
         builder.update_viewport(6);
-        let lines: Vec<String> = builder
-            .render(&context)
+        let frame = builder.render(&context);
+        let lines: Vec<String> = frame
+            .lines()
             .iter()
             .map(Line::plain_text)
             .collect();

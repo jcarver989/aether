@@ -20,7 +20,7 @@ pub fn build_frame(app: &App, context: &ViewContext) -> Frame {
 
     if app.screen_router.is_git_diff() {
         let status_lines = status_line.render(context);
-        let diff_frame = app.screen_router.build_frame(context);
+        let diff_frame = app.screen_router.render(context);
 
         let mut layout = Layout::new();
         layout.section_with_cursor(diff_frame.lines().to_vec(), diff_frame.cursor());
@@ -28,7 +28,7 @@ pub fn build_frame(app: &App, context: &ViewContext) -> Frame {
         return layout.into_frame();
     }
 
-    let conv_frame = app.conversation_screen.build_frame(context);
+    let conv_frame = app.conversation_screen.render(context);
     let mut layout = Layout::new();
     layout.section_with_cursor(conv_frame.lines().to_vec(), conv_frame.cursor());
     layout.section(status_line.render(context));

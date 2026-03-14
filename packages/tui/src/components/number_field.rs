@@ -2,6 +2,7 @@ use crossterm::event::KeyCode;
 
 use crate::components::{Component, Event, ViewContext};
 use crate::line::Line;
+use crate::rendering::frame::Frame;
 
 /// Numeric input field supporting integers or floats.
 pub struct NumberField {
@@ -57,8 +58,8 @@ impl Component for NumberField {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Vec<Line> {
-        self.render_field(context, true)
+    fn render(&self, context: &ViewContext) -> Frame {
+        Frame::new(self.render_field(context, true))
     }
 }
 

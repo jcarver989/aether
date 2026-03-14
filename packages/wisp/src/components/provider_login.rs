@@ -1,4 +1,6 @@
-use crate::tui::{Component, Event, Line, SelectItem, SelectList, SelectListMessage, ViewContext};
+use crate::tui::{
+    Component, Event, Frame, Line, SelectItem, SelectList, SelectListMessage, ViewContext,
+};
 
 pub struct ProviderLoginOverlay {
     list: SelectList<ProviderLoginEntry>,
@@ -63,7 +65,7 @@ impl Component for ProviderLoginOverlay {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Vec<Line> {
+    fn render(&self, context: &ViewContext) -> Frame {
         self.list.render(context)
     }
 }
@@ -151,10 +153,10 @@ mod tests {
     fn renders_entries_with_status_indicators() {
         let overlay = ProviderLoginOverlay::new(sample_entries());
         let ctx = ViewContext::new((80, 24));
-        let lines = overlay.render(&ctx);
+        let frame = overlay.render(&ctx);
 
-        assert_eq!(lines.len(), 1);
-        let text = lines[0].plain_text();
+        assert_eq!(frame.lines().len(), 1);
+        let text = frame.lines()[0].plain_text();
         assert!(text.contains("Codex"), "should contain provider name");
         assert!(text.contains("⚡"), "needs login should show bolt");
     }
@@ -198,8 +200,8 @@ mod tests {
     fn empty_entries_shows_placeholder() {
         let overlay = ProviderLoginOverlay::new(vec![]);
         let ctx = ViewContext::new((80, 24));
-        let lines = overlay.render(&ctx);
-        assert!(lines[0].plain_text().contains("no providers need login"));
+        let frame = overlay.render(&ctx);
+        assert!(frame.lines()[0].plain_text().contains("no providers need login"));
     }
 
     #[test]

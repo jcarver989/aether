@@ -253,14 +253,11 @@ mod tests {
     }
 
     fn frame(lines: &[&str]) -> Frame {
-        Frame::new(
-            lines.iter().map(|line| Line::new(*line)).collect(),
-            Cursor {
-                row: lines.len().saturating_sub(1),
-                col: 0,
-                is_visible: true,
-            },
-        )
+        Frame::new(lines.iter().map(|line| Line::new(*line)).collect()).with_cursor(Cursor {
+            row: lines.len().saturating_sub(1),
+            col: 0,
+            is_visible: true,
+        })
     }
 
     #[test]
@@ -321,7 +318,7 @@ mod tests {
     fn empty_to_empty_is_noop() {
         let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
         renderer.on_resize((80, 24));
-        let empty_frame = Frame::new(vec![], Cursor::default());
+        let empty_frame = Frame::new(vec![]);
         renderer.render_frame_internal(&empty_frame).unwrap();
         renderer.terminal.writer.bytes.clear();
         renderer.render_frame_internal(&empty_frame).unwrap();
@@ -396,19 +393,17 @@ mod tests {
     fn push_to_scrollback_restores_cursor_even_when_nothing_new_is_flushed() {
         let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
         renderer.on_resize((80, 2));
-        let frame = Frame::new(
-            vec![
-                Line::new("L1"),
-                Line::new("L2"),
-                Line::new("L3"),
-                Line::new("L4"),
-            ],
-            Cursor {
-                row: 2,
-                col: 0,
-                is_visible: true,
-            },
-        );
+        let frame = Frame::new(vec![
+            Line::new("L1"),
+            Line::new("L2"),
+            Line::new("L3"),
+            Line::new("L4"),
+        ])
+        .with_cursor(Cursor {
+            row: 2,
+            col: 0,
+            is_visible: true,
+        });
         renderer.render_frame_internal(&frame).unwrap();
         renderer.terminal.writer.bytes.clear();
 
@@ -507,19 +502,17 @@ mod tests {
         let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
         renderer.on_resize((80, 2));
 
-        let f = Frame::new(
-            vec![
-                Line::new("L1"),
-                Line::new("L2"),
-                Line::new("L3"),
-                Line::new("L4"),
-            ],
-            Cursor {
-                row: 3,
-                col: 0,
-                is_visible: true,
-            },
-        );
+        let f = Frame::new(vec![
+            Line::new("L1"),
+            Line::new("L2"),
+            Line::new("L3"),
+            Line::new("L4"),
+        ])
+        .with_cursor(Cursor {
+            row: 3,
+            col: 0,
+            is_visible: true,
+        });
         renderer.render_frame_internal(&f).unwrap();
 
         assert_eq!(renderer.flushed_visual_count(), 2);
@@ -530,14 +523,11 @@ mod tests {
         let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
         renderer.on_resize((3, 24));
 
-        let f = Frame::new(
-            vec![Line::new("abcdef")],
-            Cursor {
-                row: 0,
-                col: 5,
-                is_visible: true,
-            },
-        );
+        let f = Frame::new(vec![Line::new("abcdef")]).with_cursor(Cursor {
+            row: 0,
+            col: 5,
+            is_visible: true,
+        });
         renderer.render_frame_internal(&f).unwrap();
 
         let output = String::from_utf8_lossy(&renderer.terminal.writer.bytes);

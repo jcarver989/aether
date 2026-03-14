@@ -1,6 +1,6 @@
 use super::git_diff_mode::{GitDiffMode, ScreenMode};
 use crate::components::git_diff_view::GitDiffViewMessage;
-use crate::tui::{Component, Cursor, Event, Frame, Line, ViewContext};
+use crate::tui::{Component, Cursor, Event, Frame, ViewContext};
 
 const STATUS_LINE_HEIGHT: u16 = 1;
 
@@ -81,17 +81,13 @@ impl Component for ScreenRouter {
         Some(router_messages)
     }
 
-    fn render(&self, ctx: &ViewContext) -> Vec<Line> {
+    fn render(&self, ctx: &ViewContext) -> Frame {
         let diff_height = ctx.size.height.saturating_sub(STATUS_LINE_HEIGHT);
         let diff_context = ctx.with_size((ctx.size.width, diff_height));
-        self.git_diff_mode.render_lines(&diff_context)
-    }
+        let lines = self.git_diff_mode.render_lines(&diff_context);
 
-    fn cursor(&self, ctx: &ViewContext) -> Cursor {
-        let diff_height = ctx.size.height.saturating_sub(STATUS_LINE_HEIGHT);
-        let line_count = diff_height as usize;
-
-        if self.git_diff_mode.is_comment_input() {
+        let cursor = if self.git_diff_mode.is_comment_input() {
+            let line_count = diff_height as usize;
             let comment_cursor = self.git_diff_mode.comment_cursor_col();
             Cursor::visible(
                 line_count.saturating_sub(1),
@@ -99,10 +95,8 @@ impl Component for ScreenRouter {
             )
         } else {
             Cursor::hidden()
-        }
-    }
+        };
 
-    fn build_frame(&self, ctx: &ViewContext) -> Frame {
-        Frame::new(self.render(ctx), self.cursor(ctx))
+        Frame::new(lines).with_cursor(cursor)
     }
 }
