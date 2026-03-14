@@ -1,16 +1,16 @@
 use super::attachments::build_attachment_blocks;
-use super::git_diff_mode::format_review_prompt;
-use super::state::{FOCUS_COMPOSER, FOCUS_CONFIG_OVERLAY, FOCUS_ELICITATION, is_cycleable_mode_option};
+use super::state::{FOCUS_COMPOSER, FOCUS_CONFIG_OVERLAY, FOCUS_ELICITATION};
 use super::{PromptAttachment, ScreenMode, UiState, ViewEffect, WispEvent};
 use crate::components::config_overlay::ConfigOverlayMessage;
-use crate::components::elicitation_form::ElicitationForm;
+use crate::components::elicitation_form::{ElicitationForm, ElicitationMessage};
+use crate::components::session_picker::SessionPickerMessage;
 use crate::components::git_diff_view::GitDiffViewMessage;
 use crate::components::prompt_composer::PromptComposerMessage;
 use crate::error::AppError;
 use crate::keybindings::Keybindings;
-use crate::tui::{Component, Event, FormMessage, KeyEvent, Line, PickerMessage};
+use crate::tui::{Component, Event, KeyEvent};
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
-use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
+use acp_utils::config_option_id::ConfigOptionId;
 use agent_client_protocol::{
     self as acp, SessionConfigKind, SessionConfigSelectOptions, SessionId,
 };
@@ -155,26 +155,14 @@ impl UiStateController {
     }
 
     fn handle_elicitation_key(&self, state: &mut UiState, key_event: KeyEvent) {
-        let Some(elicitation_form) = state.elicitation_form.as_mut() else {
+        let Some(form) = state.elicitation_form.as_mut() else {
             return;
         };
-        let outcome = elicitation_form.form.on_event(&Event::Key(key_event));
-
-        for message in outcome.unwrap_or_default() {
-            match message {
-                FormMessage::Close => {
-                    if let Some(elicitation_form) = state.elicitation_form.take() {
-                        let _ = elicitation_form
-                            .response_tx
-                            .send(ElicitationForm::decline());
-                    }
-                    state.focus.focus(FOCUS_COMPOSER);
-                }
-                FormMessage::Submit => {
-                    if let Some(elicitation_form) = state.elicitation_form.take() {
-                        let response = elicitation_form.confirm();
-                        let _ = elicitation_form.response_tx.send(response);
-                    }
+        let outcome = form.on_event(&Event::Key(key_event));
+        for msg in outcome.unwrap_or_default() {
+            match msg {
+                ElicitationMessage::Responded => {
+                    state.elicitation_form = None;
                     state.focus.focus(FOCUS_COMPOSER);
                 }
             }
@@ -195,18 +183,16 @@ impl UiStateController {
             .unwrap_or_default();
         for msg in msgs {
             match msg {
-                PickerMessage::Close => {
+                SessionPickerMessage::Close => {
                     state.session_picker = None;
                 }
-                PickerMessage::Confirm(entry) => {
+                SessionPickerMessage::LoadSession { session_id, cwd } => {
                     state.session_picker = None;
-                    let info = entry.0;
                     state.reset_after_context_cleared();
                     effects.push(ViewEffect::ClearScreen);
                     self.prompt_handle
-                        .load_session(&acp::SessionId::new(info.session_id.0.to_string()), &info.cwd)?;
+                        .load_session(&session_id, &cwd)?;
                 }
-                _ => {}
             }
         }
         Ok(())
@@ -238,8 +224,7 @@ impl UiStateController {
                 } => {
                     state.waiting_for_response = true;
                     state.grid_loader.reset();
-                    effects.push(ViewEffect::PushToScrollback(vec![Line::new(String::new())]));
-                    effects.push(ViewEffect::PushToScrollback(vec![Line::new(user_input.clone())]));
+                    effects.push(ViewEffect::PromptSubmitted { user_input: user_input.clone() });
                     self.submit_prompt(effects, &user_input, attachments).await?;
                 }
             }
@@ -260,25 +245,15 @@ impl UiStateController {
                     state.config_overlay = None;
                     state.focus.focus(FOCUS_COMPOSER);
                 }
-                ConfigOverlayMessage::ApplyConfigChanges(changes) => {
-                    for change in changes {
-                        if change.config_id == THEME_CONFIG_ID {
-                            let file = theme_file_from_picker_value(&change.new_value);
-                            let mut settings = crate::settings::load_or_create_settings();
-                            settings.theme.file = file;
-                            if let Err(err) = crate::settings::save_settings(&settings) {
-                                tracing::warn!("Failed to persist theme setting: {err}");
-                            }
-                            let theme = crate::settings::load_theme(&settings);
-                            effects.push(ViewEffect::SetTheme(theme));
-                        } else {
-                            let _ = self.prompt_handle.set_config_option(
-                                &self.session_id,
-                                &change.config_id,
-                                &change.new_value,
-                            );
-                        }
-                    }
+                ConfigOverlayMessage::SetConfigOption { config_id, value } => {
+                    let _ = self.prompt_handle.set_config_option(
+                        &self.session_id,
+                        &config_id,
+                        &value,
+                    );
+                }
+                ConfigOverlayMessage::SetTheme(theme) => {
+                    effects.push(ViewEffect::SetTheme(theme));
                 }
                 ConfigOverlayMessage::AuthenticateServer(name) => {
                     let _ = self
@@ -300,7 +275,7 @@ impl UiStateController {
         let Some(option) = state
             .config_options
             .iter()
-            .find(|option| is_cycleable_mode_option(option))
+            .find(|option| crate::components::status_line::is_cycleable_mode_option(option))
         else {
             return;
         };
@@ -338,7 +313,8 @@ impl UiStateController {
             .any(|option| option.id.0.as_ref() == ConfigOptionId::ReasoningEffort.as_str());
 
         if has_reasoning {
-            let next = ReasoningEffort::cycle_next(state.reasoning_effort);
+            let current = crate::components::status_line::extract_reasoning_effort(&state.config_options);
+            let next = ReasoningEffort::cycle_next(current);
             let _ = self.prompt_handle.set_config_option(
                 &self.session_id,
                 ConfigOptionId::ReasoningEffort.as_str(),
@@ -362,8 +338,7 @@ impl UiStateController {
                 state.git_diff_mode.begin_refresh();
                 state.git_diff_mode.complete_load().await;
             }
-            GitDiffViewMessage::SubmitReview { comments } => {
-                let prompt = format_review_prompt(&comments);
+            GitDiffViewMessage::SubmitPrompt(prompt) => {
                 state.git_diff_mode.close();
                 state.exit_git_diff();
                 self.submit_prompt(effects, &prompt, vec![]).await?;
@@ -437,9 +412,6 @@ impl UiStateController {
                 state
                     .conversation
                     .ensure_tool_segment(&tool_call.tool_call_id.0);
-                state
-                    .conversation
-                    .invalidate_tool_segment(&tool_call.tool_call_id.0);
             }
             acp::SessionUpdate::ToolCallUpdate(update) => {
                 state.conversation.close_thought_block();
@@ -448,9 +420,6 @@ impl UiStateController {
                     state
                         .conversation
                         .ensure_tool_segment(&update.tool_call_id.0);
-                    state
-                        .conversation
-                        .invalidate_tool_segment(&update.tool_call_id.0);
                 }
             }
             acp::SessionUpdate::AvailableCommandsUpdate(update) => {
@@ -500,7 +469,13 @@ impl UiStateController {
         state.waiting_for_response = false;
         state.grid_loader.visible = false;
         state.conversation.close_thought_block();
-        effects.push(ViewEffect::FlushCompleted);
+        let (content, completed_tool_ids) = state.drain_completed();
+        if !content.is_empty() {
+            effects.push(ViewEffect::PushToScrollbackContent {
+                content,
+                completed_tool_ids,
+            });
+        }
         Ok(())
     }
 
@@ -546,9 +521,6 @@ impl UiStateController {
                     serde_json::from_str::<SubAgentProgressParams>(notification.params.get())
                 {
                     state.tool_call_statuses.on_sub_agent_progress(&progress);
-                    state
-                        .conversation
-                        .invalidate_tool_segment(&progress.parent_tool_id);
                 }
             }
             _ => {
@@ -595,12 +567,7 @@ impl UiStateController {
         let outcome = build_attachment_blocks(&attachments).await;
 
         if !outcome.warnings.is_empty() {
-            let warning_lines: Vec<Line> = outcome
-                .warnings
-                .into_iter()
-                .map(|warning| Line::new(format!("[wisp] {warning}")))
-                .collect();
-            effects.push(ViewEffect::PushToScrollback(warning_lines));
+            effects.push(ViewEffect::AttachmentWarnings(outcome.warnings));
         }
 
         self.prompt_handle.prompt(
@@ -614,15 +581,6 @@ impl UiStateController {
         )?;
 
         Ok(())
-    }
-}
-
-fn theme_file_from_picker_value(value: &str) -> Option<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
     }
 }
 
@@ -813,37 +771,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn theme_config_change_applies_theme() {
-        let controller = make_controller();
-        let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
-        let mut effects = Vec::new();
-        use crate::components::config_menu::ConfigChange;
-        let outcome = Some(vec![ConfigOverlayMessage::ApplyConfigChanges(vec![
-            ConfigChange {
-                config_id: THEME_CONFIG_ID.to_string(),
-                new_value: "   ".to_string(),
-            },
-        ])]);
-
-        controller
-            .handle_config_overlay_messages(&mut state, &mut effects, outcome)
-            .unwrap();
-    }
-
-    #[test]
-    fn theme_default_value_maps_to_none() {
-        assert_eq!(theme_file_from_picker_value("   "), None);
-    }
-
-    #[test]
-    fn theme_value_maps_to_some() {
-        assert_eq!(
-            theme_file_from_picker_value("catppuccin.tmTheme"),
-            Some("catppuccin.tmTheme".to_string())
-        );
-    }
-
     #[tokio::test]
     async fn tick_advances_tool_call_statuses() {
         let mut controller = make_controller();
@@ -983,11 +910,8 @@ mod tests {
             .unwrap();
 
         let has_warning = effects.iter().any(|effect| {
-            if let ViewEffect::PushToScrollback(lines) = effect {
-                lines.iter().any(|line| {
-                    let text = line.plain_text();
-                    text.contains("[wisp]") && text.contains("missing-file.txt")
-                })
+            if let ViewEffect::AttachmentWarnings(warnings) = effect {
+                warnings.iter().any(|w| w.contains("missing-file.txt"))
             } else {
                 false
             }
@@ -995,86 +919,4 @@ mod tests {
         assert!(has_warning, "should push warning about missing attachment");
     }
 
-    #[test]
-    fn theme_selection_persists_and_applies_theme_file() {
-        use crate::test_helpers::{CUSTOM_TMTHEME, with_wisp_home};
-        use crate::tui::Color;
-        use std::fs;
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        let themes_dir = temp_dir.path().join("themes");
-        fs::create_dir_all(&themes_dir).unwrap();
-        fs::write(themes_dir.join("custom.tmTheme"), CUSTOM_TMTHEME).unwrap();
-
-        with_wisp_home(temp_dir.path(), || {
-            let controller = make_controller();
-            let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
-            let mut effects = Vec::new();
-            let outcome = Some(vec![ConfigOverlayMessage::ApplyConfigChanges(vec![
-                crate::components::config_menu::ConfigChange {
-                    config_id: THEME_CONFIG_ID.to_string(),
-                    new_value: "custom.tmTheme".to_string(),
-                },
-            ])]);
-
-            controller
-                .handle_config_overlay_messages(&mut state, &mut effects, outcome)
-                .unwrap();
-
-            let theme_effect = effects.iter().find_map(|effect| {
-                if let ViewEffect::SetTheme(theme) = effect {
-                    Some(theme)
-                } else {
-                    None
-                }
-            });
-            assert!(theme_effect.is_some(), "should produce SetTheme effect");
-            assert_eq!(
-                theme_effect.unwrap().text_primary(),
-                Color::Rgb {
-                    r: 0x11,
-                    g: 0x22,
-                    b: 0x33
-                }
-            );
-
-            let loaded = crate::settings::load_or_create_settings();
-            assert_eq!(loaded.theme.file.as_deref(), Some("custom.tmTheme"));
-        });
-    }
-
-    #[test]
-    fn theme_selection_persists_default_theme_as_none() {
-        use crate::settings::{WispSettings, ThemeSettings as WispThemeSettings, save_settings};
-        use crate::test_helpers::with_wisp_home;
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        with_wisp_home(temp_dir.path(), || {
-            save_settings(&WispSettings {
-                theme: WispThemeSettings {
-                    file: Some("old.tmTheme".to_string()),
-                },
-            })
-            .unwrap();
-
-            let controller = make_controller();
-            let mut state = UiState::new("test-agent".to_string(), &[], vec![], std::path::PathBuf::from("."));
-            let mut effects = Vec::new();
-            let outcome = Some(vec![ConfigOverlayMessage::ApplyConfigChanges(vec![
-                crate::components::config_menu::ConfigChange {
-                    config_id: THEME_CONFIG_ID.to_string(),
-                    new_value: "   ".to_string(),
-                },
-            ])]);
-
-            controller
-                .handle_config_overlay_messages(&mut state, &mut effects, outcome)
-                .unwrap();
-
-            let loaded = crate::settings::load_or_create_settings();
-            assert_eq!(loaded.theme.file, None);
-        });
-    }
 }

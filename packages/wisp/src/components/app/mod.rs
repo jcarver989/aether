@@ -8,14 +8,19 @@ pub use controller::UiStateController;
 pub use git_diff_mode::{GitDiffLoadState, GitDiffMode, GitDiffViewState, PatchFocus, ScreenMode};
 pub use state::UiState;
 use acp_utils::client::AcpEvent;
-use crate::tui::{Line, Theme};
+use crate::components::conversation_window::SegmentContent;
+use crate::tui::Theme;
 use std::path::PathBuf;
 
 pub enum ViewEffect {
     ClearScreen,
-    PushToScrollback(Vec<Line>),
     SetTheme(Theme),
-    FlushCompleted,
+    PushToScrollbackContent {
+        content: Vec<SegmentContent>,
+        completed_tool_ids: Vec<String>,
+    },
+    PromptSubmitted { user_input: String },
+    AttachmentWarnings(Vec<String>),
 }
 
 
@@ -62,10 +67,10 @@ mod tests {
         state.prepare_for_render(&ctx);
         renderer
             .render_frame(|ctx| {
-                view::build_frame(state, &state.git_diff_mode, &state.cached_visible_plan_entries, ctx)
+                view::build_frame(state, &state.git_diff_mode, ctx)
             })
             .unwrap();
-        view::build_frame(state, &state.git_diff_mode, &state.cached_visible_plan_entries, context)
+        view::build_frame(state, &state.git_diff_mode, context)
     }
 
     #[allow(dead_code)]
@@ -196,7 +201,7 @@ mod tests {
 
     #[test]
     fn extract_model_display_handles_comma_separated_value() {
-        use state::extract_model_display;
+        use crate::components::status_line::extract_model_display;
 
         let options = vec![SessionConfigOption::select(
             "model",
@@ -217,7 +222,7 @@ mod tests {
     #[test]
     fn extract_reasoning_effort_returns_none_for_none_value() {
         use acp_utils::config_option_id::ConfigOptionId;
-        use state::extract_reasoning_effort;
+        use crate::components::status_line::extract_reasoning_effort;
 
         let options = vec![SessionConfigOption::select(
             ConfigOptionId::ReasoningEffort.as_str(),

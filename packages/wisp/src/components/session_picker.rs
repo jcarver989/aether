@@ -1,9 +1,10 @@
 use crate::tui::{
-    Combobox, Component, Event, Line, PickerKey, PickerMessage, Searchable, Style, ViewContext,
-    classify_key, display_width_text, pad_text_to_width, truncate_text,
+    Combobox, Component, Event, Line, PickerKey, Searchable, Style, ViewContext, classify_key,
+    display_width_text, pad_text_to_width, truncate_text,
 };
 use agent_client_protocol as acp;
 use chrono::{DateTime, Utc};
+use std::path::PathBuf;
 
 #[derive(Clone)]
 pub struct SessionEntry(pub acp::SessionInfo);
@@ -21,7 +22,13 @@ pub struct SessionPicker {
     combobox: Combobox<SessionEntry>,
 }
 
-pub type SessionPickerMessage = PickerMessage<SessionEntry>;
+pub enum SessionPickerMessage {
+    Close,
+    LoadSession {
+        session_id: acp::SessionId,
+        cwd: PathBuf,
+    },
+}
 
 impl SessionPicker {
     pub fn new(sessions: Vec<SessionEntry>) -> Self {
@@ -39,7 +46,9 @@ impl Component for SessionPicker {
             return None;
         };
         match classify_key(*key_event, self.combobox.query().is_empty()) {
-            PickerKey::Escape | PickerKey::BackspaceOnEmpty => Some(vec![PickerMessage::Close]),
+            PickerKey::Escape | PickerKey::BackspaceOnEmpty => {
+                Some(vec![SessionPickerMessage::Close])
+            }
             PickerKey::MoveUp => {
                 self.combobox.move_up();
                 Some(vec![])
@@ -50,9 +59,13 @@ impl Component for SessionPicker {
             }
             PickerKey::Confirm => {
                 if let Some(entry) = self.combobox.selected().cloned() {
-                    Some(vec![PickerMessage::Confirm(entry)])
+                    let info = entry.0;
+                    Some(vec![SessionPickerMessage::LoadSession {
+                        session_id: acp::SessionId::new(info.session_id.0.to_string()),
+                        cwd: info.cwd,
+                    }])
                 } else {
-                    Some(vec![PickerMessage::Close])
+                    Some(vec![SessionPickerMessage::Close])
                 }
             }
             PickerKey::Char(c) => {

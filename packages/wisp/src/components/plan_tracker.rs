@@ -10,6 +10,9 @@ pub struct PlanTracker {
     pub grace_period: Duration,
     last_tick: Instant,
     version: u64,
+    cached_entries: Vec<acp::PlanEntry>,
+    cached_version: u64,
+    cached_tick: Instant,
 }
 
 impl Default for PlanTracker {
@@ -20,6 +23,9 @@ impl Default for PlanTracker {
             grace_period: Duration::from_secs(3),
             last_tick: Instant::now(),
             version: 0,
+            cached_entries: Vec::new(),
+            cached_version: 0,
+            cached_tick: Instant::now(),
         }
     }
 }
@@ -79,6 +85,19 @@ impl PlanTracker {
     #[cfg(test)]
     fn completed_at_for(&self, entry: &acp::PlanEntry) -> Option<Instant> {
         self.completed_at.get(&Self::entry_key(entry)).copied()
+    }
+
+    pub fn cached_visible_entries(&mut self) -> &[acp::PlanEntry] {
+        if self.version != self.cached_version || self.last_tick != self.cached_tick {
+            self.cached_entries = self.visible_entries(self.last_tick, self.grace_period);
+            self.cached_version = self.version;
+            self.cached_tick = self.last_tick;
+        }
+        &self.cached_entries
+    }
+
+    pub fn cached_entries(&self) -> &[acp::PlanEntry] {
+        &self.cached_entries
     }
 
     pub fn last_tick(&self) -> Instant {

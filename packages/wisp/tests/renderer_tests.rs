@@ -4,6 +4,7 @@ use tui::advanced::Renderer as FrameRenderer;
 use tui::testing::{TestTerminal, assert_buffer_eq};
 use wisp::components::app::view::build_frame;
 use wisp::components::app::{UiState, UiStateController, ViewEffect, WispEvent};
+use wisp::components::conversation_window::render_segments_to_lines;
 
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
 use tui::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
@@ -55,7 +56,7 @@ impl Renderer {
         self.state.prepare_for_render(&context);
         let state = &self.state;
         self.frame_renderer.render_frame(|ctx| {
-            build_frame(state, &state.git_diff_mode, &state.cached_visible_plan_entries, ctx)
+            build_frame(state, &state.git_diff_mode, ctx)
         })
     }
 
@@ -127,14 +128,28 @@ impl Renderer {
         for effect in effects {
             match effect {
                 ViewEffect::ClearScreen => self.frame_renderer.clear_screen()?,
-                ViewEffect::PushToScrollback(lines) => self.frame_renderer.push_to_scrollback(&lines)?,
                 ViewEffect::SetTheme(theme) => self.frame_renderer.set_theme(theme),
-                ViewEffect::FlushCompleted => {
+                ViewEffect::PushToScrollbackContent { content, completed_tool_ids } => {
                     let context = self.frame_renderer.context();
-                    let scrollback_lines = self.state.flush_completed(&context);
-                    if !scrollback_lines.is_empty() {
-                        self.frame_renderer.push_to_scrollback(&scrollback_lines)?;
+                    let lines = render_segments_to_lines(&content, &self.state.tool_call_statuses, &context);
+                    if !lines.is_empty() {
+                        self.frame_renderer.push_to_scrollback(&lines)?;
                     }
+                    self.state.remove_tools(&completed_tool_ids);
+                }
+                ViewEffect::PromptSubmitted { user_input } => {
+                    let lines = vec![
+                        tui::Line::new(String::new()),
+                        tui::Line::new(user_input),
+                    ];
+                    self.frame_renderer.push_to_scrollback(&lines)?;
+                }
+                ViewEffect::AttachmentWarnings(warnings) => {
+                    let lines: Vec<tui::Line> = warnings
+                        .into_iter()
+                        .map(|w| tui::Line::new(format!("[wisp] {w}")))
+                        .collect();
+                    self.frame_renderer.push_to_scrollback(&lines)?;
                 }
             }
         }

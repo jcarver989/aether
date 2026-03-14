@@ -1,36 +1,44 @@
 use crate::components::reasoning_bar::reasoning_bar;
 use crate::tui::{Line, ViewContext, display_width_text};
+use acp_utils::config_option_id::ConfigOptionId;
+use agent_client_protocol::{
+    self as acp, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
+    SessionConfigSelectOptions,
+};
 use utils::ReasoningEffort;
 
 pub struct StatusLine<'a> {
     pub agent_name: &'a str,
-    pub mode_display: Option<&'a str>,
-    pub model_display: Option<&'a str>,
-    pub reasoning_effort: Option<ReasoningEffort>,
+    pub config_options: &'a [SessionConfigOption],
     pub context_pct_left: Option<u8>,
     pub waiting_for_response: bool,
     pub unhealthy_server_count: usize,
 }
 
 impl StatusLine<'_> {
+    #[allow(clippy::similar_names)]
     pub fn render(&self, context: &ViewContext) -> Vec<Line> {
+        let mode_display = extract_mode_display(self.config_options);
+        let model_display = extract_model_display(self.config_options);
+        let reasoning_effort = extract_reasoning_effort(self.config_options);
+
         let mut left_line = Line::default();
         let sep = context.theme.text_secondary();
 
         left_line.push_text("  ");
         left_line.push_styled(self.agent_name, context.theme.info());
 
-        if let Some(mode) = self.mode_display {
+        if let Some(ref mode) = mode_display {
             left_line.push_styled(" · ", sep);
-            left_line.push_styled(mode, context.theme.secondary());
+            left_line.push_styled(mode.as_str(), context.theme.secondary());
         }
 
-        if let Some(model) = self.model_display {
+        if let Some(ref model) = model_display {
             left_line.push_styled(" · ", sep);
-            left_line.push_styled(model, context.theme.success());
+            left_line.push_styled(model.as_str(), context.theme.success());
             left_line.push_text(" ");
             left_line.push_styled(
-                reasoning_bar(self.reasoning_effort),
+                reasoning_bar(reasoning_effort),
                 context.theme.success(),
             );
         }
@@ -71,17 +79,149 @@ impl StatusLine<'_> {
     }
 }
 
+pub(crate) fn is_cycleable_mode_option(option: &SessionConfigOption) -> bool {
+    matches!(option.kind, SessionConfigKind::Select(_))
+        && option.category == Some(SessionConfigOptionCategory::Mode)
+}
+
+pub(crate) fn option_display_name(
+    options: &SessionConfigSelectOptions,
+    current_value: &acp::SessionConfigValueId,
+) -> Option<String> {
+    match options {
+        SessionConfigSelectOptions::Ungrouped(options) => options
+            .iter()
+            .find(|option| &option.value == current_value)
+            .map(|option| option.name.clone()),
+        SessionConfigSelectOptions::Grouped(groups) => groups
+            .iter()
+            .flat_map(|group| group.options.iter())
+            .find(|option| &option.value == current_value)
+            .map(|option| option.name.clone()),
+        _ => None,
+    }
+}
+
+pub(crate) fn extract_select_display(
+    config_options: &[SessionConfigOption],
+    id: ConfigOptionId,
+) -> Option<String> {
+    let option = config_options
+        .iter()
+        .find(|option| option.id.0.as_ref() == id.as_str())?;
+
+    let SessionConfigKind::Select(ref select) = option.kind else {
+        return None;
+    };
+
+    option_display_name(&select.options, &select.current_value)
+}
+
+pub(crate) fn extract_mode_display(config_options: &[SessionConfigOption]) -> Option<String> {
+    extract_select_display(config_options, ConfigOptionId::Mode)
+}
+
+pub(crate) fn extract_model_display(config_options: &[SessionConfigOption]) -> Option<String> {
+    let option = config_options
+        .iter()
+        .find(|option| option.id.0.as_ref() == ConfigOptionId::Model.as_str())?;
+
+    let SessionConfigKind::Select(ref select) = option.kind else {
+        return None;
+    };
+
+    let options = match &select.options {
+        SessionConfigSelectOptions::Ungrouped(options) => options,
+        SessionConfigSelectOptions::Grouped(_) => {
+            return extract_select_display(config_options, ConfigOptionId::Model);
+        }
+        _ => return None,
+    };
+
+    let current = select.current_value.0.as_ref();
+    if current.contains(',') {
+        let names: Vec<&str> = current
+            .split(',')
+            .filter_map(|part| {
+                let trimmed = part.trim();
+                options
+                    .iter()
+                    .find(|option| option.value.0.as_ref() == trimmed)
+                    .map(|option| option.name.as_str())
+            })
+            .collect();
+        if names.is_empty() {
+            None
+        } else {
+            Some(names.join(" + "))
+        }
+    } else {
+        extract_select_display(config_options, ConfigOptionId::Model)
+    }
+}
+
+pub(crate) fn extract_reasoning_effort(
+    config_options: &[SessionConfigOption],
+) -> Option<ReasoningEffort> {
+    let option = config_options
+        .iter()
+        .find(|option| option.id.0.as_ref() == ConfigOptionId::ReasoningEffort.as_str())?;
+
+    let SessionConfigKind::Select(ref select) = option.kind else {
+        return None;
+    };
+
+    ReasoningEffort::parse(&select.current_value.0).unwrap_or(None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn mode_option(value: impl Into<String>, name: impl Into<String>) -> SessionConfigOption {
+        let value = value.into();
+        let name = name.into();
+        SessionConfigOption::select(
+            "mode",
+            "Mode",
+            value.clone(),
+            vec![acp::SessionConfigSelectOption::new(value, name)],
+        )
+        .category(SessionConfigOptionCategory::Mode)
+    }
+
+    fn model_option(value: impl Into<String>, name: impl Into<String>) -> SessionConfigOption {
+        let value = value.into();
+        let name = name.into();
+        SessionConfigOption::select(
+            "model",
+            "Model",
+            value.clone(),
+            vec![acp::SessionConfigSelectOption::new(value, name)],
+        )
+        .category(SessionConfigOptionCategory::Model)
+    }
+
+    fn reasoning_option(value: impl Into<String>) -> SessionConfigOption {
+        let value = value.into();
+        SessionConfigOption::select(
+            ConfigOptionId::ReasoningEffort.as_str(),
+            "Reasoning",
+            value,
+            vec![
+                acp::SessionConfigSelectOption::new("none", "None"),
+                acp::SessionConfigSelectOption::new("low", "Low"),
+                acp::SessionConfigSelectOption::new("medium", "Medium"),
+                acp::SessionConfigSelectOption::new("high", "High"),
+            ],
+        )
+    }
 
     #[test]
     fn renders_agent_name() {
         let status = StatusLine {
             agent_name: "claude-code",
-            mode_display: None,
-            model_display: None,
-            reasoning_effort: None,
+            config_options: &[],
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -96,9 +236,7 @@ mod tests {
     fn renders_with_indentation() {
         let status = StatusLine {
             agent_name: "test-agent",
-            mode_display: None,
-            model_display: None,
-            reasoning_effort: None,
+            config_options: &[],
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -111,11 +249,10 @@ mod tests {
 
     #[test]
     fn renders_model_display() {
+        let options = vec![model_option("gpt-4o", "gpt-4o")];
         let status = StatusLine {
             agent_name: "aether-acp",
-            mode_display: None,
-            model_display: Some("gpt-4o"),
-            reasoning_effort: None,
+            config_options: &options,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -132,9 +269,7 @@ mod tests {
     fn renders_without_model_when_none() {
         let status = StatusLine {
             agent_name: "aether-acp",
-            mode_display: None,
-            model_display: None,
-            reasoning_effort: None,
+            config_options: &[],
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -151,11 +286,10 @@ mod tests {
 
     #[test]
     fn renders_context_usage_right_aligned() {
+        let options = vec![model_option("gpt-4o", "gpt-4o")];
         let status = StatusLine {
             agent_name: "aether",
-            mode_display: None,
-            model_display: Some("gpt-4o"),
-            reasoning_effort: None,
+            config_options: &options,
             context_pct_left: Some(72),
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -170,11 +304,10 @@ mod tests {
 
     #[test]
     fn does_not_render_context_when_none() {
+        let options = vec![model_option("gpt-4o", "gpt-4o")];
         let status = StatusLine {
             agent_name: "aether",
-            mode_display: None,
-            model_display: Some("gpt-4o"),
-            reasoning_effort: None,
+            config_options: &options,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -187,11 +320,10 @@ mod tests {
 
     #[test]
     fn renders_interrupt_message_when_waiting() {
+        let options = vec![model_option("gpt-4o", "gpt-4o")];
         let status = StatusLine {
             agent_name: "aether",
-            mode_display: None,
-            model_display: Some("gpt-4o"),
-            reasoning_effort: None,
+            config_options: &options,
             context_pct_left: Some(72),
             waiting_for_response: true,
             unhealthy_server_count: 0,
@@ -214,9 +346,7 @@ mod tests {
     fn renders_interrupt_message_without_model_when_waiting() {
         let status = StatusLine {
             agent_name: "aether",
-            mode_display: None,
-            model_display: None,
-            reasoning_effort: None,
+            config_options: &[],
             context_pct_left: None,
             waiting_for_response: true,
             unhealthy_server_count: 0,
@@ -233,11 +363,10 @@ mod tests {
 
     #[test]
     fn renders_unhealthy_server_singular() {
+        let options = vec![model_option("gpt-4o", "gpt-4o")];
         let status = StatusLine {
             agent_name: "aether",
-            mode_display: None,
-            model_display: Some("gpt-4o"),
-            reasoning_effort: None,
+            config_options: &options,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 1,
@@ -255,9 +384,7 @@ mod tests {
     fn renders_unhealthy_servers_plural() {
         let status = StatusLine {
             agent_name: "aether",
-            mode_display: None,
-            model_display: None,
-            reasoning_effort: None,
+            config_options: &[],
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 3,
@@ -275,9 +402,7 @@ mod tests {
     fn zero_unhealthy_servers_shows_nothing() {
         let status = StatusLine {
             agent_name: "aether",
-            mode_display: None,
-            model_display: None,
-            reasoning_effort: None,
+            config_options: &[],
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -295,9 +420,7 @@ mod tests {
     fn context_usage_takes_precedence_over_unhealthy() {
         let status = StatusLine {
             agent_name: "aether",
-            model_display: None,
-            mode_display: None,
-            reasoning_effort: None,
+            config_options: &[],
             context_pct_left: Some(50),
             waiting_for_response: false,
             unhealthy_server_count: 2,
@@ -317,11 +440,13 @@ mod tests {
 
     #[test]
     fn renders_agent_mode_model_in_order() {
+        let options = vec![
+            mode_option("planner", "Planner"),
+            model_option("gpt-4o", "gpt-4o"),
+        ];
         let status = StatusLine {
             agent_name: "wisp",
-            mode_display: Some("Planner"),
-            model_display: Some("gpt-4o"),
-            reasoning_effort: None,
+            config_options: &options,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -350,11 +475,10 @@ mod tests {
 
     #[test]
     fn renders_mode_with_secondary_color() {
+        let options = vec![mode_option("planner", "Planner")];
         let status = StatusLine {
             agent_name: "wisp",
-            mode_display: Some("Planner"),
-            model_display: None,
-            reasoning_effort: None,
+            config_options: &options,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -380,9 +504,7 @@ mod tests {
     fn renders_agent_with_info_color() {
         let status = StatusLine {
             agent_name: "wisp",
-            mode_display: None,
-            model_display: None,
-            reasoning_effort: None,
+            config_options: &[],
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -406,11 +528,10 @@ mod tests {
 
     #[test]
     fn renders_model_with_success_color() {
+        let options = vec![model_option("gpt-4o", "gpt-4o")];
         let status = StatusLine {
             agent_name: "wisp",
-            mode_display: None,
-            model_display: Some("gpt-4o"),
-            reasoning_effort: None,
+            config_options: &options,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -434,11 +555,13 @@ mod tests {
 
     #[test]
     fn renders_each_element_with_distinct_color() {
+        let options = vec![
+            mode_option("planner", "Planner"),
+            model_option("gpt-4o", "gpt-4o"),
+        ];
         let status = StatusLine {
             agent_name: "wisp",
-            mode_display: Some("Planner"),
-            model_display: Some("gpt-4o"),
-            reasoning_effort: None,
+            config_options: &options,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -477,11 +600,13 @@ mod tests {
 
     #[test]
     fn renders_reasoning_bar_next_to_model_when_reasoning_set() {
+        let options = vec![
+            model_option("gpt-4o", "gpt-4o"),
+            reasoning_option("medium"),
+        ];
         let status = StatusLine {
             agent_name: "wisp",
-            mode_display: None,
-            model_display: Some("gpt-4o"),
-            reasoning_effort: Some(ReasoningEffort::Medium),
+            config_options: &options,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -505,11 +630,10 @@ mod tests {
 
     #[test]
     fn does_not_render_reasoning_bar_when_model_absent() {
+        let options = vec![reasoning_option("high")];
         let status = StatusLine {
             agent_name: "wisp",
-            mode_display: None,
-            model_display: None,
-            reasoning_effort: Some(ReasoningEffort::High),
+            config_options: &options,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -523,11 +647,10 @@ mod tests {
 
     #[test]
     fn renders_empty_reasoning_bar_for_none_effort() {
+        let options = vec![model_option("gpt-4o", "gpt-4o")];
         let status = StatusLine {
             agent_name: "wisp",
-            mode_display: None,
-            model_display: Some("gpt-4o"),
-            reasoning_effort: None,
+            config_options: &options,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
@@ -540,11 +663,13 @@ mod tests {
 
     #[test]
     fn renders_reasoning_bar_with_model_semantic_color() {
+        let options = vec![
+            model_option("gpt-4o", "gpt-4o"),
+            reasoning_option("low"),
+        ];
         let status = StatusLine {
             agent_name: "wisp",
-            mode_display: None,
-            model_display: Some("gpt-4o"),
-            reasoning_effort: Some(ReasoningEffort::Low),
+            config_options: &options,
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,

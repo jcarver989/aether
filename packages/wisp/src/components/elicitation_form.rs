@@ -1,5 +1,5 @@
 use crate::tui::{Checkbox, MultiSelect, NumberField, RadioSelect, SelectOption, TextField};
-use crate::tui::{Form, FormField, FormFieldKind};
+use crate::tui::{Component, Event, Form, FormField, FormFieldKind, FormMessage, Line, ViewContext};
 use acp_utils::notifications::{ElicitationAction, ElicitationParams, ElicitationResponse};
 use acp_utils::{
     ConstTitle, ElicitationSchema, EnumSchema, MultiSelectEnumSchema, PrimitiveSchema,
@@ -7,9 +7,39 @@ use acp_utils::{
 };
 use tokio::sync::oneshot;
 
+pub enum ElicitationMessage {
+    Responded,
+}
+
 pub struct ElicitationForm {
     pub form: Form,
-    pub response_tx: oneshot::Sender<ElicitationResponse>,
+    pub(crate) response_tx: Option<oneshot::Sender<ElicitationResponse>>,
+}
+
+impl Component for ElicitationForm {
+    type Message = ElicitationMessage;
+
+    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+        let outcome = self.form.on_event(event)?;
+        for msg in outcome {
+            match msg {
+                FormMessage::Close => {
+                    let _ = self.response_tx.take().map(|tx| tx.send(Self::decline()));
+                    return Some(vec![ElicitationMessage::Responded]);
+                }
+                FormMessage::Submit => {
+                    let response = self.confirm();
+                    let _ = self.response_tx.take().map(|tx| tx.send(response));
+                    return Some(vec![ElicitationMessage::Responded]);
+                }
+            }
+        }
+        Some(vec![])
+    }
+
+    fn render(&self, ctx: &ViewContext) -> Vec<Line> {
+        self.form.render(ctx)
+    }
 }
 
 impl ElicitationForm {
@@ -20,7 +50,7 @@ impl ElicitationForm {
         let fields = parse_schema(&params.schema);
         Self {
             form: Form::new(params.message, fields),
-            response_tx,
+            response_tx: Some(response_tx),
         }
     }
 
