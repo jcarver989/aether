@@ -10,7 +10,8 @@ mod test_helpers;
 mod tui;
 
 use crate::cli::Cli;
-use crate::components::app::{App, AppAction, WispEvent};
+use crate::components::app::{GitDiffMode, UiState, UiStateController, UiView, WispEvent};
+use crate::error::AppError;
 use crate::runtime_state::RuntimeState;
 use crate::tui::Event;
 use crate::tui::advanced::{
@@ -18,7 +19,6 @@ use crate::tui::advanced::{
     terminal_size,
 };
 use clap::Parser;
-use std::collections::VecDeque;
 use std::fs::create_dir_all;
 use std::io;
 use std::process::ExitCode;
@@ -52,16 +52,11 @@ async fn main() -> ExitCode {
         working_dir,
     } = state;
 
-    let app = App::new(
-        agent_name,
-        &config_options,
-        auth_methods,
-        prompt_handle,
-        session_id,
-        working_dir,
-    );
+    let ui_state = UiState::new(agent_name, &config_options, auth_methods);
+    let controller = UiStateController::new(session_id, prompt_handle);
+    let git_diff_mode = GitDiffMode::new(working_dir);
 
-    match run_app(app, theme, event_rx).await {
+    match run_app(ui_state, controller, git_diff_mode, theme, event_rx).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("Fatal error: {e}");
@@ -71,17 +66,19 @@ async fn main() -> ExitCode {
 }
 
 async fn run_app(
-    mut app: App,
+    mut state: UiState,
+    mut controller: UiStateController,
+    git_diff_mode: GitDiffMode,
     theme: tui::Theme,
     mut event_rx: mpsc::UnboundedReceiver<acp_utils::client::AcpEvent>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), AppError> {
     let _session = TerminalSession::enter(true, MouseCapture::Disabled)?;
-    let mut renderer = Renderer::new(io::stdout(), theme);
+    let mut view = UiView::new(Renderer::new(io::stdout(), theme), git_diff_mode);
     let size = terminal_size().unwrap_or((80, 24));
-    renderer.on_resize(size);
+    view.on_resize(size);
 
     let mut terminal_rx = spawn_terminal_event_task();
-    renderer.render_frame(|ctx| app.view(ctx))?;
+    view.render(&mut state)?;
 
     let tick_rate = Duration::from_millis(100);
     let mut tick_interval = time::interval(tick_rate);
@@ -89,7 +86,7 @@ async fn run_app(
 
     loop {
         let tick_fut = async {
-            if !app.wants_tick() {
+            if !state.wants_tick() {
                 std::future::pending::<()>().await;
             }
             tick_interval.tick().await;
@@ -103,69 +100,33 @@ async fn run_app(
                     return Ok(());
                 };
                 if let CrosstermEvent::Resize(cols, rows) = &event {
-                    renderer.on_resize((*cols, *rows));
+                    view.on_resize((*cols, *rows));
                 }
-                if let Ok(tui_event) = Event::try_from(event)
-                    && handle_event(&mut app, &mut renderer, WispEvent::Terminal(tui_event)).await?
-                {
-                    return Ok(());
+                if let Ok(tui_event) = Event::try_from(event) {
+                    controller.handle_event(&mut state, &mut view, WispEvent::Terminal(tui_event)).await?;
+                    if state.exit_requested { return Ok(()); }
+                    view.render(&mut state)?;
                 }
             }
 
             app_event = external_fut => {
                 match app_event {
                     Some(event) => {
-                        if handle_event(&mut app, &mut renderer, WispEvent::Acp(event)).await? {
-                            return Ok(());
-                        }
+                        controller.handle_event(&mut state, &mut view, WispEvent::Acp(event)).await?;
+                        if state.exit_requested { return Ok(()); }
+                        view.render(&mut state)?;
                     }
                     None => return Ok(()),
                 }
             }
 
             () = tick_fut => {
-                if handle_event(&mut app, &mut renderer, WispEvent::Terminal(Event::Tick)).await? {
-                    return Ok(());
-                }
+                controller.handle_event(&mut state, &mut view, WispEvent::Terminal(Event::Tick)).await?;
+                if state.exit_requested { return Ok(()); }
+                view.render(&mut state)?;
             }
         }
     }
-}
-
-async fn handle_event<W: io::Write>(
-    app: &mut App,
-    renderer: &mut Renderer<W>,
-    event: WispEvent,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let ctx = renderer.context();
-    let response = app.update(event, &ctx);
-    if app.should_exit() {
-        return Ok(true);
-    }
-    if process_effects(app, renderer, response).await? {
-        return Ok(true);
-    }
-    renderer.render_frame(|ctx| app.view(ctx))?;
-    Ok(false)
-}
-
-async fn process_effects<W: io::Write>(
-    app: &mut App,
-    renderer: &mut Renderer<W>,
-    response: Option<Vec<AppAction>>,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let mut queue: VecDeque<AppAction> = response.unwrap_or_default().into();
-
-    while let Some(effect) = queue.pop_front() {
-        renderer.render_frame(|ctx| app.view(ctx))?;
-        let follow_up = app.run_effect(renderer, effect).await?;
-        if app.should_exit() {
-            return Ok(true);
-        }
-        queue.extend(follow_up);
-    }
-
-    Ok(false)
 }
 
 fn setup_logging(cli: &Cli) {

@@ -2,7 +2,7 @@ use agent_client_protocol as acp;
 use tui::Theme;
 use tui::advanced::Renderer as FrameRenderer;
 use tui::testing::{TestTerminal, assert_buffer_eq};
-use wisp::components::app::{App, AppAction, WispEvent};
+use wisp::components::app::{GitDiffMode, UiState, UiStateController, UiView, WispEvent};
 
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
 use tui::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
@@ -17,8 +17,9 @@ enum LoopAction {
 }
 
 struct Renderer {
-    screen: App,
-    renderer: FrameRenderer<TestTerminal>,
+    state: UiState,
+    controller: UiStateController,
+    view: UiView<TestTerminal>,
 }
 
 impl Renderer {
@@ -27,32 +28,31 @@ impl Renderer {
         agent_name: String,
         config_options: &[acp::SessionConfigOption],
     ) -> Self {
-        let screen = App::new(
-            agent_name,
-            config_options,
-            vec![],
-            AcpPromptHandle::noop(),
+        let state = UiState::new(agent_name, config_options, vec![]);
+        let controller = UiStateController::new(
             acp::SessionId::new("test"),
-            std::path::PathBuf::from("."),
+            AcpPromptHandle::noop(),
         );
         let renderer = FrameRenderer::new(terminal, Theme::default());
-        Self { screen, renderer }
+        let git_diff_mode = GitDiffMode::new(std::path::PathBuf::from("."));
+        let view = UiView::new(renderer, git_diff_mode);
+        Self { state, controller, view }
     }
 
     fn writer(&self) -> &TestTerminal {
-        self.renderer.writer()
+        self.view.renderer().writer()
     }
 
     fn test_writer_mut(&mut self) -> &mut TestTerminal {
-        self.renderer.test_writer_mut()
+        self.view.renderer_mut().test_writer_mut()
     }
 
     fn on_resize(&mut self, size: (u16, u16)) {
-        self.renderer.on_resize(size);
+        self.view.on_resize(size);
     }
 
     fn initial_render(&mut self) -> std::io::Result<()> {
-        self.renderer.render_frame(|ctx| self.screen.view(ctx))?;
+        self.view.render(&mut self.state)?;
         Ok(())
     }
 
@@ -60,44 +60,30 @@ impl Renderer {
         &mut self,
         key_event: tui::KeyEvent,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
-        let effects = self
-            .screen
-            .update(WispEvent::Terminal(Event::Key(key_event)), &self.renderer.context());
-        self.apply_effects(effects).await
+        self.handle_event(WispEvent::Terminal(Event::Key(key_event))).await
     }
 
     async fn on_session_update(
         &mut self,
         update: acp::SessionUpdate,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let effects = self.screen.update(
-            WispEvent::Acp(AcpEvent::SessionUpdate(Box::new(update))),
-            &self.renderer.context(),
-        );
-        self.apply_effects(effects).await.map(|_| ())
+        self.handle_event(WispEvent::Acp(AcpEvent::SessionUpdate(Box::new(update)))).await?;
+        Ok(())
     }
 
     async fn on_prompt_done(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let effects = self.screen.update(
-            WispEvent::Acp(AcpEvent::PromptDone(acp::StopReason::EndTurn)),
-            &self.renderer.context(),
-        );
-        self.apply_effects(effects).await.map(|_| ())
+        self.handle_event(WispEvent::Acp(AcpEvent::PromptDone(acp::StopReason::EndTurn))).await?;
+        Ok(())
     }
 
     async fn on_tick(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let effects = self.screen.update(
-            WispEvent::Terminal(Event::Tick),
-            &self.renderer.context(),
-        );
-        self.apply_effects(effects).await.map(|_| ())
+        self.handle_event(WispEvent::Terminal(Event::Tick)).await?;
+        Ok(())
     }
 
     async fn on_paste(&mut self, text: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let effects = self
-            .screen
-            .update(WispEvent::Terminal(Event::Paste(text.to_string())), &self.renderer.context());
-        self.apply_effects(effects).await.map(|_| ())
+        self.handle_event(WispEvent::Terminal(Event::Paste(text.to_string()))).await?;
+        Ok(())
     }
 
     async fn on_resize_event(
@@ -105,55 +91,38 @@ impl Renderer {
         cols: u16,
         rows: u16,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.renderer.on_resize((cols, rows));
-        let effects = self.screen.update(
-            WispEvent::Terminal(Event::Resize((cols, rows).into())),
-            &self.renderer.context(),
-        );
-        self.apply_effects(effects).await.map(|_| ())
+        self.view.on_resize((cols, rows));
+        self.handle_event(WispEvent::Terminal(Event::Resize((cols, rows).into()))).await?;
+        Ok(())
     }
 
     async fn on_ext_notification(
         &mut self,
         notification: acp::ExtNotification,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let effects = self.screen.update(
-            WispEvent::Acp(AcpEvent::ExtNotification(notification)),
-            &self.renderer.context(),
-        );
-        self.apply_effects(effects).await.map(|_| ())
+        self.handle_event(WispEvent::Acp(AcpEvent::ExtNotification(notification))).await?;
+        Ok(())
     }
 
     async fn on_connection_closed(&mut self) -> Result<LoopAction, Box<dyn std::error::Error>> {
-        let effects = self.screen.update(
-            WispEvent::Acp(AcpEvent::ConnectionClosed),
-            &self.renderer.context(),
-        );
-        self.apply_effects(effects).await
+        self.handle_event(WispEvent::Acp(AcpEvent::ConnectionClosed)).await
     }
 
-    async fn apply_effects(
+    async fn handle_event(
         &mut self,
-        effects: Option<Vec<AppAction>>,
+        event: WispEvent,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
-        let mut queue: std::collections::VecDeque<_> = effects.unwrap_or_default().into();
+        self.controller
+            .handle_event(&mut self.state, &mut self.view, event)
+            .await
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
 
-        while let Some(effect) = queue.pop_front() {
-            self.renderer.render_frame(|ctx| self.screen.view(ctx))?;
-            let follow_up = self.screen.run_effect(&mut self.renderer, effect).await?;
-            if self.screen.should_exit() {
-                return Ok(LoopAction::Exit);
-            }
-            queue.extend(follow_up);
+        if self.state.exit_requested {
+            return Ok(LoopAction::Exit);
         }
 
-        self.renderer.render_frame(|ctx| self.screen.view(ctx))?;
-
-        if self.screen.should_exit() {
-            Ok(LoopAction::Exit)
-        } else {
-            Ok(LoopAction::Continue)
-        }
+        self.view.render(&mut self.state)?;
+        Ok(LoopAction::Continue)
     }
 }
 

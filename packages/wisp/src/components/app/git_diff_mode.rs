@@ -1,4 +1,3 @@
-use super::AppAction;
 use crate::components::git_diff_view::{GitDiffView, GitDiffViewMessage, build_patch_lines};
 use crate::git_diff::{FileDiff, GitDiffDocument, PatchLineKind};
 #[cfg(test)]
@@ -7,12 +6,12 @@ use crate::tui::{Component, Event, Line, MouseEventKind, ViewContext};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ScreenMode {
+pub enum ScreenMode {
     Conversation,
     GitDiff,
 }
 
-pub(crate) enum GitDiffLoadState {
+pub enum GitDiffLoadState {
     Loading,
     Ready(GitDiffDocument),
     Empty,
@@ -20,7 +19,7 @@ pub(crate) enum GitDiffLoadState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PatchFocus {
+pub enum PatchFocus {
     FileList,
     Patch,
     CommentInput,
@@ -33,7 +32,7 @@ pub(crate) struct PatchLineRef {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct QueuedComment {
+pub struct QueuedComment {
     pub file_path: String,
     pub hunk_index: usize,
     pub hunk_text: String,
@@ -43,7 +42,7 @@ pub(crate) struct QueuedComment {
     pub comment: String,
 }
 
-pub(crate) struct GitDiffViewState {
+pub struct GitDiffViewState {
     pub(crate) load_state: GitDiffLoadState,
     pub(crate) focus: PatchFocus,
     pub(crate) selected_file: usize,
@@ -296,7 +295,7 @@ struct RefreshState {
     focus: PatchFocus,
 }
 
-pub(crate) struct GitDiffMode {
+pub struct GitDiffMode {
     working_dir: PathBuf,
     cached_repo_root: Option<PathBuf>,
     state: GitDiffViewState,
@@ -304,7 +303,7 @@ pub(crate) struct GitDiffMode {
 }
 
 impl GitDiffMode {
-    pub(crate) fn new(working_dir: PathBuf) -> Self {
+    pub fn new(working_dir: PathBuf) -> Self {
         Self {
             working_dir,
             cached_repo_root: None,
@@ -353,60 +352,34 @@ impl GitDiffMode {
         self.state = GitDiffViewState::new(GitDiffLoadState::Empty);
     }
 
-    fn handle_messages(&mut self, outcome: Option<Vec<GitDiffViewMessage>>) -> Vec<AppAction> {
-        outcome
-            .unwrap_or_default()
-            .into_iter()
-            .map(|message| match message {
-                GitDiffViewMessage::Close => AppAction::CloseGitDiffViewer,
-                GitDiffViewMessage::Refresh => {
-                    self.begin_refresh();
-                    AppAction::RefreshGitDiffViewer
-                }
-                GitDiffViewMessage::SubmitReview { comments } => {
-                    AppAction::SubmitDiffReview { comments }
-                }
-            })
-            .collect()
+    pub(crate) fn on_key_event(&mut self, event: &Event) -> Vec<GitDiffViewMessage> {
+        let mut view = GitDiffView {
+            state: &mut self.state,
+        };
+        let outcome = view.on_event(event);
+        outcome.unwrap_or_default()
     }
-}
 
-impl Component for GitDiffMode {
-    type Message = AppAction;
-
-    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
-        match event {
-            Event::Key(key_event) => {
-                let mut view = GitDiffView {
-                    state: &mut self.state,
-                };
-                let outcome = view.on_event(&Event::Key(*key_event));
-                Some(self.handle_messages(outcome))
-            }
-            Event::Mouse(mouse) => match mouse.kind {
+    pub(crate) fn on_mouse_event(&mut self, event: &Event) {
+        if let Event::Mouse(mouse) = event {
+            match mouse.kind {
                 MouseEventKind::ScrollUp => {
                     self.state.scroll_patch(-3);
-                    Some(vec![])
                 }
                 MouseEventKind::ScrollDown => {
                     self.state.scroll_patch(3);
-                    Some(vec![])
                 }
-                _ => None,
-            },
-            _ => None,
+                _ => {}
+            }
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Vec<Line> {
+    pub(crate) fn render_lines(&self, context: &ViewContext) -> Vec<Line> {
         GitDiffView::render_from_state(&self.state, context)
     }
-}
 
-impl GitDiffMode {
     pub(crate) fn refresh_caches(&mut self, context: &ViewContext) {
         self.state.ensure_patch_cache(context);
-        // 2 rows: file header + spacer above patch content
         let viewport_height = (context.size.height as usize).saturating_sub(2);
         self.state.ensure_cursor_visible(viewport_height);
     }
@@ -425,7 +398,6 @@ pub(crate) fn format_review_prompt(comments: &[QueuedComment]) -> String {
 
     let mut prompt = String::from("I'm reviewing the working tree diff. Here are my comments:\n");
 
-    // Group comments by file
     let mut file_groups: Vec<(&str, Vec<&QueuedComment>)> = Vec::new();
     for comment in comments {
         if let Some(group) = file_groups
@@ -441,7 +413,6 @@ pub(crate) fn format_review_prompt(comments: &[QueuedComment]) -> String {
     for (file_path, file_comments) in &file_groups {
         write!(prompt, "\n## `{file_path}`\n").unwrap();
 
-        // Group comments by hunk within the file
         let mut hunk_groups: Vec<(usize, &str, Vec<&QueuedComment>)> = Vec::new();
         for comment in file_comments {
             if let Some(group) = hunk_groups
@@ -551,7 +522,7 @@ mod tests {
         mode.state.load_state = GitDiffLoadState::Ready(make_doc(&["a.rs"]));
         mode.state.focus = PatchFocus::Patch;
         mode.state.cached_patch_lines = vec![Line::new("a"), Line::new("b"), Line::new("c")];
-        mode.on_event(&Event::Mouse(MouseEvent {
+        mode.on_mouse_event(&Event::Mouse(MouseEvent {
             kind: MouseEventKind::ScrollDown,
             column: 0,
             row: 0,
@@ -603,7 +574,6 @@ mod tests {
             prompt.contains("## `src/bar.rs`"),
             "should have bar.rs header"
         );
-        // Both foo.rs comments should appear under the same hunk
         assert_eq!(
             prompt.matches("```diff").count(),
             2,
