@@ -3,6 +3,7 @@ use crossterm::event::KeyCode;
 use super::select_option::SelectOption;
 use crate::components::{Component, Event, ViewContext};
 use crate::line::Line;
+use crate::rendering::frame::Frame;
 use crate::style::Style;
 
 /// Multi-select from a list of options, rendered as checkboxes with a cursor.
@@ -96,8 +97,8 @@ impl Component for MultiSelect {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Vec<Line> {
-        self.render_field(context, true)
+    fn render(&self, context: &ViewContext) -> Frame {
+        Frame::new(self.render_field(context, true))
     }
 }
 

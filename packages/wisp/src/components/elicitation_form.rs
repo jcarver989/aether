@@ -1,5 +1,5 @@
 use crate::tui::{Checkbox, MultiSelect, NumberField, RadioSelect, SelectOption, TextField};
-use crate::tui::{Component, Event, Form, FormField, FormFieldKind, FormMessage, Line, ViewContext};
+use crate::tui::{Component, Event, Form, FormField, FormFieldKind, FormMessage, Frame, ViewContext};
 use acp_utils::notifications::{ElicitationAction, ElicitationParams, ElicitationResponse};
 use acp_utils::{
     ConstTitle, ElicitationSchema, EnumSchema, MultiSelectEnumSchema, PrimitiveSchema,
@@ -37,7 +37,7 @@ impl Component for ElicitationForm {
         Some(vec![])
     }
 
-    fn render(&self, ctx: &ViewContext) -> Vec<Line> {
+    fn render(&self, ctx: &ViewContext) -> Frame {
         self.form.render(ctx)
     }
 }

@@ -1,5 +1,6 @@
 use crate::tui::{
-    Combobox, Component, Event, Line, PickerKey, Searchable, Style, ViewContext, classify_key,
+    Combobox, Component, Event, Frame, Line, PickerKey, Searchable, Style, ViewContext,
+    classify_key,
     display_width_text, pad_text_to_width, truncate_text,
 };
 use agent_client_protocol as acp;
@@ -83,12 +84,12 @@ impl Component for SessionPicker {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Vec<Line> {
+    fn render(&self, context: &ViewContext) -> Frame {
         if self.combobox.is_empty() {
-            return vec![
+            return Frame::new(vec![
                 Line::new(String::new()),
                 Line::new("  No previous sessions found."),
-            ];
+            ]);
         }
 
         let now = Utc::now();
@@ -143,7 +144,7 @@ impl Component for SessionPicker {
                     }
                 });
         lines.extend(item_lines);
-        lines
+        Frame::new(lines)
     }
 }
 

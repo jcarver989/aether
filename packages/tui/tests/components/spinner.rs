@@ -7,10 +7,10 @@ fn invisible_renders_empty() {
     let mut spinner = Spinner::default();
     spinner.visible = false;
     let ctx = ViewContext::new((80, 24));
-    let lines = spinner.render(&ctx);
-    assert!(lines.is_empty());
+    let frame = spinner.render(&ctx);
+    assert!(frame.lines().is_empty());
     // Also verify it produces an empty buffer
-    let term = render_lines(&lines, 80, 24);
+    let term = render_lines(frame.lines(), 80, 24);
     assert_buffer_eq(&term, &[""]);
 }
 

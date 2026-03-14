@@ -1,7 +1,6 @@
 use crossterm::event::{KeyEvent, KeyEventKind, MouseEvent};
 
-use crate::line::Line;
-use crate::rendering::frame::{Cursor, Frame};
+use crate::rendering::frame::Frame;
 use crate::rendering::render_context::ViewContext;
 use crate::size::Size;
 
@@ -44,18 +43,8 @@ pub trait Component {
     /// - `Some(vec![msg, ...])` — event consumed, emit messages
     fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>>;
 
-    /// Render the current state to lines.
-    fn render(&self, ctx: &ViewContext) -> Vec<Line>;
-
-    /// Cursor position after render. Default: hidden.
-    fn cursor(&self, _ctx: &ViewContext) -> Cursor {
-        Cursor::hidden()
-    }
-
-    /// Build a complete frame from render + cursor. Override for custom framing.
-    fn build_frame(&self, ctx: &ViewContext) -> Frame {
-        Frame::new(self.render(ctx), self.cursor(ctx))
-    }
+    /// Render the current state to a frame.
+    fn render(&self, ctx: &ViewContext) -> Frame;
 }
 
 /// Merge two event outcomes. `None` (ignored) yields to the other.

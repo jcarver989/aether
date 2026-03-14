@@ -4,7 +4,7 @@ use crate::components::input_prompt::InputPrompt;
 use crate::components::text_input::{SelectedFileMention, TextInput, TextInputMessage};
 use crate::keybindings::Keybindings;
 use crate::tui::KeyCode;
-use crate::tui::{Component, Cursor, Event, Line, PickerMessage, ViewContext};
+use crate::tui::{Component, Cursor, Event, Frame, PickerMessage, ViewContext};
 use std::collections::HashSet;
 
 use super::app::PromptAttachment;
@@ -263,7 +263,7 @@ impl Component for PromptComposer {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Vec<Line> {
+    fn render(&self, context: &ViewContext) -> Frame {
         let picker_query_len = self.file_picker.as_ref().map(|picker| picker.query().len());
         let mut lines = InputPrompt {
             input: self.text_input.buffer(),
@@ -273,14 +273,14 @@ impl Component for PromptComposer {
         .lines;
 
         if let Some(ref picker) = self.file_picker {
-            lines.extend(picker.render(context));
+            lines.extend(picker.render(context).into_lines());
         }
 
         if let Some(ref picker) = self.command_picker {
-            lines.extend(picker.render(context));
+            lines.extend(picker.render(context).into_lines());
         }
 
-        lines
+        Frame::new(lines).with_cursor(self.cursor(context))
     }
 }
 
@@ -457,6 +457,7 @@ mod tests {
         let output = composer.render(&context);
         let cursor = composer.cursor(&context);
         let input_row = output
+            .lines()
             .iter()
             .position(|line| line.plain_text().contains("> "))
             .expect("input prompt should exist");

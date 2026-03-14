@@ -57,7 +57,7 @@ impl Renderer {
         let context = self.frame_renderer.context();
         self.app.prepare_for_render(&context);
         let app = &self.app;
-        self.frame_renderer.render_frame(|ctx| app.build_frame(ctx))
+        self.frame_renderer.render_frame(|ctx| app.render(ctx))
     }
 
     fn initial_render(&mut self) -> std::io::Result<()> {

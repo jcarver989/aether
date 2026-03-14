@@ -2,6 +2,7 @@ use crossterm::event::KeyCode;
 
 use crate::components::{Component, Event, ViewContext, wrap_selection};
 use crate::line::Line;
+use crate::rendering::frame::Frame;
 
 pub trait SelectItem {
     fn render_item(&self, selected: bool, ctx: &ViewContext) -> Line;
@@ -105,16 +106,18 @@ impl<T: SelectItem> Component for SelectList<T> {
         }
     }
 
-    fn render(&self, ctx: &ViewContext) -> Vec<Line> {
+    fn render(&self, ctx: &ViewContext) -> Frame {
         if self.items.is_empty() {
-            return vec![Line::new(format!("  ({})", self.placeholder))];
+            return Frame::new(vec![Line::new(format!("  ({})", self.placeholder))]);
         }
 
-        self.items
-            .iter()
-            .enumerate()
-            .map(|(i, item)| item.render_item(i == self.selected_index, ctx))
-            .collect()
+        Frame::new(
+            self.items
+                .iter()
+                .enumerate()
+                .map(|(i, item)| item.render_item(i == self.selected_index, ctx))
+                .collect(),
+        )
     }
 }
 
@@ -192,19 +195,19 @@ mod tests {
     fn empty_list_shows_placeholder() {
         let list: SelectList<TestItem> = SelectList::new(vec![], "no items");
         let ctx = ViewContext::new((80, 24));
-        let lines = list.render(&ctx);
-        assert_eq!(lines.len(), 1);
-        assert!(lines[0].plain_text().contains("no items"));
+        let frame = list.render(&ctx);
+        assert_eq!(frame.lines().len(), 1);
+        assert!(frame.lines()[0].plain_text().contains("no items"));
     }
 
     #[test]
     fn render_shows_selected_indicator() {
         let list = SelectList::new(items(&["alpha", "beta"]), "empty");
         let ctx = ViewContext::new((80, 24));
-        let lines = list.render(&ctx);
-        assert_eq!(lines.len(), 2);
-        assert!(lines[0].plain_text().starts_with("▶"));
-        assert!(lines[1].plain_text().starts_with("  "));
+        let frame = list.render(&ctx);
+        assert_eq!(frame.lines().len(), 2);
+        assert!(frame.lines()[0].plain_text().starts_with("▶"));
+        assert!(frame.lines()[1].plain_text().starts_with("  "));
     }
 
     #[test]

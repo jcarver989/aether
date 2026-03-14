@@ -77,7 +77,7 @@ fn render(renderer: &mut Renderer<impl io::Write>, app: &mut App) -> Result<(), 
     let context = renderer.context();
     app.prepare_for_render(&context);
     let app: &App = app;
-    renderer.render_frame(|ctx| app.build_frame(ctx))?;
+    renderer.render_frame(|ctx| app.render(ctx))?;
     Ok(())
 }
 

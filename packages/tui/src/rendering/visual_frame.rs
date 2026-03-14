@@ -118,14 +118,11 @@ mod tests {
 
     #[test]
     fn visual_frame_from_frame_soft_wraps_and_splits() {
-        let frame = Frame::new(
-            vec![Line::new("abcdef")],
-            Cursor {
-                row: 0,
-                col: 5,
-                is_visible: true,
-            },
-        );
+        let frame = Frame::new(vec![Line::new("abcdef")]).with_cursor(Cursor {
+            row: 0,
+            col: 5,
+            is_visible: true,
+        });
 
         let visual = VisualFrame::from_frame(&frame, Size::from((3, 5)), 0);
 
@@ -140,14 +137,11 @@ mod tests {
 
     #[test]
     fn visual_frame_into_parts_returns_visible_lines() {
-        let frame = Frame::new(
-            vec![Line::new("abcdef")],
-            Cursor {
-                row: 0,
-                col: 5,
-                is_visible: true,
-            },
-        );
+        let frame = Frame::new(vec![Line::new("abcdef")]).with_cursor(Cursor {
+            row: 0,
+            col: 5,
+            is_visible: true,
+        });
 
         let visual = VisualFrame::from_frame(&frame, Size::from((3, 5)), 0);
         let (scrollback_lines, visible_lines, cursor, overflow) = visual.into_parts();
@@ -161,19 +155,17 @@ mod tests {
 
     #[test]
     fn visual_frame_splits_overflow_from_visible_lines() {
-        let frame = Frame::new(
-            vec![
-                Line::new("L1"),
-                Line::new("L2"),
-                Line::new("L3"),
-                Line::new("L4"),
-            ],
-            Cursor {
-                row: 3,
-                col: 0,
-                is_visible: true,
-            },
-        );
+        let frame = Frame::new(vec![
+            Line::new("L1"),
+            Line::new("L2"),
+            Line::new("L3"),
+            Line::new("L4"),
+        ])
+        .with_cursor(Cursor {
+            row: 3,
+            col: 0,
+            is_visible: true,
+        });
 
         let visual = VisualFrame::from_frame(&frame, Size::from((80, 2)), 0);
 
@@ -189,20 +181,18 @@ mod tests {
 
     #[test]
     fn visual_frame_skips_already_flushed_overflow() {
-        let frame = Frame::new(
-            vec![
-                Line::new("L1"),
-                Line::new("L2"),
-                Line::new("L3"),
-                Line::new("L4"),
-                Line::new("L5"),
-            ],
-            Cursor {
-                row: 4,
-                col: 0,
-                is_visible: true,
-            },
-        );
+        let frame = Frame::new(vec![
+            Line::new("L1"),
+            Line::new("L2"),
+            Line::new("L3"),
+            Line::new("L4"),
+            Line::new("L5"),
+        ])
+        .with_cursor(Cursor {
+            row: 4,
+            col: 0,
+            is_visible: true,
+        });
 
         let visual = VisualFrame::from_frame(&frame, Size::from((80, 2)), 1);
 
@@ -217,14 +207,12 @@ mod tests {
 
     #[test]
     fn visual_frame_cursor_in_scrollback_gets_clamped() {
-        let frame = Frame::new(
-            vec![Line::new("L1"), Line::new("L2"), Line::new("L3")],
-            Cursor {
+        let frame = Frame::new(vec![Line::new("L1"), Line::new("L2"), Line::new("L3")])
+            .with_cursor(Cursor {
                 row: 0,
                 col: 0,
                 is_visible: true,
-            },
-        );
+            });
 
         let visual = VisualFrame::from_frame(&frame, Size::from((80, 2)), 0);
 
@@ -234,7 +222,7 @@ mod tests {
 
     #[test]
     fn visual_frame_empty_frame() {
-        let frame = Frame::new(vec![], Cursor::default());
+        let frame = Frame::new(vec![]);
 
         let visual = VisualFrame::from_frame(&frame, Size::from((80, 24)), 0);
 
@@ -244,14 +232,11 @@ mod tests {
 
     #[test]
     fn visual_frame_zero_width_keeps_lines_unwrapped() {
-        let frame = Frame::new(
-            vec![Line::new("abcdef")],
-            Cursor {
-                row: 0,
-                col: 3,
-                is_visible: true,
-            },
-        );
+        let frame = Frame::new(vec![Line::new("abcdef")]).with_cursor(Cursor {
+            row: 0,
+            col: 3,
+            is_visible: true,
+        });
 
         let visual = VisualFrame::from_frame(&frame, Size::from((0, 5)), 0);
 
@@ -264,14 +249,11 @@ mod tests {
         let lines = vec![Line::new("abcdef")];
 
         let visual_frame_lines = {
-            let frame = Frame::new(
-                lines.clone(),
-                Cursor {
-                    row: 0,
-                    col: 0,
-                    is_visible: true,
-                },
-            );
+            let frame = Frame::new(lines.clone()).with_cursor(Cursor {
+                row: 0,
+                col: 0,
+                is_visible: true,
+            });
             let visual = VisualFrame::from_frame(&frame, Size::from((3, 5)), 0);
             visual.visible_lines().to_vec()
         };

@@ -1,5 +1,5 @@
 use crate::keybindings::Keybindings;
-use crate::tui::{Component, Event, KeyEvent, Line, TextField, ViewContext};
+use crate::tui::{Component, Event, Frame, KeyEvent, Line, TextField, ViewContext};
 use std::path::PathBuf;
 
 pub struct TextInput {
@@ -126,8 +126,8 @@ impl Component for TextInput {
         }
     }
 
-    fn render(&self, _context: &ViewContext) -> Vec<Line> {
-        vec![Line::new(self.field.value.clone())]
+    fn render(&self, _context: &ViewContext) -> Frame {
+        Frame::new(vec![Line::new(self.field.value.clone())])
     }
 }
 

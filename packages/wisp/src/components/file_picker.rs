@@ -1,5 +1,5 @@
 use crate::tui::{
-    Combobox, Component, Event, Line, PickerKey, PickerMessage, Searchable, ViewContext,
+    Combobox, Component, Event, Frame, Line, PickerKey, PickerMessage, Searchable, ViewContext,
     classify_key,
 };
 use ignore::WalkBuilder;
@@ -132,12 +132,12 @@ impl Component for FilePicker {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Vec<Line> {
+    fn render(&self, context: &ViewContext) -> Frame {
         let mut lines = Vec::new();
 
         if self.combobox.is_empty() {
             lines.push(Line::new("  (no matches found)".to_string()));
-            return lines;
+            return Frame::new(lines);
         }
 
         let item_lines = self
@@ -155,7 +155,7 @@ impl Component for FilePicker {
             });
         lines.extend(item_lines);
 
-        lines
+        Frame::new(lines)
     }
 }
 
@@ -183,8 +183,9 @@ mod tests {
 
     fn selected_text(picker: &FilePicker) -> Option<String> {
         let context = ViewContext::new(DEFAULT_SIZE);
-        let lines = picker.render(&context);
-        lines
+        let frame = picker.render(&context);
+        frame
+            .lines()
             .iter()
             .find(|line| line.plain_text().starts_with("▶ "))
             .map(|line| line.plain_text())
@@ -243,8 +244,9 @@ mod tests {
             file_match("c.rs"),
         ]);
         let context = ViewContext::new((80, 24));
-        let lines = picker.render(&context);
-        let selected_line = lines
+        let frame = picker.render(&context);
+        let selected_line = frame
+            .lines()
             .iter()
             .find(|line| line.plain_text().starts_with("▶ "))
             .expect("should render a selected line");

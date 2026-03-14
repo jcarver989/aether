@@ -189,7 +189,7 @@ impl ConfigManager {
         };
 
         let mut layout = Layout::new();
-        layout.section(overlay.render(ctx));
+        layout.section(overlay.render(ctx).into_lines());
         Some(layout.into_frame().with_cursor(cursor))
     }
 

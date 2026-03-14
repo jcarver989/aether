@@ -1,6 +1,6 @@
 use crate::components::config_menu::{ConfigChange, ConfigMenuEntry, ConfigMenuValue};
 use crate::tui::{
-    Combobox, Component, Event, Line, PickerKey, Searchable, ViewContext, classify_key,
+    Combobox, Component, Event, Frame, Line, PickerKey, Searchable, ViewContext, classify_key,
 };
 impl Searchable for ConfigMenuValue {
     fn search_text(&self) -> String {
@@ -129,14 +129,14 @@ impl Component for ConfigPicker {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Vec<Line> {
+    fn render(&self, context: &ViewContext) -> Frame {
         let mut lines = Vec::new();
         let header = format!("  {} search: {}", self.title, self.combobox.query());
         lines.push(Line::styled(header, context.theme.muted()));
 
         if self.combobox.is_empty() {
             lines.push(Line::new("  (no matches found)".to_string()));
-            return lines;
+            return Frame::new(lines);
         }
 
         let item_lines = self
@@ -170,7 +170,7 @@ impl Component for ConfigPicker {
             });
         lines.extend(item_lines);
 
-        lines
+        Frame::new(lines)
     }
 }
 

@@ -10,7 +10,7 @@ use crate::components::server_status::{
 };
 use crate::settings::{list_theme_files, load_or_create_settings, save_settings};
 use crate::tui::Panel;
-use crate::tui::{Component, Event, FocusRing, Line, ViewContext};
+use crate::tui::{Component, Event, FocusRing, Frame, Line, ViewContext};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use acp_utils::notifications::McpServerStatusEntry;
 use agent_client_protocol::{self as acp, SessionConfigKind, SessionConfigOption};
@@ -364,11 +364,11 @@ impl Component for ConfigOverlay {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Vec<Line> {
+    fn render(&self, context: &ViewContext) -> Frame {
         let height = (context.size.height.saturating_sub(1)) as usize;
         let width = context.size.width as usize;
         if height < MIN_HEIGHT || width < MIN_WIDTH {
-            return vec![Line::new("(terminal too small)")];
+            return Frame::new(vec![Line::new("(terminal too small)")]);
         }
 
         let footer = self.footer_text();
@@ -382,19 +382,28 @@ impl Component for ConfigOverlay {
                 .server_overlay
                 .as_ref()
                 .expect("server overlay")
-                .render(&child_context),
+                .render(&child_context)
+                .into_lines(),
             FOCUS_PROVIDER_LOGIN => self
                 .provider_login_overlay
                 .as_ref()
                 .expect("provider login overlay")
-                .render(&child_context),
+                .render(&child_context)
+                .into_lines(),
             FOCUS_MODEL_SELECTOR => self
                 .model_selector
                 .as_ref()
                 .expect("model selector")
-                .render(&child_context),
-            FOCUS_PICKER => self.picker.as_ref().expect("picker").render(&child_context),
-            _ => self.menu.render(&child_context),
+                .render(&child_context)
+                .into_lines(),
+            FOCUS_PICKER => {
+                self.picker
+                    .as_ref()
+                    .expect("picker")
+                    .render(&child_context)
+                    .into_lines()
+            }
+            _ => self.menu.render(&child_context).into_lines(),
         };
 
         let mut container = Panel::new(context.theme.muted())
@@ -403,7 +412,7 @@ impl Component for ConfigOverlay {
             .fill_height(height)
             .gap(GAP);
         container.push(child_lines);
-        container.render(context)
+        Frame::new(container.render(context))
     }
 }
 
@@ -498,7 +507,8 @@ mod tests {
         let context = ViewContext::new((80, 24));
         let height = (context.size.height.saturating_sub(1)) as usize;
         overlay.update_child_viewport(height.saturating_sub(4));
-        let lines = overlay.render(&context);
+        let frame = overlay.render(&context);
+        let lines = frame.lines();
         lines[lines.len() - 2].plain_text()
     }
 
@@ -508,6 +518,7 @@ mod tests {
         overlay.update_child_viewport(height.saturating_sub(4));
         overlay
             .render(&context)
+            .into_lines()
             .into_iter()
             .map(|line| line.plain_text())
             .collect()
@@ -524,24 +535,25 @@ mod tests {
     fn bordered_box_fills_terminal_height_minus_one() {
         let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let context = ViewContext::new((80, 24));
-        let lines = overlay.render(&context);
+        let frame = overlay.render(&context);
         // Should fill exactly height - 1 = 23 lines
-        assert_eq!(lines.len(), 23);
+        assert_eq!(frame.lines().len(), 23);
     }
 
     #[test]
     fn title_contains_configuration() {
         let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let context = ViewContext::new((80, 24));
-        let lines = overlay.render(&context);
-        assert!(lines[0].plain_text().contains("Configuration"));
+        let frame = overlay.render(&context);
+        assert!(frame.lines()[0].plain_text().contains("Configuration"));
     }
 
     #[test]
     fn footer_shows_select_and_close_for_menu() {
         let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let context = ViewContext::new((80, 24));
-        let lines = overlay.render(&context);
+        let frame = overlay.render(&context);
+        let lines = frame.lines();
         let footer = lines[lines.len() - 2].plain_text(); // second to last (last is bottom border)
         assert!(footer.contains("[Enter] Select"), "footer: {footer}");
         assert!(footer.contains("[Esc] Close"), "footer: {footer}");
@@ -553,7 +565,8 @@ mod tests {
         // Open picker
         overlay.on_event(&Event::Key(key(KeyCode::Enter)));
         let context = ViewContext::new((80, 24));
-        let lines = overlay.render(&context);
+        let frame = overlay.render(&context);
+        let lines = frame.lines();
         let footer = lines[lines.len() - 2].plain_text();
         assert!(footer.contains("[Enter] Confirm"), "footer: {footer}");
         assert!(footer.contains("[Esc] Back"), "footer: {footer}");
@@ -565,7 +578,8 @@ mod tests {
         let statuses = make_server_statuses();
         let overlay = ConfigOverlay::new(menu, statuses, vec![]).with_server_overlay();
         let context = ViewContext::new((80, 24));
-        let lines = overlay.render(&context);
+        let frame = overlay.render(&context);
+        let lines = frame.lines();
         let footer = lines[lines.len() - 2].plain_text();
         assert!(footer.contains("[Enter] Authenticate"), "footer: {footer}");
         assert!(footer.contains("[Esc] Back"), "footer: {footer}");
@@ -575,8 +589,9 @@ mod tests {
     fn selected_entry_has_bg_color() {
         let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let context = ViewContext::new((80, 24));
-        let lines = overlay.render(&context);
-        let selected_line = lines
+        let frame = overlay.render(&context);
+        let selected_line = frame
+            .lines()
             .iter()
             .find(|line| line.plain_text().contains("Provider: OpenRouter"))
             .expect("expected provider row to be rendered");
@@ -803,17 +818,17 @@ mod tests {
     fn narrow_terminal_does_not_panic() {
         let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let context = ViewContext::new((4, 3));
-        let lines = overlay.render(&context);
-        assert!(!lines.is_empty());
+        let frame = overlay.render(&context);
+        assert!(!frame.lines().is_empty());
     }
 
     #[test]
     fn very_small_terminal_shows_fallback() {
         let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let context = ViewContext::new((3, 2));
-        let lines = overlay.render(&context);
-        assert_eq!(lines.len(), 1);
-        assert!(lines[0].plain_text().contains("too small"));
+        let frame = overlay.render(&context);
+        assert_eq!(frame.lines().len(), 1);
+        assert!(frame.lines()[0].plain_text().contains("too small"));
     }
 
     #[test]
@@ -967,8 +982,9 @@ mod tests {
         let context_tall = ViewContext::new((80, 60));
         let height_tall = (context_tall.size.height.saturating_sub(1)) as usize;
         overlay.update_child_viewport(height_tall.saturating_sub(4));
-        let lines_tall = overlay.render(&context_tall);
-        let tall_model_lines = lines_tall
+        let frame_tall = overlay.render(&context_tall);
+        let tall_model_lines = frame_tall
+            .lines()
             .iter()
             .filter(|l| l.plain_text().contains("Model "))
             .count();
@@ -977,8 +993,9 @@ mod tests {
         let context_short = ViewContext::new((80, 15));
         let height_short = (context_short.size.height.saturating_sub(1)) as usize;
         overlay.update_child_viewport(height_short.saturating_sub(4));
-        let lines_short = overlay.render(&context_short);
-        let short_model_lines = lines_short
+        let frame_short = overlay.render(&context_short);
+        let short_model_lines = frame_short
+            .lines()
             .iter()
             .filter(|l| l.plain_text().contains("Model "))
             .count();
@@ -1019,8 +1036,8 @@ mod tests {
 
         // Rendered lines do not contain Reasoning Effort
         let context = ViewContext::new((80, 24));
-        let lines = overlay.render(&context);
-        let text: Vec<String> = lines.iter().map(Line::plain_text).collect();
+        let frame = overlay.render(&context);
+        let text: Vec<String> = frame.lines().iter().map(Line::plain_text).collect();
         assert!(
             !text.iter().any(|l| l.contains("Reasoning Effort")),
             "Reasoning Effort should NOT appear initially; got:\n{}",
@@ -1039,8 +1056,8 @@ mod tests {
         )];
         overlay.update_config_options(&updated_options);
 
-        let lines = overlay.render(&context);
-        let text: Vec<String> = lines.iter().map(Line::plain_text).collect();
+        let frame = overlay.render(&context);
+        let text: Vec<String> = frame.lines().iter().map(Line::plain_text).collect();
         assert!(
             !text.iter().any(|l| l.contains("Reasoning Effort")),
             "Reasoning Effort should NOT appear after update; got:\n{}",
@@ -1056,7 +1073,8 @@ mod tests {
         overlay.on_event(&Event::Key(key(KeyCode::Enter)));
 
         let context = ViewContext::new((80, 24));
-        let lines = overlay.render(&context);
+        let frame = overlay.render(&context);
+        let lines = frame.lines();
         let footer = lines[lines.len() - 2].plain_text();
         assert!(footer.contains("Toggle"), "footer: {footer}");
         assert!(footer.contains("[Esc] Done"), "footer: {footer}");

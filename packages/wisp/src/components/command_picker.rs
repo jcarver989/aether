@@ -1,5 +1,6 @@
 use crate::tui::{
-    Combobox, Component, Event, Line, PickerKey, PickerMessage, Searchable, Style, ViewContext,
+    Combobox, Component, Event, Frame, Line, PickerKey, PickerMessage, Searchable, Style,
+    ViewContext,
     classify_key, display_width_text, pad_text_to_width, truncate_text,
 };
 
@@ -80,12 +81,12 @@ impl Component for CommandPicker {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Vec<Line> {
+    fn render(&self, context: &ViewContext) -> Frame {
         let mut lines = Vec::new();
 
         if self.combobox.is_empty() {
             lines.push(Line::new("  (no matching commands)".to_string()));
-            return lines;
+            return Frame::new(lines);
         }
 
         let max_name_width = self
@@ -123,7 +124,7 @@ impl Component for CommandPicker {
             });
         lines.extend(item_lines);
 
-        lines
+        Frame::new(lines)
     }
 }
 
@@ -185,8 +186,9 @@ mod tests {
 
     fn selected_text(picker: &CommandPicker) -> Option<String> {
         let context = ViewContext::new(DEFAULT_SIZE);
-        let lines = picker.render(&context);
-        lines
+        let frame = picker.render(&context);
+        frame
+            .lines()
             .iter()
             .find(|line| line.plain_text().starts_with("▶ "))
             .map(|line| line.plain_text())
@@ -290,8 +292,9 @@ mod tests {
     fn selected_entry_has_highlight_background() {
         let picker = CommandPicker::new(sample_commands());
         let context = ViewContext::new((80, 24));
-        let lines = picker.render(&context);
-        let selected_line = lines
+        let frame = picker.render(&context);
+        let selected_line = frame
+            .lines()
             .iter()
             .find(|line| line.plain_text().starts_with("▶ "))
             .expect("should render a selected line");

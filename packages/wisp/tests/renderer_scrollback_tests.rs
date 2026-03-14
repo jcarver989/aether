@@ -4,7 +4,7 @@ use tui::{Cursor, Frame, Line, Theme};
 
 fn render_frame(renderer: &mut Renderer<TestTerminal>, lines: Vec<Line>, cursor: Cursor) {
     renderer
-        .render_frame(|_ctx| Frame::new(lines, cursor))
+        .render_frame(|_ctx| Frame::new(lines).with_cursor(cursor))
         .unwrap();
 }
 

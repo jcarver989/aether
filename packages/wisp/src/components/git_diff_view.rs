@@ -1,7 +1,7 @@
 use crate::components::app::git_diff_mode::{PatchLineRef, QueuedComment, format_review_prompt};
 use crate::components::app::{GitDiffLoadState, GitDiffViewState, PatchFocus};
 use crate::git_diff::{FileDiff, FileStatus, PatchLineKind};
-use crate::tui::{Component, Event, KeyCode, Line, Span, Style, ViewContext, truncate_text};
+use crate::tui::{Component, Event, Frame, KeyCode, Line, Span, Style, ViewContext, truncate_text};
 
 pub enum GitDiffViewMessage {
     Close,
@@ -137,8 +137,8 @@ impl Component for GitDiffView<'_> {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Vec<Line> {
-        render_git_diff_state(self.state, context)
+    fn render(&self, context: &ViewContext) -> Frame {
+        Frame::new(render_git_diff_state(self.state, context))
     }
 }
 
@@ -839,8 +839,8 @@ mod tests {
         let mut state = GitDiffViewState::new(GitDiffLoadState::Empty);
         let view = GitDiffView { state: &mut state };
         let context = ViewContext::new((80, 24));
-        let lines = view.render(&context);
-        let text: String = lines.iter().map(|l| l.plain_text()).collect();
+        let frame = view.render(&context);
+        let text: String = frame.lines().iter().map(|l| l.plain_text()).collect();
         assert!(text.contains("No changes"));
     }
 
@@ -851,8 +851,8 @@ mod tests {
         });
         let view = GitDiffView { state: &mut state };
         let context = ViewContext::new((80, 24));
-        let lines = view.render(&context);
-        let text: String = lines.iter().map(|l| l.plain_text()).collect();
+        let frame = view.render(&context);
+        let text: String = frame.lines().iter().map(|l| l.plain_text()).collect();
         assert!(text.contains("Git diff unavailable"));
         assert!(text.contains("not a repo"));
     }
@@ -863,11 +863,11 @@ mod tests {
         let mut state = make_view_state(doc);
         let view = GitDiffView { state: &mut state };
         let context = ViewContext::new((100, 24));
-        let lines = view.render(&context);
-        assert!(!lines.is_empty());
+        let frame = view.render(&context);
+        assert!(!frame.lines().is_empty());
 
         // First line should have file list entry and file header
-        let first_text = lines[0].plain_text();
+        let first_text = frame.lines()[0].plain_text();
         assert!(
             first_text.contains("a.rs"),
             "Should show file name: {first_text}"
