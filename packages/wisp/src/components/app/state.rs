@@ -18,6 +18,8 @@ use agent_client_protocol::{
     self as acp, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
     SessionConfigSelectOptions,
 };
+use std::path::PathBuf;
+use std::time::Instant;
 use utils::ReasoningEffort;
 
 pub(super) const FOCUS_COMPOSER: usize = 0;
@@ -44,6 +46,10 @@ pub struct UiState {
     pub(crate) auth_methods: Vec<acp::AuthMethod>,
     pub(crate) plan_tracker: PlanTracker,
     pub(crate) screen_mode: ScreenMode,
+    pub git_diff_mode: GitDiffMode,
+    pub cached_visible_plan_entries: Vec<acp::PlanEntry>,
+    pub(crate) cached_plan_version: u64,
+    pub(crate) cached_plan_tick: Instant,
     pub exit_requested: bool,
     pub(super) focus: FocusRing,
 }
@@ -53,6 +59,7 @@ impl UiState {
         agent_name: String,
         config_options: &[SessionConfigOption],
         auth_methods: Vec<acp::AuthMethod>,
+        working_dir: PathBuf,
     ) -> Self {
         let keybindings = Keybindings::default();
         Self {
@@ -75,6 +82,10 @@ impl UiState {
             auth_methods,
             plan_tracker: PlanTracker::default(),
             screen_mode: ScreenMode::Conversation,
+            git_diff_mode: GitDiffMode::new(working_dir),
+            cached_visible_plan_entries: Vec::new(),
+            cached_plan_version: 0,
+            cached_plan_tick: Instant::now(),
             exit_requested: false,
             focus: FocusRing::new(3),
         }
@@ -144,21 +155,36 @@ impl UiState {
         menu
     }
 
-    pub(crate) fn refresh_caches(
-        &mut self,
-        context: &ViewContext,
-        git_diff_mode: Option<&mut GitDiffMode>,
-    ) {
+    pub(crate) fn refresh_caches(&mut self, context: &ViewContext) {
         let progress = self.tool_call_statuses.progress();
         self.progress_indicator
             .update(progress.completed_top_level, progress.total_top_level);
         self.conversation
             .ensure_all_rendered(&self.tool_call_statuses, context);
 
-        if matches!(self.screen_mode, ScreenMode::GitDiff)
-            && let Some(mode) = git_diff_mode
-        {
-            mode.refresh_caches(context);
+        if matches!(self.screen_mode, ScreenMode::GitDiff) {
+            self.git_diff_mode.refresh_caches(context);
+        }
+    }
+
+    pub fn prepare_for_render(&mut self, context: &ViewContext) {
+        self.refresh_caches(context);
+
+        if let Some(ref mut overlay) = self.config_overlay {
+            let height = (context.size.height.saturating_sub(1)) as usize;
+            if height >= 3 {
+                overlay.update_child_viewport(height.saturating_sub(4));
+            }
+        }
+
+        let plan_version = self.plan_tracker.version();
+        let last_tick = self.plan_tracker.last_tick();
+        if plan_version != self.cached_plan_version || last_tick != self.cached_plan_tick {
+            let grace_period = self.plan_tracker.grace_period;
+            self.cached_visible_plan_entries =
+                self.plan_tracker.visible_entries(last_tick, grace_period);
+            self.cached_plan_version = plan_version;
+            self.cached_plan_tick = last_tick;
         }
     }
 
@@ -321,6 +347,7 @@ mod tests {
                 "anthropic",
                 "Anthropic",
             ))],
+            PathBuf::from("."),
         );
 
         assert_eq!(state.agent_name, "test-agent");
@@ -333,7 +360,7 @@ mod tests {
 
     #[test]
     fn ui_state_new_initializes_defaults() {
-        let state = UiState::new("test-agent".to_string(), &[], vec![]);
+        let state = UiState::new("test-agent".to_string(), &[], vec![], PathBuf::from("."));
 
         assert!(!state.waiting_for_response);
         assert_eq!(state.context_usage_pct, None);
