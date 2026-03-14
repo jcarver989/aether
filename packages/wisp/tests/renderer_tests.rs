@@ -2,10 +2,10 @@ use agent_client_protocol as acp;
 use tui::Theme;
 use tui::advanced::Renderer as FrameRenderer;
 use tui::testing::{TestTerminal, assert_buffer_eq};
-use wisp::components::app::{App, AppAction};
+use wisp::components::app::{App, AppAction, WispEvent};
 
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
-use tui::{App as TuiApp, AppEvent, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+use tui::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
 const TEST_AGENT: &str = "test-agent";
 const TEST_WIDTH: u16 = 200;
@@ -62,7 +62,7 @@ impl Renderer {
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
         let effects = self
             .screen
-            .update(AppEvent::Key(key_event), &self.renderer.context());
+            .update(WispEvent::Terminal(Event::Key(key_event)), &self.renderer.context());
         self.apply_effects(effects).await
     }
 
@@ -71,7 +71,7 @@ impl Renderer {
         update: acp::SessionUpdate,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let effects = self.screen.update(
-            AppEvent::External(AcpEvent::SessionUpdate(Box::new(update))),
+            WispEvent::Acp(AcpEvent::SessionUpdate(Box::new(update))),
             &self.renderer.context(),
         );
         self.apply_effects(effects).await.map(|_| ())
@@ -79,7 +79,7 @@ impl Renderer {
 
     async fn on_prompt_done(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let effects = self.screen.update(
-            AppEvent::External(AcpEvent::PromptDone(acp::StopReason::EndTurn)),
+            WispEvent::Acp(AcpEvent::PromptDone(acp::StopReason::EndTurn)),
             &self.renderer.context(),
         );
         self.apply_effects(effects).await.map(|_| ())
@@ -87,7 +87,7 @@ impl Renderer {
 
     async fn on_tick(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let effects = self.screen.update(
-            AppEvent::Tick(std::time::Instant::now()),
+            WispEvent::Terminal(Event::Tick),
             &self.renderer.context(),
         );
         self.apply_effects(effects).await.map(|_| ())
@@ -96,7 +96,7 @@ impl Renderer {
     async fn on_paste(&mut self, text: &str) -> Result<(), Box<dyn std::error::Error>> {
         let effects = self
             .screen
-            .update(AppEvent::Paste(text.to_string()), &self.renderer.context());
+            .update(WispEvent::Terminal(Event::Paste(text.to_string())), &self.renderer.context());
         self.apply_effects(effects).await.map(|_| ())
     }
 
@@ -107,7 +107,7 @@ impl Renderer {
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.renderer.on_resize((cols, rows));
         let effects = self.screen.update(
-            AppEvent::Resize((cols, rows).into()),
+            WispEvent::Terminal(Event::Resize((cols, rows).into())),
             &self.renderer.context(),
         );
         self.apply_effects(effects).await.map(|_| ())
@@ -118,7 +118,7 @@ impl Renderer {
         notification: acp::ExtNotification,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let effects = self.screen.update(
-            AppEvent::External(AcpEvent::ExtNotification(notification)),
+            WispEvent::Acp(AcpEvent::ExtNotification(notification)),
             &self.renderer.context(),
         );
         self.apply_effects(effects).await.map(|_| ())
@@ -126,7 +126,7 @@ impl Renderer {
 
     async fn on_connection_closed(&mut self) -> Result<LoopAction, Box<dyn std::error::Error>> {
         let effects = self.screen.update(
-            AppEvent::External(AcpEvent::ConnectionClosed),
+            WispEvent::Acp(AcpEvent::ConnectionClosed),
             &self.renderer.context(),
         );
         self.apply_effects(effects).await

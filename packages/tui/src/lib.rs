@@ -1,11 +1,12 @@
-//! A lightweight, composable terminal UI framework.
+//! A lightweight terminal UI rendering and widget library.
 //!
-//! `tui` provides a simple, opinionated app model for building full-screen terminal
+//! `tui` provides composable primitives for building full-screen terminal
 //! applications:
 //!
-//! - **[`App`]** — Single trait combining event handling, effects, and rendering
-//! - **[`AppEvent`]** — Unified event type for terminal, external, and tick events
-//! - **[`Runner`]** — Builder-style runner that owns terminal lifecycle
+//! - **[`Component`]** — Trait for reusable UI widgets with event handling
+//! - **[`Frame`]** — A rendered frame of lines with cursor position
+//! - **[`Renderer`](advanced::Renderer)** — Efficient diff-based terminal renderer
+//! - **[`TerminalSession`](advanced::TerminalSession)** — Terminal lifecycle management
 
 // Core modules - always available
 pub(crate) mod components;
@@ -59,9 +60,7 @@ pub use rendering::size::Size;
 pub use rendering::style::Style;
 pub use theme::Theme;
 
-/// Advanced APIs for users who need low-level control.
-///
-/// Most applications should use the [`App`] trait with [`Runner`] instead.
+/// Advanced APIs for low-level terminal control.
 #[cfg(feature = "runtime")]
 pub mod advanced {
     /// Low-level renderer for manual frame control.
@@ -72,6 +71,9 @@ pub mod advanced {
 
     /// Direct terminal size query helper.
     pub use crate::runtime::terminal::terminal_size;
+
+    /// Raw crossterm event type returned by [`spawn_terminal_event_task`].
+    pub use crossterm::event::Event as CrosstermEvent;
 }
 
 // &str text utilities
@@ -99,6 +101,3 @@ pub use crossterm::event::{
     KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseEvent, MouseEventKind,
 };
 pub use crossterm::style::Color;
-
-#[cfg(feature = "runtime")]
-pub use runtime::{App, AppEvent, Runner, run};

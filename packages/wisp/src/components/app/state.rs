@@ -125,7 +125,7 @@ impl UiState {
                 self.progress_indicator.on_tick();
                 Some(vec![])
             }
-            Event::Mouse(_) => Some(vec![]),
+            Event::Mouse(_) | Event::Resize(_) => Some(vec![]),
         }
     }
 
