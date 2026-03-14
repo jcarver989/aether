@@ -10,9 +10,7 @@ pub(crate) use git_diff_mode::{
 pub(crate) use state::UiState;
 
 use crate::tui::advanced::Renderer;
-use crate::tui::{
-    App as TuiApp, AppEvent, Component, Cursor, Event, Frame, Layout, Line, ViewContext, merge,
-};
+use crate::tui::{Component, Cursor, Event, Frame, Layout, Line, ViewContext, merge};
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
 use acp_utils::notifications::McpServerStatus;
 use agent_client_protocol::{self as acp, SessionConfigOption};
@@ -25,6 +23,12 @@ use crate::components::plan_view::PlanView;
 use crate::components::status_line::StatusLine;
 
 pub use attachments::build_attachment_blocks;
+
+/// Unified event type for the Wisp application.
+pub enum WispEvent {
+    Terminal(Event),
+    Acp(AcpEvent),
+}
 
 /// Runtime-executed side effects emitted by the app state machine.
 #[derive(Debug)]
@@ -150,42 +154,34 @@ impl App {
             unhealthy_server_count: unhealthy_count,
         }
     }
-}
 
-impl TuiApp for App {
-    type Event = AcpEvent;
-    type Effect = AppAction;
-    type Error = Box<dyn std::error::Error>;
-
-    fn update(
+    pub fn update(
         &mut self,
-        event: AppEvent<Self::Event>,
+        event: WispEvent,
         context: &ViewContext,
-    ) -> Option<Vec<Self::Effect>> {
+    ) -> Option<Vec<AppAction>> {
         let effects = match event {
-            AppEvent::Key(key_event) => {
-                let event = Event::Key(key_event);
-                let input = self.state.on_event(&event);
-                if matches!(self.state.screen_mode, ScreenMode::GitDiff) {
-                    let git_effects = self.git_diff_mode.on_event(&event);
-                    merge(input, git_effects)
-                } else {
-                    input
+            WispEvent::Terminal(ref terminal_event) => match terminal_event {
+                Event::Key(_) | Event::Paste(_) | Event::Tick => {
+                    let input = self.state.on_event(terminal_event);
+                    if matches!(terminal_event, Event::Key(_))
+                        && matches!(self.state.screen_mode, ScreenMode::GitDiff)
+                    {
+                        let git_effects = self.git_diff_mode.on_event(terminal_event);
+                        merge(input, git_effects)
+                    } else {
+                        input
+                    }
                 }
-            }
-            AppEvent::Paste(text) => {
-                let event = Event::Paste(text);
-                self.state.on_event(&event)
-            }
-            AppEvent::Mouse(mouse) => {
-                if matches!(self.state.screen_mode, ScreenMode::GitDiff) {
-                    self.git_diff_mode.on_event(&Event::Mouse(mouse));
+                Event::Mouse(_) => {
+                    if matches!(self.state.screen_mode, ScreenMode::GitDiff) {
+                        self.git_diff_mode.on_event(terminal_event);
+                    }
+                    Some(vec![])
                 }
-                Some(vec![])
-            }
-            AppEvent::Tick(_) => self.state.on_event(&Event::Tick),
-            AppEvent::Resize(_) => Some(vec![]),
-            AppEvent::External(event) => match event {
+                Event::Resize(_) => Some(vec![]),
+            },
+            WispEvent::Acp(event) => match event {
                 AcpEvent::SessionUpdate(update) => Some(self.state.on_session_update(*update)),
                 AcpEvent::ExtNotification(notification) => {
                     Some(self.state.on_ext_notification(&notification))
@@ -230,7 +226,7 @@ impl TuiApp for App {
         effects
     }
 
-    fn view(&self, context: &ViewContext) -> Frame {
+    pub fn view(&self, context: &ViewContext) -> Frame {
         let s = self.status_line_props();
         let status_line = StatusLine {
             agent_name: &s.agent_name,
@@ -243,19 +239,16 @@ impl TuiApp for App {
         };
 
         if let Some(ref overlay) = self.state.config_overlay {
-            let cursor = Cursor {
-                row: overlay.cursor_row_offset(),
-                col: overlay.cursor_col(),
-                is_visible: overlay.has_picker(),
+            let cursor = if overlay.has_picker() {
+                Cursor::visible(overlay.cursor_row_offset(), overlay.cursor_col())
+            } else {
+                Cursor::hidden()
             };
 
             let mut layout = Layout::new();
             layout.section(overlay.render(context));
             layout.section(status_line.render(context));
-            let mut frame = layout.into_frame();
-            // Override cursor from overlay (not section-relative)
-            frame = Frame::new(frame.lines().to_vec(), cursor);
-            return frame;
+            return layout.into_frame().with_cursor(cursor);
         }
 
         if matches!(self.state.screen_mode, ScreenMode::GitDiff) {
@@ -270,24 +263,18 @@ impl TuiApp for App {
 
             let cursor = if self.git_diff_mode.is_comment_input() {
                 let comment_cursor = self.git_diff_mode.comment_cursor_col();
-                Cursor {
-                    row: line_count.saturating_sub(1),
-                    col: "Comment: ".len() + comment_cursor,
-                    is_visible: true,
-                }
+                Cursor::visible(
+                    line_count.saturating_sub(1),
+                    "Comment: ".len() + comment_cursor,
+                )
             } else {
-                Cursor {
-                    row: 0,
-                    col: 0,
-                    is_visible: false,
-                }
+                Cursor::hidden()
             };
 
             let mut layout = Layout::new();
             layout.section(self.git_diff_mode.render(&diff_context));
             layout.section(status_lines);
-            let frame = layout.into_frame();
-            return Frame::new(frame.lines().to_vec(), cursor);
+            return layout.into_frame().with_cursor(cursor);
         }
 
         let conversation_window = ConversationWindow {
@@ -316,21 +303,21 @@ impl TuiApp for App {
         layout.into_frame()
     }
 
-    async fn run_effect(
+    pub async fn run_effect(
         &mut self,
         terminal: &mut Renderer<impl std::io::Write>,
-        effect: Self::Effect,
-    ) -> Result<Vec<Self::Effect>, Self::Error> {
+        effect: AppAction,
+    ) -> Result<Vec<AppAction>, Box<dyn std::error::Error>> {
         let follow_up = self.apply_action(terminal, effect).await?;
         self.prepare_for_view(&terminal.context());
         Ok(follow_up)
     }
 
-    fn should_exit(&self) -> bool {
+    pub fn should_exit(&self) -> bool {
         self.state.exit_requested
     }
 
-    fn wants_tick(&self) -> bool {
+    pub fn wants_tick(&self) -> bool {
         self.state.wants_tick()
     }
 }
@@ -819,7 +806,7 @@ mod tests {
 
         let context = ViewContext::new((120, 40));
         app.update(
-            AppEvent::External(AcpEvent::SessionsListed { sessions }),
+            WispEvent::Acp(AcpEvent::SessionsListed { sessions }),
             &context,
         );
 

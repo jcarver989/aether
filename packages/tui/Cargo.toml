@@ -2,7 +2,7 @@
 name = "tui"
 version = "0.1.0"
 edition = "2024"
-description = "A lightweight, composable terminal UI framework for building rich CLI applications"
+description = "A lightweight terminal UI rendering library for building rich CLI applications"
 license = "MIT"
 repository = "https://github.com/contextbridge/aether"
 keywords = ["tui", "terminal", "cli", "ui", "component"]
