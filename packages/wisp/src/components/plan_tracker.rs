@@ -87,6 +87,13 @@ impl PlanTracker {
         self.completed_at.get(&Self::entry_key(entry)).copied()
     }
 
+    pub fn has_completed_in_grace_period(&self) -> bool {
+        self.entries.iter().any(|entry| {
+            matches!(entry.status, acp::PlanEntryStatus::Completed)
+                && self.is_visible(entry, self.last_tick, self.grace_period)
+        })
+    }
+
     pub fn cached_visible_entries(&mut self) -> &[acp::PlanEntry] {
         if self.version != self.cached_version || self.last_tick != self.cached_tick {
             self.cached_entries = self.visible_entries(self.last_tick, self.grace_period);
@@ -100,10 +107,6 @@ impl PlanTracker {
         &self.cached_entries
     }
 
-    pub fn last_tick(&self) -> Instant {
-        self.last_tick
-    }
-
     /// Advance the animation state. Call this on tick events.
     pub fn on_tick(&mut self, now: Instant) {
         self.last_tick = now;
@@ -111,6 +114,7 @@ impl PlanTracker {
 
     /// Returns the version counter, incremented on each `replace` or `clear` call.
     /// Use this to detect plan content changes without comparing entry counts.
+    #[cfg(test)]
     pub fn version(&self) -> u64 {
         self.version
     }

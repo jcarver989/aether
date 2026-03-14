@@ -50,6 +50,10 @@ impl Frame {
         self
     }
 
+    pub fn into_parts(self) -> (Vec<Line>, Cursor) {
+        (self.lines, self.cursor)
+    }
+
     pub fn clamp_cursor(mut self) -> Self {
         if self.cursor.row >= self.lines.len() {
             self.cursor.row = self.lines.len().saturating_sub(1);

@@ -1,93 +1,15 @@
 use acp_utils::notifications::{SubAgentEvent, SubAgentProgressParams, ToolResultMeta};
 use agent_client_protocol as acp;
-use similar::{ChangeTag, TextDiff};
 use std::collections::HashMap;
-use std::path::Path;
 use std::time::Instant;
 
+use crate::components::tool_call_status_view::{
+    ToolCallStatus, ToolCallStatusView, compute_diff_preview,
+};
 use crate::tui::BRAILLE_FRAMES as FRAMES;
-use crate::tui::highlight_diff;
-use crate::tui::{DiffLine, DiffPreview, DiffTag, Line, ViewContext};
+use crate::tui::{DiffPreview, Line, ViewContext};
 
-const MAX_TOOL_ARG_LENGTH: usize = 200;
 const SUB_AGENT_VISIBLE_TOOL_LIMIT: usize = 3;
-
-/// Renders a single tool call status line.
-pub struct ToolCallStatusView {
-    pub name: String,
-    pub arguments: String,
-    pub display_value: Option<String>,
-    pub diff_preview: Option<DiffPreview>,
-    pub status: ToolCallStatus,
-    pub tick: u16,
-}
-
-#[derive(Clone)]
-pub enum ToolCallStatus {
-    Running,
-    Success,
-    Error(String),
-}
-
-impl ToolCallStatusView {
-    pub fn render(&self, context: &ViewContext) -> Vec<Line> {
-        let (indicator, indicator_color) = match &self.status {
-            ToolCallStatus::Running => {
-                let frame = FRAMES[self.tick as usize % FRAMES.len()];
-                (frame.to_string(), context.theme.info())
-            }
-            ToolCallStatus::Success => ("✓".to_string(), context.theme.success()),
-            ToolCallStatus::Error(_) => ("✗".to_string(), context.theme.error()),
-        };
-
-        let mut line = Line::default();
-        line.push_styled(indicator, indicator_color);
-        line.push_text(" ");
-        line.push_text(&self.name);
-
-        let display_text = self
-            .display_value
-            .as_ref()
-            .filter(|v| !v.is_empty())
-            .map_or_else(
-                || match self.status {
-                    ToolCallStatus::Running => String::new(),
-                    _ => Self::format_arguments(&self.arguments),
-                },
-                |v| format!(" ({v})"),
-            );
-        line.push_styled(display_text, context.theme.muted());
-
-        if let ToolCallStatus::Error(msg) = &self.status {
-            line.push_text(" ");
-            line.push_styled(msg, context.theme.error());
-        }
-
-        let mut lines = vec![line];
-
-        if matches!(self.status, ToolCallStatus::Success)
-            && let Some(ref preview) = self.diff_preview
-        {
-            lines.extend(highlight_diff(preview, context));
-        }
-
-        lines
-    }
-}
-
-impl ToolCallStatusView {
-    fn format_arguments(arguments: &str) -> String {
-        let mut formatted = format!(" {arguments}");
-        if formatted.len() > MAX_TOOL_ARG_LENGTH {
-            let mut new_len = MAX_TOOL_ARG_LENGTH;
-            while !formatted.is_char_boundary(new_len) {
-                new_len -= 1;
-            }
-            formatted.truncate(new_len);
-        }
-        formatted
-    }
-}
 
 /// Per-sub-agent state: tracks its tool calls in order.
 #[derive(Clone)]
@@ -201,7 +123,7 @@ impl ToolCallStatuses {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn tick(&self) -> u16 {
         self.tick
     }
@@ -309,6 +231,7 @@ impl ToolCallStatuses {
             .is_some_and(|tc| matches!(tc.status, ToolCallStatus::Running))
     }
 
+    #[cfg(test)]
     pub fn is_tool_active_for_render(&self, id: &str) -> bool {
         self.is_tool_running(id)
             || self
@@ -395,7 +318,6 @@ impl ToolCallStatuses {
     }
 
     #[cfg(test)]
-    #[allow(dead_code)]
     pub fn render(&self, context: &ViewContext) -> Vec<Line> {
         self.tool_order
             .iter()
@@ -467,16 +389,13 @@ impl ToolCallStatuses {
     }
 
     /// Clear all tracked tool calls (e.g., after pushing to scrollback).
-    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.tool_order.clear();
         self.tool_calls.clear();
         self.sub_agents.clear();
     }
 
-    /// Render and remove only completed (Success/Error) tool calls,
-    /// leaving Running ones in place for continued display.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn drain_completed(&mut self, context: &ViewContext) -> Vec<Line> {
         let mut lines = Vec::new();
         let mut completed_ids = Vec::new();
@@ -499,7 +418,7 @@ impl ToolCallStatuses {
         lines
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.tool_calls.is_empty()
     }
@@ -518,18 +437,18 @@ impl ToolCallStatuses {
         line
     }
 
-    fn tool_call_view(tc: &TrackedToolCall, tick: u16) -> ToolCallStatusView {
+    fn tool_call_view(tc: &TrackedToolCall, tick: u16) -> ToolCallStatusView<'_> {
         ToolCallStatusView {
-            name: tc.name.clone(),
-            arguments: tc.arguments.clone(),
-            display_value: tc.display_value.clone(),
-            diff_preview: tc.diff_preview.clone(),
-            status: tc.status.clone(),
+            name: &tc.name,
+            arguments: &tc.arguments,
+            display_value: tc.display_value.as_deref(),
+            diff_preview: tc.diff_preview.as_ref(),
+            status: &tc.status,
             tick,
         }
     }
 
-    fn view_for(&self, id: &str, tick: u16) -> Option<ToolCallStatusView> {
+    fn view_for(&self, id: &str, tick: u16) -> Option<ToolCallStatusView<'_>> {
         self.tool_calls
             .get(id)
             .map(|tc| Self::tool_call_view(tc, tick))
@@ -552,58 +471,11 @@ impl SubAgentState {
     }
 }
 
-/// Compute a visual diff preview from an ACP `Diff` (full old/new text).
-fn compute_diff_preview(diff: &acp::Diff) -> DiffPreview {
-    let old_text = diff.old_text.as_deref().unwrap_or("");
-    let text_diff = TextDiff::from_lines(old_text, &diff.new_text);
-
-    let mut lines = Vec::new();
-    let mut first_change_line: Option<usize> = None;
-    let mut current_old_line: usize = 0;
-
-    for change in text_diff.iter_all_changes() {
-        let tag = match change.tag() {
-            ChangeTag::Equal => {
-                current_old_line += 1;
-                DiffTag::Context
-            }
-            ChangeTag::Delete => {
-                if first_change_line.is_none() {
-                    first_change_line = Some(current_old_line + 1);
-                }
-                current_old_line += 1;
-                DiffTag::Removed
-            }
-            ChangeTag::Insert => {
-                if first_change_line.is_none() {
-                    first_change_line = Some(current_old_line + 1);
-                }
-                DiffTag::Added
-            }
-        };
-        lines.push(DiffLine {
-            tag,
-            content: change.value().trim_end_matches('\n').to_string(),
-        });
-    }
-
-    let lang_hint = Path::new(&diff.path)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-
-    DiffPreview {
-        lines,
-        lang_hint,
-        start_line: first_change_line,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::Line;
+    use crate::components::tool_call_status_view::MAX_TOOL_ARG_LENGTH;
+    use crate::tui::{DiffLine, DiffTag, Line};
 
     fn ctx() -> ViewContext {
         ViewContext::new((80, 24))
@@ -776,12 +648,13 @@ mod tests {
 
     #[test]
     fn view_renders_running_with_spinner() {
+        let status = ToolCallStatus::Running;
         let view = ToolCallStatusView {
-            name: "TestTool".to_string(),
-            arguments: "test args".to_string(),
+            name: "TestTool",
+            arguments: "test args",
             display_value: None,
             diff_preview: None,
-            status: ToolCallStatus::Running,
+            status: &status,
             tick: 0,
         };
         let lines = view.render(&ctx());
@@ -794,20 +667,21 @@ mod tests {
 
     #[test]
     fn view_running_spinner_changes_with_tick() {
+        let status = ToolCallStatus::Running;
         let view_a = ToolCallStatusView {
-            name: "TestTool".to_string(),
-            arguments: String::new(),
+            name: "TestTool",
+            arguments: "",
             display_value: None,
             diff_preview: None,
-            status: ToolCallStatus::Running,
+            status: &status,
             tick: 0,
         };
         let view_b = ToolCallStatusView {
-            name: "TestTool".to_string(),
-            arguments: String::new(),
+            name: "TestTool",
+            arguments: "",
             display_value: None,
             diff_preview: None,
-            status: ToolCallStatus::Running,
+            status: &status,
             tick: 1,
         };
         let a = view_a.render(&ctx())[0].plain_text();
@@ -817,12 +691,13 @@ mod tests {
 
     #[test]
     fn view_renders_success() {
+        let status = ToolCallStatus::Success;
         let view = ToolCallStatusView {
-            name: "TestTool".to_string(),
-            arguments: "test args".to_string(),
+            name: "TestTool",
+            arguments: "test args",
             display_value: None,
             diff_preview: None,
-            status: ToolCallStatus::Success,
+            status: &status,
             tick: 0,
         };
         let lines = view.render(&ctx());
@@ -832,12 +707,13 @@ mod tests {
 
     #[test]
     fn view_renders_error() {
+        let status = ToolCallStatus::Error("boom".to_string());
         let view = ToolCallStatusView {
-            name: "TestTool".to_string(),
-            arguments: "test args".to_string(),
+            name: "TestTool",
+            arguments: "test args",
             display_value: None,
             diff_preview: None,
-            status: ToolCallStatus::Error("boom".to_string()),
+            status: &status,
             tick: 0,
         };
         let lines = view.render(&ctx());
@@ -849,12 +725,13 @@ mod tests {
     #[test]
     fn view_truncates_utf8_arguments_without_panicking() {
         let arguments = format!("{}界", "a".repeat(MAX_TOOL_ARG_LENGTH - 2));
+        let status = ToolCallStatus::Success;
         let view = ToolCallStatusView {
-            name: "TestTool".to_string(),
-            arguments,
+            name: "TestTool",
+            arguments: &arguments,
             display_value: None,
             diff_preview: None,
-            status: ToolCallStatus::Success,
+            status: &status,
             tick: 0,
         };
 
@@ -868,12 +745,13 @@ mod tests {
 
     #[test]
     fn view_running_hides_raw_args_then_shows_display_value() {
-        let mut view = ToolCallStatusView {
-            name: "Read".to_string(),
-            arguments: r#"{"file_path":"/path/to/main.rs"}"#.to_string(),
+        let status = ToolCallStatus::Running;
+        let view = ToolCallStatusView {
+            name: "Read",
+            arguments: r#"{"file_path":"/path/to/main.rs"}"#,
             display_value: None,
             diff_preview: None,
-            status: ToolCallStatus::Running,
+            status: &status,
             tick: 0,
         };
 
@@ -883,7 +761,10 @@ mod tests {
         assert_eq!(text, format!("{} Read", FRAMES[0]));
 
         // After display_value arrives, it is shown
-        view.display_value = Some("main.rs".to_string());
+        let view = ToolCallStatusView {
+            display_value: Some("main.rs"),
+            ..view
+        };
         let text = view.render(&ctx())[0].plain_text();
         assert_eq!(text, format!("{} Read (main.rs)", FRAMES[0]));
     }
@@ -1440,25 +1321,27 @@ mod tests {
 
     #[test]
     fn view_renders_diff_preview_on_success() {
+        let status = ToolCallStatus::Success;
+        let diff_preview = DiffPreview {
+            lines: vec![
+                DiffLine {
+                    tag: DiffTag::Removed,
+                    content: "old line".to_string(),
+                },
+                DiffLine {
+                    tag: DiffTag::Added,
+                    content: "new line".to_string(),
+                },
+            ],
+            lang_hint: String::new(),
+            start_line: None,
+        };
         let view = ToolCallStatusView {
-            name: "Edit file".to_string(),
-            arguments: "{}".to_string(),
-            display_value: Some("main.rs".to_string()),
-            diff_preview: Some(DiffPreview {
-                lines: vec![
-                    DiffLine {
-                        tag: DiffTag::Removed,
-                        content: "old line".to_string(),
-                    },
-                    DiffLine {
-                        tag: DiffTag::Added,
-                        content: "new line".to_string(),
-                    },
-                ],
-                lang_hint: String::new(),
-                start_line: None,
-            }),
-            status: ToolCallStatus::Success,
+            name: "Edit file",
+            arguments: "{}",
+            display_value: Some("main.rs"),
+            diff_preview: Some(&diff_preview),
+            status: &status,
             tick: 0,
         };
         let lines = view.render(&ctx());
@@ -1471,25 +1354,27 @@ mod tests {
 
     #[test]
     fn view_hides_diff_preview_while_running() {
+        let status = ToolCallStatus::Running;
+        let diff_preview = DiffPreview {
+            lines: vec![
+                DiffLine {
+                    tag: DiffTag::Removed,
+                    content: "old".to_string(),
+                },
+                DiffLine {
+                    tag: DiffTag::Added,
+                    content: "new".to_string(),
+                },
+            ],
+            lang_hint: String::new(),
+            start_line: None,
+        };
         let view = ToolCallStatusView {
-            name: "Edit file".to_string(),
-            arguments: "{}".to_string(),
-            display_value: Some("main.rs".to_string()),
-            diff_preview: Some(DiffPreview {
-                lines: vec![
-                    DiffLine {
-                        tag: DiffTag::Removed,
-                        content: "old".to_string(),
-                    },
-                    DiffLine {
-                        tag: DiffTag::Added,
-                        content: "new".to_string(),
-                    },
-                ],
-                lang_hint: String::new(),
-                start_line: None,
-            }),
-            status: ToolCallStatus::Running,
+            name: "Edit file",
+            arguments: "{}",
+            display_value: Some("main.rs"),
+            diff_preview: Some(&diff_preview),
+            status: &status,
             tick: 0,
         };
         let lines = view.render(&ctx());

@@ -1,0 +1,338 @@
+use crate::components::conversation_window::{ConversationBuffer, ConversationWindow, SegmentContent};
+use crate::components::elicitation_form::{ElicitationForm, ElicitationMessage};
+use crate::components::plan_tracker::PlanTracker;
+use crate::components::plan_view::PlanView;
+use crate::components::progress_indicator::ProgressIndicator;
+use crate::components::prompt_composer::{PromptComposer, PromptComposerMessage};
+use crate::components::session_picker::{SessionEntry, SessionPicker, SessionPickerMessage};
+use crate::components::tool_call_statuses::ToolCallStatuses;
+use crate::keybindings::Keybindings;
+use crate::tui::{Component, Cursor, Event, Layout, Line, Spinner, ViewContext};
+use agent_client_protocol::{self as acp, SessionId};
+use std::cell::Cell;
+use std::path::PathBuf;
+use std::time::Instant;
+
+pub enum ConversationScreenMessage {
+    SendPrompt {
+        user_input: String,
+        attachments: Vec<crate::components::app::PromptAttachment>,
+    },
+    ClearScreen,
+    OpenConfig,
+    OpenSessionPicker,
+    PushToScrollback {
+        content: Vec<SegmentContent>,
+        completed_tool_ids: Vec<String>,
+    },
+    LoadSession {
+        session_id: SessionId,
+        cwd: PathBuf,
+    },
+}
+
+pub struct ConversationScreen {
+    pub(crate) conversation: ConversationBuffer,
+    pub tool_call_statuses: ToolCallStatuses,
+    pub(crate) prompt_composer: PromptComposer,
+    pub(crate) plan_tracker: PlanTracker,
+    pub(crate) progress_indicator: ProgressIndicator,
+    pub(crate) grid_loader: Spinner,
+    pub(crate) waiting_for_response: bool,
+    pub(crate) elicitation_form: Option<ElicitationForm>,
+    pub(crate) session_picker: Option<SessionPicker>,
+    cached_cursor: Cell<Cursor>,
+}
+
+impl ConversationScreen {
+    pub fn new(keybindings: Keybindings) -> Self {
+        Self {
+            conversation: ConversationBuffer::new(),
+            tool_call_statuses: ToolCallStatuses::new(),
+            prompt_composer: PromptComposer::new(keybindings),
+            plan_tracker: PlanTracker::default(),
+            progress_indicator: ProgressIndicator::default(),
+            grid_loader: Spinner::default(),
+            waiting_for_response: false,
+            elicitation_form: None,
+            session_picker: None,
+            cached_cursor: Cell::new(Cursor::hidden()),
+        }
+    }
+
+    pub fn has_modal(&self) -> bool {
+        self.elicitation_form.is_some() || self.session_picker.is_some()
+    }
+
+    pub fn is_waiting(&self) -> bool {
+        self.waiting_for_response
+    }
+
+    pub fn wants_tick(&self) -> bool {
+        self.grid_loader.visible
+            || self.tool_call_statuses.progress().running_any
+            || self.plan_tracker_has_tick_driven_visibility()
+    }
+
+    pub fn on_tick(&mut self, now: Instant) {
+        self.grid_loader.on_tick();
+        self.tool_call_statuses.on_tick(now);
+        self.plan_tracker.on_tick(now);
+        self.progress_indicator.on_tick();
+    }
+
+    pub fn refresh_caches(&mut self, _context: &ViewContext) {
+        let progress = self.tool_call_statuses.progress();
+        self.progress_indicator
+            .update(progress.completed_top_level, progress.total_top_level);
+        self.plan_tracker.cached_visible_entries();
+    }
+
+    pub fn drain_completed(&mut self) -> (Vec<SegmentContent>, Vec<String>) {
+        self.conversation.drain_completed(&self.tool_call_statuses)
+    }
+
+    pub fn remove_tools(&mut self, tool_ids: &[String]) {
+        for id in tool_ids {
+            self.tool_call_statuses.remove_tool(id);
+        }
+    }
+
+    pub fn reset_after_context_cleared(&mut self) {
+        self.conversation.clear();
+        self.tool_call_statuses.clear();
+        self.grid_loader.visible = false;
+        self.waiting_for_response = false;
+        self.plan_tracker.clear();
+        self.progress_indicator = ProgressIndicator::default();
+    }
+
+    pub fn open_session_picker(&mut self, sessions: Vec<acp::SessionInfo>) {
+        let entries = sessions.into_iter().map(SessionEntry).collect();
+        self.session_picker = Some(SessionPicker::new(entries));
+    }
+
+    pub fn on_session_update(&mut self, update: &acp::SessionUpdate) {
+        self.grid_loader.visible = false;
+
+        match update {
+            acp::SessionUpdate::AgentMessageChunk(chunk) => {
+                if let acp::ContentBlock::Text(text_content) = &chunk.content {
+                    self.conversation.append_text_chunk(&text_content.text);
+                }
+            }
+            acp::SessionUpdate::AgentThoughtChunk(chunk) => {
+                if let acp::ContentBlock::Text(text_content) = &chunk.content {
+                    self.conversation.append_thought_chunk(&text_content.text);
+                }
+            }
+            acp::SessionUpdate::ToolCall(tool_call) => {
+                self.conversation.close_thought_block();
+                self.tool_call_statuses.on_tool_call(tool_call);
+                self.conversation
+                    .ensure_tool_segment(&tool_call.tool_call_id.0);
+            }
+            acp::SessionUpdate::ToolCallUpdate(update) => {
+                self.conversation.close_thought_block();
+                self.tool_call_statuses.on_tool_call_update(update);
+                if self.tool_call_statuses.has_tool(&update.tool_call_id.0) {
+                    self.conversation
+                        .ensure_tool_segment(&update.tool_call_id.0);
+                }
+            }
+            acp::SessionUpdate::AvailableCommandsUpdate(update) => {
+                let commands = update
+                    .available_commands
+                    .iter()
+                    .map(|cmd| {
+                        let hint = match cmd.input {
+                            Some(acp::AvailableCommandInput::Unstructured(ref input)) => {
+                                Some(input.hint.clone())
+                            }
+                            _ => None,
+                        };
+                        crate::components::command_picker::CommandEntry {
+                            name: cmd.name.clone(),
+                            description: cmd.description.clone(),
+                            has_input: cmd.input.is_some(),
+                            hint,
+                            builtin: false,
+                        }
+                    })
+                    .collect();
+                self.prompt_composer.set_available_commands(commands);
+            }
+            acp::SessionUpdate::Plan(plan) => {
+                self.plan_tracker
+                    .replace(plan.entries.clone(), Instant::now());
+            }
+            _ => {
+                self.conversation.close_thought_block();
+            }
+        }
+    }
+
+    pub fn on_prompt_done(&mut self) -> Option<ConversationScreenMessage> {
+        self.waiting_for_response = false;
+        self.grid_loader.visible = false;
+        self.conversation.close_thought_block();
+        let (content, completed_tool_ids) = self.drain_completed();
+        if content.is_empty() {
+            None
+        } else {
+            Some(ConversationScreenMessage::PushToScrollback {
+                content,
+                completed_tool_ids,
+            })
+        }
+    }
+
+    pub fn on_prompt_error(&mut self, error: &acp::Error) {
+        tracing::error!("Prompt error: {error}");
+        self.waiting_for_response = false;
+        self.grid_loader.visible = false;
+    }
+
+    pub fn on_elicitation_request(
+        &mut self,
+        params: acp_utils::notifications::ElicitationParams,
+        response_tx: tokio::sync::oneshot::Sender<acp_utils::notifications::ElicitationResponse>,
+    ) {
+        self.elicitation_form = Some(ElicitationForm::from_params(params, response_tx));
+    }
+
+    pub fn on_sub_agent_progress(
+        &mut self,
+        progress: &acp_utils::notifications::SubAgentProgressParams,
+    ) {
+        self.tool_call_statuses.on_sub_agent_progress(progress);
+    }
+
+    fn plan_tracker_has_tick_driven_visibility(&self) -> bool {
+        self.plan_tracker.has_completed_in_grace_period()
+    }
+
+    fn handle_elicitation_key(&mut self, event: &Event) -> Option<Vec<ConversationScreenMessage>> {
+        let form = self.elicitation_form.as_mut()?;
+        let outcome = form.on_event(event);
+        for msg in outcome.unwrap_or_default() {
+            match msg {
+                ElicitationMessage::Responded => {
+                    self.elicitation_form = None;
+                }
+            }
+        }
+        Some(vec![])
+    }
+
+    fn handle_session_picker_key(
+        &mut self,
+        event: &Event,
+    ) -> Option<Vec<ConversationScreenMessage>> {
+        let picker = self.session_picker.as_mut()?;
+        let msgs = picker.on_event(event).unwrap_or_default();
+        let mut out = Vec::new();
+        for msg in msgs {
+            match msg {
+                SessionPickerMessage::Close => {
+                    self.session_picker = None;
+                }
+                SessionPickerMessage::LoadSession { session_id, cwd } => {
+                    self.session_picker = None;
+                    self.reset_after_context_cleared();
+                    out.push(ConversationScreenMessage::ClearScreen);
+                    out.push(ConversationScreenMessage::LoadSession { session_id, cwd });
+                }
+            }
+        }
+        Some(out)
+    }
+
+    fn handle_prompt_composer_messages(
+        &mut self,
+        outcome: Option<Vec<PromptComposerMessage>>,
+    ) -> Option<Vec<ConversationScreenMessage>> {
+        let msgs = outcome?;
+        let mut out = Vec::new();
+        for msg in msgs {
+            match msg {
+                PromptComposerMessage::ClearScreen => {
+                    self.reset_after_context_cleared();
+                    out.push(ConversationScreenMessage::ClearScreen);
+                }
+                PromptComposerMessage::OpenConfig => {
+                    out.push(ConversationScreenMessage::OpenConfig);
+                }
+                PromptComposerMessage::OpenSessionPicker => {
+                    out.push(ConversationScreenMessage::OpenSessionPicker);
+                }
+                PromptComposerMessage::SubmitRequested {
+                    user_input,
+                    attachments,
+                } => {
+                    self.waiting_for_response = true;
+                    self.grid_loader.reset();
+                    out.push(ConversationScreenMessage::SendPrompt {
+                        user_input,
+                        attachments,
+                    });
+                }
+            }
+        }
+        Some(out)
+    }
+}
+
+impl Component for ConversationScreen {
+    type Message = ConversationScreenMessage;
+
+    fn on_event(&mut self, event: &Event) -> Option<Vec<ConversationScreenMessage>> {
+        if self.elicitation_form.is_some() {
+            return self.handle_elicitation_key(event);
+        }
+
+        if self.session_picker.is_some() {
+            return self.handle_session_picker_key(event);
+        }
+
+        let composer_outcome = self.prompt_composer.on_event(event);
+        if composer_outcome.is_some() {
+            return self.handle_prompt_composer_messages(composer_outcome);
+        }
+
+        None
+    }
+
+    fn render(&self, ctx: &ViewContext) -> Vec<Line> {
+        let conversation_window = ConversationWindow {
+            loader: &self.grid_loader,
+            conversation: &self.conversation,
+            tool_call_statuses: &self.tool_call_statuses,
+        };
+        let plan_view = PlanView {
+            entries: self.plan_tracker.cached_entries(),
+        };
+
+        let mut layout = Layout::new();
+        layout.section(conversation_window.render(ctx));
+        layout.section(plan_view.render(ctx));
+        layout.section(self.progress_indicator.render(ctx));
+        layout.section_with_cursor(
+            self.prompt_composer.render(ctx),
+            self.prompt_composer.cursor(ctx),
+        );
+        if let Some(ref session_picker) = self.session_picker {
+            layout.section(session_picker.render(ctx));
+        }
+        if let Some(ref elicitation_form) = self.elicitation_form {
+            layout.section(elicitation_form.render(ctx));
+        }
+        let (lines, cursor) = layout.into_frame().into_parts();
+        self.cached_cursor.set(cursor);
+        lines
+    }
+
+    fn cursor(&self, _ctx: &ViewContext) -> Cursor {
+        self.cached_cursor.get()
+    }
+}

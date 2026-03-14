@@ -10,16 +10,17 @@ mod test_helpers;
 mod tui;
 
 use crate::cli::Cli;
-use crate::components::app::view::build_frame;
-use crate::components::app::{UiState, UiStateController, ViewEffect, WispEvent};
+use crate::components::app::attachments::build_attachment_blocks;
+use crate::components::app::{App, AppMessage};
 use crate::components::conversation_window::render_segments_to_lines;
 use crate::error::AppError;
 use crate::runtime_state::RuntimeState;
-use crate::tui::Event;
+use crate::tui::{Component, Event};
 use crate::tui::advanced::{
     CrosstermEvent, MouseCapture, Renderer, TerminalSession, spawn_terminal_event_task,
     terminal_size,
 };
+use acp_utils::client::AcpPromptHandle;
 use clap::Parser;
 use std::fs::create_dir_all;
 use std::io;
@@ -54,10 +55,16 @@ async fn main() -> ExitCode {
         working_dir,
     } = state;
 
-    let ui_state = UiState::new(agent_name, &config_options, auth_methods, working_dir);
-    let controller = UiStateController::new(session_id, prompt_handle);
+    let app = App::new(
+        session_id,
+        agent_name,
+        &config_options,
+        auth_methods,
+        working_dir,
+        prompt_handle.clone(),
+    );
 
-    match run_app(ui_state, controller, theme, event_rx).await {
+    match run_app(app, prompt_handle, theme, event_rx).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("Fatal error: {e}");
@@ -66,55 +73,73 @@ async fn main() -> ExitCode {
     }
 }
 
-fn apply_effects(
+fn render(renderer: &mut Renderer<impl io::Write>, app: &mut App) -> Result<(), AppError> {
+    let context = renderer.context();
+    app.prepare_for_render(&context);
+    let app: &App = app;
+    renderer.render_frame(|ctx| app.build_frame(ctx))?;
+    Ok(())
+}
+
+async fn process_messages(
     renderer: &mut Renderer<impl io::Write>,
-    state: &mut UiState,
-    effects: Vec<ViewEffect>,
+    app: &mut App,
+    prompt_handle: &AcpPromptHandle,
+    messages: Vec<AppMessage>,
 ) -> Result<(), AppError> {
-    for effect in effects {
-        match effect {
-            ViewEffect::ClearScreen => renderer.clear_screen()?,
-            ViewEffect::SetTheme(theme) => renderer.set_theme(theme),
-            ViewEffect::PushToScrollbackContent { content, completed_tool_ids } => {
+    for msg in messages {
+        match msg {
+            AppMessage::ClearScreen => renderer.clear_screen()?,
+            AppMessage::SetTheme(theme) => renderer.set_theme(theme),
+            AppMessage::PushToScrollbackContent {
+                content,
+                completed_tool_ids,
+            } => {
                 let context = renderer.context();
-                let lines = render_segments_to_lines(&content, &state.tool_call_statuses, &context);
+                let lines =
+                    render_segments_to_lines(&content, app.tool_call_statuses(), &context);
                 if !lines.is_empty() {
                     renderer.push_to_scrollback(&lines)?;
                 }
-                state.remove_tools(&completed_tool_ids);
+                app.remove_tools(&completed_tool_ids);
             }
-            ViewEffect::PromptSubmitted { user_input } => {
-                let lines = vec![
-                    tui::Line::new(String::new()),
-                    tui::Line::new(user_input),
-                ];
-                renderer.push_to_scrollback(&lines)?;
+            AppMessage::SendPrompt {
+                user_input,
+                attachments,
+            } => {
+                let echo = vec![tui::Line::new(String::new()), tui::Line::new(user_input.clone())];
+                renderer.push_to_scrollback(&echo)?;
+
+                let outcome = build_attachment_blocks(&attachments).await;
+                if !outcome.warnings.is_empty() {
+                    let lines: Vec<tui::Line> = outcome
+                        .warnings
+                        .into_iter()
+                        .map(|w| tui::Line::new(format!("[wisp] {w}")))
+                        .collect();
+                    renderer.push_to_scrollback(&lines)?;
+                }
+                prompt_handle.prompt(
+                    app.session_id(),
+                    &user_input,
+                    if outcome.blocks.is_empty() {
+                        None
+                    } else {
+                        Some(outcome.blocks)
+                    },
+                )?;
             }
-            ViewEffect::AttachmentWarnings(warnings) => {
-                let lines: Vec<tui::Line> = warnings
-                    .into_iter()
-                    .map(|w| tui::Line::new(format!("[wisp] {w}")))
-                    .collect();
-                renderer.push_to_scrollback(&lines)?;
+            AppMessage::LoadGitDiff | AppMessage::RefreshGitDiff => {
+                app.git_diff_mode_mut().complete_load().await;
             }
         }
     }
     Ok(())
 }
 
-fn render(renderer: &mut Renderer<impl io::Write>, state: &mut UiState) -> Result<(), AppError> {
-    let context = renderer.context();
-    state.prepare_for_render(&context);
-    let state: &UiState = state;
-    renderer.render_frame(|ctx| {
-        build_frame(state, &state.git_diff_mode, ctx)
-    })?;
-    Ok(())
-}
-
 async fn run_app(
-    mut state: UiState,
-    mut controller: UiStateController,
+    mut app: App,
+    prompt_handle: AcpPromptHandle,
     theme: tui::Theme,
     mut event_rx: mpsc::UnboundedReceiver<acp_utils::client::AcpEvent>,
 ) -> Result<(), AppError> {
@@ -124,7 +149,7 @@ async fn run_app(
     renderer.on_resize(size);
 
     let mut terminal_rx = spawn_terminal_event_task();
-    render(&mut renderer, &mut state)?;
+    render(&mut renderer, &mut app)?;
 
     let tick_rate = Duration::from_millis(100);
     let mut tick_interval = time::interval(tick_rate);
@@ -132,7 +157,7 @@ async fn run_app(
 
     loop {
         let tick_fut = async {
-            if !state.wants_tick() {
+            if !app.wants_tick() {
                 std::future::pending::<()>().await;
             }
             tick_interval.tick().await;
@@ -149,30 +174,30 @@ async fn run_app(
                     renderer.on_resize((*cols, *rows));
                 }
                 if let Ok(tui_event) = Event::try_from(event) {
-                    let effects = controller.handle_event(&mut state, WispEvent::Terminal(tui_event)).await?;
-                    apply_effects(&mut renderer, &mut state, effects)?;
-                    if state.exit_requested { return Ok(()); }
-                    render(&mut renderer, &mut state)?;
+                    let messages = app.on_event(&tui_event).unwrap_or_default();
+                    process_messages(&mut renderer, &mut app, &prompt_handle, messages).await?;
+                    if app.exit_requested() { return Ok(()); }
+                    render(&mut renderer, &mut app)?;
                 }
             }
 
             app_event = external_fut => {
                 match app_event {
                     Some(event) => {
-                        let effects = controller.handle_event(&mut state, WispEvent::Acp(event)).await?;
-                        apply_effects(&mut renderer, &mut state, effects)?;
-                        if state.exit_requested { return Ok(()); }
-                        render(&mut renderer, &mut state)?;
+                        let messages = app.on_acp_event(event);
+                        process_messages(&mut renderer, &mut app, &prompt_handle, messages).await?;
+                        if app.exit_requested() { return Ok(()); }
+                        render(&mut renderer, &mut app)?;
                     }
                     None => return Ok(()),
                 }
             }
 
             () = tick_fut => {
-                let effects = controller.handle_event(&mut state, WispEvent::Terminal(Event::Tick)).await?;
-                apply_effects(&mut renderer, &mut state, effects)?;
-                if state.exit_requested { return Ok(()); }
-                render(&mut renderer, &mut state)?;
+                let messages = app.on_event(&Event::Tick).unwrap_or_default();
+                process_messages(&mut renderer, &mut app, &prompt_handle, messages).await?;
+                if app.exit_requested() { return Ok(()); }
+                render(&mut renderer, &mut app)?;
             }
         }
     }

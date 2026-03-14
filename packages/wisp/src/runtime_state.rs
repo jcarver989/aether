@@ -1,5 +1,5 @@
 use crate::cli::Cli;
-use crate::error::WispError;
+use crate::error::AppError;
 use crate::settings::load_or_create_settings;
 use crate::tui::Theme;
 use acp_utils::client::{AcpEvent, AcpPromptHandle, AutoApproveClient, spawn_acp_session};
@@ -21,7 +21,7 @@ pub struct RuntimeState {
 }
 
 impl RuntimeState {
-    pub async fn from_cli(cli: &Cli) -> Result<Self, WispError> {
+    pub async fn from_cli(cli: &Cli) -> Result<Self, AppError> {
         let cwd = current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let new_session_request = NewSessionRequest::new(cwd.clone());
         let init_request = InitializeRequest::new(ProtocolVersion::LATEST)
@@ -34,7 +34,7 @@ impl RuntimeState {
             AutoApproveClient::new,
         )
         .await
-        .map_err(WispError::Acp)?;
+        .map_err(AppError::Acp)?;
 
         let settings = load_or_create_settings();
 
