@@ -44,3 +44,4 @@ tracing = { workspace = true }
 tui = { path = ".", features = ["testing"] }
 tempfile = { workspace = true }
 crossterm = { workspace = true }
+tokio = { workspace = true }

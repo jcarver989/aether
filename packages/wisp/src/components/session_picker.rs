@@ -201,10 +201,10 @@ mod tests {
         );
     }
 
-    #[test]
-    fn navigation_moves_selection_down() {
+    #[tokio::test]
+    async fn navigation_moves_selection_down() {
         let mut picker = SessionPicker::new(sample_sessions());
-        picker.on_event(&key(KeyCode::Down));
+        picker.on_event(&key(KeyCode::Down)).await;
         let d1 = expected_date("2026-03-10T10:00:00Z");
         let d2 = expected_date("2026-03-09T10:00:00Z");
         let term = render_component(|ctx| picker.render(ctx), W, H);

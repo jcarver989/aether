@@ -10,12 +10,12 @@ fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
 
-fn type_query(picker: &mut CommandPicker, text: &str) {
+async fn type_query(picker: &mut CommandPicker, text: &str) {
     for c in text.chars() {
         let _ = picker.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Char(c),
             KeyModifiers::NONE,
-        )));
+        ))).await;
     }
 }
 
@@ -67,43 +67,43 @@ fn init_shows_all_commands() {
     assert!(lines.iter().any(|l| l.contains("/web")));
 }
 
-#[test]
-fn query_filters_by_name() {
+#[tokio::test]
+async fn query_filters_by_name() {
     let mut picker = CommandPicker::new(sample_commands());
-    type_query(&mut picker, "conf");
+    type_query(&mut picker, "conf").await;
     let lines = rendered_lines(&picker, DEFAULT_SIZE.0, DEFAULT_SIZE.1);
     assert_eq!(lines.len(), 1);
     assert!(lines[0].contains("/config"));
 }
 
-#[test]
-fn query_filters_by_description() {
+#[tokio::test]
+async fn query_filters_by_description() {
     let mut picker = CommandPicker::new(sample_commands());
-    type_query(&mut picker, "browse");
+    type_query(&mut picker, "browse").await;
     let lines = rendered_lines(&picker, DEFAULT_SIZE.0, DEFAULT_SIZE.1);
     assert_eq!(lines.len(), 1);
     assert!(lines[0].contains("/web"));
 }
 
-#[test]
-fn selection_wraps() {
+#[tokio::test]
+async fn selection_wraps() {
     let mut picker = CommandPicker::new(sample_commands());
     let first = selected_text(&picker).unwrap();
 
-    picker.on_event(&Event::Key(key(KeyCode::Up)));
+    picker.on_event(&Event::Key(key(KeyCode::Up))).await;
     let last = selected_text(&picker).unwrap();
     assert_ne!(first, last);
 
-    picker.on_event(&Event::Key(key(KeyCode::Down)));
+    picker.on_event(&Event::Key(key(KeyCode::Down))).await;
     let back_to_first = selected_text(&picker).unwrap();
     assert_eq!(first, back_to_first);
 }
 
-#[test]
-fn selected_command_changes_on_move() {
+#[tokio::test]
+async fn selected_command_changes_on_move() {
     let mut picker = CommandPicker::new(sample_commands());
     let first = selected_text(&picker).unwrap();
-    picker.on_event(&Event::Key(key(KeyCode::Down)));
+    picker.on_event(&Event::Key(key(KeyCode::Down))).await;
     let second = selected_text(&picker).unwrap();
     assert_ne!(first, second);
 }

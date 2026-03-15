@@ -164,7 +164,7 @@ impl App {
         messages
     }
 
-    fn handle_key(&mut self, messages: &mut Vec<AppMessage>, key_event: KeyEvent) {
+    async fn handle_key(&mut self, messages: &mut Vec<AppMessage>, key_event: KeyEvent) {
         if self.keybindings.exit.matches(key_event) {
             self.exit_requested = true;
             return;
@@ -182,14 +182,14 @@ impl App {
         let event = Event::Key(key_event);
 
         if self.screen_router.is_git_diff() {
-            for msg in self.screen_router.on_event(&event).unwrap_or_default() {
+            for msg in self.screen_router.on_event(&event).await.unwrap_or_default() {
                 Self::handle_screen_router_message(messages, msg);
             }
         } else if self.config_manager.is_overlay_open() {
-            let outcome = self.config_manager.on_overlay_event(&event);
+            let outcome = self.config_manager.on_overlay_event(&event).await;
             self.handle_config_manager_messages(messages, outcome);
         } else {
-            let outcome = self.conversation_screen.on_event(&event);
+            let outcome = self.conversation_screen.on_event(&event).await;
             let consumed = outcome.is_some();
             self.handle_conversation_messages(messages, outcome);
             if !consumed {
@@ -383,10 +383,10 @@ impl Component for App {
     async fn on_event(&mut self, event: &Event) -> Option<Vec<AppMessage>> {
         let mut messages = Vec::new();
         match event {
-            Event::Key(key_event) => self.handle_key(&mut messages, *key_event),
+            Event::Key(key_event) => self.handle_key(&mut messages, *key_event).await,
             Event::Paste(_) => {
                 self.config_manager.close_overlay();
-                let outcome = self.conversation_screen.on_event(event);
+                let outcome = self.conversation_screen.on_event(event).await;
                 self.handle_conversation_messages(&mut messages, outcome);
             }
             Event::Tick => {
@@ -714,8 +714,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn custom_exit_keybinding_triggers_exit() {
+    #[tokio::test]
+    async fn custom_exit_keybinding_triggers_exit() {
         use crate::keybindings::KeyBinding;
         use crate::tui::{KeyCode, KeyModifiers};
 
@@ -723,24 +723,24 @@ mod tests {
         app.keybindings.exit = KeyBinding::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
 
         let default_exit = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
-        app.on_event(&Event::Key(default_exit));
+        app.on_event(&Event::Key(default_exit)).await;
         assert!(
             !app.exit_requested(),
             "default Ctrl+C should no longer exit"
         );
 
         let custom_exit = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
-        app.on_event(&Event::Key(custom_exit));
+        app.on_event(&Event::Key(custom_exit)).await;
         assert!(app.exit_requested(), "custom Ctrl+Q should exit");
     }
 
-    #[test]
-    fn ctrl_g_opens_git_diff_viewer() {
+    #[tokio::test]
+    async fn ctrl_g_opens_git_diff_viewer() {
         use crate::tui::{KeyCode, KeyModifiers};
 
         let mut app = make_app();
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
-        let messages = app.on_event(&Event::Key(key)).unwrap_or_default();
+        let messages = app.on_event(&Event::Key(key)).await.unwrap_or_default();
 
         assert!(app.screen_router.is_git_diff());
         assert!(has_message(&messages, |m| matches!(
@@ -749,21 +749,21 @@ mod tests {
         )));
     }
 
-    #[test]
-    fn ctrl_g_closes_git_diff_viewer() {
+    #[tokio::test]
+    async fn ctrl_g_closes_git_diff_viewer() {
         use crate::tui::{KeyCode, KeyModifiers};
 
         let mut app = make_app();
         app.screen_router.enter_git_diff_for_test();
 
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
-        app.on_event(&Event::Key(key));
+        app.on_event(&Event::Key(key)).await;
 
         assert!(!app.screen_router.is_git_diff());
     }
 
-    #[test]
-    fn ctrl_g_blocked_during_elicitation() {
+    #[tokio::test]
+    async fn ctrl_g_blocked_during_elicitation() {
         use crate::tui::{KeyCode, KeyModifiers};
 
         let mut app = make_app();
@@ -779,7 +779,7 @@ mod tests {
             ));
 
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
-        app.on_event(&Event::Key(key));
+        app.on_event(&Event::Key(key)).await;
 
         assert!(
             !app.screen_router.is_git_diff(),
@@ -787,8 +787,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn esc_in_diff_mode_does_not_cancel() {
+    #[tokio::test]
+    async fn esc_in_diff_mode_does_not_cancel() {
         use crate::tui::{KeyCode, KeyModifiers};
 
         let mut app = make_app();
@@ -796,7 +796,7 @@ mod tests {
         app.screen_router.enter_git_diff_for_test();
 
         let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
-        app.on_event(&Event::Key(key));
+        app.on_event(&Event::Key(key)).await;
 
         assert!(!app.exit_requested());
         assert!(
@@ -805,8 +805,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn mouse_scroll_ignored_in_conversation_mode() {
+    #[tokio::test]
+    async fn mouse_scroll_ignored_in_conversation_mode() {
         use crate::tui::{KeyModifiers, MouseEvent, MouseEventKind};
 
         let mut app = make_app();
@@ -816,7 +816,7 @@ mod tests {
             row: 0,
             modifiers: KeyModifiers::NONE,
         };
-        app.on_event(&Event::Mouse(mouse));
+        app.on_event(&Event::Mouse(mouse)).await;
     }
 
     #[test]
@@ -863,8 +863,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn tick_advances_tool_call_statuses() {
+    #[tokio::test]
+    async fn tick_advances_tool_call_statuses() {
         let mut app = make_app();
 
         let tool_call = acp::ToolCall::new("tool-1".to_string(), "test_tool");
@@ -878,7 +878,7 @@ mod tests {
             .conversation_screen
             .tool_call_statuses
             .render_tool("tool-1", &ctx);
-        app.on_event(&Event::Tick);
+        app.on_event(&Event::Tick).await;
         let lines_after = app
             .conversation_screen
             .tool_call_statuses
@@ -891,8 +891,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn tick_advances_progress_indicator() {
+    #[tokio::test]
+    async fn tick_advances_progress_indicator() {
         let mut app = make_app();
 
         let tool_call = acp::ToolCall::new("tool-1".to_string(), "test_tool");
@@ -903,7 +903,7 @@ mod tests {
         app.conversation_screen.progress_indicator.update(0, 1);
         let ctx = ViewContext::new((80, 24));
         let output_before = app.conversation_screen.progress_indicator.render(&ctx);
-        app.on_event(&Event::Tick);
+        app.on_event(&Event::Tick).await;
         let output_after = app.conversation_screen.progress_indicator.render(&ctx);
 
         assert_ne!(
@@ -974,15 +974,15 @@ mod tests {
         )));
     }
 
-    #[test]
-    fn cancel_sends_directly_via_prompt_handle() {
+    #[tokio::test]
+    async fn cancel_sends_directly_via_prompt_handle() {
         use crate::tui::{KeyCode, KeyModifiers};
 
         let mut app = make_app();
         app.conversation_screen.waiting_for_response = true;
 
         let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
-        app.on_event(&Event::Key(key));
+        app.on_event(&Event::Key(key)).await;
         assert!(!app.exit_requested());
     }
 }

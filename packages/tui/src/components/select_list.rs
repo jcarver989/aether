@@ -143,51 +143,51 @@ mod tests {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
     }
 
-    #[test]
-    fn navigation_wraps_down() {
+    #[tokio::test]
+    async fn navigation_wraps_down() {
         let mut list = SelectList::new(items(&["a", "b", "c"]), "empty");
         assert_eq!(list.selected_index(), 0);
 
-        list.on_event(&key(KeyCode::Down));
+        list.on_event(&key(KeyCode::Down)).await;
         assert_eq!(list.selected_index(), 1);
 
-        list.on_event(&key(KeyCode::Down));
-        list.on_event(&key(KeyCode::Down));
+        list.on_event(&key(KeyCode::Down)).await;
+        list.on_event(&key(KeyCode::Down)).await;
         assert_eq!(list.selected_index(), 0);
     }
 
-    #[test]
-    fn navigation_wraps_up() {
+    #[tokio::test]
+    async fn navigation_wraps_up() {
         let mut list = SelectList::new(items(&["a", "b", "c"]), "empty");
-        list.on_event(&key(KeyCode::Up));
+        list.on_event(&key(KeyCode::Up)).await;
         assert_eq!(list.selected_index(), 2);
     }
 
-    #[test]
-    fn esc_emits_close() {
+    #[tokio::test]
+    async fn esc_emits_close() {
         let mut list = SelectList::new(items(&["a"]), "empty");
-        let outcome = list.on_event(&key(KeyCode::Esc));
+        let outcome = list.on_event(&key(KeyCode::Esc)).await;
         assert!(matches!(
             outcome.unwrap().as_slice(),
             [SelectListMessage::Close]
         ));
     }
 
-    #[test]
-    fn enter_emits_select_with_index() {
+    #[tokio::test]
+    async fn enter_emits_select_with_index() {
         let mut list = SelectList::new(items(&["a", "b", "c"]), "empty");
-        list.on_event(&key(KeyCode::Down));
-        let outcome = list.on_event(&key(KeyCode::Enter));
+        list.on_event(&key(KeyCode::Down)).await;
+        let outcome = list.on_event(&key(KeyCode::Enter)).await;
         match outcome.unwrap().as_slice() {
             [SelectListMessage::Select(idx)] => assert_eq!(*idx, 1),
             other => panic!("expected Select(1), got {other:?}"),
         }
     }
 
-    #[test]
-    fn enter_on_empty_is_noop() {
+    #[tokio::test]
+    async fn enter_on_empty_is_noop() {
         let mut list: SelectList<TestItem> = SelectList::new(vec![], "empty");
-        let outcome = list.on_event(&key(KeyCode::Enter));
+        let outcome = list.on_event(&key(KeyCode::Enter)).await;
         assert!(outcome.unwrap().is_empty());
     }
 
@@ -210,21 +210,21 @@ mod tests {
         assert!(frame.lines()[1].plain_text().starts_with("  "));
     }
 
-    #[test]
-    fn set_items_clamps_index() {
+    #[tokio::test]
+    async fn set_items_clamps_index() {
         let mut list = SelectList::new(items(&["a", "b", "c"]), "empty");
-        list.on_event(&key(KeyCode::Down));
-        list.on_event(&key(KeyCode::Down));
+        list.on_event(&key(KeyCode::Down)).await;
+        list.on_event(&key(KeyCode::Down)).await;
         assert_eq!(list.selected_index(), 2);
 
         list.set_items(items(&["x"]));
         assert_eq!(list.selected_index(), 0);
     }
 
-    #[test]
-    fn set_items_preserves_index_when_in_range() {
+    #[tokio::test]
+    async fn set_items_preserves_index_when_in_range() {
         let mut list = SelectList::new(items(&["a", "b", "c"]), "empty");
-        list.on_event(&key(KeyCode::Down));
+        list.on_event(&key(KeyCode::Down)).await;
         assert_eq!(list.selected_index(), 1);
 
         list.set_items(items(&["x", "y", "z"]));
@@ -238,18 +238,18 @@ mod tests {
         assert_eq!(list.len(), 2);
     }
 
-    #[test]
-    fn mouse_events_are_ignored() {
+    #[tokio::test]
+    async fn mouse_events_are_ignored() {
         let mut list = SelectList::new(items(&["a"]), "empty");
-        let outcome = list.on_event(&Event::Tick);
+        let outcome = list.on_event(&Event::Tick).await;
         assert!(outcome.is_none());
     }
 
-    #[test]
-    fn retain_removes_items_and_clamps_index() {
+    #[tokio::test]
+    async fn retain_removes_items_and_clamps_index() {
         let mut list = SelectList::new(items(&["a", "b", "c"]), "empty");
-        list.on_event(&key(KeyCode::Down));
-        list.on_event(&key(KeyCode::Down));
+        list.on_event(&key(KeyCode::Down)).await;
+        list.on_event(&key(KeyCode::Down)).await;
         assert_eq!(list.selected_index(), 2);
 
         list.retain(|item| item.0 != "c");

@@ -61,12 +61,12 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
-    #[test]
-    fn space_toggles() {
+    #[tokio::test]
+    async fn space_toggles() {
         let mut cb = Checkbox::new(false);
-        cb.on_event(&Event::Key(key(KeyCode::Char(' '))));
+        cb.on_event(&Event::Key(key(KeyCode::Char(' ')))).await;
         assert!(cb.checked);
-        cb.on_event(&Event::Key(key(KeyCode::Char(' '))));
+        cb.on_event(&Event::Key(key(KeyCode::Char(' ')))).await;
         assert!(!cb.checked);
     }
 
@@ -76,10 +76,10 @@ mod tests {
         assert_eq!(Checkbox::new(false).to_json(), serde_json::json!(false));
     }
 
-    #[test]
-    fn other_keys_are_ignored() {
+    #[tokio::test]
+    async fn other_keys_are_ignored() {
         let mut cb = Checkbox::new(false);
-        let outcome = cb.on_event(&Event::Key(key(KeyCode::Char('a'))));
+        let outcome = cb.on_event(&Event::Key(key(KeyCode::Char('a')))).await;
         assert!(outcome.is_none());
         assert!(!cb.checked);
     }

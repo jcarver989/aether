@@ -6,12 +6,12 @@ use crate::rendering::render_context::Size;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-pub fn type_query<P: Component>(picker: &mut P, text: &str) {
+pub async fn type_query<P: Component>(picker: &mut P, text: &str) {
     for c in text.chars() {
         let _ = picker.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Char(c),
             KeyModifiers::NONE,
-        )));
+        ))).await;
     }
 }
 

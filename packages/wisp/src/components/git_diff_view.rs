@@ -555,12 +555,12 @@ mod tests {
         GitDiffViewState::new(GitDiffLoadState::Ready(doc))
     }
 
-    #[test]
-    fn esc_emits_close() {
+    #[tokio::test]
+    async fn esc_emits_close() {
         let doc = make_test_doc();
         let mut state = make_view_state(doc);
         let mut view = GitDiffView { state: &mut state };
-        let result = view.on_event(&Event::Key(key(KeyCode::Esc)));
+        let result = view.on_event(&Event::Key(key(KeyCode::Esc))).await;
         assert!(
             result
                 .unwrap_or_default()
@@ -569,12 +569,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn r_emits_refresh() {
+    #[tokio::test]
+    async fn r_emits_refresh() {
         let doc = make_test_doc();
         let mut state = make_view_state(doc);
         let mut view = GitDiffView { state: &mut state };
-        let result = view.on_event(&Event::Key(key(KeyCode::Char('r'))));
+        let result = view.on_event(&Event::Key(key(KeyCode::Char('r')))).await;
         assert!(
             result
                 .unwrap_or_default()
@@ -583,58 +583,58 @@ mod tests {
         );
     }
 
-    #[test]
-    fn j_moves_file_selection_down() {
+    #[tokio::test]
+    async fn j_moves_file_selection_down() {
         let doc = make_test_doc();
         let mut state = make_view_state(doc);
         assert_eq!(state.selected_file, 0);
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Char('j'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('j')))).await;
         assert_eq!(view.state.selected_file, 1);
     }
 
-    #[test]
-    fn k_moves_file_selection_up_with_wrap() {
+    #[tokio::test]
+    async fn k_moves_file_selection_up_with_wrap() {
         let doc = make_test_doc();
         let mut state = make_view_state(doc);
         assert_eq!(state.selected_file, 0);
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Char('k'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('k')))).await;
         assert_eq!(view.state.selected_file, 1); // wraps from 0 to last
     }
 
-    #[test]
-    fn enter_switches_to_patch_focus() {
+    #[tokio::test]
+    async fn enter_switches_to_patch_focus() {
         let doc = make_test_doc();
         let mut state = make_view_state(doc);
         assert_eq!(state.focus, PatchFocus::FileList);
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Enter)));
+        view.on_event(&Event::Key(key(KeyCode::Enter))).await;
         assert_eq!(view.state.focus, PatchFocus::Patch);
     }
 
-    #[test]
-    fn h_switches_to_file_list_focus() {
+    #[tokio::test]
+    async fn h_switches_to_file_list_focus() {
         let doc = make_test_doc();
         let mut state = make_view_state(doc);
         state.focus = PatchFocus::Patch;
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Char('h'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('h')))).await;
         assert_eq!(view.state.focus, PatchFocus::FileList);
     }
 
-    #[test]
-    fn file_selection_resets_patch_scroll() {
+    #[tokio::test]
+    async fn file_selection_resets_patch_scroll() {
         let doc = make_test_doc();
         let mut state = make_view_state(doc);
         state.patch_scroll = 5;
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Char('j'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('j')))).await;
         assert_eq!(view.state.patch_scroll, 0);
     }
 
@@ -646,19 +646,19 @@ mod tests {
         state
     }
 
-    #[test]
-    fn c_enters_comment_mode() {
+    #[tokio::test]
+    async fn c_enters_comment_mode() {
         let mut state = make_state_with_cache();
         state.focus = PatchFocus::Patch;
         state.cursor_line = 1; // Context line (has a ref)
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Char('c'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('c')))).await;
         assert_eq!(view.state.focus, PatchFocus::CommentInput);
     }
 
-    #[test]
-    fn c_on_spacer_is_noop() {
+    #[tokio::test]
+    async fn c_on_spacer_is_noop() {
         let doc = GitDiffDocument {
             repo_root: PathBuf::from("/tmp/test"),
             files: vec![FileDiff {
@@ -704,48 +704,48 @@ mod tests {
         state.cursor_line = 1; // spacer between two hunks
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Char('c'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('c')))).await;
         assert_eq!(view.state.focus, PatchFocus::Patch);
     }
 
-    #[test]
-    fn esc_exits_comment_mode() {
+    #[tokio::test]
+    async fn esc_exits_comment_mode() {
         let mut state = make_state_with_cache();
         state.focus = PatchFocus::CommentInput;
         state.comment_buffer = "partial".to_string();
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Esc)));
+        view.on_event(&Event::Key(key(KeyCode::Esc))).await;
         assert_eq!(view.state.focus, PatchFocus::Patch);
         assert!(view.state.comment_buffer.is_empty());
     }
 
-    #[test]
-    fn enter_queues_comment() {
+    #[tokio::test]
+    async fn enter_queues_comment() {
         let mut state = make_state_with_cache();
         state.focus = PatchFocus::Patch;
         state.cursor_line = 1; // Context line
         // Enter comment mode
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Char('c'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('c')))).await;
         assert_eq!(view.state.focus, PatchFocus::CommentInput);
 
         // Type some text
         for ch in "test comment".chars() {
-            view.on_event(&Event::Key(key(KeyCode::Char(ch))));
+            view.on_event(&Event::Key(key(KeyCode::Char(ch)))).await;
         }
         assert_eq!(view.state.comment_buffer, "test comment");
 
         // Submit with Enter
-        view.on_event(&Event::Key(key(KeyCode::Enter)));
+        view.on_event(&Event::Key(key(KeyCode::Enter))).await;
         assert_eq!(view.state.focus, PatchFocus::Patch);
         assert_eq!(view.state.queued_comments.len(), 1);
         assert_eq!(view.state.queued_comments[0].comment, "test comment");
         assert!(view.state.comment_buffer.is_empty());
     }
 
-    #[test]
-    fn s_submits_review() {
+    #[tokio::test]
+    async fn s_submits_review() {
         let mut state = make_state_with_cache();
         state.focus = PatchFocus::Patch;
         state.queued_comments.push(QueuedComment {
@@ -759,7 +759,7 @@ mod tests {
         });
 
         let mut view = GitDiffView { state: &mut state };
-        let result = view.on_event(&Event::Key(key(KeyCode::Char('s'))));
+        let result = view.on_event(&Event::Key(key(KeyCode::Char('s')))).await;
         assert!(
             result
                 .unwrap_or_default()
@@ -768,18 +768,18 @@ mod tests {
         );
     }
 
-    #[test]
-    fn s_without_comments_is_noop() {
+    #[tokio::test]
+    async fn s_without_comments_is_noop() {
         let mut state = make_state_with_cache();
         state.focus = PatchFocus::Patch;
 
         let mut view = GitDiffView { state: &mut state };
-        let result = view.on_event(&Event::Key(key(KeyCode::Char('s'))));
+        let result = view.on_event(&Event::Key(key(KeyCode::Char('s')))).await;
         assert!(result.unwrap_or_default().is_empty());
     }
 
-    #[test]
-    fn u_removes_last_comment() {
+    #[tokio::test]
+    async fn u_removes_last_comment() {
         let mut state = make_state_with_cache();
         state.focus = PatchFocus::Patch;
         state.queued_comments.push(QueuedComment {
@@ -802,7 +802,7 @@ mod tests {
         });
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Char('u'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('u')))).await;
         assert_eq!(view.state.queued_comments.len(), 1);
         assert_eq!(view.state.queued_comments[0].comment, "first");
     }
@@ -824,17 +824,17 @@ mod tests {
         assert_eq!(state.cursor_line, max);
     }
 
-    #[test]
-    fn cursor_replaces_scroll() {
+    #[tokio::test]
+    async fn cursor_replaces_scroll() {
         let mut state = make_state_with_cache();
         state.focus = PatchFocus::Patch;
         state.cursor_line = 0;
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Char('j'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('j')))).await;
         assert_eq!(view.state.cursor_line, 1);
 
-        view.on_event(&Event::Key(key(KeyCode::Char('k'))));
+        view.on_event(&Event::Key(key(KeyCode::Char('k')))).await;
         assert_eq!(view.state.cursor_line, 0);
     }
 

@@ -141,25 +141,25 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
-    #[test]
-    fn typing_appends_characters() {
+    #[tokio::test]
+    async fn typing_appends_characters() {
         let mut field = TextField::new(String::new());
-        field.on_event(&Event::Key(key(KeyCode::Char('h'))));
-        field.on_event(&Event::Key(key(KeyCode::Char('i'))));
+        field.on_event(&Event::Key(key(KeyCode::Char('h')))).await;
+        field.on_event(&Event::Key(key(KeyCode::Char('i')))).await;
         assert_eq!(field.value, "hi");
     }
 
-    #[test]
-    fn backspace_removes_last_character() {
+    #[tokio::test]
+    async fn backspace_removes_last_character() {
         let mut field = TextField::new("abc".to_string());
-        field.on_event(&Event::Key(key(KeyCode::Backspace)));
+        field.on_event(&Event::Key(key(KeyCode::Backspace))).await;
         assert_eq!(field.value, "ab");
     }
 
-    #[test]
-    fn backspace_on_empty_is_no_op() {
+    #[tokio::test]
+    async fn backspace_on_empty_is_no_op() {
         let mut field = TextField::new(String::new());
-        field.on_event(&Event::Key(key(KeyCode::Backspace)));
+        field.on_event(&Event::Key(key(KeyCode::Backspace))).await;
         assert_eq!(field.value, "");
     }
 
@@ -169,17 +169,17 @@ mod tests {
         assert_eq!(field.to_json(), serde_json::json!("hello"));
     }
 
-    #[test]
-    fn unhandled_keys_are_ignored() {
+    #[tokio::test]
+    async fn unhandled_keys_are_ignored() {
         let mut field = TextField::new(String::new());
-        let outcome = field.on_event(&Event::Key(key(KeyCode::Up)));
+        let outcome = field.on_event(&Event::Key(key(KeyCode::Up))).await;
         assert!(outcome.is_none());
     }
 
-    #[test]
-    fn paste_appends_text() {
+    #[tokio::test]
+    async fn paste_appends_text() {
         let mut field = TextField::new(String::new());
-        let outcome = field.on_event(&Event::Paste("hello".to_string()));
+        let outcome = field.on_event(&Event::Paste("hello".to_string())).await;
         assert!(outcome.is_some());
         assert_eq!(field.value, "hello");
     }
@@ -190,65 +190,65 @@ mod tests {
         assert_eq!(field.cursor_pos(), 5);
     }
 
-    #[test]
-    fn left_moves_cursor_back() {
+    #[tokio::test]
+    async fn left_moves_cursor_back() {
         let mut field = TextField::new("hello".to_string());
-        field.on_event(&Event::Key(key(KeyCode::Left)));
+        field.on_event(&Event::Key(key(KeyCode::Left))).await;
         assert_eq!(field.cursor_pos(), 4);
     }
 
-    #[test]
-    fn right_at_end_stays() {
+    #[tokio::test]
+    async fn right_at_end_stays() {
         let mut field = TextField::new("hello".to_string());
-        field.on_event(&Event::Key(key(KeyCode::Right)));
+        field.on_event(&Event::Key(key(KeyCode::Right))).await;
         assert_eq!(field.cursor_pos(), 5);
     }
 
-    #[test]
-    fn left_at_start_stays() {
+    #[tokio::test]
+    async fn left_at_start_stays() {
         let mut field = TextField::new(String::new());
-        field.on_event(&Event::Key(key(KeyCode::Left)));
+        field.on_event(&Event::Key(key(KeyCode::Left))).await;
         assert_eq!(field.cursor_pos(), 0);
     }
 
-    #[test]
-    fn home_moves_to_start() {
+    #[tokio::test]
+    async fn home_moves_to_start() {
         let mut field = TextField::new("hello".to_string());
-        field.on_event(&Event::Key(key(KeyCode::Home)));
+        field.on_event(&Event::Key(key(KeyCode::Home))).await;
         assert_eq!(field.cursor_pos(), 0);
     }
 
-    #[test]
-    fn end_moves_to_end() {
+    #[tokio::test]
+    async fn end_moves_to_end() {
         let mut field = TextField::new("hello".to_string());
         field.move_cursor_home();
-        field.on_event(&Event::Key(key(KeyCode::End)));
+        field.on_event(&Event::Key(key(KeyCode::End))).await;
         assert_eq!(field.cursor_pos(), 5);
     }
 
-    #[test]
-    fn insert_at_middle() {
+    #[tokio::test]
+    async fn insert_at_middle() {
         let mut field = TextField::new("hllo".to_string());
         field.set_cursor_pos(1);
-        field.on_event(&Event::Key(key(KeyCode::Char('e'))));
+        field.on_event(&Event::Key(key(KeyCode::Char('e')))).await;
         assert_eq!(field.value, "hello");
         assert_eq!(field.cursor_pos(), 2);
     }
 
-    #[test]
-    fn backspace_at_middle() {
+    #[tokio::test]
+    async fn backspace_at_middle() {
         let mut field = TextField::new("hello".to_string());
         field.set_cursor_pos(3);
-        field.on_event(&Event::Key(key(KeyCode::Backspace)));
+        field.on_event(&Event::Key(key(KeyCode::Backspace))).await;
         assert_eq!(field.value, "helo");
         assert_eq!(field.cursor_pos(), 2);
     }
 
-    #[test]
-    fn paste_at_cursor() {
+    #[tokio::test]
+    async fn paste_at_cursor() {
         let mut field = TextField::new("hd".to_string());
         field.set_cursor_pos(1);
-        field.on_event(&Event::Paste("ello worl".to_string()));
+        field.on_event(&Event::Paste("ello worl".to_string())).await;
         assert_eq!(field.value, "hello world");
         assert_eq!(field.cursor_pos(), 10);
     }

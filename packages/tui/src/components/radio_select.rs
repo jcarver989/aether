@@ -115,21 +115,21 @@ mod tests {
         ]
     }
 
-    #[test]
-    fn right_cycles_forward() {
+    #[tokio::test]
+    async fn right_cycles_forward() {
         let mut rs = RadioSelect::new(sample_options(), 0);
-        rs.on_event(&Event::Key(key(KeyCode::Right)));
+        rs.on_event(&Event::Key(key(KeyCode::Right))).await;
         assert_eq!(rs.selected, 1);
-        rs.on_event(&Event::Key(key(KeyCode::Right)));
+        rs.on_event(&Event::Key(key(KeyCode::Right))).await;
         assert_eq!(rs.selected, 2);
-        rs.on_event(&Event::Key(key(KeyCode::Right)));
+        rs.on_event(&Event::Key(key(KeyCode::Right))).await;
         assert_eq!(rs.selected, 0); // wraps
     }
 
-    #[test]
-    fn left_cycles_backward() {
+    #[tokio::test]
+    async fn left_cycles_backward() {
         let mut rs = RadioSelect::new(sample_options(), 0);
-        rs.on_event(&Event::Key(key(KeyCode::Left)));
+        rs.on_event(&Event::Key(key(KeyCode::Left))).await;
         assert_eq!(rs.selected, 2); // wraps to end
     }
 
@@ -145,10 +145,10 @@ mod tests {
         assert_eq!(rs.to_json(), serde_json::Value::Null);
     }
 
-    #[test]
-    fn empty_options_ignores_keys() {
+    #[tokio::test]
+    async fn empty_options_ignores_keys() {
         let mut rs = RadioSelect::new(vec![], 0);
-        let outcome = rs.on_event(&Event::Key(key(KeyCode::Right)));
+        let outcome = rs.on_event(&Event::Key(key(KeyCode::Right))).await;
         assert!(outcome.is_none());
     }
 }

@@ -175,7 +175,7 @@ async fn run_app(
                     renderer.on_resize((*cols, *rows));
                 }
                 if let Ok(tui_event) = Event::try_from(event) {
-                    let messages = app.on_event(&tui_event).unwrap_or_default();
+                    let messages = app.on_event(&tui_event).await.unwrap_or_default();
                     process_messages(&mut renderer, &mut app, &prompt_handle, messages).await?;
                     if app.exit_requested() { return Ok(()); }
                     render(&mut renderer, &mut app)?;
@@ -195,7 +195,7 @@ async fn run_app(
             }
 
             () = tick_fut => {
-                let messages = app.on_event(&Event::Tick).unwrap_or_default();
+                let messages = app.on_event(&Event::Tick).await.unwrap_or_default();
                 process_messages(&mut renderer, &mut app, &prompt_handle, messages).await?;
                 if app.exit_requested() { return Ok(()); }
                 render(&mut renderer, &mut app)?;

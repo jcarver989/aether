@@ -228,20 +228,20 @@ mod tests {
         assert!(selected.contains("GPT-4o"));
     }
 
-    #[test]
-    fn query_filters_by_name() {
+    #[tokio::test]
+    async fn query_filters_by_name() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
-        type_query(&mut picker, "gemini");
+        type_query(&mut picker, "gemini").await;
         let lines = rendered_lines(&picker);
         // header + 1 match
         assert_eq!(lines.len(), 2);
         assert!(lines[1].contains("Gemini 2.5 Pro"));
     }
 
-    #[test]
-    fn query_filters_by_value() {
+    #[tokio::test]
+    async fn query_filters_by_value() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
-        type_query(&mut picker, "anthropic/claude");
+        type_query(&mut picker, "anthropic/claude").await;
         let lines = rendered_lines(&picker);
         // header + 1 match
         assert_eq!(lines.len(), 2);
@@ -254,13 +254,13 @@ mod tests {
         assert!(picker.confirm_selection().is_none());
     }
 
-    #[test]
-    fn confirm_selection_returns_change_for_new_value() {
+    #[tokio::test]
+    async fn confirm_selection_returns_change_for_new_value() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
         picker.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Down,
             KeyModifiers::NONE,
-        )));
+        ))).await;
         let change = picker.confirm_selection().expect("config change");
         assert_eq!(change.config_id, "model");
         assert_eq!(
@@ -269,30 +269,30 @@ mod tests {
         );
     }
 
-    #[test]
-    fn disabled_option_cannot_be_confirmed() {
+    #[tokio::test]
+    async fn disabled_option_cannot_be_confirmed() {
         let mut entry = entry();
         entry.values[1].is_disabled = true;
         entry.values[1].description = Some("Unavailable: set ANTHROPIC_API_KEY".to_string());
         entry.values[1].name = "Disabled Claude".to_string();
 
         let mut picker = ConfigPicker::from_entry(&entry).expect("picker");
-        type_query(&mut picker, "disabled");
+        type_query(&mut picker, "disabled").await;
         assert!(picker.confirm_selection().is_none());
     }
 
-    #[test]
-    fn handle_key_enter_returns_apply_selection_message() {
+    #[tokio::test]
+    async fn handle_key_enter_returns_apply_selection_message() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
         picker.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Down,
             KeyModifiers::NONE,
-        )));
+        ))).await;
 
         let outcome = picker.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::NONE,
-        )));
+        ))).await;
 
         assert!(outcome.is_some());
 
@@ -305,11 +305,11 @@ mod tests {
         }
     }
 
-    #[test]
-    fn handle_key_escape_returns_close_message() {
+    #[tokio::test]
+    async fn handle_key_escape_returns_close_message() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
 
-        let outcome = picker.on_event(&Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)));
+        let outcome = picker.on_event(&Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))).await;
 
         assert!(outcome.is_some());
 

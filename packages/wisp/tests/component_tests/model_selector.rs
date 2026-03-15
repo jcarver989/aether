@@ -4,9 +4,9 @@ use tui::{Component, Event, KeyCode, KeyEvent, KeyModifiers};
 use tui::testing::render_component;
 use acp_utils::config_meta::SelectOptionMeta;
 
-fn type_query(picker: &mut ModelSelector, text: &str) {
+async fn type_query(picker: &mut ModelSelector, text: &str) {
     for c in text.chars() {
-        picker.on_event(&Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)));
+        picker.on_event(&Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE))).await;
     }
 }
 
@@ -155,10 +155,10 @@ fn model_entry_with_reasoning() -> ConfigMenuEntry {
     }
 }
 
-#[test]
-fn search_filters_entries() {
+#[tokio::test]
+async fn search_filters_entries() {
     let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-    type_query(&mut builder, "deepseek");
+    type_query(&mut builder, "deepseek").await;
     let lines = rendered_lines(&builder);
     assert!(lines.iter().any(|l| l.trim() == "DeepSeek"));
     assert!(lines.iter().any(|l| l.contains("[ ] DeepSeek Chat")));
@@ -181,10 +181,10 @@ fn render_groups_models_under_provider_headers() {
     assert!(lines.iter().any(|l| l.contains("[ ] Gemini 2.5 Pro")));
 }
 
-#[test]
-fn search_filters_and_keeps_provider_headers() {
+#[tokio::test]
+async fn search_filters_and_keeps_provider_headers() {
     let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
-    type_query(&mut builder, "gemini");
+    type_query(&mut builder, "gemini").await;
     let lines = rendered_lines(&builder);
 
     assert!(
@@ -198,8 +198,8 @@ fn search_filters_and_keeps_provider_headers() {
     assert!(lines.iter().any(|l| l.contains("[ ] Gemini 2.5 Pro")));
 }
 
-#[test]
-fn search_does_not_duplicate_provider_headers() {
+#[tokio::test]
+async fn search_does_not_duplicate_provider_headers() {
     let entry = ConfigMenuEntry {
         config_id: "model".to_string(),
         title: "Model".to_string(),
@@ -240,7 +240,7 @@ fn search_does_not_duplicate_provider_headers() {
         display_name: None,
     };
     let mut selector = ModelSelector::from_model_entry(&entry, None, None);
-    type_query(&mut selector, "gpt");
+    type_query(&mut selector, "gpt").await;
     let lines = rendered_lines(&selector);
 
     let codex_count = lines.iter().filter(|l| l.trim() == "Codex").count();
@@ -255,35 +255,35 @@ fn search_does_not_duplicate_provider_headers() {
     );
 }
 
-#[test]
-fn grouped_navigation_follows_rendered_order() {
+#[tokio::test]
+async fn grouped_navigation_follows_rendered_order() {
     let mut selector = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
 
     let (provider, focused) = focused_provider_and_row(&selector);
     assert_eq!(provider, "Anthropic");
     assert!(focused.contains("Claude Sonnet 4.5"));
 
-    selector.on_event(&Event::Key(key(KeyCode::Down)));
+    selector.on_event(&Event::Key(key(KeyCode::Down))).await;
     let (provider, focused) = focused_provider_and_row(&selector);
     assert_eq!(provider, "Google");
     assert!(focused.contains("Gemini 2.5 Pro"));
 
-    selector.on_event(&Event::Key(key(KeyCode::Down)));
+    selector.on_event(&Event::Key(key(KeyCode::Down))).await;
     let (provider, focused) = focused_provider_and_row(&selector);
     assert_eq!(provider, "OpenRouter");
     assert!(focused.contains("Claude Sonnet 4.5"));
 }
 
-#[test]
-fn grouped_navigation_after_search_follows_rendered_order() {
+#[tokio::test]
+async fn grouped_navigation_after_search_follows_rendered_order() {
     let mut selector = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
-    type_query(&mut selector, "2.5");
+    type_query(&mut selector, "2.5").await;
 
     let (provider, focused) = focused_provider_and_row(&selector);
     assert_eq!(provider, "Google");
     assert!(focused.contains("Gemini 2.5 Pro"));
 
-    selector.on_event(&Event::Key(key(KeyCode::Down)));
+    selector.on_event(&Event::Key(key(KeyCode::Down))).await;
     let (provider, focused) = focused_provider_and_row(&selector);
     assert_eq!(provider, "OpenRouter");
     assert!(focused.contains("Gemini 2.5 Pro"));
@@ -364,12 +364,12 @@ fn render_shows_bar_on_focused_reasoning_row() {
     );
 }
 
-#[test]
-fn render_no_bar_on_non_reasoning_focused_row() {
+#[tokio::test]
+async fn render_no_bar_on_non_reasoning_focused_row() {
     let mut selector =
         ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, Some("medium"));
     // Move to non-reasoning model
-    selector.on_event(&Event::Key(key(KeyCode::Down)));
+    selector.on_event(&Event::Key(key(KeyCode::Down))).await;
     let lines = rendered_lines(&selector);
     let focused_line = lines
         .iter()

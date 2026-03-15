@@ -59,7 +59,7 @@ impl Component for ScreenRouter {
     type Message = ScreenRouterMessage;
 
     async fn on_event(&mut self, event: &Event) -> Option<Vec<ScreenRouterMessage>> {
-        let git_messages = self.git_diff_mode.on_key_event(event);
+        let git_messages = self.git_diff_mode.on_key_event(event).await;
         let mut router_messages = Vec::new();
         for msg in git_messages {
             match msg {

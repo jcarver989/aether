@@ -61,11 +61,11 @@ impl Renderer {
         self.render()
     }
 
-    fn on_key_event(
+    async fn on_key_event(
         &mut self,
         key_event: tui::KeyEvent,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
-        self.handle_terminal_event(Event::Key(key_event))
+        self.handle_terminal_event(Event::Key(key_event)).await
     }
 
     fn on_session_update(
@@ -81,23 +81,23 @@ impl Renderer {
         Ok(())
     }
 
-    fn on_tick(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.handle_terminal_event(Event::Tick)?;
+    async fn on_tick(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.handle_terminal_event(Event::Tick).await?;
         Ok(())
     }
 
-    fn on_paste(&mut self, text: &str) -> Result<(), Box<dyn std::error::Error>> {
-        self.handle_terminal_event(Event::Paste(text.to_string()))?;
+    async fn on_paste(&mut self, text: &str) -> Result<(), Box<dyn std::error::Error>> {
+        self.handle_terminal_event(Event::Paste(text.to_string())).await?;
         Ok(())
     }
 
-    fn on_resize_event(
+    async fn on_resize_event(
         &mut self,
         cols: u16,
         rows: u16,
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.frame_renderer.on_resize((cols, rows));
-        self.handle_terminal_event(Event::Resize((cols, rows).into()))?;
+        self.handle_terminal_event(Event::Resize((cols, rows).into())).await?;
         Ok(())
     }
 
@@ -113,11 +113,11 @@ impl Renderer {
         self.handle_acp_event(AcpEvent::ConnectionClosed)
     }
 
-    fn handle_terminal_event(
+    async fn handle_terminal_event(
         &mut self,
         event: Event,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
-        let messages = self.app.on_event(&event).unwrap_or_default();
+        let messages = self.app.on_event(&event).await.unwrap_or_default();
         self.apply_messages(messages)
     }
 
@@ -256,8 +256,8 @@ fn command_picker_visible_names(terminal: &TestTerminal) -> Vec<String> {
     names
 }
 
-#[test]
-fn test_agent_message_text_chunks() {
+#[tokio::test]
+async fn test_agent_message_text_chunks() {
     let renderer = render(vec![
         text_chunk("Hello"),
         text_chunk(" World"),
@@ -269,8 +269,8 @@ fn test_agent_message_text_chunks() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_agent_thought_chunks() {
+#[tokio::test]
+async fn test_agent_thought_chunks() {
     let renderer = render(vec![
         thought_chunk("Plan"),
         thought_chunk(" this"),
@@ -282,8 +282,8 @@ fn test_agent_thought_chunks() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_agent_message_chunks_stream_before_prompt_done() {
+#[tokio::test]
+async fn test_agent_message_chunks_stream_before_prompt_done() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
@@ -303,8 +303,8 @@ fn test_agent_message_chunks_stream_before_prompt_done() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_thought_and_text_chunks_stream_before_prompt_done() {
+#[tokio::test]
+async fn test_thought_and_text_chunks_stream_before_prompt_done() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
@@ -324,8 +324,8 @@ fn test_thought_and_text_chunks_stream_before_prompt_done() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_text_and_thought_chunks_stream_in_arrival_order() {
+#[tokio::test]
+async fn test_text_and_thought_chunks_stream_in_arrival_order() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
@@ -350,8 +350,8 @@ fn test_text_and_thought_chunks_stream_in_arrival_order() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_thought_prefix_resets_after_non_thought_boundary() {
+#[tokio::test]
+async fn test_thought_prefix_resets_after_non_thought_boundary() {
     let renderer = render(vec![
         thought_chunk("Plan"),
         text_chunk("Answer"),
@@ -369,16 +369,16 @@ fn test_thought_prefix_resets_after_non_thought_boundary() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_multiline_thought_prefixes_only_first_line() {
+#[tokio::test]
+async fn test_multiline_thought_prefixes_only_first_line() {
     let renderer = render(vec![thought_chunk("line one\nline two"), prompt_done()]);
 
     let expected = expected_with_prompt(&["│ line one", "│ line two"], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_tool_calls_interleave_with_thought_and_text_in_arrival_order() {
+#[tokio::test]
+async fn test_tool_calls_interleave_with_thought_and_text_in_arrival_order() {
     let renderer = render(vec![
         thought_chunk("Thinking"),
         tool_call("search", r#"{"q":"rust"}"#),
@@ -402,8 +402,8 @@ fn test_tool_calls_interleave_with_thought_and_text_in_arrival_order() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_agent_message_tool_call() {
+#[tokio::test]
+async fn test_agent_message_tool_call() {
     let renderer = render(vec![tool_call("test_tool", r#"{"arg1": "value1"}"#)]);
 
     let expected = expected_with_prompt(
@@ -415,8 +415,8 @@ fn test_agent_message_tool_call() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_agent_message_tool_result() {
+#[tokio::test]
+async fn test_agent_message_tool_result() {
     let args = r#"{"arg1": "value1"}"#;
     let renderer = render(vec![
         tool_call("test_tool", args),
@@ -433,8 +433,8 @@ fn test_agent_message_tool_result() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_multiple_messages_sequence() {
+#[tokio::test]
+async fn test_multiple_messages_sequence() {
     let args = r#"{"query": "test"}"#;
     let renderer = render(vec![
         text_chunk("Processing your request"),
@@ -460,8 +460,8 @@ fn test_multiple_messages_sequence() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_streaming_tool_call_arguments() {
+#[tokio::test]
+async fn test_streaming_tool_call_arguments() {
     let renderer = render(vec![
         tool_call_with_id("Read", "call_1", ""),
         tool_update_with_args("call_1", r#"{"file":"test.rs"}"#),
@@ -478,8 +478,8 @@ fn test_streaming_tool_call_arguments() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_in_progress_tool_call_updates_from_duplicate_requests() {
+#[tokio::test]
+async fn test_in_progress_tool_call_updates_from_duplicate_requests() {
     let renderer = render(vec![
         tool_call_with_id("Read", "call_1", ""),
         tool_call_with_id("", "call_1", r#"{"file":"test.rs"}"#),
@@ -495,8 +495,8 @@ fn test_in_progress_tool_call_updates_from_duplicate_requests() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_tool_progress_renders_running_tool() {
+#[tokio::test]
+async fn test_tool_progress_renders_running_tool() {
     let renderer = render(vec![tool_call_with_id(
         "Read",
         "call_1",
@@ -513,8 +513,8 @@ fn test_tool_progress_renders_running_tool() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_multiple_parallel_tool_calls() {
+#[tokio::test]
+async fn test_multiple_parallel_tool_calls() {
     let args1 = r#"{"file": "test.rs"}"#;
     let args2 = r#"{"pattern": "foo"}"#;
     let args3 = r#"{"path": "src/"}"#;
@@ -542,8 +542,8 @@ fn test_multiple_parallel_tool_calls() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_text_complete_preserves_running_tool_calls() {
+#[tokio::test]
+async fn test_text_complete_preserves_running_tool_calls() {
     let renderer = render(vec![
         tool_call_with_id("Read", "call_1", r#"{"file": "a.rs"}"#),
         tool_call_with_id("Write", "call_2", r#"{"file": "b.rs"}"#),
@@ -568,8 +568,8 @@ fn test_text_complete_preserves_running_tool_calls() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_late_result_after_prompt_done() {
+#[tokio::test]
+async fn test_late_result_after_prompt_done() {
     let renderer = render(vec![
         tool_call_with_id("Read", "call_1", r#"{"file": "a.rs"}"#),
         tool_call_with_id("Write", "call_2", r#"{"file": "b.rs"}"#),
@@ -611,15 +611,15 @@ fn render_with_size(events: Vec<TestEvent>, size: (u16, u16)) -> Renderer {
 fn render(events: Vec<TestEvent>) -> Renderer {
     render_with_size(events, (TEST_WIDTH, 40))}
 
-#[test]
-fn test_user_message_submission() {
+#[tokio::test]
+async fn test_user_message_submission() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "Hello world");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "Hello world").await;
+    press_enter(&mut renderer).await;
 
     // Simulate the agent finishing so the grid loader clears
     renderer.on_prompt_done().unwrap();
@@ -700,7 +700,7 @@ fn tool_update_with_args(id: &str, args: &str) -> TestEvent {
     )))
 }
 
-fn type_string(renderer: &mut Renderer, text: &str) {
+async fn type_string(renderer: &mut Renderer, text: &str) {
     for ch in text.chars() {
         let key_event = KeyEvent {
             code: KeyCode::Char(ch),
@@ -708,24 +708,24 @@ fn type_string(renderer: &mut Renderer, text: &str) {
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
         };
-        renderer.on_key_event(key_event).unwrap();
+        renderer.on_key_event(key_event).await.unwrap();
     }
 }
 
-fn press_enter(renderer: &mut Renderer) {
+async fn press_enter(renderer: &mut Renderer) {
     let enter_event = KeyEvent {
         code: KeyCode::Enter,
         modifiers: KeyModifiers::empty(),
         kind: KeyEventKind::Press,
         state: KeyEventState::empty(),
     };
-    renderer.on_key_event(enter_event).unwrap();
+    renderer.on_key_event(enter_event).await.unwrap();
 }
 
 // ── Regression: tool calls must render after initial_render ──────────
 
-#[test]
-fn test_in_progress_tool_call_visible_after_initial_render() {
+#[tokio::test]
+async fn test_in_progress_tool_call_visible_after_initial_render() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
 
@@ -747,8 +747,8 @@ fn test_in_progress_tool_call_visible_after_initial_render() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_in_progress_tool_call_renders_correctly_after_resize() {
+#[tokio::test]
+async fn test_in_progress_tool_call_renders_correctly_after_resize() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
@@ -761,7 +761,7 @@ fn test_in_progress_tool_call_renders_correctly_after_resize() {
                 .unwrap();
 
     // Terminal resize triggers full re-render at new width
-    renderer.on_resize_event(100, 30).unwrap();
+    renderer.on_resize_event(100, 30).await.unwrap();
 
     let expected = expected_with_prompt(
         &["⠒ Read", "⠒ Working... (0/1 tools complete)"],
@@ -774,8 +774,8 @@ fn test_in_progress_tool_call_renders_correctly_after_resize() {
 
 // ── Regression tests: small terminals that force scrolling ───────────
 
-#[test]
-fn test_no_ghost_on_tool_completion_small_terminal() {
+#[tokio::test]
+async fn test_no_ghost_on_tool_completion_small_terminal() {
     let args = r#"{"file": "a.rs"}"#;
     let renderer = render_with_size(
         vec![
@@ -798,8 +798,8 @@ fn test_no_ghost_on_tool_completion_small_terminal() {
     );
 }
 
-#[test]
-fn test_tool_updates_in_place_after_scrollback_push() {
+#[tokio::test]
+async fn test_tool_updates_in_place_after_scrollback_push() {
     let renderer = render_with_size(
         vec![
             tool_call_with_id("Read", "call_1", r#"{"file": "a.rs"}"#),
@@ -823,8 +823,8 @@ fn test_tool_updates_in_place_after_scrollback_push() {
     );
 }
 
-#[test]
-fn test_wrapped_tool_update_does_not_duplicate_lines() {
+#[tokio::test]
+async fn test_wrapped_tool_update_does_not_duplicate_lines() {
     let long_args = r#"{"file":"src/some/really/long/path/that/forces/tool/status/wrapping.rs"}"#;
     let renderer = render_with_size(
         vec![
@@ -850,8 +850,8 @@ fn test_wrapped_tool_update_does_not_duplicate_lines() {
     );
 }
 
-#[test]
-fn test_multiple_scrollback_pushes_tiny_terminal() {
+#[tokio::test]
+async fn test_multiple_scrollback_pushes_tiny_terminal() {
     let renderer = render_with_size(
         vec![
             text_chunk("First message"),
@@ -873,8 +873,8 @@ fn test_multiple_scrollback_pushes_tiny_terminal() {
     );
 }
 
-#[test]
-fn test_prompt_done_does_not_duplicate_overflowed_lines() {
+#[tokio::test]
+async fn test_prompt_done_does_not_duplicate_overflowed_lines() {
     let markers: Vec<String> = (1..=16).map(|i| format!("L{i:02}")).collect();
     let chunk = format!("```text\n{}\n```", markers.join("\n"));
 
@@ -897,19 +897,19 @@ fn test_prompt_done_does_not_duplicate_overflowed_lines() {
 
 // ── New tests: bordered input + status line ──────────────────────────
 
-#[test]
-fn test_resize_after_terminal_reflow_keeps_single_prompt_box() {
+#[tokio::test]
+async fn test_resize_after_terminal_reflow_keeps_single_prompt_box() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
     let input = "this input prompt is long enough to wrap across multiple rows and should reflow cleanly on resize";
-    type_string(&mut renderer, input);
+    type_string(&mut renderer, input).await;
 
     renderer
         .test_writer_mut()
         .resize_preserving_transcript(32, 24);
-    renderer.on_resize_event(32, 24).unwrap();
+    renderer.on_resize_event(32, 24).await.unwrap();
 
     let lines = renderer.writer().get_lines();
     let top_count = lines.iter().filter(|l| l.contains('╭')).count();
@@ -940,21 +940,21 @@ fn test_resize_after_terminal_reflow_keeps_single_prompt_box() {
     );
 }
 
-#[test]
-fn test_typing_renders_within_bordered_input() {
+#[tokio::test]
+async fn test_typing_renders_within_bordered_input() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "hello");
+    type_string(&mut renderer, "hello").await;
 
     let expected = expected_prompt(80, "hello", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_wrapped_input_prompt_rerender_has_single_box() {
+#[tokio::test]
+async fn test_wrapped_input_prompt_rerender_has_single_box() {
     let terminal = TestTerminal::new(32, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (32, 24));
 
@@ -962,10 +962,10 @@ fn test_wrapped_input_prompt_rerender_has_single_box() {
     type_string(
         &mut renderer,
         "this input prompt is long enough to wrap across multiple rows",
-    )
+    ).await
     ;
-    press_backspace(&mut renderer);
-    press_backspace(&mut renderer);
+    press_backspace(&mut renderer).await;
+    press_backspace(&mut renderer).await;
 
     let lines = renderer.writer().get_lines();
     let top_count = lines.iter().filter(|l| l.contains('╭')).count();
@@ -991,22 +991,22 @@ fn test_wrapped_input_prompt_rerender_has_single_box() {
     );
 }
 
-#[test]
-fn test_backspace_updates_within_border() {
+#[tokio::test]
+async fn test_backspace_updates_within_border() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "hello");
-    press_backspace(&mut renderer);
+    type_string(&mut renderer, "hello").await;
+    press_backspace(&mut renderer).await;
 
     let expected = expected_prompt(80, "hell", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_ctrl_c_exits_while_file_picker_is_open() {
+#[tokio::test]
+async fn test_ctrl_c_exits_while_file_picker_is_open() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
@@ -1017,7 +1017,7 @@ fn test_ctrl_c_exits_while_file_picker_is_open() {
             modifiers: KeyModifiers::empty(),
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
-        })
+        }).await
                 .unwrap();
     assert!(
         has_file_picker(renderer.writer()),
@@ -1030,14 +1030,14 @@ fn test_ctrl_c_exits_while_file_picker_is_open() {
             modifiers: KeyModifiers::CONTROL,
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
-        })
+        }).await
                 .unwrap();
 
     assert!(matches!(action, LoopAction::Exit));
 }
 
-#[test]
-fn test_space_closes_file_picker_without_selection() {
+#[tokio::test]
+async fn test_space_closes_file_picker_without_selection() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
@@ -1048,7 +1048,7 @@ fn test_space_closes_file_picker_without_selection() {
             modifiers: KeyModifiers::empty(),
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
-        })
+        }).await
                 .unwrap();
     assert!(
         has_file_picker(renderer.writer()),
@@ -1061,7 +1061,7 @@ fn test_space_closes_file_picker_without_selection() {
             modifiers: KeyModifiers::empty(),
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
-        })
+        }).await
                 .unwrap();
 
     assert!(
@@ -1070,8 +1070,8 @@ fn test_space_closes_file_picker_without_selection() {
     );
 }
 
-#[test]
-fn test_status_line_shows_agent_name() {
+#[tokio::test]
+async fn test_status_line_shows_agent_name() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, "claude-code".to_string(), &[], (80, 24));
 
@@ -1085,8 +1085,8 @@ fn test_status_line_shows_agent_name() {
     );
 }
 
-#[test]
-fn test_status_line_shows_model_from_config_options() {
+#[tokio::test]
+async fn test_status_line_shows_model_from_config_options() {
     let config_options = vec![
         acp::SessionConfigOption::select(
             "model",
@@ -1115,8 +1115,8 @@ fn test_status_line_shows_model_from_config_options() {
     );
 }
 
-#[test]
-fn test_status_line_updates_on_config_option_update() {
+#[tokio::test]
+async fn test_status_line_updates_on_config_option_update() {
     let config_options = vec![
         acp::SessionConfigOption::select(
             "model",
@@ -1167,8 +1167,8 @@ fn test_status_line_updates_on_config_option_update() {
     );
 }
 
-#[test]
-fn test_empty_prompt_renders_bordered_box() {
+#[tokio::test]
+async fn test_empty_prompt_renders_bordered_box() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
 
@@ -1180,15 +1180,15 @@ fn test_empty_prompt_renders_bordered_box() {
 
 // ── Grid loader tests ────────────────────────────────────────────────
 
-#[test]
-fn test_grid_loader_visible_after_prompt_submit() {
+#[tokio::test]
+async fn test_grid_loader_visible_after_prompt_submit() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "Hello");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "Hello").await;
+    press_enter(&mut renderer).await;
 
     let lines = renderer.writer().get_lines();
     let has_spinner = lines.iter().any(|l| l.contains('⠒'));
@@ -1199,15 +1199,15 @@ fn test_grid_loader_visible_after_prompt_submit() {
     );
 }
 
-#[test]
-fn test_grid_loader_disappears_on_session_update() {
+#[tokio::test]
+async fn test_grid_loader_disappears_on_session_update() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "Hello");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "Hello").await;
+    press_enter(&mut renderer).await;
 
     // First session update should hide the loader
     renderer
@@ -1227,15 +1227,15 @@ fn test_grid_loader_disappears_on_session_update() {
     );
 }
 
-#[test]
-fn test_grid_loader_disappears_on_prompt_done() {
+#[tokio::test]
+async fn test_grid_loader_disappears_on_prompt_done() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "Hello");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "Hello").await;
+    press_enter(&mut renderer).await;
 
     renderer.on_prompt_done().unwrap();
 
@@ -1250,8 +1250,8 @@ fn test_grid_loader_disappears_on_prompt_done() {
     );
 }
 
-#[test]
-fn test_grid_loader_not_visible_on_initial_render() {
+#[tokio::test]
+async fn test_grid_loader_not_visible_on_initial_render() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
 
@@ -1261,19 +1261,19 @@ fn test_grid_loader_not_visible_on_initial_render() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_on_tick_advances_animation() {
+#[tokio::test]
+async fn test_on_tick_advances_animation() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
 
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "Hello");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "Hello").await;
+    press_enter(&mut renderer).await;
 
     let lines_before: Vec<String> = renderer.writer().get_lines();
 
-    renderer.on_tick().unwrap();
+    renderer.on_tick().await.unwrap();
 
     let lines_after: Vec<String> = renderer.writer().get_lines();
 
@@ -1284,8 +1284,8 @@ fn test_on_tick_advances_animation() {
     );
 }
 
-#[test]
-fn test_on_tick_noop_when_not_waiting() {
+#[tokio::test]
+async fn test_on_tick_noop_when_not_waiting() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
 
@@ -1293,7 +1293,7 @@ fn test_on_tick_noop_when_not_waiting() {
 
     let lines_before: Vec<String> = renderer.writer().get_lines();
 
-    renderer.on_tick().unwrap();
+    renderer.on_tick().await.unwrap();
 
     let lines_after: Vec<String> = renderer.writer().get_lines();
 
@@ -1303,32 +1303,32 @@ fn test_on_tick_noop_when_not_waiting() {
     );
 }
 
-#[test]
-fn test_paste_inserts_all_text_at_once() {
+#[tokio::test]
+async fn test_paste_inserts_all_text_at_once() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
-    renderer.on_paste("hello world").unwrap();
+    renderer.on_paste("hello world").await.unwrap();
 
     let expected = expected_prompt(80, "hello world", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_paste_strips_control_characters() {
+#[tokio::test]
+async fn test_paste_strips_control_characters() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
-    renderer.on_paste("line1\nline2\ttab").unwrap();
+    renderer.on_paste("line1\nline2\ttab").await.unwrap();
 
     let expected = expected_prompt(80, "line1line2tab", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_paste_closes_file_picker() {
+#[tokio::test]
+async fn test_paste_closes_file_picker() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
@@ -1340,7 +1340,7 @@ fn test_paste_closes_file_picker() {
             modifiers: KeyModifiers::empty(),
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
-        })
+        }).await
                 .unwrap();
     assert!(
         has_file_picker(renderer.writer()),
@@ -1348,7 +1348,7 @@ fn test_paste_closes_file_picker() {
     );
 
     // Paste should close the picker and append text
-    renderer.on_paste("pasted text").unwrap();
+    renderer.on_paste("pasted text").await.unwrap();
 
     assert!(
         !has_file_picker(renderer.writer()),
@@ -1358,25 +1358,25 @@ fn test_paste_closes_file_picker() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-fn send_key(renderer: &mut Renderer, code: KeyCode, modifiers: KeyModifiers) {
+async fn send_key(renderer: &mut Renderer, code: KeyCode, modifiers: KeyModifiers) {
     renderer
         .on_key_event(KeyEvent {
             code,
             modifiers,
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
-        })
+        }).await
                 .unwrap();
 }
 
-fn press_backspace(renderer: &mut Renderer) {
+async fn press_backspace(renderer: &mut Renderer) {
     let backspace_event = KeyEvent {
         code: KeyCode::Backspace,
         modifiers: KeyModifiers::empty(),
         kind: KeyEventKind::Press,
         state: KeyEventState::empty(),
     };
-    renderer.on_key_event(backspace_event).unwrap();
+    renderer.on_key_event(backspace_event).await.unwrap();
 }
 
 // ── Config menu tests ────────────────────────────────────────────────
@@ -1402,15 +1402,15 @@ fn make_config_options() -> Vec<acp::SessionConfigOption> {
     ]
 }
 
-#[test]
-fn test_config_command_opens_menu_for_single_option() {
+#[tokio::test]
+async fn test_config_command_opens_menu_for_single_option() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
 
     // Config menu should open; picker requires explicit Enter
     assert!(
@@ -1423,15 +1423,15 @@ fn test_config_command_opens_menu_for_single_option() {
     );
 }
 
-#[test]
-fn test_config_menu_esc_closes() {
+#[tokio::test]
+async fn test_config_menu_esc_closes() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
     assert!(
         has_config_menu(renderer.writer()),
         "Config menu should be visible"
@@ -1442,7 +1442,7 @@ fn test_config_menu_esc_closes() {
     );
 
     // Open the picker by pressing Enter on the selected menu entry
-    press_enter(&mut renderer);
+    press_enter(&mut renderer).await;
     assert!(
         has_config_menu(renderer.writer()),
         "Config menu should be visible"
@@ -1453,7 +1453,7 @@ fn test_config_menu_esc_closes() {
     );
 
     // First ESC closes the picker
-    send_key(&mut renderer, KeyCode::Esc, KeyModifiers::empty());
+    send_key(&mut renderer, KeyCode::Esc, KeyModifiers::empty()).await;
     assert!(
         has_config_menu(renderer.writer()),
         "Config menu should be visible"
@@ -1464,22 +1464,22 @@ fn test_config_menu_esc_closes() {
     );
 
     // Second ESC closes the menu
-    send_key(&mut renderer, KeyCode::Esc, KeyModifiers::empty());
+    send_key(&mut renderer, KeyCode::Esc, KeyModifiers::empty()).await;
     assert!(
         !has_config_menu(renderer.writer()),
         "Config menu should not be visible"
     );
 }
 
-#[test]
-fn test_config_menu_arrow_navigation_single_entry() {
+#[tokio::test]
+async fn test_config_menu_arrow_navigation_single_entry() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
 
     // With single config option + Theme + MCP servers, menu has 3 entries: Model, Theme, MCP Servers
     assert!(
@@ -1497,7 +1497,7 @@ fn test_config_menu_arrow_navigation_single_entry() {
     );
 
     // Down goes to Theme (index 1)
-    send_key(&mut renderer, KeyCode::Down, KeyModifiers::empty());
+    send_key(&mut renderer, KeyCode::Down, KeyModifiers::empty()).await;
     let label = config_menu_selected_label(renderer.writer());
     assert!(
         label.as_deref().is_some_and(|l| l.contains("Theme")),
@@ -1505,7 +1505,7 @@ fn test_config_menu_arrow_navigation_single_entry() {
     );
 
     // Down again goes to MCP Servers (index 2)
-    send_key(&mut renderer, KeyCode::Down, KeyModifiers::empty());
+    send_key(&mut renderer, KeyCode::Down, KeyModifiers::empty()).await;
     let label = config_menu_selected_label(renderer.writer());
     assert!(
         label.as_deref().is_some_and(|l| l.contains("MCP Servers")),
@@ -1513,7 +1513,7 @@ fn test_config_menu_arrow_navigation_single_entry() {
     );
 
     // Down again wraps back to Model (index 0)
-    send_key(&mut renderer, KeyCode::Down, KeyModifiers::empty());
+    send_key(&mut renderer, KeyCode::Down, KeyModifiers::empty()).await;
     let label = config_menu_selected_label(renderer.writer());
     assert!(
         label.as_deref().is_some_and(|l| l.contains("Model")),
@@ -1521,22 +1521,22 @@ fn test_config_menu_arrow_navigation_single_entry() {
     );
 }
 
-#[test]
-fn test_config_single_option_shows_model_picker() {
+#[tokio::test]
+async fn test_config_single_option_shows_model_picker() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
 
     // Menu opens; press Enter to open the model picker
     assert!(
         has_config_menu(renderer.writer()),
         "Config menu should be visible"
     );
-    press_enter(&mut renderer);
+    press_enter(&mut renderer).await;
 
     assert!(
         has_config_picker(renderer.writer()),
@@ -1550,17 +1550,17 @@ fn test_config_single_option_shows_model_picker() {
     );
 }
 
-#[test]
-fn test_config_picker_focuses_cursor_on_overlay_query() {
+#[tokio::test]
+async fn test_config_picker_focuses_cursor_on_overlay_query() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
     // Open the picker from the menu
-    press_enter(&mut renderer);
+    press_enter(&mut renderer).await;
 
     let lines = renderer.writer().get_lines();
     #[allow(clippy::cast_possible_truncation)]
@@ -1580,19 +1580,19 @@ fn test_config_picker_focuses_cursor_on_overlay_query() {
     assert_eq!(cursor_col, 18);
 }
 
-#[test]
-fn test_config_picker_filters_model_options() {
+#[tokio::test]
+async fn test_config_picker_filters_model_options() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
     // Open the picker from the menu
-    press_enter(&mut renderer);
+    press_enter(&mut renderer).await;
 
-    type_string(&mut renderer, "claude");
+    type_string(&mut renderer, "claude").await;
 
     let lines = renderer.writer().get_lines();
     assert!(
@@ -1602,8 +1602,8 @@ fn test_config_picker_filters_model_options() {
     );
 }
 
-#[test]
-fn test_config_menu_swallows_other_keys() {
+#[tokio::test]
+async fn test_config_menu_swallows_other_keys() {
     let config_options = vec![
         acp::SessionConfigOption::select(
             "model",
@@ -1623,15 +1623,15 @@ fn test_config_menu_swallows_other_keys() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
     assert!(
         has_config_menu(renderer.writer()),
         "Config menu should be visible"
     );
 
     // Typing a character should not modify input buffer
-    send_key(&mut renderer, KeyCode::Char('x'), KeyModifiers::empty());
+    send_key(&mut renderer, KeyCode::Char('x'), KeyModifiers::empty()).await;
 
     // Menu should still be open
     assert!(
@@ -1647,15 +1647,15 @@ fn test_config_menu_swallows_other_keys() {
     );
 }
 
-#[test]
-fn test_config_menu_ctrl_c_exits() {
+#[tokio::test]
+async fn test_config_menu_ctrl_c_exits() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
     assert!(
         has_config_menu(renderer.writer()),
         "Config menu should be visible"
@@ -1668,21 +1668,21 @@ fn test_config_menu_ctrl_c_exits() {
             modifiers: KeyModifiers::CONTROL,
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
-        })
+        }).await
                 .unwrap();
 
     assert!(matches!(action, LoopAction::Exit));
 }
 
-#[test]
-fn test_config_menu_updates_on_config_option_event() {
+#[tokio::test]
+async fn test_config_menu_updates_on_config_option_event() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
     assert!(
         has_config_menu(renderer.writer()),
         "Config menu should be visible"
@@ -1722,15 +1722,15 @@ fn test_config_menu_updates_on_config_option_event() {
     );
 }
 
-#[test]
-fn test_config_clears_input_buffer() {
+#[tokio::test]
+async fn test_config_clears_input_buffer() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
 
     // Input buffer should be cleared
     let lines = renderer.writer().get_lines();
@@ -1742,14 +1742,14 @@ fn test_config_clears_input_buffer() {
     );
 }
 
-#[test]
-fn test_config_with_no_options_shows_placeholder() {
+#[tokio::test]
+async fn test_config_with_no_options_shows_placeholder() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
 
     assert!(
         has_config_menu(renderer.writer()),
@@ -1766,13 +1766,13 @@ fn test_config_with_no_options_shows_placeholder() {
 
 // ── Command picker tests ─────────────────────────────────────────────
 
-#[test]
-fn test_slash_opens_command_picker() {
+#[tokio::test]
+async fn test_slash_opens_command_picker() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
-    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty());
+    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
 
     assert!(
         has_command_picker(renderer.writer()),
@@ -1780,13 +1780,13 @@ fn test_slash_opens_command_picker() {
     );
 }
 
-#[test]
-fn test_slash_mid_input_no_picker() {
+#[tokio::test]
+async fn test_slash_mid_input_no_picker() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "hello/");
+    type_string(&mut renderer, "hello/").await;
 
     assert!(
         !has_command_picker(renderer.writer()),
@@ -1794,19 +1794,19 @@ fn test_slash_mid_input_no_picker() {
     );
 }
 
-#[test]
-fn test_command_picker_esc_clears() {
+#[tokio::test]
+async fn test_command_picker_esc_clears() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
-    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty());
+    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
     assert!(
         has_command_picker(renderer.writer()),
         "Command picker should be open"
     );
 
-    send_key(&mut renderer, KeyCode::Esc, KeyModifiers::empty());
+    send_key(&mut renderer, KeyCode::Esc, KeyModifiers::empty()).await;
 
     assert!(
         !has_command_picker(renderer.writer()),
@@ -1820,19 +1820,19 @@ fn test_command_picker_esc_clears() {
     );
 }
 
-#[test]
-fn test_command_picker_backspace_empty_closes() {
+#[tokio::test]
+async fn test_command_picker_backspace_empty_closes() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
-    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty());
+    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
     assert!(
         has_command_picker(renderer.writer()),
         "Command picker should be open"
     );
 
-    send_key(&mut renderer, KeyCode::Backspace, KeyModifiers::empty());
+    send_key(&mut renderer, KeyCode::Backspace, KeyModifiers::empty()).await;
 
     assert!(
         !has_command_picker(renderer.writer()),
@@ -1840,8 +1840,8 @@ fn test_command_picker_backspace_empty_closes() {
     );
 }
 
-#[test]
-fn test_available_commands_update_stored() {
+#[tokio::test]
+async fn test_available_commands_update_stored() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
@@ -1856,7 +1856,7 @@ fn test_available_commands_update_stored() {
                 .unwrap();
 
     // Open command picker and verify commands appear in rendered output
-    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty());
+    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
 
     let names = command_picker_visible_names(renderer.writer());
     assert!(
@@ -1869,8 +1869,8 @@ fn test_available_commands_update_stored() {
     );
 }
 
-#[test]
-fn test_available_commands_update_extracts_hint() {
+#[tokio::test]
+async fn test_available_commands_update_extracts_hint() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
@@ -1889,7 +1889,7 @@ fn test_available_commands_update_extracts_hint() {
                 .unwrap();
 
     // Open command picker and verify the hint appears in rendered output
-    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty());
+    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
 
     let lines = renderer.writer().get_lines();
     assert!(
@@ -1899,8 +1899,8 @@ fn test_available_commands_update_extracts_hint() {
     );
 }
 
-#[test]
-fn test_command_picker_shows_mcp_commands() {
+#[tokio::test]
+async fn test_command_picker_shows_mcp_commands() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
@@ -1916,7 +1916,7 @@ fn test_command_picker_shows_mcp_commands() {
                 .unwrap();
 
     // Open picker
-    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty());
+    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
 
     let names = command_picker_visible_names(renderer.writer());
     assert!(
@@ -1929,13 +1929,13 @@ fn test_command_picker_shows_mcp_commands() {
     );
 }
 
-#[test]
-fn test_command_picker_ctrl_c_exits() {
+#[tokio::test]
+async fn test_command_picker_ctrl_c_exits() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
-    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty());
+    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
     assert!(
         has_command_picker(renderer.writer()),
         "Command picker should be open"
@@ -1947,7 +1947,7 @@ fn test_command_picker_ctrl_c_exits() {
             modifiers: KeyModifiers::CONTROL,
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
-        })
+        }).await
                 .unwrap();
 
     assert!(matches!(action, LoopAction::Exit));
@@ -1955,8 +1955,8 @@ fn test_command_picker_ctrl_c_exits() {
 
 // ── Display meta tests ───────────────────────────────────────────────
 
-#[test]
-fn test_tool_complete_with_display_meta_shows_display_value() {
+#[tokio::test]
+async fn test_tool_complete_with_display_meta_shows_display_value() {
     let renderer = render(vec![
         tool_call_with_id(
             "read_file",
@@ -1982,8 +1982,8 @@ fn test_tool_complete_with_display_meta_shows_display_value() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_tool_complete_without_display_meta_shows_raw_args() {
+#[tokio::test]
+async fn test_tool_complete_without_display_meta_shows_raw_args() {
     let args = r#"{"filePath":"/Users/josh/code/aether/Cargo.toml"}"#;
     let renderer = render(vec![
         tool_call_with_id("read_file", "call_1", args),
@@ -2000,8 +2000,8 @@ fn test_tool_complete_without_display_meta_shows_raw_args() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_running_tool_hides_raw_args() {
+#[tokio::test]
+async fn test_running_tool_hides_raw_args() {
     let renderer = render(vec![tool_call_with_id(
         "read_file",
         "call_1",
@@ -2022,8 +2022,8 @@ fn test_running_tool_hides_raw_args() {
     );
 }
 
-#[test]
-fn test_display_meta_title_overrides_tool_name() {
+#[tokio::test]
+async fn test_display_meta_title_overrides_tool_name() {
     let renderer = render(vec![
         tool_call_with_id("coding__read_file", "call_1", r#"{"filePath":"main.rs"}"#),
         tool_complete_with_display_meta(
@@ -2048,8 +2048,8 @@ fn test_display_meta_title_overrides_tool_name() {
     );
 }
 
-#[test]
-fn test_multiple_tools_with_mixed_display_meta() {
+#[tokio::test]
+async fn test_multiple_tools_with_mixed_display_meta() {
     let renderer = render(vec![
         tool_call_with_id("read_file", "call_1", r#"{"filePath":"Cargo.toml"}"#),
         tool_call_with_id("external_tool", "call_2", r#"{"key":"value"}"#),
@@ -2076,8 +2076,8 @@ fn test_multiple_tools_with_mixed_display_meta() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_command_display_meta_shows_exit_code() {
+#[tokio::test]
+async fn test_command_display_meta_shows_exit_code() {
     let renderer = render(vec![
         tool_call_with_id("bash", "call_1", r#"{"command":"cargo test"}"#),
         tool_complete_with_display_meta(
@@ -2099,8 +2099,8 @@ fn test_command_display_meta_shows_exit_code() {
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
-#[test]
-fn test_config_overlay_renders_after_large_overflow_scrollback() {
+#[tokio::test]
+async fn test_config_overlay_renders_after_large_overflow_scrollback() {
     let config_options = make_config_options();
     // Small viewport to force overflow quickly
     let terminal = TestTerminal::new(40, 8);
@@ -2122,8 +2122,8 @@ fn test_config_overlay_renders_after_large_overflow_scrollback() {
     // This is where the bug manifests - flushed_visual_count is high
     // but the overlay produces fewer lines
 
-    type_string(&mut renderer, "/config");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
 
     // Assert overlay state is correct
     assert!(
@@ -2145,8 +2145,8 @@ fn test_config_overlay_renders_after_large_overflow_scrollback() {
     );
 }
 
-#[test]
-fn test_config_overlay_open_close_after_overflow_keeps_prompt_and_layout_valid() {
+#[tokio::test]
+async fn test_config_overlay_open_close_after_overflow_keeps_prompt_and_layout_valid() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(40, 8);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (40, 8));
@@ -2163,8 +2163,8 @@ fn test_config_overlay_open_close_after_overflow_keeps_prompt_and_layout_valid()
     }
 
     // Open config overlay while flushed_visual_count is high
-    type_string(&mut renderer, "/config");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
 
     // Verify overlay rendered correctly
     assert!(
@@ -2179,7 +2179,7 @@ fn test_config_overlay_open_close_after_overflow_keeps_prompt_and_layout_valid()
     );
 
     // Close overlay with Esc
-    send_key(&mut renderer, KeyCode::Esc, KeyModifiers::empty());
+    send_key(&mut renderer, KeyCode::Esc, KeyModifiers::empty()).await;
 
     // Verify normal prompt rendering resumes
     assert!(
@@ -2208,8 +2208,8 @@ fn test_config_overlay_open_close_after_overflow_keeps_prompt_and_layout_valid()
 
 // ── Migrated from mod.rs unit tests ──────────────────────────────────
 
-#[test]
-fn test_shift_tab_cycles_mode_option() {
+#[tokio::test]
+async fn test_shift_tab_cycles_mode_option() {
     let options = vec![
         acp::SessionConfigOption::select(
             "mode",
@@ -2228,14 +2228,14 @@ fn test_shift_tab_cycles_mode_option() {
     renderer.initial_render().unwrap();
 
     let action = renderer
-        .on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
+        .on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)).await
                 .unwrap();
 
     assert!(matches!(action, LoopAction::Continue));
 }
 
-#[test]
-fn test_shift_tab_wraps_mode_option() {
+#[tokio::test]
+async fn test_shift_tab_wraps_mode_option() {
     let options = vec![
         acp::SessionConfigOption::select(
             "mode",
@@ -2254,12 +2254,12 @@ fn test_shift_tab_wraps_mode_option() {
     renderer.initial_render().unwrap();
 
     renderer
-        .on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
+        .on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)).await
                 .unwrap();
 }
 
-#[test]
-fn test_shift_tab_ignored_when_overlay_consumes_input() {
+#[tokio::test]
+async fn test_shift_tab_ignored_when_overlay_consumes_input() {
     let options = vec![
         acp::SessionConfigOption::select(
             "mode",
@@ -2275,8 +2275,8 @@ fn test_shift_tab_ignored_when_overlay_consumes_input() {
     renderer.initial_render().unwrap();
 
     // Open config overlay
-    type_string(&mut renderer, "/config");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
     assert!(
         has_config_menu(renderer.writer()),
         "Config overlay should be visible"
@@ -2284,7 +2284,7 @@ fn test_shift_tab_ignored_when_overlay_consumes_input() {
 
     // Send shift+tab — should be swallowed by the overlay
     renderer
-        .on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
+        .on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)).await
                 .unwrap();
 
     // Overlay should still be visible
@@ -2294,8 +2294,8 @@ fn test_shift_tab_ignored_when_overlay_consumes_input() {
     );
 }
 
-#[test]
-fn test_shift_tab_noop_when_no_cycleable_option_exists() {
+#[tokio::test]
+async fn test_shift_tab_noop_when_no_cycleable_option_exists() {
     let options = vec![
         acp::SessionConfigOption::select(
             "model",
@@ -2316,7 +2316,7 @@ fn test_shift_tab_noop_when_no_cycleable_option_exists() {
     let lines_before = renderer.writer().get_lines();
 
     renderer
-        .on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
+        .on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)).await
                 .unwrap();
 
     let lines_after = renderer.writer().get_lines();
@@ -2326,8 +2326,8 @@ fn test_shift_tab_noop_when_no_cycleable_option_exists() {
     );
 }
 
-#[test]
-fn test_tab_cycles_reasoning_option() {
+#[tokio::test]
+async fn test_tab_cycles_reasoning_option() {
     use acp_utils::config_option_id::ConfigOptionId;
 
     let options = vec![acp::SessionConfigOption::select(
@@ -2346,12 +2346,12 @@ fn test_tab_cycles_reasoning_option() {
     renderer.initial_render().unwrap();
 
     renderer
-        .on_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
+        .on_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)).await
                 .unwrap();
 }
 
-#[test]
-fn test_tab_noop_when_no_reasoning_option() {
+#[tokio::test]
+async fn test_tab_noop_when_no_reasoning_option() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
@@ -2359,7 +2359,7 @@ fn test_tab_noop_when_no_reasoning_option() {
     let lines_before = renderer.writer().get_lines();
 
     renderer
-        .on_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
+        .on_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)).await
                 .unwrap();
 
     let lines_after = renderer.writer().get_lines();
@@ -2369,8 +2369,8 @@ fn test_tab_noop_when_no_reasoning_option() {
     );
 }
 
-#[test]
-fn test_connection_closed_exits() {
+#[tokio::test]
+async fn test_connection_closed_exits() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
@@ -2379,39 +2379,39 @@ fn test_connection_closed_exits() {
     assert!(matches!(action, LoopAction::Exit));
 }
 
-#[test]
-fn test_ctrl_c_emits_exit() {
+#[tokio::test]
+async fn test_ctrl_c_emits_exit() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     let action = renderer
-        .on_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
+        .on_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)).await
                 .unwrap();
 
     assert!(matches!(action, LoopAction::Exit));
 }
 
-#[test]
-fn test_escape_while_waiting_emits_cancel() {
+#[tokio::test]
+async fn test_escape_while_waiting_emits_cancel() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     // Submit a prompt to enter waiting state
-    type_string(&mut renderer, "Hello");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "Hello").await;
+    press_enter(&mut renderer).await;
 
     // Press Escape while waiting — should cancel
     let action = renderer
-        .on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+        .on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await
                 .unwrap();
 
     assert!(matches!(action, LoopAction::Continue));
 }
 
-#[test]
-fn test_escape_while_not_waiting_does_nothing() {
+#[tokio::test]
+async fn test_escape_while_not_waiting_does_nothing() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
@@ -2419,7 +2419,7 @@ fn test_escape_while_not_waiting_does_nothing() {
     let lines_before = renderer.writer().get_lines();
 
     renderer
-        .on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+        .on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await
                 .unwrap();
 
     let lines_after = renderer.writer().get_lines();
@@ -2431,8 +2431,8 @@ fn test_escape_while_not_waiting_does_nothing() {
 
 // ── Migrated from session.rs unit tests ──────────────────────────────
 
-#[test]
-fn test_prompt_done_keeps_running_tool_segment() {
+#[tokio::test]
+async fn test_prompt_done_keeps_running_tool_segment() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
@@ -2456,8 +2456,8 @@ fn test_prompt_done_keeps_running_tool_segment() {
     );
 }
 
-#[test]
-fn test_prompt_done_flush_respects_rendering() {
+#[tokio::test]
+async fn test_prompt_done_flush_respects_rendering() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
@@ -2483,15 +2483,15 @@ fn test_prompt_done_flush_respects_rendering() {
     );
 }
 
-#[test]
-fn test_streaming_chunks_keep_waiting_for_response() {
+#[tokio::test]
+async fn test_streaming_chunks_keep_waiting_for_response() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     // Submit prompt to enter waiting state
-    type_string(&mut renderer, "Hello");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "Hello").await;
+    press_enter(&mut renderer).await;
 
     // Send a streaming chunk (should not clear waiting state)
     renderer
@@ -2502,15 +2502,15 @@ fn test_streaming_chunks_keep_waiting_for_response() {
 
     // Escape should still trigger cancel (proving we're still waiting)
     let action = renderer
-        .on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+        .on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await
                 .unwrap();
 
     // If we're still waiting, escape triggers cancel effect which is handled
     assert!(matches!(action, LoopAction::Continue));
 }
 
-#[test]
-fn test_sub_agent_progress_notification_triggers_render() {
+#[tokio::test]
+async fn test_sub_agent_progress_notification_triggers_render() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
@@ -2529,8 +2529,8 @@ fn test_sub_agent_progress_notification_triggers_render() {
     assert!(!lines.is_empty());
 }
 
-#[test]
-fn test_invalid_sub_agent_progress_json_silently_ignored() {
+#[tokio::test]
+async fn test_invalid_sub_agent_progress_json_silently_ignored() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
@@ -2546,8 +2546,8 @@ fn test_invalid_sub_agent_progress_json_silently_ignored() {
     assert!(!lines.is_empty());
 }
 
-#[test]
-fn test_context_usage_notification_updates_percent_left() {
+#[tokio::test]
+async fn test_context_usage_notification_updates_percent_left() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
@@ -2573,8 +2573,8 @@ fn test_context_usage_notification_updates_percent_left() {
     );
 }
 
-#[test]
-fn test_context_usage_notification_with_unknown_limit_clears_meter() {
+#[tokio::test]
+async fn test_context_usage_notification_with_unknown_limit_clears_meter() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
@@ -2613,8 +2613,8 @@ fn test_context_usage_notification_with_unknown_limit_clears_meter() {
     );
 }
 
-#[test]
-fn test_context_cleared_notification_resets_conversation() {
+#[tokio::test]
+async fn test_context_cleared_notification_resets_conversation() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
@@ -2650,8 +2650,8 @@ fn test_context_cleared_notification_resets_conversation() {
     );
 }
 
-#[test]
-fn test_on_tick_requests_render_while_completed_entries() {
+#[tokio::test]
+async fn test_on_tick_requests_render_while_completed_entries() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
@@ -2668,22 +2668,22 @@ fn test_on_tick_requests_render_while_completed_entries() {
                 .unwrap();
 
     // Tick should produce a render (entries within grace period)
-    renderer.on_tick().unwrap();
+    renderer.on_tick().await.unwrap();
 
     // Should render without crashing
     let lines = renderer.writer().get_lines();
     assert!(!lines.is_empty());
 }
 
-#[test]
-fn test_on_tick_without_active_state_is_noop() {
+#[tokio::test]
+async fn test_on_tick_without_active_state_is_noop() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     let lines_before = renderer.writer().get_lines();
 
-    renderer.on_tick().unwrap();
+    renderer.on_tick().await.unwrap();
 
     let lines_after = renderer.writer().get_lines();
     assert_eq!(
@@ -2692,8 +2692,8 @@ fn test_on_tick_without_active_state_is_noop() {
     );
 }
 
-#[test]
-fn test_config_option_update_refreshes_mode_display() {
+#[tokio::test]
+async fn test_config_option_update_refreshes_mode_display() {
     let initial = vec![
         acp::SessionConfigOption::select(
             "mode",
@@ -2738,8 +2738,8 @@ fn test_config_option_update_refreshes_mode_display() {
     );
 }
 
-#[test]
-fn test_available_commands_update_is_forwarded() {
+#[tokio::test]
+async fn test_available_commands_update_is_forwarded() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
@@ -2754,7 +2754,7 @@ fn test_available_commands_update_is_forwarded() {
                 .unwrap();
 
     // Open the command picker with /
-    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty());
+    send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
 
     let names = command_picker_visible_names(renderer.writer());
     assert!(
@@ -2763,14 +2763,14 @@ fn test_available_commands_update_is_forwarded() {
     );
 }
 
-#[test]
-fn test_server_status_notification_updates_overlay_state() {
+#[tokio::test]
+async fn test_server_status_notification_updates_overlay_state() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config");
-    press_enter(&mut renderer);
+    type_string(&mut renderer, "/config").await;
+    press_enter(&mut renderer).await;
     assert!(
         has_config_menu(renderer.writer()),
         "Config overlay should be visible"

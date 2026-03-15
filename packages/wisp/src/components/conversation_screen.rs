@@ -217,11 +217,11 @@ impl ConversationScreen {
         self.plan_tracker.has_completed_in_grace_period()
     }
 
-    fn handle_modal_key(&mut self, event: &Event) -> Option<Vec<ConversationScreenMessage>> {
+    async fn handle_modal_key(&mut self, event: &Event) -> Option<Vec<ConversationScreenMessage>> {
         let modal = self.active_modal.as_mut()?;
         match modal {
             Modal::Elicitation(form) => {
-                let outcome = form.on_event(event);
+                let outcome = form.on_event(event).await;
                 for msg in outcome.unwrap_or_default() {
                     match msg {
                         ElicitationMessage::Responded => {
@@ -232,7 +232,7 @@ impl ConversationScreen {
                 Some(vec![])
             }
             Modal::SessionPicker(picker) => {
-                let msgs = picker.on_event(event).unwrap_or_default();
+                let msgs = picker.on_event(event).await.unwrap_or_default();
                 let mut out = Vec::new();
                 for msg in msgs {
                     match msg {
@@ -292,10 +292,10 @@ impl Component for ConversationScreen {
 
     async fn on_event(&mut self, event: &Event) -> Option<Vec<ConversationScreenMessage>> {
         if self.active_modal.is_some() {
-            return self.handle_modal_key(event);
+            return self.handle_modal_key(event).await;
         }
 
-        let composer_outcome = self.prompt_composer.on_event(event);
+        let composer_outcome = self.prompt_composer.on_event(event).await;
         if composer_outcome.is_some() {
             return self.handle_prompt_composer_messages(composer_outcome);
         }

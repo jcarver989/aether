@@ -238,7 +238,7 @@ impl Component for PromptComposer {
             }
             Event::Key(key_event) => {
                 if let Some(ref mut picker) = self.file_picker {
-                    let outcome = picker.on_event(event);
+                    let outcome = picker.on_event(event).await;
                     if outcome.is_some() {
                         return Some(self.handle_file_picker_outcome(outcome));
                     }
@@ -252,11 +252,11 @@ impl Component for PromptComposer {
                 }
 
                 if let Some(ref mut picker) = self.command_picker {
-                    let outcome = picker.on_event(event);
+                    let outcome = picker.on_event(event).await;
                     return Some(self.handle_command_picker_outcome(outcome));
                 }
 
-                let outcome = self.text_input.on_event(event);
+                let outcome = self.text_input.on_event(event).await;
                 self.handle_text_input_outcome(outcome)
             }
             _ => None,
@@ -335,18 +335,18 @@ mod tests {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
     }
 
-    #[test]
-    fn builtin_config_command_emits_open_config() {
+    #[tokio::test]
+    async fn builtin_config_command_emits_open_config() {
         let mut composer = PromptComposer::default();
 
-        composer.on_event(&key(KeyCode::Char('/')));
+        composer.on_event(&key(KeyCode::Char('/'))).await;
 
         assert!(composer.has_command_picker());
 
         // Navigate past "clear" to "config"
-        composer.on_event(&key(KeyCode::Down));
+        composer.on_event(&key(KeyCode::Down)).await;
 
-        let outcome = composer.on_event(&key(KeyCode::Enter));
+        let outcome = composer.on_event(&key(KeyCode::Enter)).await;
         assert!(matches!(
             outcome.unwrap().as_slice(),
             [PromptComposerMessage::OpenConfig]
@@ -355,8 +355,8 @@ mod tests {
         assert!(!composer.has_active_picker());
     }
 
-    #[test]
-    fn command_without_input_requests_submit_immediately() {
+    #[tokio::test]
+    async fn command_without_input_requests_submit_immediately() {
         let mut composer = PromptComposer::default();
         composer.set_available_commands(vec![CommandEntry {
             name: "status".into(),
@@ -366,10 +366,10 @@ mod tests {
             builtin: false,
         }]);
 
-        composer.on_event(&key(KeyCode::Char('/')));
-        composer.on_event(&key(KeyCode::Char('s')));
+        composer.on_event(&key(KeyCode::Char('/'))).await;
+        composer.on_event(&key(KeyCode::Char('s'))).await;
 
-        let outcome = composer.on_event(&key(KeyCode::Enter));
+        let outcome = composer.on_event(&key(KeyCode::Enter)).await;
         assert!(matches!(
             outcome.unwrap().as_slice(),
             [PromptComposerMessage::SubmitRequested { user_input, .. }]
@@ -378,8 +378,8 @@ mod tests {
         assert_eq!(composer.buffer(), "");
     }
 
-    #[test]
-    fn command_with_input_populates_prompt_without_submit() {
+    #[tokio::test]
+    async fn command_with_input_populates_prompt_without_submit() {
         let mut composer = PromptComposer::default();
         composer.set_available_commands(vec![CommandEntry {
             name: "search".into(),
@@ -389,9 +389,9 @@ mod tests {
             builtin: false,
         }]);
 
-        composer.on_event(&key(KeyCode::Char('/')));
-        composer.on_event(&key(KeyCode::Char('s')));
-        let outcome = composer.on_event(&key(KeyCode::Enter));
+        composer.on_event(&key(KeyCode::Char('/'))).await;
+        composer.on_event(&key(KeyCode::Char('s'))).await;
+        let outcome = composer.on_event(&key(KeyCode::Enter)).await;
 
         assert!(outcome.unwrap().is_empty());
 
@@ -419,25 +419,25 @@ mod tests {
         assert_eq!(attachments[0].path, PathBuf::from("/tmp/keep.rs"));
     }
 
-    #[test]
-    fn paste_closes_picker_and_inserts_text() {
+    #[tokio::test]
+    async fn paste_closes_picker_and_inserts_text() {
         let mut composer = PromptComposer::default();
-        composer.on_event(&key(KeyCode::Char('@')));
+        composer.on_event(&key(KeyCode::Char('@'))).await;
         assert!(composer.has_file_picker());
 
-        let outcome = composer.on_event(&Event::Paste("pasted text".to_string()));
+        let outcome = composer.on_event(&Event::Paste("pasted text".to_string())).await;
         assert!(outcome.is_some());
         assert!(outcome.unwrap().is_empty());
         assert!(!composer.has_active_picker());
         assert_eq!(composer.buffer(), "@pasted text");
     }
 
-    #[test]
-    fn file_picker_cursor_tracks_query_length() {
+    #[tokio::test]
+    async fn file_picker_cursor_tracks_query_length() {
         let mut composer = PromptComposer::default();
-        composer.on_event(&key(KeyCode::Char('@')));
-        composer.on_event(&key(KeyCode::Char('f')));
-        composer.on_event(&key(KeyCode::Char('o')));
+        composer.on_event(&key(KeyCode::Char('@'))).await;
+        composer.on_event(&key(KeyCode::Char('f'))).await;
+        composer.on_event(&key(KeyCode::Char('o'))).await;
 
         assert_eq!(composer.cursor_index(), 3);
     }

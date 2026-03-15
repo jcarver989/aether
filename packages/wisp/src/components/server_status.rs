@@ -63,7 +63,7 @@ impl Component for ServerStatusOverlay {
     type Message = ServerStatusMessage;
 
     async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
-        let outcome = self.list.on_event(event);
+        let outcome = self.list.on_event(event).await;
         match outcome.as_deref() {
             Some([SelectListMessage::Close]) => Some(vec![ServerStatusMessage::Close]),
             Some([SelectListMessage::Select(_)]) => {
@@ -175,32 +175,32 @@ mod tests {
         assert!(frame.lines()[1].plain_text().starts_with("  "));
     }
 
-    #[test]
-    fn navigation_wraps_around() {
+    #[tokio::test]
+    async fn navigation_wraps_around() {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
 
         overlay.on_event(&Event::Key(crate::tui::KeyEvent::new(
             crate::tui::KeyCode::Up,
             crate::tui::KeyModifiers::NONE,
-        )));
+        ))).await;
         assert_eq!(overlay.list.selected_index(), 2);
 
         overlay.on_event(&Event::Key(crate::tui::KeyEvent::new(
             crate::tui::KeyCode::Down,
             crate::tui::KeyModifiers::NONE,
-        )));
+        ))).await;
         assert_eq!(overlay.list.selected_index(), 0);
     }
 
-    #[test]
-    fn enter_on_needs_oauth_emits_authenticate() {
+    #[tokio::test]
+    async fn enter_on_needs_oauth_emits_authenticate() {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
         overlay.list.set_selected(1); // linear - NeedsOAuth
 
         let outcome = overlay.on_event(&Event::Key(crate::tui::KeyEvent::new(
             crate::tui::KeyCode::Enter,
             crate::tui::KeyModifiers::NONE,
-        )));
+        ))).await;
         let messages = outcome.unwrap();
         match messages.as_slice() {
             [ServerStatusMessage::Authenticate(name)] => assert_eq!(name, "linear"),
@@ -208,25 +208,25 @@ mod tests {
         }
     }
 
-    #[test]
-    fn enter_on_connected_is_noop() {
+    #[tokio::test]
+    async fn enter_on_connected_is_noop() {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
         // index 0 = github (Connected)
 
         let outcome = overlay.on_event(&Event::Key(crate::tui::KeyEvent::new(
             crate::tui::KeyCode::Enter,
             crate::tui::KeyModifiers::NONE,
-        )));
+        ))).await;
         assert!(outcome.unwrap().is_empty());
     }
 
-    #[test]
-    fn esc_closes_overlay() {
+    #[tokio::test]
+    async fn esc_closes_overlay() {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
         let outcome = overlay.on_event(&Event::Key(crate::tui::KeyEvent::new(
             crate::tui::KeyCode::Esc,
             crate::tui::KeyModifiers::NONE,
-        )));
+        ))).await;
         let messages = outcome.unwrap();
         assert!(matches!(messages.as_slice(), [ServerStatusMessage::Close]));
     }

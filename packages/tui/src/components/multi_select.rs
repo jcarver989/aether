@@ -141,21 +141,21 @@ mod tests {
         )
     }
 
-    #[test]
-    fn space_toggles_at_cursor() {
+    #[tokio::test]
+    async fn space_toggles_at_cursor() {
         let mut ms = sample();
-        ms.on_event(&Event::Key(key(KeyCode::Char(' '))));
+        ms.on_event(&Event::Key(key(KeyCode::Char(' ')))).await;
         assert!(ms.selected[0]);
-        ms.on_event(&Event::Key(key(KeyCode::Char(' '))));
+        ms.on_event(&Event::Key(key(KeyCode::Char(' ')))).await;
         assert!(!ms.selected[0]);
     }
 
-    #[test]
-    fn cursor_moves_with_arrows() {
+    #[tokio::test]
+    async fn cursor_moves_with_arrows() {
         let mut ms = sample();
-        ms.on_event(&Event::Key(key(KeyCode::Down)));
+        ms.on_event(&Event::Key(key(KeyCode::Down))).await;
         assert_eq!(ms.cursor, 1);
-        ms.on_event(&Event::Key(key(KeyCode::Char(' '))));
+        ms.on_event(&Event::Key(key(KeyCode::Char(' ')))).await;
         assert!(ms.selected[1]);
     }
 
@@ -173,10 +173,10 @@ mod tests {
         assert_eq!(ms.to_json(), serde_json::json!([]));
     }
 
-    #[test]
-    fn cursor_wraps() {
+    #[tokio::test]
+    async fn cursor_wraps() {
         let mut ms = sample();
-        ms.on_event(&Event::Key(key(KeyCode::Up)));
+        ms.on_event(&Event::Key(key(KeyCode::Up))).await;
         assert_eq!(ms.cursor, 2); // wraps to end
     }
 }

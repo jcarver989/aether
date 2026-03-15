@@ -22,7 +22,7 @@ impl Component for ElicitationForm {
     type Message = ElicitationMessage;
 
     async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
-        let outcome = self.form.on_event(event)?;
+        let outcome = self.form.on_event(event).await?;
         if let Some(msg) = outcome.into_iter().next() {
             match msg {
                 FormMessage::Close => {

@@ -82,7 +82,7 @@ impl Component for ConfigMenu {
     type Message = ConfigMenuMessage;
 
     async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
-        let outcome = self.list.on_event(event);
+        let outcome = self.list.on_event(event).await;
         match outcome.as_deref() {
             Some([SelectListMessage::Close]) => Some(vec![ConfigMenuMessage::CloseAll]),
             Some([SelectListMessage::Select(_)]) => {
@@ -381,8 +381,8 @@ mod tests {
         assert_eq!(menu.options()[0].current_value_index, 1);
     }
 
-    #[test]
-    fn navigation_wraps_around() {
+    #[tokio::test]
+    async fn navigation_wraps_around() {
         let opts = vec![
             make_select_option("a", "A", "v1", &[("v1", "V1")]),
             make_select_option("b", "B", "v1", &[("v1", "V1")]),
@@ -391,27 +391,27 @@ mod tests {
         let mut menu = ConfigMenu::from_config_options(&opts);
         assert_eq!(menu.selected_index(), 0);
 
-        menu.on_event(&Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)));
+        menu.on_event(&Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE))).await;
         assert_eq!(menu.selected_index(), 2);
 
         menu.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Down,
             KeyModifiers::NONE,
-        )));
+        ))).await;
         assert_eq!(menu.selected_index(), 0);
 
         menu.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Down,
             KeyModifiers::NONE,
-        )));
+        ))).await;
         menu.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Down,
             KeyModifiers::NONE,
-        )));
+        ))).await;
         menu.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Down,
             KeyModifiers::NONE,
-        )));
+        ))).await;
         assert_eq!(menu.selected_index(), 0);
     }
 
@@ -469,15 +469,15 @@ mod tests {
         assert_eq!(menu.options()[0].title, "Model");
     }
 
-    #[test]
-    fn handle_key_enter_requests_open_picker() {
+    #[tokio::test]
+    async fn handle_key_enter_requests_open_picker() {
         let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
         let mut menu = ConfigMenu::from_config_options(&opts);
 
         let outcome = menu.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::NONE,
-        )));
+        ))).await;
 
         assert!(outcome.is_some());
 
@@ -488,12 +488,12 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn handle_key_escape_requests_close() {
+    #[tokio::test]
+    async fn handle_key_escape_requests_close() {
         let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
         let mut menu = ConfigMenu::from_config_options(&opts);
 
-        let outcome = menu.on_event(&Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)));
+        let outcome = menu.on_event(&Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))).await;
 
         assert!(outcome.is_some());
 
@@ -517,8 +517,8 @@ mod tests {
         assert!(!menu.options()[0].multi_select);
     }
 
-    #[test]
-    fn multi_select_entry_opens_model_selector() {
+    #[tokio::test]
+    async fn multi_select_entry_opens_model_selector() {
         let meta = ConfigOptionMeta { multi_select: true };
         let opt = make_select_option("model", "Model", "a", &[("a", "A"), ("b", "B")])
             .meta(meta.into_meta());
@@ -527,7 +527,7 @@ mod tests {
         let outcome = menu.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::NONE,
-        )));
+        ))).await;
         let messages = outcome.unwrap();
         assert!(matches!(
             messages.as_slice(),
