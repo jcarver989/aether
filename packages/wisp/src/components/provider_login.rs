@@ -47,7 +47,7 @@ impl SelectItem for ProviderLoginEntry {
 impl Component for ProviderLoginOverlay {
     type Message = ProviderLoginMessage;
 
-    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         let outcome = self.list.on_event(event);
         match outcome.as_deref() {
             Some([SelectListMessage::Close]) => Some(vec![ProviderLoginMessage::Close]),
@@ -201,7 +201,11 @@ mod tests {
         let overlay = ProviderLoginOverlay::new(vec![]);
         let ctx = ViewContext::new((80, 24));
         let frame = overlay.render(&ctx);
-        assert!(frame.lines()[0].plain_text().contains("no providers need login"));
+        assert!(
+            frame.lines()[0]
+                .plain_text()
+                .contains("no providers need login")
+        );
     }
 
     #[test]

@@ -221,7 +221,7 @@ impl Component for ConfigOverlay {
     type Message = ConfigOverlayMessage;
 
     #[allow(clippy::too_many_lines)]
-    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         let Event::Key(_key) = event else {
             return None;
         };

@@ -81,7 +81,7 @@ impl SelectItem for ConfigMenuEntry {
 impl Component for ConfigMenu {
     type Message = ConfigMenuMessage;
 
-    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         let outcome = self.list.on_event(event);
         match outcome.as_deref() {
             Some([SelectListMessage::Close]) => Some(vec![ConfigMenuMessage::CloseAll]),

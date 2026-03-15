@@ -95,7 +95,7 @@ impl ConfigPicker {
 impl Component for ConfigPicker {
     type Message = ConfigPickerMessage;
 
-    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         let Event::Key(key) = event else {
             return None;
         };

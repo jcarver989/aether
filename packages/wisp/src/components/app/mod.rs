@@ -263,9 +263,10 @@ impl App {
 
         if self.keybindings.cancel.matches(key_event)
             && self.conversation_screen.is_waiting()
-            && let Err(e) = self.prompt_handle.cancel(&self.session_id) {
-                tracing::warn!("Failed to send cancel: {e}");
-            }
+            && let Err(e) = self.prompt_handle.cancel(&self.session_id)
+        {
+            tracing::warn!("Failed to send cancel: {e}");
+        }
     }
 
     fn handle_config_manager_messages(
@@ -276,9 +277,9 @@ impl App {
         for msg in outcome.unwrap_or_default() {
             match msg {
                 ConfigManagerMessage::SetConfigOption { config_id, value } => {
-                    let _ = self
-                        .prompt_handle
-                        .set_config_option(&self.session_id, &config_id, &value);
+                    let _ =
+                        self.prompt_handle
+                            .set_config_option(&self.session_id, &config_id, &value);
                 }
                 ConfigManagerMessage::SetTheme(theme) => {
                     messages.push(AppMessage::SetTheme(theme));
@@ -297,10 +298,7 @@ impl App {
         }
     }
 
-    fn handle_screen_router_message(
-        messages: &mut Vec<AppMessage>,
-        msg: ScreenRouterMessage,
-    ) {
+    fn handle_screen_router_message(messages: &mut Vec<AppMessage>, msg: ScreenRouterMessage) {
         messages.push(msg.into());
     }
 
@@ -356,8 +354,7 @@ impl App {
                 if let Ok(progress) =
                     serde_json::from_str::<SubAgentProgressParams>(notification.params.get())
                 {
-                    self.conversation_screen
-                        .on_sub_agent_progress(&progress);
+                    self.conversation_screen.on_sub_agent_progress(&progress);
                 }
             }
             _ => {
@@ -383,7 +380,7 @@ impl App {
 impl Component for App {
     type Message = AppMessage;
 
-    fn on_event(&mut self, event: &Event) -> Option<Vec<AppMessage>> {
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<AppMessage>> {
         let mut messages = Vec::new();
         match event {
             Event::Key(key_event) => self.handle_key(&mut messages, *key_event),
@@ -478,16 +475,10 @@ mod tests {
         Renderer::new(Vec::new(), Theme::default(), (80, 24))
     }
 
-    fn render_app(
-        renderer: &mut Renderer<Vec<u8>>,
-        app: &mut App,
-        context: &ViewContext,
-    ) -> Frame {
+    fn render_app(renderer: &mut Renderer<Vec<u8>>, app: &mut App, context: &ViewContext) -> Frame {
         let ctx = renderer.context();
         app.prepare_for_render(&ctx);
-        renderer
-            .render_frame(|ctx| app.render(ctx))
-            .unwrap();
+        renderer.render_frame(|ctx| app.render(ctx)).unwrap();
         app.render(context)
     }
 
@@ -634,9 +625,7 @@ mod tests {
                 .checked_sub(grace_period + Duration::from_millis(1))
                 .unwrap(),
         );
-        app.conversation_screen
-            .plan_tracker
-            .on_tick(Instant::now());
+        app.conversation_screen.plan_tracker.on_tick(Instant::now());
 
         let output = render_app(&mut renderer, &mut app, &ViewContext::new((120, 40)));
         assert!(
@@ -754,7 +743,10 @@ mod tests {
         let messages = app.on_event(&Event::Key(key)).unwrap_or_default();
 
         assert!(app.screen_router.is_git_diff());
-        assert!(has_message(&messages, |m| matches!(m, AppMessage::LoadGitDiff)));
+        assert!(has_message(&messages, |m| matches!(
+            m,
+            AppMessage::LoadGitDiff
+        )));
     }
 
     #[test]
@@ -937,9 +929,10 @@ mod tests {
 
     #[test]
     fn on_authenticate_complete_removes_method() {
-        let mut app = make_app_with_auth(vec![acp::AuthMethod::Agent(
-            acp::AuthMethodAgent::new("anthropic", "Anthropic"),
-        )]);
+        let mut app = make_app_with_auth(vec![acp::AuthMethod::Agent(acp::AuthMethodAgent::new(
+            "anthropic",
+            "Anthropic",
+        ))]);
 
         app.on_authenticate_complete("anthropic");
 
@@ -975,7 +968,10 @@ mod tests {
             Some(vec![ConversationScreenMessage::ClearScreen]),
         );
 
-        assert!(has_message(&messages, |m| matches!(m, AppMessage::ClearScreen)));
+        assert!(has_message(&messages, |m| matches!(
+            m,
+            AppMessage::ClearScreen
+        )));
     }
 
     #[test]

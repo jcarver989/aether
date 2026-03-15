@@ -180,7 +180,7 @@ impl ModelSelector {
 impl Component for ModelSelector {
     type Message = ModelSelectorMessage;
 
-    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         let Event::Key(key) = event else {
             return None;
         };

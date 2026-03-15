@@ -229,7 +229,7 @@ impl PromptComposer {
 impl Component for PromptComposer {
     type Message = PromptComposerMessage;
 
-    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         match event {
             Event::Paste(text) => {
                 self.close_all();

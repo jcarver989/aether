@@ -22,7 +22,7 @@ impl Checkbox {
 impl Component for Checkbox {
     type Message = ();
 
-    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         let Event::Key(key) = event else {
             return None;
         };
