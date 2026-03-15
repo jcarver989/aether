@@ -3,10 +3,12 @@ use similar::{ChangeTag, TextDiff};
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::components::sub_agent_tracker::{SUB_AGENT_VISIBLE_TOOL_LIMIT, SubAgentState, SubAgentTracker};
+use crate::components::sub_agent_tracker::{
+    SUB_AGENT_VISIBLE_TOOL_LIMIT, SubAgentState, SubAgentTracker,
+};
 use crate::components::tracked_tool_call::TrackedToolCall;
-use crate::tui::{DiffLine, DiffPreview, DiffTag, Line, ViewContext, highlight_diff};
 use crate::tui::BRAILLE_FRAMES as FRAMES;
+use crate::tui::{DiffLine, DiffPreview, DiffTag, Line, ViewContext, highlight_diff};
 
 pub const MAX_TOOL_ARG_LENGTH: usize = 200;
 
@@ -124,16 +126,13 @@ impl ToolCallStatusView<'_> {
         line.push_text(" ");
         line.push_text(self.name);
 
-        let display_text = self
-            .display_value
-            .filter(|v| !v.is_empty())
-            .map_or_else(
-                || match self.status {
-                    ToolCallStatus::Running => String::new(),
-                    _ => format_arguments(self.arguments),
-                },
-                |v| format!(" ({v})"),
-            );
+        let display_text = self.display_value.filter(|v| !v.is_empty()).map_or_else(
+            || match self.status {
+                ToolCallStatus::Running => String::new(),
+                _ => format_arguments(self.arguments),
+            },
+            |v| format!(" ({v})"),
+        );
         line.push_styled(display_text, context.theme.muted());
 
         if let ToolCallStatus::Error(msg) = &self.status {
@@ -188,6 +187,19 @@ pub(super) fn compute_diff_preview(diff: &acp::Diff) -> DiffPreview {
         });
     }
 
+    const CONTEXT_LINES: usize = 3;
+
+    let first_change_idx = lines.iter().position(|l| l.tag != DiffTag::Context);
+    let last_change_idx = lines.iter().rposition(|l| l.tag != DiffTag::Context);
+
+    if let (Some(first), Some(last)) = (first_change_idx, last_change_idx) {
+        let start = first.saturating_sub(CONTEXT_LINES);
+        let end = (last + CONTEXT_LINES + 1).min(lines.len());
+        lines = lines[start..end].to_vec();
+        let trimmed_context = first - start;
+        first_change_line = first_change_line.map(|l| l - trimmed_context);
+    }
+
     let lang_hint = Path::new(&diff.path)
         .extension()
         .and_then(|ext| ext.to_str())
@@ -213,6 +225,68 @@ fn render_agent_header(agent: &SubAgentState, tick: u16, context: &ViewContext) 
     line.push_text(" ");
     line.push_text(&agent.agent_name);
     line
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_large_file(num_lines: usize) -> String {
+        (1..=num_lines)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn replace_line(text: &str, line_num: usize, replacement: &str) -> String {
+        text.lines()
+            .enumerate()
+            .map(|(i, l)| if i + 1 == line_num { replacement } else { l })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn diff_preview_for_edit_near_end_contains_change() {
+        let old = make_large_file(50);
+        let new = replace_line(&old, 45, "CHANGED LINE 45");
+
+        let diff = acp::Diff::new("test.rs", new).old_text(old);
+        let preview = compute_diff_preview(&diff);
+
+        let has_change = preview.lines.iter().any(|l| l.tag != DiffTag::Context);
+        assert!(has_change, "preview must contain the changed lines");
+    }
+
+    #[test]
+    fn diff_preview_trims_leading_context() {
+        let old = make_large_file(50);
+        let new = replace_line(&old, 45, "CHANGED LINE 45");
+
+        let diff = acp::Diff::new("test.rs", new).old_text(old);
+        let preview = compute_diff_preview(&diff);
+
+        assert!(
+            preview.lines.len() <= 10,
+            "expected at most ~10 lines (3 context + change + 3 context), got {}",
+            preview.lines.len()
+        );
+    }
+
+    #[test]
+    fn diff_preview_start_line_adjusted_after_trim() {
+        let old = make_large_file(50);
+        let new = replace_line(&old, 45, "CHANGED LINE 45");
+
+        let diff = acp::Diff::new("test.rs", new).old_text(old);
+        let preview = compute_diff_preview(&diff);
+
+        let start = preview.start_line.expect("start_line should be set");
+        assert!(
+            start >= 42,
+            "start_line should be near the edit (line 45), got {start}"
+        );
+    }
 }
 
 fn format_arguments(arguments: &str) -> String {
