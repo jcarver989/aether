@@ -88,7 +88,7 @@ async fn test_format_mcp_instructions_xml_structure() {
 
     // Check for XML tags with server names
     assert!(formatted.contains("<mcp-server-instructions name=\"coding\">"));
-    assert!(formatted.contains("</mcp-server-instructions>"));
+    assert!(formatted.contains("</mcp-server-instructions>\n"));
     assert!(formatted.contains("Use absolute paths."));
     assert!(formatted.contains("# MCP Server Instructions"));
 }
