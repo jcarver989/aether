@@ -1,6 +1,6 @@
 use crate::components::command_picker::{CommandEntry, CommandPicker, CommandPickerMessage};
 use crate::components::file_picker::{FilePicker, FilePickerMessage};
-use crate::components::input_prompt::InputPrompt;
+use crate::components::input_prompt::{InputPrompt, prompt_content_width};
 use crate::components::text_input::{SelectedFileMention, TextInput, TextInputMessage};
 use crate::keybindings::Keybindings;
 use crate::tui::KeyCode;
@@ -245,7 +245,12 @@ impl Component for PromptComposer {
 
                     if matches!(
                         key_event.code,
-                        KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End
+                        KeyCode::Left
+                            | KeyCode::Right
+                            | KeyCode::Home
+                            | KeyCode::End
+                            | KeyCode::Up
+                            | KeyCode::Down
                     ) {
                         return Some(vec![]);
                     }
@@ -264,6 +269,9 @@ impl Component for PromptComposer {
     }
 
     fn render(&mut self, context: &ViewContext) -> Frame {
+        let content_width = prompt_content_width(usize::from(context.size.width));
+        self.text_input.set_content_width(content_width);
+
         let picker_query_len = self.file_picker.as_ref().map(|picker| picker.query().len());
         let mut lines = InputPrompt {
             input: self.text_input.buffer(),

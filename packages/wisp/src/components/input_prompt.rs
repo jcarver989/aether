@@ -1,6 +1,14 @@
 use crate::tui::{Line, ViewContext};
 use unicode_width::UnicodeWidthChar;
 
+pub fn prompt_content_width(terminal_width: usize) -> usize {
+    if terminal_width >= 4 {
+        (terminal_width - 2).saturating_sub(3).max(1)
+    } else {
+        terminal_width.max(1)
+    }
+}
+
 pub struct InputPrompt<'a> {
     pub input: &'a str,
     pub cursor_index: usize,
@@ -41,8 +49,7 @@ impl InputPrompt<'_> {
         }
 
         let inner_width = width - 2; // space between │ and │
-        // " " + marker area ("> " or "  ")
-        let content_width = inner_width.saturating_sub(3).max(1);
+        let content_width = prompt_content_width(width);
         let wrapped_chunks =
             styled_input.soft_wrap(u16::try_from(content_width).unwrap_or(u16::MAX));
 
