@@ -287,7 +287,7 @@ mod tests {
                 model: "anthropic:claude-sonnet-4-5".to_string(),
                 reasoning_effort: Some(ReasoningEffort::High),
                 prompts: vec![],
-                agent_mcp_config_path: None,
+                mcp_config_path: None,
                 exposure: AgentSpecExposure::both(),
             },
             AgentSpec {
@@ -296,7 +296,7 @@ mod tests {
                 model: "deepseek:deepseek-chat".to_string(),
                 reasoning_effort: None,
                 prompts: vec![],
-                agent_mcp_config_path: None,
+                mcp_config_path: None,
                 exposure: AgentSpecExposure::both(),
             },
         ]

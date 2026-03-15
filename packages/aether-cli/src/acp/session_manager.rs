@@ -470,10 +470,10 @@ impl Agent for SessionManager {
 
         let (initial_selected_mode, mode_config) = select_initial_mode(&mode_catalog.modes);
 
-        let runtime = if let Some(selected_mode) = initial_selected_mode.as_deref() {
+        let spec = if let Some(selected_mode) = initial_selected_mode.as_deref() {
             mode_catalog
                 .catalog
-                .runtime_inputs_for(selected_mode, &args.cwd)
+                .resolve(selected_mode, &args.cwd)
                 .map_err(|e| {
                     error!(
                         "Failed to resolve runtime inputs for mode '{}': {e}",
@@ -484,14 +484,14 @@ impl Agent for SessionManager {
         } else {
             mode_catalog
                 .catalog
-                .runtime_inputs_for_default(default_model, None, &args.cwd)
+                .resolve_default(default_model, None, &args.cwd)
         };
 
-        let model_str = runtime.spec.model.clone();
+        let model_str = spec.model.clone();
         let initial_reasoning_effort = mode_config.and_then(|(_, effort)| effort);
 
         let session = Session::new(
-            runtime,
+            spec,
             args.cwd.clone(),
             map_acp_mcp_servers(args.mcp_servers),
             None,
@@ -579,10 +579,10 @@ impl Agent for SessionManager {
         let context = Context::from_events(&events);
         let mode_catalog = Self::load_mode_catalog(&args.cwd)?;
 
-        let runtime = if let Some(mode_name) = meta.selected_mode.as_deref() {
+        let spec = if let Some(mode_name) = meta.selected_mode.as_deref() {
             mode_catalog
                 .catalog
-                .runtime_inputs_for(mode_name, &args.cwd)
+                .resolve(mode_name, &args.cwd)
                 .map_err(|e| {
                     error!(
                         "Failed to resolve runtime inputs for mode '{}': {e}",
@@ -597,10 +597,10 @@ impl Agent for SessionManager {
             })?;
             mode_catalog
                 .catalog
-                .runtime_inputs_for_default(&parsed_model, None, &args.cwd)
+                .resolve_default(&parsed_model, None, &args.cwd)
         };
 
-        let model = runtime.spec.model.clone();
+        let model = spec.model.clone();
 
         let restored_messages: Vec<_> = context
             .messages()
@@ -610,7 +610,7 @@ impl Agent for SessionManager {
             .collect();
 
         let session = Session::new(
-            runtime,
+            spec,
             args.cwd.clone(),
             map_acp_mcp_servers(args.mcp_servers),
             Some(restored_messages),
