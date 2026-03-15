@@ -231,13 +231,17 @@ fn build_auth_methods() -> Vec<AuthMethod> {
     LlmModel::all()
         .iter()
         .filter_map(LlmModel::oauth_provider_id)
-        .filter(|id| !credential_ids.contains(*id) && seen.insert(*id))
+        .filter(|id| seen.insert(*id))
         .map(|id| {
             let display = LlmModel::all()
                 .iter()
                 .find(|m| m.oauth_provider_id() == Some(id))
                 .map_or(id, |m| m.provider_display_name());
-            AuthMethod::Agent(acp::AuthMethodAgent::new(id, display))
+            let mut method = acp::AuthMethodAgent::new(id, display);
+            if credential_ids.contains(id) {
+                method = method.description("authenticated");
+            }
+            AuthMethod::Agent(method)
         })
         .collect()
 }
