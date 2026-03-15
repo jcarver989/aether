@@ -4,14 +4,10 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-const SANDBOX_IMAGE: &str = "aether-sandbox:latest";
+use llm::LlmModel;
 
-const FORWARDED_KEYS: &[&str] = &[
-    "ANTHROPIC_API_KEY",
-    "OPENROUTER_API_KEY",
-    "OPENAI_API_KEY",
-    "OLLAMA_HOST",
-];
+
+const EXTRA_FORWARDED_KEYS: &[&str] = &["OLLAMA_HOST"];
 
 const AETHER_ENV_PREFIX: &str = "AETHER_";
 
@@ -52,9 +48,9 @@ impl fmt::Display for SandboxError {
 
 impl std::error::Error for SandboxError {}
 
-/// Entry point called from `main()` when `--sandbox` flag is present.
-pub fn exec_in_container() -> ExitCode {
-    match try_exec_in_container() {
+/// Entry point called from `main()` when `--sandbox-image` is present.
+pub fn exec_in_container(image: &str) -> ExitCode {
+    match try_exec_in_container(image) {
         Ok(code) => code,
         Err(err) => {
             eprintln!("Sandbox error: {err}");
@@ -63,17 +59,17 @@ pub fn exec_in_container() -> ExitCode {
     }
 }
 
-fn try_exec_in_container() -> Result<ExitCode, SandboxError> {
+fn try_exec_in_container(image: &str) -> Result<ExitCode, SandboxError> {
     check_docker()?;
-    check_image(SANDBOX_IMAGE)?;
+    check_image(image)?;
 
     let cwd = env::current_dir().map_err(SandboxError::ExecFailed)?;
     let aether_home = resolve_aether_home()?;
     let args: Vec<String> = env::args().collect();
-    let inner_args = filter_sandbox_flag(&args);
+    let inner_args = filter_sandbox_arg(&args);
     let env_vars = select_forwarded_vars(env::vars());
 
-    let docker_args = build_docker_args(&cwd, &aether_home, &env_vars, &inner_args);
+    let docker_args = build_docker_args(image, &cwd, &aether_home, &env_vars, &inner_args);
 
     exec_docker(&docker_args)
 }
@@ -117,23 +113,39 @@ fn resolve_aether_home() -> Result<PathBuf, SandboxError> {
     Ok(home.join(".aether"))
 }
 
-fn filter_sandbox_flag(args: &[String]) -> Vec<String> {
-    args.iter()
-        .filter(|a| *a != "--sandbox")
-        .cloned()
-        .collect()
+fn filter_sandbox_arg(args: &[String]) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut skip_next = false;
+    for arg in args {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if arg == "--sandbox-image" {
+            skip_next = true;
+            continue;
+        }
+        if arg.starts_with("--sandbox-image=") {
+            continue;
+        }
+        result.push(arg.clone());
+    }
+    result
 }
 
 fn select_forwarded_vars(
     vars: impl Iterator<Item = (String, String)>,
 ) -> Vec<(String, String)> {
     vars.filter(|(key, _)| {
-        FORWARDED_KEYS.contains(&key.as_str()) || key.starts_with(AETHER_ENV_PREFIX)
+        LlmModel::ALL_REQUIRED_ENV_VARS.contains(&key.as_str())
+            || EXTRA_FORWARDED_KEYS.contains(&key.as_str())
+            || key.starts_with(AETHER_ENV_PREFIX)
     })
     .collect()
 }
 
 fn build_docker_args(
+    image: &str,
     cwd: &Path,
     aether_home: &Path,
     env_vars: &[(String, String)],
@@ -162,7 +174,7 @@ fn build_docker_args(
         args.push(format!("{key}={value}"));
     }
 
-    args.push(SANDBOX_IMAGE.to_string());
+    args.push(image.to_string());
 
     // Skip the binary name (first element) — the ENTRYPOINT already provides it
     if inner_args.len() > 1 {
@@ -198,65 +210,80 @@ mod tests {
     use super::*;
 
     #[test]
-    fn filter_sandbox_flag_strips_flag() {
+    fn filter_sandbox_arg_strips_separate_value() {
         let args = vec![
             "aether".to_string(),
-            "--sandbox".to_string(),
+            "--sandbox-image".to_string(),
+            "my-image:latest".to_string(),
             "headless".to_string(),
             "-m".to_string(),
             "gpt-4".to_string(),
         ];
-        let filtered = filter_sandbox_flag(&args);
+        let filtered = filter_sandbox_arg(&args);
         assert_eq!(filtered, vec!["aether", "headless", "-m", "gpt-4"]);
     }
 
     #[test]
-    fn filter_sandbox_flag_middle_position() {
+    fn filter_sandbox_arg_strips_equals_form() {
         let args = vec![
             "aether".to_string(),
+            "--sandbox-image=my-image:latest".to_string(),
             "headless".to_string(),
-            "--sandbox".to_string(),
-            "-m".to_string(),
         ];
-        let filtered = filter_sandbox_flag(&args);
-        assert_eq!(filtered, vec!["aether", "headless", "-m"]);
-    }
-
-    #[test]
-    fn filter_sandbox_flag_noop_when_absent() {
-        let args = vec![
-            "aether".to_string(),
-            "headless".to_string(),
-            "-m".to_string(),
-        ];
-        let filtered = filter_sandbox_flag(&args);
-        assert_eq!(filtered, args);
-    }
-
-    #[test]
-    fn filter_sandbox_flag_strips_multiple() {
-        let args = vec![
-            "aether".to_string(),
-            "--sandbox".to_string(),
-            "headless".to_string(),
-            "--sandbox".to_string(),
-        ];
-        let filtered = filter_sandbox_flag(&args);
+        let filtered = filter_sandbox_arg(&args);
         assert_eq!(filtered, vec!["aether", "headless"]);
     }
 
     #[test]
-    fn select_forwarded_vars_includes_known_keys() {
+    fn filter_sandbox_arg_noop_when_absent() {
+        let args = vec![
+            "aether".to_string(),
+            "headless".to_string(),
+            "-m".to_string(),
+        ];
+        let filtered = filter_sandbox_arg(&args);
+        assert_eq!(filtered, args);
+    }
+
+    #[test]
+    fn filter_sandbox_arg_middle_position() {
+        let args = vec![
+            "aether".to_string(),
+            "headless".to_string(),
+            "--sandbox-image".to_string(),
+            "custom:v2".to_string(),
+            "-m".to_string(),
+        ];
+        let filtered = filter_sandbox_arg(&args);
+        assert_eq!(filtered, vec!["aether", "headless", "-m"]);
+    }
+
+    #[test]
+    fn select_forwarded_vars_includes_generated_provider_keys() {
         let vars = vec![
             ("ANTHROPIC_API_KEY".to_string(), "sk-123".to_string()),
             ("OPENROUTER_API_KEY".to_string(), "or-456".to_string()),
+            ("ZAI_API_KEY".to_string(), "zai-789".to_string()),
+            ("DEEPSEEK_API_KEY".to_string(), "ds-000".to_string()),
             ("HOME".to_string(), "/root".to_string()),
-            ("PATH".to_string(), "/usr/bin".to_string()),
         ];
         let forwarded = select_forwarded_vars(vars.into_iter());
-        assert_eq!(forwarded.len(), 2);
+        assert_eq!(forwarded.len(), 4);
         assert!(forwarded.iter().any(|(k, _)| k == "ANTHROPIC_API_KEY"));
         assert!(forwarded.iter().any(|(k, _)| k == "OPENROUTER_API_KEY"));
+        assert!(forwarded.iter().any(|(k, _)| k == "ZAI_API_KEY"));
+        assert!(forwarded.iter().any(|(k, _)| k == "DEEPSEEK_API_KEY"));
+    }
+
+    #[test]
+    fn select_forwarded_vars_includes_extra_keys() {
+        let vars = vec![
+            ("OLLAMA_HOST".to_string(), "http://localhost:11434".to_string()),
+            ("HOME".to_string(), "/root".to_string()),
+        ];
+        let forwarded = select_forwarded_vars(vars.into_iter());
+        assert_eq!(forwarded.len(), 1);
+        assert!(forwarded.iter().any(|(k, _)| k == "OLLAMA_HOST"));
     }
 
     #[test]
@@ -283,6 +310,14 @@ mod tests {
     }
 
     #[test]
+    fn all_required_env_vars_stays_in_sync() {
+        // If a new provider is added to codegen, this test reminds us it's auto-forwarded
+        assert!(LlmModel::ALL_REQUIRED_ENV_VARS.contains(&"ANTHROPIC_API_KEY"));
+        assert!(LlmModel::ALL_REQUIRED_ENV_VARS.contains(&"ZAI_API_KEY"));
+        assert!(LlmModel::ALL_REQUIRED_ENV_VARS.contains(&"DEEPSEEK_API_KEY"));
+    }
+
+    #[test]
     fn build_docker_args_contains_expected_flags() {
         let cwd = Path::new("/home/user/project");
         let aether_home = Path::new("/home/user/.aether");
@@ -294,7 +329,7 @@ mod tests {
             "gpt-4".to_string(),
         ];
 
-        let args = build_docker_args(cwd, aether_home, &env_vars, &inner_args);
+        let args = build_docker_args("test-image:latest", cwd, aether_home, &env_vars, &inner_args);
 
         assert!(args.contains(&"run".to_string()));
         assert!(args.contains(&"--rm".to_string()));
@@ -307,24 +342,40 @@ mod tests {
         assert!(args.contains(&"AETHER_HOME=/root/.aether".to_string()));
         assert!(args.contains(&"AETHER_INSIDE_SANDBOX=1".to_string()));
         assert!(args.contains(&"ANTHROPIC_API_KEY=sk-123".to_string()));
-        assert!(args.contains(&SANDBOX_IMAGE.to_string()));
+        assert!(args.contains(&"test-image:latest".to_string()));
         // Inner args skip the binary name
         assert!(args.contains(&"headless".to_string()));
         assert!(args.contains(&"-m".to_string()));
         assert!(args.contains(&"gpt-4".to_string()));
         // Binary name must NOT appear after the image
-        let image_pos = args.iter().position(|a| a == SANDBOX_IMAGE).unwrap();
+        let image_pos = args.iter().position(|a| a == "test-image:latest").unwrap();
         assert!(!args[image_pos..].contains(&"aether".to_string()));
+    }
+
+    #[test]
+    fn build_docker_args_uses_custom_image() {
+        let cwd = Path::new("/tmp");
+        let aether_home = Path::new("/home/user/.aether");
+        let args = build_docker_args(
+            "my-go-sandbox:v2",
+            cwd,
+            aether_home,
+            &[],
+            &["aether".to_string(), "headless".to_string()],
+        );
+
+        assert!(args.contains(&"my-go-sandbox:v2".to_string()));
+        assert!(!args.contains(&"test-image:latest".to_string()));
     }
 
     #[test]
     fn build_docker_args_skips_binary_name_only() {
         let cwd = Path::new("/tmp");
         let aether_home = Path::new("/home/user/.aether");
-        let args = build_docker_args(cwd, aether_home, &[], &["aether".to_string()]);
+        let args = build_docker_args("test-image:latest", cwd, aether_home, &[], &["aether".to_string()]);
 
         // Only the binary name — nothing after image
-        assert_eq!(args.last().unwrap(), SANDBOX_IMAGE);
+        assert_eq!(args.last().unwrap(), "test-image:latest");
     }
 
     #[test]
