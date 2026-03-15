@@ -1,12 +1,9 @@
 use super::mappers::map_mcp_prompt_to_available_command;
-use aether_core::core::{AgentBuilder, AgentHandle, Prompt};
+use aether_core::core::AgentHandle;
 use aether_core::events::{AgentMessage, UserMessage};
-use aether_core::mcp::McpSpawnResult;
-use aether_core::mcp::mcp;
 use aether_core::mcp::run_mcp_task::McpCommand;
 use aether_project::ResolvedRuntimeSpec;
 use llm::ChatMessage;
-use mcp_servers::McpBuilderExt;
 use mcp_utils::client::oauth::BrowserOAuthHandler;
 use mcp_utils::client::{ElicitationRequest, McpServerConfig};
 use mcp_utils::status::McpServerStatusEntry;
@@ -17,6 +14,8 @@ use std::path::PathBuf;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing::{debug, error};
+
+use crate::runtime::RuntimeBuilder;
 
 /// Represents an active Aether agent session
 pub struct Session {
@@ -42,56 +41,28 @@ impl Session {
         debug!("MCP config: {:?}", runtime.effective_mcp_config_path);
         debug!("Using project root: {:?}", cwd);
 
-        let roots_path = cwd.clone();
-        let mut builder = mcp()
-            .with_builtin_servers(cwd, &roots_path)
-            .with_servers(extra_mcp_servers);
+        let mut rb = RuntimeBuilder::from_resolved(cwd, runtime)
+            .extra_servers(extra_mcp_servers);
 
         match BrowserOAuthHandler::new() {
             Ok(handler) => {
-                builder = builder.with_oauth_handler(handler);
+                rb = rb.oauth_handler(handler);
             }
             Err(e) => {
                 error!("Failed to initialize browser OAuth handler: {e}");
             }
         }
 
-        if let Some(ref config_path) = runtime.effective_mcp_config_path {
-            let config_str = config_path.to_str().ok_or("Invalid MCP config path")?;
-            builder = builder.from_json_file(config_str).await?;
-        }
-
-        let McpSpawnResult {
-            tool_definitions,
-            instructions,
-            server_statuses,
-            command_tx: mcp_tx,
-            elicitation_rx,
-            handle: mcp_handle,
-        } = builder.spawn().await?;
-
-        let mut spec = runtime.spec;
-        spec.prompts
-            .push(Prompt::system_env().with_cwd(roots_path.clone()));
-        spec.prompts.push(Prompt::mcp_instructions(instructions));
-
-        let mut agent_builder =
-            AgentBuilder::from_spec(&spec, vec![])?.tools(mcp_tx.clone(), tool_definitions);
-
-        if let Some(messages) = restored_messages {
-            agent_builder = agent_builder.messages(messages);
-        }
-
-        let (agent_tx, agent_rx, agent_handle) = agent_builder.spawn().await?;
+        let agent = rb.build(None, restored_messages).await?;
 
         Ok(Self {
-            agent_tx,
-            agent_rx,
-            agent_handle,
-            _mcp_handle: mcp_handle,
-            mcp_tx,
-            elicitation_rx,
-            initial_server_statuses: server_statuses,
+            agent_tx: agent.agent_tx,
+            agent_rx: agent.agent_rx,
+            agent_handle: agent.agent_handle,
+            _mcp_handle: agent.mcp_handle,
+            mcp_tx: agent.mcp_tx,
+            elicitation_rx: agent.elicitation_rx,
+            initial_server_statuses: agent.server_statuses,
         })
     }
 

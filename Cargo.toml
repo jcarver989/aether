@@ -25,6 +25,7 @@ missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 return_self_not_must_use = "allow"
 pub_underscore_fields = "allow"
+absolute_paths = "warn"
 
 [workspace.dependencies]
 # AWS SDK
