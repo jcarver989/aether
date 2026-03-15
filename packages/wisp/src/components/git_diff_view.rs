@@ -1,7 +1,9 @@
-use crate::components::app::git_diff_mode::{PatchLineRef, QueuedComment, format_review_prompt};
+use crate::components::app::git_diff_mode::{QueuedComment, format_review_prompt};
 use crate::components::app::{GitDiffLoadState, GitDiffViewState, PatchFocus};
+use crate::components::file_list_renderer::render_file_list_cell;
+pub(crate) use crate::components::patch_renderer::build_patch_lines;
 use crate::git_diff::{FileDiff, FileStatus, PatchLineKind};
-use crate::tui::{Component, Event, Frame, KeyCode, Line, Span, Style, ViewContext, truncate_text};
+use crate::tui::{Component, Event, Frame, KeyCode, Line, Style, ViewContext, truncate_text};
 
 pub enum GitDiffViewMessage {
     Close,
@@ -52,20 +54,9 @@ fn render_git_diff_state(state: &GitDiffViewState, context: &ViewContext) -> Vec
             available_height,
             theme,
         ),
-        GitDiffLoadState::Ready(doc) => render_ready(
-            &doc.files,
-            state.selected_file,
-            state.patch_scroll,
-            &state.cached_patch_lines,
-            state.cursor_line,
-            state.focus,
-            &state.queued_comments,
-            &state.comment_buffer,
-            left_width,
-            right_width,
-            available_height,
-            context,
-        ),
+        GitDiffLoadState::Ready(doc) => {
+            render_ready(&doc.files, state, left_width, right_width, available_height, context)
+        }
     }
 }
 
@@ -239,26 +230,19 @@ impl GitDiffView<'_> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn render_ready(
     files: &[FileDiff],
-    selected_file_idx: usize,
-    patch_scroll: usize,
-    cached_patch_lines: &[Line],
-    cursor_line: usize,
-    focus: PatchFocus,
-    queued_comments: &[QueuedComment],
-    comment_buffer: &str,
+    state: &GitDiffViewState,
     left_width: usize,
     right_width: usize,
     available_height: usize,
     context: &ViewContext,
 ) -> Vec<Line> {
     let theme = &context.theme;
-    let selected = selected_file_idx.min(files.len().saturating_sub(1));
+    let selected = state.selected_file.min(files.len().saturating_sub(1));
     let selected_file = &files[selected];
 
-    let show_comment_bar = focus == PatchFocus::CommentInput;
+    let show_comment_bar = state.focus == PatchFocus::CommentInput;
     let content_height = if show_comment_bar {
         available_height.saturating_sub(1)
     } else {
@@ -272,13 +256,18 @@ fn render_ready(
         let mut line = Line::default();
 
         // Show queue indicator in last file list row
-        let queue_row = !queued_comments.is_empty() && i == content_height.saturating_sub(1);
+        let queue_row =
+            !state.queued_comments.is_empty() && i == content_height.saturating_sub(1);
 
         if queue_row {
             let indicator = format!(
                 " [{} comment{}] s:submit u:undo",
-                queued_comments.len(),
-                if queued_comments.len() == 1 { "" } else { "s" },
+                state.queued_comments.len(),
+                if state.queued_comments.len() == 1 {
+                    ""
+                } else {
+                    "s"
+                },
             );
             let padded = truncate_text(&indicator, left_width);
             let pad = left_width.saturating_sub(padded.chars().count());
@@ -294,11 +283,11 @@ fn render_ready(
         render_patch_cell(
             &mut line,
             selected_file,
-            cached_patch_lines,
+            &state.cached_patch_lines,
             i,
-            patch_scroll,
-            cursor_line,
-            focus,
+            state.patch_scroll,
+            state.cursor_line,
+            state.focus,
             right_width,
             theme,
         );
@@ -308,7 +297,7 @@ fn render_ready(
 
     if show_comment_bar {
         let mut bar = Line::default();
-        let label = format!("Comment: {comment_buffer}");
+        let label = format!("Comment: {}", state.comment_buffer);
         let truncated = truncate_text(&label, left_width + 1 + right_width);
         bar.push_with_style(
             truncated.as_ref(),
@@ -328,64 +317,6 @@ fn render_ready(
     rows
 }
 
-fn render_file_list_cell(
-    line: &mut Line,
-    files: &[FileDiff],
-    row: usize,
-    selected: usize,
-    left_width: usize,
-    theme: &crate::tui::Theme,
-) {
-    if row >= files.len() {
-        line.push_text(" ".repeat(left_width));
-        return;
-    }
-
-    let file = &files[row];
-    let is_selected = row == selected;
-    let marker = if is_selected { "> " } else { "  " };
-    let status_char = file.status.marker();
-    let status_color = match file.status {
-        FileStatus::Added => theme.diff_added_fg(),
-        FileStatus::Deleted | FileStatus::Renamed => theme.diff_removed_fg(),
-        FileStatus::Modified => theme.text_secondary(),
-    };
-
-    let stats_str = format!("+{}/-{}", file.additions(), file.deletions());
-    let stats_width = stats_str.len();
-    let path_budget = left_width.saturating_sub(4 + stats_width + 1);
-    let truncated_path = truncate_text(&file.path, path_budget);
-    let path_width = truncated_path.chars().count();
-    let padding = left_width.saturating_sub(4 + path_width + stats_width);
-
-    let row_style = if is_selected {
-        theme.selected_row_style()
-    } else {
-        Style::default()
-    };
-
-    line.push_with_style(marker, row_style);
-    line.push_with_style(
-        format!("{status_char} "),
-        if is_selected {
-            theme.selected_row_style_with_fg(status_color)
-        } else {
-            Style::fg(status_color)
-        },
-    );
-    line.push_with_style(truncated_path.as_ref(), row_style);
-    if padding > 0 {
-        line.push_with_style(" ".repeat(padding), row_style);
-    }
-    line.push_with_style(
-        &stats_str,
-        if is_selected {
-            theme.selected_row_style_with_fg(theme.text_secondary())
-        } else {
-            Style::fg(theme.text_secondary())
-        },
-    );
-}
 
 #[allow(clippy::too_many_arguments)]
 fn render_patch_cell(
@@ -468,124 +399,6 @@ fn render_message_layout(
     rows
 }
 
-pub(crate) fn build_patch_lines(
-    file: &FileDiff,
-    context: &ViewContext,
-) -> (Vec<Line>, Vec<Option<PatchLineRef>>) {
-    let theme = &context.theme;
-    let lang_hint = lang_hint_from_path(&file.path);
-    let mut patch_lines = Vec::new();
-    let mut patch_refs = Vec::new();
-
-    let max_line_no = file
-        .hunks
-        .iter()
-        .flat_map(|h| &h.lines)
-        .filter_map(|l| l.old_line_no.into_iter().chain(l.new_line_no).max())
-        .max()
-        .unwrap_or(0);
-    let gutter_width = digit_count(max_line_no);
-
-    for (hunk_idx, hunk) in file.hunks.iter().enumerate() {
-        if hunk_idx > 0 {
-            patch_lines.push(Line::default());
-            patch_refs.push(None);
-        }
-
-        for (line_idx, pl) in hunk.lines.iter().enumerate() {
-            let mut line = Line::default();
-
-            match pl.kind {
-                PatchLineKind::HunkHeader => {
-                    line.push_with_style(&pl.text, Style::fg(theme.info()).bold());
-                }
-                PatchLineKind::Context => {
-                    let old_str = format_line_no(pl.old_line_no, gutter_width);
-                    let new_str = format_line_no(pl.new_line_no, gutter_width);
-                    line.push_with_style(
-                        format!("{old_str} {new_str}   "),
-                        Style::fg(theme.text_secondary()),
-                    );
-                    append_syntax_spans(&mut line, &pl.text, lang_hint, None, context);
-                }
-                PatchLineKind::Added => {
-                    let old_str = " ".repeat(gutter_width);
-                    let new_str = format_line_no(pl.new_line_no, gutter_width);
-                    let bg = Some(theme.diff_added_bg());
-                    let style = Style::fg(theme.diff_added_fg()).bg_color(theme.diff_added_bg());
-                    line.push_with_style(format!("{old_str} {new_str} + "), style);
-                    append_syntax_spans(&mut line, &pl.text, lang_hint, bg, context);
-                }
-                PatchLineKind::Removed => {
-                    let old_str = format_line_no(pl.old_line_no, gutter_width);
-                    let new_str = " ".repeat(gutter_width);
-                    let bg = Some(theme.diff_removed_bg());
-                    let style =
-                        Style::fg(theme.diff_removed_fg()).bg_color(theme.diff_removed_bg());
-                    line.push_with_style(format!("{old_str} {new_str} - "), style);
-                    append_syntax_spans(&mut line, &pl.text, lang_hint, bg, context);
-                }
-                PatchLineKind::Meta => {
-                    line.push_with_style(&pl.text, Style::fg(theme.text_secondary()).italic());
-                }
-            }
-
-            patch_lines.push(line);
-            patch_refs.push(Some(PatchLineRef {
-                hunk_index: hunk_idx,
-                line_index: line_idx,
-            }));
-        }
-    }
-
-    (patch_lines, patch_refs)
-}
-
-fn lang_hint_from_path(path: &str) -> &str {
-    path.rsplit('.').next().unwrap_or("")
-}
-
-fn append_syntax_spans(
-    line: &mut Line,
-    text: &str,
-    lang_hint: &str,
-    bg_override: Option<crate::tui::Color>,
-    context: &ViewContext,
-) {
-    let spans = context
-        .highlighter()
-        .highlight(text, lang_hint, &context.theme);
-    if let Some(content) = spans.first() {
-        for span in content.spans() {
-            let mut span_style = span.style();
-            if let Some(bg) = bg_override {
-                span_style.bg = Some(bg);
-            }
-            line.push_span(Span::with_style(span.text(), span_style));
-        }
-    } else {
-        line.push_text(text);
-    }
-}
-
-fn format_line_no(line_no: Option<usize>, width: usize) -> String {
-    match line_no {
-        Some(n) => format!("{n:>width$}"),
-        None => " ".repeat(width),
-    }
-}
-
-fn digit_count(mut n: usize) -> usize {
-    if n == 0 {
-        return 1;
-    }
-    let mut count = 0;
-    while n > 0 {
-        count += 1;
-        n /= 10;
-    }
-    count
-}
 
 fn char_to_byte_pos(s: &str, char_idx: usize) -> usize {
     s.char_indices().nth(char_idx).map_or(s.len(), |(i, _)| i)
@@ -649,6 +462,7 @@ fn build_queued_comment(state: &GitDiffViewState) -> Option<QueuedComment> {
 mod tests {
     use super::*;
     use crate::git_diff::{FileDiff, FileStatus, GitDiffDocument, Hunk, PatchLine, PatchLineKind};
+    use crate::tui::Span;
     use crate::tui::{KeyEvent, KeyModifiers};
     use std::path::PathBuf;
 
@@ -824,17 +638,6 @@ mod tests {
     }
 
     #[test]
-    fn digit_count_works() {
-        assert_eq!(digit_count(0), 1);
-        assert_eq!(digit_count(1), 1);
-        assert_eq!(digit_count(9), 1);
-        assert_eq!(digit_count(10), 2);
-        assert_eq!(digit_count(99), 2);
-        assert_eq!(digit_count(100), 3);
-        assert_eq!(digit_count(999), 3);
-    }
-
-    #[test]
     fn render_empty_state() {
         let mut state = GitDiffViewState::new(GitDiffLoadState::Empty);
         let view = GitDiffView { state: &mut state };
@@ -906,14 +709,6 @@ mod tests {
                 "Added line spans should have diff_added_bg"
             );
         }
-    }
-
-    #[test]
-    fn lang_hint_extracts_extension() {
-        assert_eq!(lang_hint_from_path("src/main.rs"), "rs");
-        assert_eq!(lang_hint_from_path("foo.py"), "py");
-        assert_eq!(lang_hint_from_path("Makefile"), "Makefile");
-        assert_eq!(lang_hint_from_path("a/b/c.tsx"), "tsx");
     }
 
     fn make_state_with_cache() -> GitDiffViewState {

@@ -1,7 +1,6 @@
 use crate::tui::{
-    Combobox, Component, Event, Frame, Line, PickerKey, PickerMessage, Searchable, Style,
-    ViewContext,
-    classify_key, display_width_text, pad_text_to_width, truncate_text,
+    Combobox, Component, Event, Frame, Line, PickerMessage, Searchable, Style, ViewContext,
+    display_width_text, pad_text_to_width, truncate_text,
 };
 
 #[derive(Debug, Clone)]
@@ -42,43 +41,7 @@ impl Component for CommandPicker {
     type Message = CommandPickerMessage;
 
     fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
-        let Event::Key(key_event) = event else {
-            return None;
-        };
-        match classify_key(*key_event, self.combobox.query().is_empty()) {
-            PickerKey::Escape => Some(vec![PickerMessage::Close]),
-            PickerKey::BackspaceOnEmpty => Some(vec![PickerMessage::CloseAndPopChar]),
-            PickerKey::MoveUp => {
-                self.combobox.move_up();
-                Some(vec![])
-            }
-            PickerKey::MoveDown => {
-                self.combobox.move_down();
-                Some(vec![])
-            }
-            PickerKey::Confirm => {
-                if let Some(command) = self.combobox.selected().cloned() {
-                    Some(vec![PickerMessage::Confirm(command)])
-                } else {
-                    Some(vec![PickerMessage::Close])
-                }
-            }
-            PickerKey::Char(c) => {
-                if c.is_whitespace() {
-                    return Some(vec![PickerMessage::CloseWithChar(c)]);
-                }
-                self.combobox.push_query_char(c);
-                Some(vec![PickerMessage::CharTyped(c)])
-            }
-            PickerKey::Backspace => {
-                self.combobox.pop_query_char();
-                Some(vec![PickerMessage::PopChar])
-            }
-            PickerKey::MoveLeft
-            | PickerKey::MoveRight
-            | PickerKey::ControlChar
-            | PickerKey::Other => Some(vec![]),
-        }
+        self.combobox.handle_picker_event(event)
     }
 
     fn render(&self, context: &ViewContext) -> Frame {

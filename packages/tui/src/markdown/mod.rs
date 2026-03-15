@@ -1,6 +1,7 @@
+mod table;
+
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use std::borrow::Cow;
-use unicode_width::UnicodeWidthStr;
 
 use crate::line::Line;
 use crate::rendering::render_context::ViewContext;
@@ -8,231 +9,7 @@ use crate::span::Span;
 use crate::style::Style;
 use crate::theme::Theme;
 
-/// A single rendered cell in a table row.
-#[derive(Clone, Debug)]
-struct TableCell {
-    /// Styled content lines.
-    lines: Vec<Line>,
-    /// Horizontal alignment for this cell.
-    alignment: Alignment,
-    /// Maximum display width across `lines`.
-    max_width: usize,
-}
-
-impl Default for TableCell {
-    fn default() -> Self {
-        Self {
-            lines: Vec::new(),
-            alignment: Alignment::None,
-            max_width: 0,
-        }
-    }
-}
-
-/// A row in a table.
-type TableRow = Vec<TableCell>;
-
-/// Builds styled inline content for a single table cell.
-#[derive(Clone, Debug, Default)]
-struct CellBuilder {
-    lines: Vec<Line>,
-    current_line: Line,
-}
-
-impl CellBuilder {
-    fn push_text(&mut self, text: &str, style: Style) {
-        for (i, chunk) in text.split('\n').enumerate() {
-            if i > 0 {
-                self.flush_line();
-            }
-            if !chunk.is_empty() {
-                self.current_line.push_span(Span::with_style(chunk, style));
-            }
-        }
-    }
-
-    fn push_code(&mut self, code: &str, style: Style) {
-        if !code.is_empty() {
-            self.current_line.push_span(Span::with_style(code, style));
-        }
-    }
-
-    fn soft_break(&mut self, style: Style) {
-        self.current_line.push_span(Span::with_style(" ", style));
-    }
-
-    fn hard_break(&mut self) {
-        self.flush_line();
-    }
-
-    fn finish(mut self) -> Vec<Line> {
-        if !self.current_line.is_empty() || !self.lines.is_empty() {
-            self.lines.push(std::mem::take(&mut self.current_line));
-        }
-        self.lines
-    }
-
-    fn flush_line(&mut self) {
-        let line = std::mem::take(&mut self.current_line);
-        self.lines.push(line);
-    }
-}
-
-/// Manages table state during parsing and rendering.
-#[derive(Clone, Debug, Default)]
-struct TableState {
-    /// Column alignments from markdown table syntax.
-    alignments: Vec<Alignment>,
-    /// All rows in the table (including header).
-    rows: Vec<TableRow>,
-    /// Current row being built.
-    current_row: Vec<TableCell>,
-    /// Display width for each column, including left/right padding.
-    column_widths: Vec<usize>,
-}
-
-impl TableState {
-    fn new(alignments: &[Alignment]) -> Self {
-        Self {
-            alignments: alignments.to_vec(),
-            rows: Vec::new(),
-            current_row: Vec::new(),
-            column_widths: vec![0; alignments.len()],
-        }
-    }
-
-    fn start_row(&mut self) {
-        self.current_row.clear();
-    }
-
-    fn add_cell(&mut self, cell: TableCell) {
-        let col_idx = self.current_row.len();
-        let needed = cell.max_width + 2;
-        if col_idx < self.column_widths.len() {
-            self.column_widths[col_idx] = self.column_widths[col_idx].max(needed);
-        }
-        self.current_row.push(cell);
-    }
-
-    fn finish_row(&mut self) {
-        if !self.current_row.is_empty() {
-            self.rows.push(std::mem::take(&mut self.current_row));
-        }
-    }
-
-    fn cell_width(&self, col_idx: usize) -> usize {
-        self.column_widths.get(col_idx).copied().unwrap_or(0).max(3)
-    }
-
-    fn render(&self, theme: &Theme) -> Vec<Line> {
-        if self.rows.is_empty() {
-            return Vec::new();
-        }
-
-        let num_cols = self.column_widths.len();
-        if num_cols == 0 {
-            return Vec::new();
-        }
-
-        let mut lines = Vec::new();
-        let border_style = Style::fg(theme.muted());
-        lines.push(self.render_border(num_cols, '┌', '┬', '┐', border_style));
-
-        for (row_idx, row) in self.rows.iter().enumerate() {
-            let max_cell_lines = (0..num_cols)
-                .map(|col_idx| row.get(col_idx).map_or(1, |cell| cell.lines.len().max(1)))
-                .max()
-                .unwrap_or(1);
-
-            for line_idx in 0..max_cell_lines {
-                let mut line = Line::default();
-                line.push_span(Span::with_style("│", border_style));
-
-                for col_idx in 0..num_cols {
-                    let width = self.cell_width(col_idx);
-                    let cell = row.get(col_idx);
-                    let alignment = cell.map_or_else(|| self.alignments[col_idx], |c| c.alignment);
-                    let content_line = cell.and_then(|c| c.lines.get(line_idx));
-                    Self::push_formatted_cell_line(&mut line, content_line, width, alignment);
-
-                    if col_idx < num_cols - 1 {
-                        line.push_span(Span::with_style("│", border_style));
-                    }
-                }
-
-                line.push_span(Span::with_style("│", border_style));
-                lines.push(line);
-            }
-
-            if row_idx == 0 {
-                lines.push(self.render_border(num_cols, '├', '┼', '┤', border_style));
-            }
-        }
-
-        lines.push(self.render_border(num_cols, '└', '┴', '┘', border_style));
-        lines
-    }
-
-    fn render_border(
-        &self,
-        num_cols: usize,
-        left_char: char,
-        mid_char: char,
-        right_char: char,
-        style: Style,
-    ) -> Line {
-        let mut s = String::new();
-        s.push(left_char);
-        for col_idx in 0..num_cols {
-            for _ in 0..self.cell_width(col_idx) {
-                s.push('─');
-            }
-            if col_idx < num_cols - 1 {
-                s.push(mid_char);
-            }
-        }
-        s.push(right_char);
-        Line::with_style(s, style)
-    }
-
-    fn push_formatted_cell_line(
-        line: &mut Line,
-        content_line: Option<&Line>,
-        width: usize,
-        alignment: Alignment,
-    ) {
-        let cell_width = width.max(3);
-        let content_width = content_line.map_or(0, line_display_width);
-        let padding = cell_width.saturating_sub(content_width);
-
-        let (left_pad, right_pad) = match alignment {
-            Alignment::Right => (padding.saturating_sub(1), 1),
-            Alignment::Center => {
-                let left = padding / 2;
-                let right = padding.saturating_sub(left);
-                (left, right)
-            }
-            _ => (1, padding.saturating_sub(1)),
-        };
-
-        if left_pad > 0 {
-            line.push_span(Span::with_style(" ".repeat(left_pad), Style::default()));
-        }
-        if let Some(content) = content_line {
-            line.append_line(content);
-        }
-        if right_pad > 0 {
-            line.push_span(Span::with_style(" ".repeat(right_pad), Style::default()));
-        }
-    }
-}
-
-fn line_display_width(line: &Line) -> usize {
-    line.spans()
-        .iter()
-        .map(|span| UnicodeWidthStr::width(span.text()))
-        .sum()
-}
+use table::{line_display_width, CellBuilder, TableCell, TableState};
 
 pub fn render_markdown(text: &str, context: &ViewContext) -> Vec<Line> {
     let renderer = MarkdownRenderer::new(context);
@@ -319,6 +96,48 @@ impl<'a> MarkdownRenderer<'a> {
 
     fn handle_start(&mut self, tag: Tag<'_>) {
         match tag {
+            Tag::Heading { .. }
+            | Tag::BlockQuote(_)
+            | Tag::List(_)
+            | Tag::Item
+            | Tag::Paragraph => self.handle_block_start(tag),
+
+            Tag::Strong | Tag::Emphasis | Tag::Strikethrough | Tag::Link { .. } => {
+                self.handle_inline_start(tag)
+            }
+
+            Tag::CodeBlock(_) => self.handle_code_block_start(tag),
+
+            Tag::Table(_) | Tag::TableRow | Tag::TableCell => self.handle_table_start(tag),
+
+            _ => {}
+        }
+    }
+
+    fn handle_end(&mut self, tag_end: TagEnd) {
+        match tag_end {
+            TagEnd::Paragraph
+            | TagEnd::Heading(_)
+            | TagEnd::BlockQuote(_)
+            | TagEnd::List(_)
+            | TagEnd::Item => self.handle_block_end(tag_end),
+
+            TagEnd::Strong | TagEnd::Emphasis | TagEnd::Strikethrough | TagEnd::Link => {
+                self.handle_inline_end(tag_end)
+            }
+
+            TagEnd::CodeBlock => self.handle_code_block_end(),
+
+            TagEnd::Table | TagEnd::TableRow | TagEnd::TableHead | TagEnd::TableCell => {
+                self.handle_table_end(tag_end)
+            }
+
+            _ => {}
+        }
+    }
+
+    fn handle_block_start(&mut self, tag: Tag<'_>) {
+        match tag {
             Tag::Heading { level, .. } => {
                 self.finish_current_line();
                 let prefix = "#".repeat(level as usize);
@@ -329,30 +148,10 @@ impl<'a> MarkdownRenderer<'a> {
                 self.style_stack
                     .push(Style::fg(self.theme.heading()).bold());
             }
-            Tag::Strong => {
-                self.style_stack.push(Style::default().bold());
-            }
-            Tag::Emphasis => {
-                self.style_stack.push(Style::default().italic());
-            }
-            Tag::Strikethrough => {
-                self.style_stack.push(Style::default().strikethrough());
-            }
             Tag::BlockQuote(_) => {
                 self.finish_current_line();
                 self.blockquote_depth += 1;
                 self.style_stack.push(Style::fg(self.theme.blockquote()));
-            }
-            Tag::CodeBlock(kind) => {
-                self.finish_current_line();
-                self.in_code_block = true;
-                self.code_buffer.clear();
-                self.code_lang = match kind {
-                    CodeBlockKind::Fenced(lang) => {
-                        lang.split(',').next().unwrap_or("").trim().to_string()
-                    }
-                    CodeBlockKind::Indented => String::new(),
-                };
             }
             Tag::List(start) => {
                 if self.list_stack.is_empty() {
@@ -373,31 +172,12 @@ impl<'a> MarkdownRenderer<'a> {
                 };
                 self.push_styled_text(&format!("{indent}{marker}"), Style::fg(self.theme.muted()));
             }
-            Tag::Link { dest_url, .. } => {
-                self.style_stack
-                    .push(Style::fg(self.theme.link()).underline());
-                // Store URL to emit after text if desired; for now just style the text
-                let _ = dest_url;
-            }
-            // Table event handlers
-            Tag::Table(alignments) => {
-                self.finish_current_line();
-                self.table_state = Some(TableState::new(&alignments));
-            }
-            Tag::TableRow => {
-                // Start a new row
-                if let Some(ref mut table) = self.table_state {
-                    table.start_row();
-                }
-            }
-            Tag::TableCell => {
-                self.active_cell = Some(CellBuilder::default());
-            }
+            Tag::Paragraph => {}
             _ => {}
         }
     }
 
-    fn handle_end(&mut self, tag_end: TagEnd) {
+    fn handle_block_end(&mut self, tag_end: TagEnd) {
         match tag_end {
             TagEnd::Paragraph => {
                 self.flush_line();
@@ -408,9 +188,6 @@ impl<'a> MarkdownRenderer<'a> {
                 self.flush_line();
                 self.lines.push(Line::default());
             }
-            TagEnd::Strong | TagEnd::Emphasis | TagEnd::Strikethrough | TagEnd::Link => {
-                self.style_stack.pop();
-            }
             TagEnd::BlockQuote(_) => {
                 self.style_stack.pop();
                 self.blockquote_depth -= 1;
@@ -418,17 +195,6 @@ impl<'a> MarkdownRenderer<'a> {
                 if self.blockquote_depth == 0 {
                     self.lines.push(Line::default());
                 }
-            }
-            TagEnd::CodeBlock => {
-                self.in_code_block = false;
-                let code = std::mem::take(&mut self.code_buffer);
-                let lang = std::mem::take(&mut self.code_lang);
-                let code_lines = self
-                    .context
-                    .highlighter()
-                    .highlight(&code, &lang, self.theme);
-                self.lines.extend(code_lines);
-                self.lines.push(Line::default());
             }
             TagEnd::List(_) => {
                 self.list_stack.pop();
@@ -440,7 +206,81 @@ impl<'a> MarkdownRenderer<'a> {
             TagEnd::Item => {
                 self.flush_line();
             }
-            // Table end event handlers
+            _ => {}
+        }
+    }
+
+    fn handle_inline_start(&mut self, tag: Tag<'_>) {
+        match tag {
+            Tag::Strong => {
+                self.style_stack.push(Style::default().bold());
+            }
+            Tag::Emphasis => {
+                self.style_stack.push(Style::default().italic());
+            }
+            Tag::Strikethrough => {
+                self.style_stack.push(Style::default().strikethrough());
+            }
+            Tag::Link { dest_url, .. } => {
+                self.style_stack
+                    .push(Style::fg(self.theme.link()).underline());
+                // Store URL to emit after text if desired; for now just style the text
+                let _ = dest_url;
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_inline_end(&mut self, _tag_end: TagEnd) {
+        self.style_stack.pop();
+    }
+
+    fn handle_code_block_start(&mut self, tag: Tag<'_>) {
+        if let Tag::CodeBlock(kind) = tag {
+            self.finish_current_line();
+            self.in_code_block = true;
+            self.code_buffer.clear();
+            self.code_lang = match kind {
+                CodeBlockKind::Fenced(lang) => {
+                    lang.split(',').next().unwrap_or("").trim().to_string()
+                }
+                CodeBlockKind::Indented => String::new(),
+            };
+        }
+    }
+
+    fn handle_code_block_end(&mut self) {
+        self.in_code_block = false;
+        let code = std::mem::take(&mut self.code_buffer);
+        let lang = std::mem::take(&mut self.code_lang);
+        let code_lines = self
+            .context
+            .highlighter()
+            .highlight(&code, &lang, self.theme);
+        self.lines.extend(code_lines);
+        self.lines.push(Line::default());
+    }
+
+    fn handle_table_start(&mut self, tag: Tag<'_>) {
+        match tag {
+            Tag::Table(alignments) => {
+                self.finish_current_line();
+                self.table_state = Some(TableState::new(&alignments));
+            }
+            Tag::TableRow => {
+                if let Some(ref mut table) = self.table_state {
+                    table.start_row();
+                }
+            }
+            Tag::TableCell => {
+                self.active_cell = Some(CellBuilder::default());
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_table_end(&mut self, tag_end: TagEnd) {
+        match tag_end {
             TagEnd::Table => {
                 if let Some(table) = self.table_state.take() {
                     let rendered = table.render(self.theme);

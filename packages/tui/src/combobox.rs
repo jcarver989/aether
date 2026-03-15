@@ -1,15 +1,11 @@
 use crate::components::ViewContext;
+use crate::components::component::PickerMessage;
+use crate::fuzzy_matcher::FuzzyMatcher;
 use crate::line::Line;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use nucleo::pattern::{CaseMatching, Normalization};
-use nucleo::{Config, Nucleo};
 use std::cmp::Ordering;
-use std::sync::Arc;
 
 const DEFAULT_MAX_VISIBLE: usize = 10;
-const MAX_MATCHES: u32 = 200;
-const MATCH_TIMEOUT_MS: u64 = 10;
-const MAX_TICKS_PER_QUERY: usize = 4;
 
 pub enum PickerKey {
     Escape,
@@ -30,59 +26,37 @@ pub trait Searchable: Clone {
 }
 
 pub struct Combobox<T: Searchable + Send + Sync + 'static> {
-    query: String,
-    matches: Vec<T>,
+    fuzzy: FuzzyMatcher<T>,
     selected_index: usize,
     scroll_offset: usize,
     max_visible: usize,
-    matcher: Nucleo<T>,
-    match_sort: Option<fn(&T, &T) -> Ordering>,
 }
 
 impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
     pub fn new(items: Vec<T>) -> Self {
-        let mut matcher = Nucleo::new(Config::DEFAULT, Arc::new(|| {}), Some(1), 1);
-        let injector = matcher.injector();
-        for item in items {
-            injector.push(item, |item, columns| {
-                let text = item.search_text();
-                columns[0] = text.as_str().into();
-            });
-        }
-        let _ = matcher.tick(0);
-
-        let mut combobox = Self {
-            query: String::new(),
-            matches: Vec::new(),
+        Self {
+            fuzzy: FuzzyMatcher::new(items),
             selected_index: 0,
             scroll_offset: 0,
             max_visible: DEFAULT_MAX_VISIBLE,
-            matcher,
-            match_sort: None,
-        };
-        combobox.matches = combobox.search(false);
-        combobox
+        }
     }
 
     pub fn from_matches(matches: Vec<T>) -> Self {
-        let nucleo = Nucleo::new(Config::DEFAULT, Arc::new(|| {}), Some(1), 1);
         Self {
-            query: String::new(),
-            matches,
+            fuzzy: FuzzyMatcher::from_matches(matches),
             selected_index: 0,
             scroll_offset: 0,
             max_visible: DEFAULT_MAX_VISIBLE,
-            matcher: nucleo,
-            match_sort: None,
         }
     }
 
     pub fn query(&self) -> &str {
-        &self.query
+        self.fuzzy.query()
     }
 
     pub fn matches(&self) -> &[T] {
-        &self.matches
+        self.fuzzy.matches()
     }
 
     pub fn selected_index(&self) -> usize {
@@ -95,37 +69,35 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
     }
 
     pub fn set_match_sort(&mut self, sort: fn(&T, &T) -> Ordering) {
-        self.match_sort = Some(sort);
-        self.matches = self.search(false);
+        self.fuzzy.set_match_sort(sort);
         self.scroll_offset = 0;
-        if self.selected_index >= self.matches.len() {
+        if self.selected_index >= self.fuzzy.matches().len() {
             self.selected_index = 0;
         }
         self.ensure_visible();
     }
 
     pub fn is_empty(&self) -> bool {
-        self.matches.is_empty()
+        self.fuzzy.is_empty()
     }
 
     pub fn selected(&self) -> Option<&T> {
-        self.matches.get(self.selected_index)
+        self.fuzzy.matches().get(self.selected_index)
     }
 
     pub fn push_query_char(&mut self, c: char) {
-        self.query.push(c);
-        self.refresh_matches(true);
+        self.fuzzy.push_query_char(c);
+        self.reset_viewport();
     }
 
     pub fn pop_query_char(&mut self) {
-        if self.query.pop().is_none() {
-            return;
+        if self.fuzzy.pop_query_char() {
+            self.reset_viewport();
         }
-        self.refresh_matches(false);
     }
 
     pub fn set_selected_index(&mut self, index: usize) {
-        let len = self.matches.len();
+        let len = self.fuzzy.matches().len();
         if len == 0 {
             return;
         }
@@ -142,14 +114,15 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
     }
 
     pub fn move_up_where(&mut self, predicate: impl Fn(&T) -> bool) {
-        let len = self.matches.len();
+        let len = self.fuzzy.matches().len();
         if len == 0 {
             return;
         }
+        let matches = self.fuzzy.matches();
         let mut idx = self.selected_index;
         for _ in 0..len {
             idx = if idx == 0 { len - 1 } else { idx - 1 };
-            if predicate(&self.matches[idx]) {
+            if predicate(&matches[idx]) {
                 self.selected_index = idx;
                 self.ensure_visible();
                 return;
@@ -158,14 +131,15 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
     }
 
     pub fn move_down_where(&mut self, predicate: impl Fn(&T) -> bool) {
-        let len = self.matches.len();
+        let len = self.fuzzy.matches().len();
         if len == 0 {
             return;
         }
+        let matches = self.fuzzy.matches();
         let mut idx = self.selected_index;
         for _ in 0..len {
             idx = (idx + 1) % len;
-            if predicate(&self.matches[idx]) {
+            if predicate(&matches[idx]) {
                 self.selected_index = idx;
                 self.ensure_visible();
                 return;
@@ -174,7 +148,7 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
     }
 
     pub fn select_first_where(&mut self, predicate: impl Fn(&T) -> bool) {
-        if let Some(idx) = self.matches.iter().position(&predicate) {
+        if let Some(idx) = self.fuzzy.matches().iter().position(&predicate) {
             self.selected_index = idx;
             self.ensure_visible();
         }
@@ -200,9 +174,57 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
             .collect()
     }
 
+    /// Standard event dispatch for picker-style components.
+    ///
+    /// Handles Escape, Up/Down, Enter (confirm), Char (query + whitespace-close),
+    /// Backspace, and `BackspaceOnEmpty`. Returns `PickerMessage<T>` for each action.
+    pub fn handle_picker_event(
+        &mut self,
+        event: &crate::components::Event,
+    ) -> Option<Vec<PickerMessage<T>>> {
+        let crate::components::Event::Key(key_event) = event else {
+            return None;
+        };
+        match classify_key(*key_event, self.fuzzy.query().is_empty()) {
+            PickerKey::Escape => Some(vec![PickerMessage::Close]),
+            PickerKey::BackspaceOnEmpty => Some(vec![PickerMessage::CloseAndPopChar]),
+            PickerKey::MoveUp => {
+                self.move_up();
+                Some(vec![])
+            }
+            PickerKey::MoveDown => {
+                self.move_down();
+                Some(vec![])
+            }
+            PickerKey::Confirm => {
+                if let Some(item) = self.selected().cloned() {
+                    Some(vec![PickerMessage::Confirm(item)])
+                } else {
+                    Some(vec![PickerMessage::Close])
+                }
+            }
+            PickerKey::Char(c) => {
+                if c.is_whitespace() {
+                    return Some(vec![PickerMessage::CloseWithChar(c)]);
+                }
+                self.push_query_char(c);
+                Some(vec![PickerMessage::CharTyped(c)])
+            }
+            PickerKey::Backspace => {
+                self.pop_query_char();
+                Some(vec![PickerMessage::PopChar])
+            }
+            PickerKey::MoveLeft
+            | PickerKey::MoveRight
+            | PickerKey::ControlChar
+            | PickerKey::Other => Some(vec![]),
+        }
+    }
+
     fn visible_matches(&self) -> &[T] {
-        let end = (self.scroll_offset + self.max_visible).min(self.matches.len());
-        &self.matches[self.scroll_offset..end]
+        let matches = self.fuzzy.matches();
+        let end = (self.scroll_offset + self.max_visible).min(matches.len());
+        &matches[self.scroll_offset..end]
     }
 
     fn visible_selected_index(&self) -> Option<usize> {
@@ -210,7 +232,7 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
     }
 
     fn ensure_visible(&mut self) {
-        if self.matches.is_empty() {
+        if self.fuzzy.matches().is_empty() {
             self.scroll_offset = 0;
             return;
         }
@@ -221,39 +243,11 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
         }
     }
 
-    fn refresh_matches(&mut self, append: bool) {
-        self.matches = self.search(append);
+    fn reset_viewport(&mut self) {
         self.scroll_offset = 0;
-        if self.selected_index >= self.matches.len() {
+        if self.selected_index >= self.fuzzy.matches().len() {
             self.selected_index = 0;
         }
-    }
-
-    fn search(&mut self, append: bool) -> Vec<T> {
-        self.matcher.pattern.reparse(
-            0,
-            &self.query,
-            CaseMatching::Smart,
-            Normalization::Smart,
-            append,
-        );
-        let mut status = self.matcher.tick(MATCH_TIMEOUT_MS);
-        let mut ticks = 0;
-        while status.running && ticks < MAX_TICKS_PER_QUERY {
-            status = self.matcher.tick(MATCH_TIMEOUT_MS);
-            ticks += 1;
-        }
-
-        let snapshot = self.matcher.snapshot();
-        let limit = snapshot.matched_item_count().min(MAX_MATCHES);
-        let mut matches: Vec<T> = snapshot
-            .matched_items(0..limit)
-            .map(|item| item.data.clone())
-            .collect();
-        if let Some(sort) = self.match_sort {
-            matches.sort_by(sort);
-        }
-        matches
     }
 }
 
@@ -315,8 +309,8 @@ mod tests {
             FakeItem::new("gamma"),
         ];
         let combobox = Combobox::new(items);
-        assert_eq!(combobox.matches.len(), 3);
-        assert_eq!(combobox.query, "");
+        assert_eq!(combobox.matches().len(), 3);
+        assert_eq!(combobox.query(), "");
         assert_eq!(combobox.selected_index, 0);
     }
 
@@ -331,8 +325,8 @@ mod tests {
         for c in "ban".chars() {
             combobox.push_query_char(c);
         }
-        assert_eq!(combobox.matches.len(), 1);
-        assert_eq!(combobox.matches[0].text, "banana");
+        assert_eq!(combobox.matches().len(), 1);
+        assert_eq!(combobox.matches()[0].text, "banana");
     }
 
     #[test]
@@ -353,18 +347,18 @@ mod tests {
         ];
         let mut combobox = Combobox::new(items);
         combobox.push_query_char('c');
-        assert_eq!(combobox.query, "c");
+        assert_eq!(combobox.query(), "c");
         combobox.push_query_char('a');
-        assert_eq!(combobox.query, "ca");
+        assert_eq!(combobox.query(), "ca");
 
         combobox.pop_query_char();
-        assert_eq!(combobox.query, "c");
+        assert_eq!(combobox.query(), "c");
         combobox.pop_query_char();
-        assert_eq!(combobox.query, "");
+        assert_eq!(combobox.query(), "");
 
         // pop on empty is no-op
         combobox.pop_query_char();
-        assert_eq!(combobox.query, "");
+        assert_eq!(combobox.query(), "");
     }
 
     #[test]
@@ -393,7 +387,7 @@ mod tests {
     fn from_matches_populates_directly() {
         let matches = vec![FakeItem::new("pre-populated")];
         let combobox = Combobox::from_matches(matches);
-        assert_eq!(combobox.matches.len(), 1);
+        assert_eq!(combobox.matches().len(), 1);
         assert_eq!(combobox.selected_index, 0);
     }
 
@@ -414,7 +408,7 @@ mod tests {
     #[test]
     fn from_matches_stores_more_than_viewport() {
         let combobox = Combobox::from_matches(many_items(25));
-        assert_eq!(combobox.matches.len(), 25);
+        assert_eq!(combobox.matches().len(), 25);
     }
 
     #[test]
@@ -486,12 +480,11 @@ mod tests {
 
     #[test]
     fn refresh_matches_resets_scroll_offset() {
-        let items = many_items(25);
-        let mut combobox = Combobox::from_matches(items);
+        let mut combobox = Combobox::from_matches(many_items(25));
         combobox.scroll_offset = 10;
         combobox.selected_index = 15;
         // Simulating what refresh_matches does via update_query
-        combobox.matches = many_items(5);
+        combobox.fuzzy = FuzzyMatcher::from_matches(many_items(5));
         combobox.scroll_offset = 0;
         combobox.selected_index = 0;
         assert_eq!(combobox.scroll_offset, 0);

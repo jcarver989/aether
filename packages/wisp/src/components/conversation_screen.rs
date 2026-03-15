@@ -30,6 +30,11 @@ pub enum ConversationScreenMessage {
     },
 }
 
+pub(crate) enum Modal {
+    Elicitation(ElicitationForm),
+    SessionPicker(SessionPicker),
+}
+
 pub struct ConversationScreen {
     pub(crate) conversation: ConversationBuffer,
     pub tool_call_statuses: ToolCallStatuses,
@@ -38,8 +43,7 @@ pub struct ConversationScreen {
     pub(crate) progress_indicator: ProgressIndicator,
     pub(crate) grid_loader: Spinner,
     pub(crate) waiting_for_response: bool,
-    pub(crate) elicitation_form: Option<ElicitationForm>,
-    pub(crate) session_picker: Option<SessionPicker>,
+    pub(crate) active_modal: Option<Modal>,
 }
 
 impl ConversationScreen {
@@ -52,13 +56,12 @@ impl ConversationScreen {
             progress_indicator: ProgressIndicator::default(),
             grid_loader: Spinner::default(),
             waiting_for_response: false,
-            elicitation_form: None,
-            session_picker: None,
+            active_modal: None,
         }
     }
 
     pub fn has_modal(&self) -> bool {
-        self.elicitation_form.is_some() || self.session_picker.is_some()
+        self.active_modal.is_some()
     }
 
     pub fn is_waiting(&self) -> bool {
@@ -106,7 +109,7 @@ impl ConversationScreen {
 
     pub fn open_session_picker(&mut self, sessions: Vec<acp::SessionInfo>) {
         let entries = sessions.into_iter().map(SessionEntry).collect();
-        self.session_picker = Some(SessionPicker::new(entries));
+        self.active_modal = Some(Modal::SessionPicker(SessionPicker::new(entries)));
     }
 
     pub fn on_session_update(&mut self, update: &acp::SessionUpdate) {
@@ -195,7 +198,10 @@ impl ConversationScreen {
         params: acp_utils::notifications::ElicitationParams,
         response_tx: tokio::sync::oneshot::Sender<acp_utils::notifications::ElicitationResponse>,
     ) {
-        self.elicitation_form = Some(ElicitationForm::from_params(params, response_tx));
+        self.active_modal = Some(Modal::Elicitation(ElicitationForm::from_params(
+            params,
+            response_tx,
+        )));
     }
 
     pub fn on_sub_agent_progress(
@@ -209,40 +215,42 @@ impl ConversationScreen {
         self.plan_tracker.has_completed_in_grace_period()
     }
 
-    fn handle_elicitation_key(&mut self, event: &Event) -> Option<Vec<ConversationScreenMessage>> {
-        let form = self.elicitation_form.as_mut()?;
-        let outcome = form.on_event(event);
-        for msg in outcome.unwrap_or_default() {
-            match msg {
-                ElicitationMessage::Responded => {
-                    self.elicitation_form = None;
+    fn handle_modal_key(&mut self, event: &Event) -> Option<Vec<ConversationScreenMessage>> {
+        let modal = self.active_modal.as_mut()?;
+        match modal {
+            Modal::Elicitation(form) => {
+                let outcome = form.on_event(event);
+                for msg in outcome.unwrap_or_default() {
+                    match msg {
+                        ElicitationMessage::Responded => {
+                            self.active_modal = None;
+                        }
+                    }
                 }
+                Some(vec![])
+            }
+            Modal::SessionPicker(picker) => {
+                let msgs = picker.on_event(event).unwrap_or_default();
+                let mut out = Vec::new();
+                for msg in msgs {
+                    match msg {
+                        SessionPickerMessage::Close => {
+                            self.active_modal = None;
+                        }
+                        SessionPickerMessage::LoadSession { session_id, cwd } => {
+                            self.active_modal = None;
+                            self.reset_after_context_cleared();
+                            out.push(ConversationScreenMessage::ClearScreen);
+                            out.push(ConversationScreenMessage::LoadSession {
+                                session_id,
+                                cwd,
+                            });
+                        }
+                    }
+                }
+                Some(out)
             }
         }
-        Some(vec![])
-    }
-
-    fn handle_session_picker_key(
-        &mut self,
-        event: &Event,
-    ) -> Option<Vec<ConversationScreenMessage>> {
-        let picker = self.session_picker.as_mut()?;
-        let msgs = picker.on_event(event).unwrap_or_default();
-        let mut out = Vec::new();
-        for msg in msgs {
-            match msg {
-                SessionPickerMessage::Close => {
-                    self.session_picker = None;
-                }
-                SessionPickerMessage::LoadSession { session_id, cwd } => {
-                    self.session_picker = None;
-                    self.reset_after_context_cleared();
-                    out.push(ConversationScreenMessage::ClearScreen);
-                    out.push(ConversationScreenMessage::LoadSession { session_id, cwd });
-                }
-            }
-        }
-        Some(out)
     }
 
     fn handle_prompt_composer_messages(
@@ -284,12 +292,8 @@ impl Component for ConversationScreen {
     type Message = ConversationScreenMessage;
 
     fn on_event(&mut self, event: &Event) -> Option<Vec<ConversationScreenMessage>> {
-        if self.elicitation_form.is_some() {
-            return self.handle_elicitation_key(event);
-        }
-
-        if self.session_picker.is_some() {
-            return self.handle_session_picker_key(event);
+        if self.active_modal.is_some() {
+            return self.handle_modal_key(event);
         }
 
         let composer_outcome = self.prompt_composer.on_event(event);
@@ -316,11 +320,14 @@ impl Component for ConversationScreen {
         layout.section(self.progress_indicator.render(ctx));
         let prompt_frame = self.prompt_composer.render(ctx);
         layout.section_with_cursor(prompt_frame.lines().to_vec(), prompt_frame.cursor());
-        if let Some(ref session_picker) = self.session_picker {
-            layout.section(session_picker.render(ctx).into_lines());
-        }
-        if let Some(ref elicitation_form) = self.elicitation_form {
-            layout.section(elicitation_form.render(ctx).into_lines());
+        match &self.active_modal {
+            Some(Modal::SessionPicker(picker)) => {
+                layout.section(picker.render(ctx).into_lines());
+            }
+            Some(Modal::Elicitation(form)) => {
+                layout.section(form.render(ctx).into_lines());
+            }
+            None => {}
         }
         layout.into_frame()
     }

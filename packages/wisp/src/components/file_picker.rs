@@ -1,6 +1,5 @@
 use crate::tui::{
-    Combobox, Component, Event, Frame, Line, PickerKey, PickerMessage, Searchable, ViewContext,
-    classify_key,
+    Combobox, Component, Event, Frame, Line, PickerMessage, Searchable, ViewContext,
 };
 use ignore::WalkBuilder;
 use std::env::current_dir;
@@ -93,43 +92,7 @@ impl Component for FilePicker {
     type Message = FilePickerMessage;
 
     fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
-        let Event::Key(key_event) = event else {
-            return None;
-        };
-        match classify_key(*key_event, self.combobox.query().is_empty()) {
-            PickerKey::Escape => Some(vec![PickerMessage::Close]),
-            PickerKey::MoveUp => {
-                self.combobox.move_up();
-                Some(vec![])
-            }
-            PickerKey::MoveDown => {
-                self.combobox.move_down();
-                Some(vec![])
-            }
-            PickerKey::Confirm => {
-                if let Some(selected) = self.combobox.selected().cloned() {
-                    Some(vec![PickerMessage::Confirm(selected)])
-                } else {
-                    Some(vec![PickerMessage::Close])
-                }
-            }
-            PickerKey::Char(c) => {
-                if c.is_whitespace() {
-                    return Some(vec![PickerMessage::CloseWithChar(c)]);
-                }
-                self.combobox.push_query_char(c);
-                Some(vec![PickerMessage::CharTyped(c)])
-            }
-            PickerKey::Backspace => {
-                self.combobox.pop_query_char();
-                Some(vec![PickerMessage::PopChar])
-            }
-            PickerKey::BackspaceOnEmpty => Some(vec![PickerMessage::CloseAndPopChar]),
-            PickerKey::MoveLeft
-            | PickerKey::MoveRight
-            | PickerKey::ControlChar
-            | PickerKey::Other => None,
-        }
+        self.combobox.handle_picker_event(event)
     }
 
     fn render(&self, context: &ViewContext) -> Frame {

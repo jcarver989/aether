@@ -41,6 +41,19 @@ pub enum AppMessage {
     RefreshGitDiff,
 }
 
+impl From<ScreenRouterMessage> for AppMessage {
+    fn from(msg: ScreenRouterMessage) -> Self {
+        match msg {
+            ScreenRouterMessage::LoadGitDiff => AppMessage::LoadGitDiff,
+            ScreenRouterMessage::RefreshGitDiff => AppMessage::RefreshGitDiff,
+            ScreenRouterMessage::SendPrompt { user_input } => AppMessage::SendPrompt {
+                user_input,
+                attachments: vec![],
+            },
+        }
+    }
+}
+
 pub struct App {
     pub(crate) agent_name: String,
     pub(crate) context_usage_pct: Option<u8>,
@@ -291,16 +304,7 @@ impl App {
         messages: &mut Vec<AppMessage>,
         msg: ScreenRouterMessage,
     ) {
-        match msg {
-            ScreenRouterMessage::LoadGitDiff => messages.push(AppMessage::LoadGitDiff),
-            ScreenRouterMessage::RefreshGitDiff => messages.push(AppMessage::RefreshGitDiff),
-            ScreenRouterMessage::SendPrompt { user_input } => {
-                messages.push(AppMessage::SendPrompt {
-                    user_input,
-                    attachments: vec![],
-                });
-            }
-        }
+        messages.push(msg.into());
     }
 
     fn on_session_update(&mut self, update: acp::SessionUpdate) {
@@ -696,11 +700,10 @@ mod tests {
 
         app.on_acp_event(AcpEvent::SessionsListed { sessions });
 
-        let picker = app
-            .conversation_screen
-            .session_picker
-            .as_ref()
-            .unwrap();
+        let picker = match &app.conversation_screen.active_modal {
+            Some(crate::components::conversation_screen::Modal::SessionPicker(p)) => p,
+            _ => panic!("expected session picker modal"),
+        };
         let term = render_component(|ctx| picker.render(ctx), 60, 10);
         let lines = term.get_lines();
 
@@ -775,13 +778,16 @@ mod tests {
         use crate::tui::{KeyCode, KeyModifiers};
 
         let mut app = make_app();
-        app.conversation_screen.elicitation_form = Some(ElicitationForm::from_params(
-            acp_utils::notifications::ElicitationParams {
-                message: "test".to_string(),
-                schema: acp_utils::ElicitationSchema::builder().build().unwrap(),
-            },
-            tokio::sync::oneshot::channel().0,
-        ));
+        app.conversation_screen.active_modal =
+            Some(crate::components::conversation_screen::Modal::Elicitation(
+                ElicitationForm::from_params(
+                    acp_utils::notifications::ElicitationParams {
+                        message: "test".to_string(),
+                        schema: acp_utils::ElicitationSchema::builder().build().unwrap(),
+                    },
+                    tokio::sync::oneshot::channel().0,
+                ),
+            ));
 
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
         app.on_event(&Event::Key(key));
