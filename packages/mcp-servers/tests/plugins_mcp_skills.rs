@@ -1,5 +1,5 @@
 use mcp_servers::skills::SkillsMcp;
-use mcp_utils::MarkdownFile;
+use utils::MarkdownFile;
 use mcp_utils::testing::connect;
 use rmcp::model::{CallToolRequestParams, ClientInfo, Implementation};
 use serde::{Deserialize, Serialize};

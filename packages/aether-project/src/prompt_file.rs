@@ -173,21 +173,13 @@ impl PromptFile {
 
     /// Parse YAML frontmatter and body from a SKILL.md content string (no I/O).
     fn parse_frontmatter(content: &str) -> Result<(PromptFrontmatter, String), PromptFileError> {
-        let rest = content
-            .strip_prefix("---")
+        let (yaml_str, body) = utils::markdown_file::split_frontmatter(content)
             .ok_or(PromptFileError::MissingFrontmatter)?;
 
-        let end_pos = rest
-            .find("\n---")
-            .ok_or(PromptFileError::MissingFrontmatter)?;
+        let frontmatter: PromptFrontmatter =
+            serde_yml::from_str(yaml_str).map_err(|e| PromptFileError::Yaml(e.to_string()))?;
 
-        let frontmatter_str = &rest[..end_pos];
-        let body = rest[end_pos + 4..].trim().to_string();
-
-        let frontmatter: PromptFrontmatter = serde_yml::from_str(frontmatter_str)
-            .map_err(|e| PromptFileError::Yaml(e.to_string()))?;
-
-        Ok((frontmatter, body))
+        Ok((frontmatter, body.to_string()))
     }
 }
 

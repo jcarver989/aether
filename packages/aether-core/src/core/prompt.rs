@@ -1,4 +1,5 @@
-use crate::core::{AgentError, Result, substitute_parameters};
+use crate::core::{AgentError, Result};
+use utils::substitution::substitute_parameters;
 use glob::glob;
 use mcp_utils::client::ServerInstructions;
 use std::collections::HashMap;

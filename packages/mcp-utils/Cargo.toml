@@ -7,7 +7,7 @@ edition = "2024"
 workspace = true
 
 [features]
-default = ["client", "server"]
+default = ["client"]
 client = [
     "dep:llm",
     "llm/oauth",
@@ -17,7 +17,6 @@ client = [
     "rmcp/transport-streamable-http-client-reqwest",
     "rmcp/transport-child-process",
 ]
-server = []
 
 [dependencies]
 futures = { workspace = true }
@@ -25,7 +24,6 @@ serde = { workspace = true }
 tokio = { workspace = true }
 rmcp = { workspace = true }
 tracing = { workspace = true }
-serde_yml = { workspace = true }
 utils = { path = "../utils" }
 
 # client-only deps
