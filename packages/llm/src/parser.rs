@@ -115,10 +115,14 @@ impl ModelProviderParser {
             }
         }
 
-        let identity = first_identity.expect("at least one provider parsed");
+        let identity = first_identity
+            .ok_or_else(|| LlmError::Other("No providers parsed".to_string()))?;
 
         let provider: Box<dyn StreamingModelProvider> = if providers.len() == 1 {
-            providers.into_iter().next().unwrap()
+            providers
+                .into_iter()
+                .next()
+                .ok_or_else(|| LlmError::Other("No providers available".to_string()))?
         } else {
             Box::new(AlloyedModelProvider::new(providers))
         };
