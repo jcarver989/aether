@@ -1,5 +1,4 @@
 use crate::core::{AgentError, Result};
-use utils::substitution::substitute_parameters;
 use glob::glob;
 use mcp_utils::client::ServerInstructions;
 use std::collections::HashMap;
@@ -8,6 +7,7 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::process::Command;
 use tracing::warn;
+use utils::substitution::substitute_parameters;
 
 #[derive(Debug, Clone)]
 pub enum Prompt {
@@ -162,21 +162,21 @@ impl Prompt {
                 }
             });
 
-        let is_git_repo = if fs::metadata(cwd.join(".git"))
+        let is_git_repo = fs::metadata(cwd.join(".git"))
             .await
             .map(|m| m.is_dir())
-            .unwrap_or(false)
-        {
-            "Yes"
+            .unwrap_or(false);
+
+        let working_dir = if is_git_repo {
+            format!("Working directory: {} (git repo)", cwd.display())
         } else {
-            "No"
+            format!("Working directory: {}", cwd.display())
         };
 
         let mut lines = vec![
-            format!("Working directory: {}", cwd.display()),
+            working_dir,
             format!("Platform: {}", env::consts::OS),
             format!("Today's date: {}", chrono::Local::now().format("%Y-%m-%d")),
-            format!("Is directory a git repo: {}", is_git_repo),
         ];
 
         if let Some(os) = os_version {
@@ -200,7 +200,7 @@ fn format_mcp_instructions(instructions: &[ServerInstructions]) -> String {
 
     for instr in instructions {
         parts.push(format!(
-            "<mcp-server-instructions name=\"{}\">\n{}\n</mcp-server-instructions>",
+            "<mcp-server-instructions name=\"{}\">\n{}\n</mcp-server-instructions>\n",
             instr.server_name, instr.instructions
         ));
     }
@@ -234,7 +234,6 @@ mod tests {
         assert!(result.contains("Working directory:"));
         assert!(result.contains("Platform:"));
         assert!(result.contains("Today's date:"));
-        assert!(result.contains("Is directory a git repo:"));
     }
 
     #[tokio::test]
