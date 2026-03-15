@@ -14,8 +14,3 @@ Tasks are organized into trees: root tasks can have subtasks, and subtasks can h
 - `description` — detailed description (markdown)
 - `assignee` — agent/worker to assign
 - `deps` — task IDs that must complete before this can start
-
-## Task IDs
-
-- Root: `at-{hash}` (e.g., `at-a1b2c3d4`)
-- Subtask: `at-{hash}.{n}` (e.g., `at-a1b2c3d4.1`)

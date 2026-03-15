@@ -1,7 +1,5 @@
 Finds files by name pattern.
 
-**For code symbols, use `lsp_symbol` instead.** This tool is for locating files by filename.
-
 ## Usage
 
 ```json

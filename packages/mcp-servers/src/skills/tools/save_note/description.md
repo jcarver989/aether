@@ -9,9 +9,3 @@ Persist what you've learned to a topical notes file. Use this to keep track of p
 - `topic` — **required**, topic name (normalized to kebab-case for filename)
 - `content` — **required**, the learning to record
 - `tags` — optional array of tags for search
-
-## Behavior
-
-- If a note for this topic exists: merges tags, appends content, updates timestamp
-- If not: creates a new note file
-- Returns the full note content after the operation so you can see what's accumulated
