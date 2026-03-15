@@ -118,72 +118,61 @@ impl<W: Write> Renderer<W> {
             VisualFrame::from_frame(frame, self.size, flushed)
         };
 
-        let previous_visible_rows = if self.resized {
-            0
+        // When resized, the previous frame layout is invalid — start fresh.
+        let (mut commands, mut prev_frame) = if self.resized {
+            (vec![TerminalCommand::ClearViewport], None)
         } else {
-            self.prev_frame
-                .as_ref()
-                .map_or(0, |f| f.visible_lines().len())
+            (
+                vec![TerminalCommand::RestoreCursorPosition],
+                self.prev_frame.as_ref(),
+            )
         };
 
-        let mut commands = vec![if self.resized {
-            TerminalCommand::ClearViewport
-        } else {
-            TerminalCommand::RestoreCursorPosition
-        }];
-
-        let scrollback_pushed = !next_frame.scrollback_lines().is_empty();
-        if scrollback_pushed {
+        if !next_frame.scrollback_lines().is_empty() {
             commands.push(TerminalCommand::PushScrollbackLines {
-                previous_visible_rows,
+                previous_visible_rows: prev_frame.map_or(0, |f| f.visible_lines().len()),
                 lines: next_frame.scrollback_lines(),
             });
+            prev_frame = None;
         }
 
         let empty = VisualFrame::empty();
-        let diff_prev = if scrollback_pushed || self.resized {
-            &VisualFrame::empty()
-        } else {
-            self.prev_frame.as_ref().unwrap_or(&empty)
-        };
-
-        if let Some(diff) = diff_prev.diff(&next_frame) {
-            let append_after_existing =
-                diff.rewrite_from >= diff.previous_row_count && diff.previous_row_count > 0;
-            let rows_up = if diff.rewrite_from < diff.previous_row_count {
-                u16::try_from(diff.previous_row_count - 1 - diff.rewrite_from).unwrap_or(u16::MAX)
-            } else {
-                0
-            };
-            commands.push(TerminalCommand::RewriteVisibleLines {
-                rows_up,
-                append_after_existing,
-                lines: diff.lines,
-            });
+        if let Some(diff) = prev_frame.unwrap_or(&empty).diff(&next_frame) {
+            commands.push(Self::rewrite_command(&diff));
         }
 
-        let rows_up = u16::try_from(
-            next_frame
-                .visible_lines()
-                .len()
-                .saturating_sub(1)
-                .saturating_sub(next_frame.cursor().row),
-        )
-        .unwrap_or(u16::MAX);
-
-        commands.push(TerminalCommand::SetCursorVisible(
-            next_frame.cursor().is_visible,
-        ));
-        commands.push(TerminalCommand::PlaceCursor {
-            rows_up,
-            col: u16::try_from(next_frame.cursor().col).unwrap_or(u16::MAX),
-        });
-
+        commands.extend(Self::cursor_commands(&next_frame));
         self.terminal.execute(&commands)?;
         self.prev_frame = Some(next_frame);
         self.resized = false;
-
         Ok(())
+    }
+
+    fn rewrite_command<'a>(diff: &super::visual_frame::LineDiff<'a>) -> TerminalCommand<'a> {
+        TerminalCommand::RewriteVisibleLines {
+            rows_up: diff_rows_up(diff),
+            append_after_existing: diff_should_append(diff),
+            lines: diff.lines,
+        }
+    }
+
+    fn cursor_commands(frame: &VisualFrame) -> [TerminalCommand<'_>; 2] {
+        let cursor = frame.cursor();
+        let rows_up = to_u16(
+            frame
+                .visible_lines()
+                .len()
+                .saturating_sub(1)
+                .saturating_sub(cursor.row),
+        );
+
+        [
+            TerminalCommand::SetCursorVisible(cursor.is_visible),
+            TerminalCommand::PlaceCursor {
+                rows_up,
+                col: to_u16(cursor.col),
+            },
+        ]
     }
 
     fn push_lines_to_scrollback(&mut self, lines: &[Line], width: u16) -> io::Result<()> {
@@ -219,6 +208,22 @@ impl<W: Write> Renderer<W> {
         self.prev_frame = None;
         Ok(())
     }
+}
+
+fn diff_rows_up(diff: &super::visual_frame::LineDiff<'_>) -> u16 {
+    if diff.rewrite_from < diff.previous_row_count {
+        to_u16(diff.previous_row_count - 1 - diff.rewrite_from)
+    } else {
+        0
+    }
+}
+
+fn diff_should_append(diff: &super::visual_frame::LineDiff<'_>) -> bool {
+    diff.rewrite_from >= diff.previous_row_count && diff.previous_row_count > 0
+}
+
+fn to_u16(n: usize) -> u16 {
+    u16::try_from(n).unwrap_or(u16::MAX)
 }
 
 #[cfg(test)]
@@ -259,9 +264,7 @@ mod tests {
         let mut renderer = Renderer::new(Vec::new(), Theme::default(), (80, 24));
         let new_theme = Theme::default();
         let expected = new_theme.text_primary();
-
         renderer.set_theme(new_theme);
-
         assert_eq!(renderer.context().theme.text_primary(), expected);
     }
 
@@ -269,7 +272,6 @@ mod tests {
     #[test]
     fn set_theme_replaces_render_context_theme_from_file() {
         let mut renderer = Renderer::new(Vec::new(), Theme::default(), (80, 24));
-
         let custom_tmtheme = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
