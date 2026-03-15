@@ -124,7 +124,7 @@ impl App {
     pub fn on_acp_event(&mut self, event: AcpEvent) -> Vec<AppMessage> {
         let mut messages = Vec::new();
         match event {
-            AcpEvent::SessionUpdate(update) => self.on_session_update(*update),
+            AcpEvent::SessionUpdate(update) => self.on_session_update(&update),
             AcpEvent::ExtNotification(notification) => {
                 self.on_ext_notification(&notification);
             }
@@ -174,7 +174,7 @@ impl App {
             && !self.conversation_screen.has_modal()
         {
             if let Some(msg) = self.screen_router.toggle_git_diff() {
-                self.handle_screen_router_message(messages, msg);
+                Self::handle_screen_router_message(messages, msg);
             }
             return;
         }
@@ -183,7 +183,7 @@ impl App {
 
         if self.screen_router.is_git_diff() {
             for msg in self.screen_router.on_event(&event).unwrap_or_default() {
-                self.handle_screen_router_message(messages, msg);
+                Self::handle_screen_router_message(messages, msg);
             }
         } else if self.config_manager.is_overlay_open() {
             let outcome = self.config_manager.on_overlay_event(&event);
@@ -263,11 +263,9 @@ impl App {
 
         if self.keybindings.cancel.matches(key_event)
             && self.conversation_screen.is_waiting()
-        {
-            if let Err(e) = self.prompt_handle.cancel(&self.session_id) {
+            && let Err(e) = self.prompt_handle.cancel(&self.session_id) {
                 tracing::warn!("Failed to send cancel: {e}");
             }
-        }
     }
 
     fn handle_config_manager_messages(
@@ -300,17 +298,16 @@ impl App {
     }
 
     fn handle_screen_router_message(
-        &mut self,
         messages: &mut Vec<AppMessage>,
         msg: ScreenRouterMessage,
     ) {
         messages.push(msg.into());
     }
 
-    fn on_session_update(&mut self, update: acp::SessionUpdate) {
-        self.conversation_screen.on_session_update(&update);
+    fn on_session_update(&mut self, update: &acp::SessionUpdate) {
+        self.conversation_screen.on_session_update(update);
 
-        if let acp::SessionUpdate::ConfigOptionUpdate(ref config_update) = update {
+        if let acp::SessionUpdate::ConfigOptionUpdate(config_update) = update {
             self.config_manager
                 .update_config_options(&config_update.config_options);
         }
