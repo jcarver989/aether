@@ -1,83 +1,27 @@
-use aether_core::core::{AgentBuilder, Prompt};
+use aether_core::core::Prompt;
 use aether_core::events::{AgentMessage, UserMessage};
-use aether_core::mcp::McpSpawnResult;
-use aether_core::mcp::mcp;
-use aether_project::load_agent_catalog;
-use mcp_servers::McpBuilderExt;
 use std::io;
 use std::process::ExitCode;
-use tracing::debug;
 
 use super::error::CliError;
 use super::{OutputFormat, RunConfig};
+use crate::runtime::RuntimeBuilder;
 
 pub async fn run(config: RunConfig) -> Result<ExitCode, CliError> {
     setup_tracing(config.verbose, &config.output);
 
-    let cwd = config.cwd.canonicalize().map_err(CliError::IoError)?;
-    debug!("Working directory: {}", cwd.display());
+    let agent = RuntimeBuilder::new(&config.cwd, &config.model)?
+        .mcp_config_opt(config.mcp_config)
+        .build(config.system_prompt.as_deref().map(Prompt::text), None)
+        .await?;
 
-    let catalog = load_agent_catalog(&cwd).map_err(|e| CliError::AgentError(e.to_string()))?;
-
-    let parsed_model = config
-        .model
-        .parse()
-        .map_err(|e: String| CliError::ModelError(e))?;
-    let runtime = catalog.runtime_inputs_for_default(&parsed_model, None, &cwd);
-
-    let mut builder = mcp().with_builtin_servers(cwd.clone(), &cwd);
-    let mcp_config_path = config
-        .mcp_config
-        .or(runtime.effective_mcp_config_path.clone());
-
-    if let Some(ref config_path) = mcp_config_path {
-        debug!("Loading MCP config from: {}", config_path.display());
-        let config_str = config_path
-            .to_str()
-            .ok_or_else(|| CliError::McpError("Invalid MCP config path".to_string()))?;
-
-        builder = builder
-            .from_json_file(config_str)
-            .await
-            .map_err(|e| CliError::McpError(e.to_string()))?;
-    }
-
-    let McpSpawnResult {
-        tool_definitions,
-        instructions,
-        server_statuses: _,
-        command_tx: mcp_tx,
-        elicitation_rx: _,
-        handle: _mcp_handle,
-    } = builder
-        .spawn()
-        .await
-        .map_err(|e| CliError::McpError(e.to_string()))?;
-
-    let mut spec = runtime.spec;
-    spec.prompts
-        .push(Prompt::system_env().with_cwd(cwd.clone()));
-    spec.prompts.push(Prompt::mcp_instructions(instructions));
-
-    let mut agent_builder = AgentBuilder::from_spec(&spec, vec![])
-        .map_err(|e| CliError::AgentError(e.to_string()))?
-        .tools(mcp_tx, tool_definitions);
-
-    if let Some(custom) = config.system_prompt.as_deref() {
-        agent_builder = agent_builder.system_prompt(Prompt::text(custom));
-    }
-
-    let (agent_tx, agent_rx, _agent_handle) = agent_builder
-        .spawn()
-        .await
-        .map_err(|e| CliError::AgentError(e.to_string()))?;
-
-    agent_tx
+    agent
+        .agent_tx
         .send(UserMessage::text(&config.prompt))
         .await
         .map_err(|e| CliError::AgentError(format!("Failed to send prompt: {e}")))?;
 
-    Ok(stream_output(agent_rx, &config.output).await)
+    Ok(stream_output(agent.agent_rx, &config.output).await)
 }
 
 async fn stream_output(
