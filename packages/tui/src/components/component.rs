@@ -1,8 +1,7 @@
 use crossterm::event::{KeyEvent, KeyEventKind, MouseEvent};
 
 use crate::rendering::frame::Frame;
-use crate::rendering::render_context::ViewContext;
-use crate::size::Size;
+use crate::rendering::render_context::{Size, ViewContext};
 
 /// Events that a [`Widget`] can handle.
 pub enum Event {

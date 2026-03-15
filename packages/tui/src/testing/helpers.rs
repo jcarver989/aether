@@ -25,8 +25,7 @@ pub fn render_component(
     let ctx = ViewContext::new((width, rows));
     let frame = render(&ctx);
     let terminal = TestTerminal::new(width, rows);
-    let mut renderer = Renderer::new(terminal, crate::theme::Theme::default());
-    renderer.on_resize((width, rows));
+    let mut renderer = Renderer::new(terminal, crate::theme::Theme::default(), (width, rows));
     renderer.render_frame(|_| frame).unwrap();
     renderer.writer().clone()
 }

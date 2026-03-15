@@ -14,7 +14,6 @@ pub(crate) mod diffs;
 pub(crate) mod focus;
 pub(crate) mod rendering;
 pub(crate) use rendering::line;
-pub(crate) use rendering::size;
 pub(crate) use rendering::span;
 pub(crate) use rendering::style;
 pub(crate) mod theme;
@@ -59,7 +58,6 @@ pub use diffs::diff_types::{DiffLine, DiffPreview, DiffTag};
 pub use focus::{FocusOutcome, FocusRing};
 pub use rendering::frame::Frame;
 pub use rendering::line::Line;
-pub use rendering::size::Size;
 pub use rendering::style::Style;
 pub use theme::Theme;
 

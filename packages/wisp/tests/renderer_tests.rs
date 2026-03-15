@@ -28,6 +28,7 @@ impl Renderer {
         terminal: TestTerminal,
         agent_name: String,
         config_options: &[acp::SessionConfigOption],
+        size: (u16, u16),
     ) -> Self {
         let app = App::new(
             acp::SessionId::new("test"),
@@ -37,7 +38,7 @@ impl Renderer {
             std::path::PathBuf::from("."),
             AcpPromptHandle::noop(),
         );
-        let frame_renderer = FrameRenderer::new(terminal, Theme::default());
+        let frame_renderer = FrameRenderer::new(terminal, Theme::default(), size);
         Self { app, frame_renderer }
     }
 
@@ -47,10 +48,6 @@ impl Renderer {
 
     fn test_writer_mut(&mut self) -> &mut TestTerminal {
         self.frame_renderer.test_writer_mut()
-    }
-
-    fn on_resize(&mut self, size: (u16, u16)) {
-        self.frame_renderer.on_resize(size);
     }
 
     fn render(&mut self) -> std::io::Result<()> {
@@ -288,8 +285,7 @@ fn test_agent_thought_chunks() {
 #[test]
 fn test_agent_message_chunks_stream_before_prompt_done() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     renderer
@@ -310,8 +306,7 @@ fn test_agent_message_chunks_stream_before_prompt_done() {
 #[test]
 fn test_thought_and_text_chunks_stream_before_prompt_done() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     renderer
@@ -332,8 +327,7 @@ fn test_thought_and_text_chunks_stream_before_prompt_done() {
 #[test]
 fn test_text_and_thought_chunks_stream_in_arrival_order() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     renderer
@@ -602,8 +596,7 @@ fn test_late_result_after_prompt_done() {
 
 fn render_with_size(events: Vec<TestEvent>, size: (u16, u16)) -> Renderer {
     let terminal = TestTerminal::new(size.0, size.1);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize(size);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], size);
 
     for event in events {
         match event {
@@ -621,8 +614,7 @@ fn render(events: Vec<TestEvent>) -> Renderer {
 #[test]
 fn test_user_message_submission() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
 
     renderer.initial_render().unwrap();
 
@@ -735,8 +727,7 @@ fn press_enter(renderer: &mut Renderer) {
 #[test]
 fn test_in_progress_tool_call_visible_after_initial_render() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
 
     renderer.initial_render().unwrap();
 
@@ -759,8 +750,7 @@ fn test_in_progress_tool_call_visible_after_initial_render() {
 #[test]
 fn test_in_progress_tool_call_renders_correctly_after_resize() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     renderer
@@ -910,8 +900,7 @@ fn test_prompt_done_does_not_duplicate_overflowed_lines() {
 #[test]
 fn test_resize_after_terminal_reflow_keeps_single_prompt_box() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
     let input = "this input prompt is long enough to wrap across multiple rows and should reflow cleanly on resize";
@@ -954,8 +943,7 @@ fn test_resize_after_terminal_reflow_keeps_single_prompt_box() {
 #[test]
 fn test_typing_renders_within_bordered_input() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
 
     renderer.initial_render().unwrap();
 
@@ -968,8 +956,7 @@ fn test_typing_renders_within_bordered_input() {
 #[test]
 fn test_wrapped_input_prompt_rerender_has_single_box() {
     let terminal = TestTerminal::new(32, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((32, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (32, 24));
 
     renderer.initial_render().unwrap();
     type_string(
@@ -1007,8 +994,7 @@ fn test_wrapped_input_prompt_rerender_has_single_box() {
 #[test]
 fn test_backspace_updates_within_border() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
 
     renderer.initial_render().unwrap();
 
@@ -1022,8 +1008,7 @@ fn test_backspace_updates_within_border() {
 #[test]
 fn test_ctrl_c_exits_while_file_picker_is_open() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
     renderer
@@ -1054,8 +1039,7 @@ fn test_ctrl_c_exits_while_file_picker_is_open() {
 #[test]
 fn test_space_closes_file_picker_without_selection() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
     renderer
@@ -1089,8 +1073,7 @@ fn test_space_closes_file_picker_without_selection() {
 #[test]
 fn test_status_line_shows_agent_name() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, "claude-code".to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, "claude-code".to_string(), &[], (80, 24));
 
     renderer.initial_render().unwrap();
 
@@ -1118,8 +1101,7 @@ fn test_status_line_shows_model_from_config_options() {
     ];
 
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, "aether-acp".to_string(), &config_options);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, "aether-acp".to_string(), &config_options, (80, 24));
 
     renderer.initial_render().unwrap();
 
@@ -1149,8 +1131,7 @@ fn test_status_line_updates_on_config_option_update() {
     ];
 
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, "aether-acp".to_string(), &config_options);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, "aether-acp".to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
     // Send a ConfigOptionUpdate with a new model
@@ -1189,8 +1170,7 @@ fn test_status_line_updates_on_config_option_update() {
 #[test]
 fn test_empty_prompt_renders_bordered_box() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
 
     renderer.initial_render().unwrap();
 
@@ -1203,8 +1183,7 @@ fn test_empty_prompt_renders_bordered_box() {
 #[test]
 fn test_grid_loader_visible_after_prompt_submit() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
 
     renderer.initial_render().unwrap();
 
@@ -1223,8 +1202,7 @@ fn test_grid_loader_visible_after_prompt_submit() {
 #[test]
 fn test_grid_loader_disappears_on_session_update() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
 
     renderer.initial_render().unwrap();
 
@@ -1252,8 +1230,7 @@ fn test_grid_loader_disappears_on_session_update() {
 #[test]
 fn test_grid_loader_disappears_on_prompt_done() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
 
     renderer.initial_render().unwrap();
 
@@ -1276,8 +1253,7 @@ fn test_grid_loader_disappears_on_prompt_done() {
 #[test]
 fn test_grid_loader_not_visible_on_initial_render() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
 
     renderer.initial_render().unwrap();
 
@@ -1288,8 +1264,7 @@ fn test_grid_loader_not_visible_on_initial_render() {
 #[test]
 fn test_on_tick_advances_animation() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
 
     renderer.initial_render().unwrap();
 
@@ -1312,8 +1287,7 @@ fn test_on_tick_advances_animation() {
 #[test]
 fn test_on_tick_noop_when_not_waiting() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
 
     renderer.initial_render().unwrap();
 
@@ -1332,8 +1306,7 @@ fn test_on_tick_noop_when_not_waiting() {
 #[test]
 fn test_paste_inserts_all_text_at_once() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
     renderer.on_paste("hello world").unwrap();
@@ -1345,8 +1318,7 @@ fn test_paste_inserts_all_text_at_once() {
 #[test]
 fn test_paste_strips_control_characters() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
     renderer.on_paste("line1\nline2\ttab").unwrap();
@@ -1358,8 +1330,7 @@ fn test_paste_strips_control_characters() {
 #[test]
 fn test_paste_closes_file_picker() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
     // Open file picker with @
@@ -1435,8 +1406,7 @@ fn make_config_options() -> Vec<acp::SessionConfigOption> {
 fn test_config_command_opens_menu_for_single_option() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
     type_string(&mut renderer, "/config");
@@ -1457,8 +1427,7 @@ fn test_config_command_opens_menu_for_single_option() {
 fn test_config_menu_esc_closes() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
     type_string(&mut renderer, "/config");
@@ -1506,8 +1475,7 @@ fn test_config_menu_esc_closes() {
 fn test_config_menu_arrow_navigation_single_entry() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
     type_string(&mut renderer, "/config");
@@ -1557,8 +1525,7 @@ fn test_config_menu_arrow_navigation_single_entry() {
 fn test_config_single_option_shows_model_picker() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
     type_string(&mut renderer, "/config");
@@ -1587,8 +1554,7 @@ fn test_config_single_option_shows_model_picker() {
 fn test_config_picker_focuses_cursor_on_overlay_query() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
     type_string(&mut renderer, "/config");
@@ -1618,8 +1584,7 @@ fn test_config_picker_focuses_cursor_on_overlay_query() {
 fn test_config_picker_filters_model_options() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
     type_string(&mut renderer, "/config");
@@ -1655,8 +1620,7 @@ fn test_config_menu_swallows_other_keys() {
     ];
 
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
     type_string(&mut renderer, "/config");
@@ -1687,8 +1651,7 @@ fn test_config_menu_swallows_other_keys() {
 fn test_config_menu_ctrl_c_exits() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
     type_string(&mut renderer, "/config");
@@ -1715,8 +1678,7 @@ fn test_config_menu_ctrl_c_exits() {
 fn test_config_menu_updates_on_config_option_event() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
     type_string(&mut renderer, "/config");
@@ -1764,8 +1726,7 @@ fn test_config_menu_updates_on_config_option_event() {
 fn test_config_clears_input_buffer() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
     type_string(&mut renderer, "/config");
@@ -1784,8 +1745,7 @@ fn test_config_clears_input_buffer() {
 #[test]
 fn test_config_with_no_options_shows_placeholder() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
     type_string(&mut renderer, "/config");
@@ -1809,8 +1769,7 @@ fn test_config_with_no_options_shows_placeholder() {
 #[test]
 fn test_slash_opens_command_picker() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
     send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty());
@@ -1824,8 +1783,7 @@ fn test_slash_opens_command_picker() {
 #[test]
 fn test_slash_mid_input_no_picker() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
     type_string(&mut renderer, "hello/");
@@ -1839,8 +1797,7 @@ fn test_slash_mid_input_no_picker() {
 #[test]
 fn test_command_picker_esc_clears() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
     send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty());
@@ -1866,8 +1823,7 @@ fn test_command_picker_esc_clears() {
 #[test]
 fn test_command_picker_backspace_empty_closes() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
     send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty());
@@ -1887,8 +1843,7 @@ fn test_command_picker_backspace_empty_closes() {
 #[test]
 fn test_available_commands_update_stored() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
     renderer
@@ -1917,8 +1872,7 @@ fn test_available_commands_update_stored() {
 #[test]
 fn test_available_commands_update_extracts_hint() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
     renderer
@@ -1948,8 +1902,7 @@ fn test_available_commands_update_extracts_hint() {
 #[test]
 fn test_command_picker_shows_mcp_commands() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
     // Feed available commands
@@ -1979,8 +1932,7 @@ fn test_command_picker_shows_mcp_commands() {
 #[test]
 fn test_command_picker_ctrl_c_exits() {
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
     send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty());
@@ -2152,8 +2104,7 @@ fn test_config_overlay_renders_after_large_overflow_scrollback() {
     let config_options = make_config_options();
     // Small viewport to force overflow quickly
     let terminal = TestTerminal::new(40, 8);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.on_resize((40, 8));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (40, 8));
     renderer.initial_render().unwrap();
 
     // Feed a LOT of content in a single streaming response (no prompt_done)
@@ -2198,8 +2149,7 @@ fn test_config_overlay_renders_after_large_overflow_scrollback() {
 fn test_config_overlay_open_close_after_overflow_keeps_prompt_and_layout_valid() {
     let config_options = make_config_options();
     let terminal = TestTerminal::new(40, 8);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options);
-    renderer.on_resize((40, 8));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (40, 8));
     renderer.initial_render().unwrap();
 
     // Create overflow history within a single streaming response
@@ -2274,8 +2224,7 @@ fn test_shift_tab_cycles_mode_option() {
     ];
 
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &options);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &options, (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     let action = renderer
@@ -2301,8 +2250,7 @@ fn test_shift_tab_wraps_mode_option() {
     ];
 
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &options);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &options, (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     renderer
@@ -2323,8 +2271,7 @@ fn test_shift_tab_ignored_when_overlay_consumes_input() {
     ];
 
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &options);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &options, (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     // Open config overlay
@@ -2363,8 +2310,7 @@ fn test_shift_tab_noop_when_no_cycleable_option_exists() {
     ];
 
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &options);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &options, (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     let lines_before = renderer.writer().get_lines();
@@ -2396,8 +2342,7 @@ fn test_tab_cycles_reasoning_option() {
     )];
 
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &options);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &options, (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     renderer
@@ -2408,8 +2353,7 @@ fn test_tab_cycles_reasoning_option() {
 #[test]
 fn test_tab_noop_when_no_reasoning_option() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     let lines_before = renderer.writer().get_lines();
@@ -2428,8 +2372,7 @@ fn test_tab_noop_when_no_reasoning_option() {
 #[test]
 fn test_connection_closed_exits() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     let action = renderer.on_connection_closed().unwrap();
@@ -2439,8 +2382,7 @@ fn test_connection_closed_exits() {
 #[test]
 fn test_ctrl_c_emits_exit() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     let action = renderer
@@ -2453,8 +2395,7 @@ fn test_ctrl_c_emits_exit() {
 #[test]
 fn test_escape_while_waiting_emits_cancel() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     // Submit a prompt to enter waiting state
@@ -2472,8 +2413,7 @@ fn test_escape_while_waiting_emits_cancel() {
 #[test]
 fn test_escape_while_not_waiting_does_nothing() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     let lines_before = renderer.writer().get_lines();
@@ -2494,8 +2434,7 @@ fn test_escape_while_not_waiting_does_nothing() {
 #[test]
 fn test_prompt_done_keeps_running_tool_segment() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     // Send a tool call that remains in-progress
@@ -2520,8 +2459,7 @@ fn test_prompt_done_keeps_running_tool_segment() {
 #[test]
 fn test_prompt_done_flush_respects_rendering() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     renderer
@@ -2548,8 +2486,7 @@ fn test_prompt_done_flush_respects_rendering() {
 #[test]
 fn test_streaming_chunks_keep_waiting_for_response() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     // Submit prompt to enter waiting state
@@ -2575,8 +2512,7 @@ fn test_streaming_chunks_keep_waiting_for_response() {
 #[test]
 fn test_sub_agent_progress_notification_triggers_render() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     let json = r#"{"parent_tool_id":"p1","task_id":"t1","agent_name":"explorer","event":{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}}"#;
@@ -2596,8 +2532,7 @@ fn test_sub_agent_progress_notification_triggers_render() {
 #[test]
 fn test_invalid_sub_agent_progress_json_silently_ignored() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     let raw = serde_json::value::to_raw_value(&serde_json::json!({"bad": "data"})).unwrap();
@@ -2614,8 +2549,7 @@ fn test_invalid_sub_agent_progress_json_silently_ignored() {
 #[test]
 fn test_context_usage_notification_updates_percent_left() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     let raw = serde_json::value::to_raw_value(&serde_json::json!({
@@ -2642,8 +2576,7 @@ fn test_context_usage_notification_updates_percent_left() {
 #[test]
 fn test_context_usage_notification_with_unknown_limit_clears_meter() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     // First set a known usage
@@ -2683,8 +2616,7 @@ fn test_context_usage_notification_with_unknown_limit_clears_meter() {
 #[test]
 fn test_context_cleared_notification_resets_conversation() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     // Add some conversation content
@@ -2721,8 +2653,7 @@ fn test_context_cleared_notification_resets_conversation() {
 #[test]
 fn test_on_tick_requests_render_while_completed_entries() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     // Send a plan with completed entries
@@ -2747,8 +2678,7 @@ fn test_on_tick_requests_render_while_completed_entries() {
 #[test]
 fn test_on_tick_without_active_state_is_noop() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     let lines_before = renderer.writer().get_lines();
@@ -2778,8 +2708,7 @@ fn test_config_option_update_refreshes_mode_display() {
     ];
 
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &initial);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &initial, (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     let updated = vec![
@@ -2812,8 +2741,7 @@ fn test_config_option_update_refreshes_mode_display() {
 #[test]
 fn test_available_commands_update_is_forwarded() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     renderer
@@ -2838,8 +2766,7 @@ fn test_available_commands_update_is_forwarded() {
 #[test]
 fn test_server_status_notification_updates_overlay_state() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[]);
-    renderer.on_resize((TEST_WIDTH, 40));
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
     type_string(&mut renderer, "/config");

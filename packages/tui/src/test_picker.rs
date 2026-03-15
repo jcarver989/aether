@@ -2,7 +2,8 @@ use crate::Component;
 use crate::components::{Event, ViewContext};
 use crate::line::Line;
 use crate::rendering::frame::Frame;
-use crate::size::Size;
+use crate::rendering::render_context::Size;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub fn type_query<P: Component>(picker: &mut P, text: &str) {
@@ -23,7 +24,11 @@ pub fn rendered_lines_with_context(
     size: impl Into<Size>,
 ) -> Vec<String> {
     let context = ViewContext::new(size);
-    render(&context).lines().iter().map(Line::plain_text).collect()
+    render(&context)
+        .lines()
+        .iter()
+        .map(Line::plain_text)
+        .collect()
 }
 
 pub fn rendered_raw_lines_with_context(

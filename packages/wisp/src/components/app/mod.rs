@@ -475,7 +475,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn make_renderer() -> Renderer<Vec<u8>> {
-        Renderer::new(Vec::new(), Theme::default())
+        Renderer::new(Vec::new(), Theme::default(), (80, 24))
     }
 
     fn render_app(

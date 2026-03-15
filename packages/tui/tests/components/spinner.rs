@@ -53,8 +53,7 @@ fn rerender_updates_frame_in_place() {
     spinner.set_tick(0);
 
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, tui::Theme::default());
-    renderer.on_resize((80, 24));
+    let mut renderer = Renderer::new(terminal, tui::Theme::default(), (80, 24));
 
     // Initial render
     render_component_with_renderer(|ctx| spinner.render(ctx), &mut renderer, 80, 24);
