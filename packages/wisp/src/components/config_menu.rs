@@ -191,7 +191,7 @@ impl ConfigMenu {
         }
     }
 
-    #[cfg(test)]
+    #[allow(dead_code)] // Used by integration tests
     pub fn from_entries(entries: Vec<ConfigMenuEntry>) -> Self {
         Self {
             list: SelectList::new(entries, "no config options"),
@@ -448,46 +448,6 @@ mod tests {
     }
 
     #[test]
-    fn component_renders_selected_row() {
-        let opts = vec![
-            make_select_option(
-                "model",
-                "Model",
-                "gpt-4o",
-                &[("gpt-4o", "GPT-4o"), ("claude", "Claude")],
-            ),
-            make_select_option(
-                "mode",
-                "Mode",
-                "code",
-                &[("code", "Code"), ("chat", "Chat")],
-            ),
-        ];
-        let menu = ConfigMenu::from_config_options(&opts);
-
-        let context = ViewContext::new((80, 24));
-        let frame = menu.render(&context);
-
-        assert_eq!(frame.lines().len(), 2);
-        assert!(frame.lines()[0].plain_text().contains("▶"));
-        assert!(frame.lines()[0].plain_text().contains("Model"));
-        assert!(frame.lines()[0].plain_text().contains("GPT-4o"));
-        assert!(frame.lines()[1].plain_text().contains("Mode"));
-        assert!(frame.lines()[1].plain_text().contains("Code"));
-        assert!(!frame.lines()[1].plain_text().contains("▶"));
-    }
-
-    #[test]
-    fn empty_options_renders_placeholder() {
-        let menu = ConfigMenu::from_config_options(&[]);
-
-        let context = ViewContext::new((80, 24));
-        let frame = menu.render(&context);
-        assert_eq!(frame.lines().len(), 1);
-        assert!(frame.lines()[0].plain_text().contains("no config options"));
-    }
-
-    #[test]
     fn from_config_options_skips_empty_values() {
         let empty =
             SessionConfigOption::select("x", "X", "v", Vec::<SessionConfigSelectOption>::new());
@@ -584,51 +544,6 @@ mod tests {
         let display = menu.options()[0].display_name.as_deref().unwrap();
         assert!(display.contains("Alpha"), "display: {display}");
         assert!(display.contains("Beta"), "display: {display}");
-    }
-
-    #[test]
-    fn multi_select_with_display_name_not_dimmed_when_first_value_disabled() {
-        let menu = ConfigMenu {
-            list: SelectList::new(
-                vec![ConfigMenuEntry {
-                    config_id: "model".to_string(),
-                    title: "Model".to_string(),
-                    values: vec![
-                        ConfigMenuValue {
-                            value: "a".to_string(),
-                            name: "Alpha".to_string(),
-                            description: Some("Unavailable: no key".to_string()),
-                            is_disabled: true,
-                            meta: SelectOptionMeta::default(),
-                        },
-                        ConfigMenuValue {
-                            value: "b".to_string(),
-                            name: "Beta".to_string(),
-                            description: None,
-                            is_disabled: false,
-                            meta: SelectOptionMeta::default(),
-                        },
-                    ],
-                    current_value_index: 0,
-                    current_raw_value: "b,a".to_string(),
-                    entry_kind: ConfigMenuEntryKind::Select,
-                    multi_select: true,
-                    display_name: Some("Beta, Alpha".to_string()),
-                }],
-                "no config options",
-            ),
-        };
-
-        let context = ViewContext::new((80, 24));
-        let frame = menu.render(&context);
-        let has_highlight = frame.lines()[0]
-            .spans()
-            .iter()
-            .any(|s| s.style().bg == Some(context.theme.highlight_bg()));
-        assert!(
-            has_highlight,
-            "multi-select with display_name should get highlight_bg, not muted"
-        );
     }
 
     #[test]

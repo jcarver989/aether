@@ -26,7 +26,7 @@ pub enum PatchFocus {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct PatchLineRef {
+pub struct PatchLineRef {
     pub hunk_index: usize,
     pub line_index: usize,
 }
@@ -57,7 +57,7 @@ pub struct GitDiffViewState {
 }
 
 impl GitDiffViewState {
-    pub(crate) fn new(load_state: GitDiffLoadState) -> Self {
+    pub fn new(load_state: GitDiffLoadState) -> Self {
         Self {
             load_state,
             focus: PatchFocus::FileList,

@@ -2,7 +2,7 @@ use crate::components::app::git_diff_mode::PatchLineRef;
 use crate::git_diff::{FileDiff, PatchLineKind};
 use crate::tui::{Color, Line, Span, Style, ViewContext};
 
-pub(crate) fn build_patch_lines(
+pub fn build_patch_lines(
     file: &FileDiff,
     context: &ViewContext,
 ) -> (Vec<Line>, Vec<Option<PatchLineRef>>) {

@@ -166,7 +166,7 @@ impl ModelSelector {
 }
 
 impl ModelSelector {
-    pub(crate) fn update_viewport(&mut self, max_height: usize) {
+    pub fn update_viewport(&mut self, max_height: usize) {
         let overhead = if self.selected_models.is_empty() {
             2
         } else {
@@ -341,13 +341,8 @@ fn reasoning_config_value(effort: Option<ReasoningEffort>) -> &'static str {
 mod tests {
     use super::*;
     use crate::components::config_menu::{ConfigMenuEntryKind, ConfigMenuValue};
-    use crate::tui::test_picker::{rendered_lines_from, type_query};
     use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
     use acp_utils::config_meta::SelectOptionMeta;
-
-    fn rendered_lines(selector: &ModelSelector) -> Vec<String> {
-        rendered_lines_from(&selector.render(&ViewContext::new((120, 40))))
-    }
 
     fn model_entry() -> ConfigMenuEntry {
         ConfigMenuEntry {
@@ -384,47 +379,6 @@ mod tests {
         }
     }
 
-    fn model_entry_with_groups() -> ConfigMenuEntry {
-        ConfigMenuEntry {
-            config_id: "model".to_string(),
-            title: "Model".to_string(),
-            values: vec![
-                ConfigMenuValue {
-                    value: "openrouter:anthropic/claude-sonnet-4-5".to_string(),
-                    name: "OpenRouter / Claude Sonnet 4.5".to_string(),
-                    description: None,
-                    is_disabled: false,
-                    meta: SelectOptionMeta::default(),
-                },
-                ConfigMenuValue {
-                    value: "openrouter:google/gemini-2.5-pro".to_string(),
-                    name: "OpenRouter / Gemini 2.5 Pro".to_string(),
-                    description: None,
-                    is_disabled: false,
-                    meta: SelectOptionMeta::default(),
-                },
-                ConfigMenuValue {
-                    value: "anthropic:claude-sonnet-4-5".to_string(),
-                    name: "Anthropic / Claude Sonnet 4.5".to_string(),
-                    description: None,
-                    is_disabled: false,
-                    meta: SelectOptionMeta::default(),
-                },
-                ConfigMenuValue {
-                    value: "gemini:gemini-2.5-pro".to_string(),
-                    name: "Google / Gemini 2.5 Pro".to_string(),
-                    description: None,
-                    is_disabled: false,
-                    meta: SelectOptionMeta::default(),
-                },
-            ],
-            current_value_index: 0,
-            current_raw_value: "openrouter:anthropic/claude-sonnet-4-5".to_string(),
-            entry_kind: ConfigMenuEntryKind::Select,
-            multi_select: true,
-            display_name: None,
-        }
-    }
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
@@ -488,187 +442,6 @@ mod tests {
     }
 
     #[test]
-    fn search_filters_entries() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-        type_query(&mut builder, "deepseek");
-        let lines = rendered_lines(&builder);
-        assert!(lines.iter().any(|l| l.trim() == "DeepSeek"));
-        assert!(lines.iter().any(|l| l.contains("[ ] DeepSeek Chat")));
-    }
-
-    #[test]
-    fn render_groups_models_under_provider_headers() {
-        let builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
-        let lines = rendered_lines(&builder);
-
-        let openrouter_headers = lines.iter().filter(|l| l.trim() == "OpenRouter").count();
-        assert_eq!(openrouter_headers, 1, "expected one OpenRouter header line");
-        assert!(
-            lines
-                .windows(2)
-                .any(|w| w[0].trim().is_empty() && w[1].trim() == "Anthropic"),
-            "expected blank separator before next provider: {lines:?}"
-        );
-        assert!(lines.iter().any(|l| l.contains("[ ] Claude Sonnet 4.5")));
-        assert!(lines.iter().any(|l| l.contains("[ ] Gemini 2.5 Pro")));
-    }
-
-    #[test]
-    fn search_filters_and_keeps_provider_headers() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
-        type_query(&mut builder, "gemini");
-        let lines = rendered_lines(&builder);
-
-        assert!(
-            lines.iter().any(|l| l.trim() == "OpenRouter"),
-            "missing OpenRouter header in filtered results: {lines:?}"
-        );
-        assert!(
-            lines.iter().any(|l| l.trim() == "Google"),
-            "missing Google header in filtered results: {lines:?}"
-        );
-        assert!(lines.iter().any(|l| l.contains("[ ] Gemini 2.5 Pro")));
-    }
-
-    #[test]
-    fn search_does_not_duplicate_provider_headers() {
-        let entry = ConfigMenuEntry {
-            config_id: "model".to_string(),
-            title: "Model".to_string(),
-            values: vec![
-                ConfigMenuValue {
-                    value: "codex:gpt-5".to_string(),
-                    name: "Codex / GPT-5".to_string(),
-                    description: None,
-                    is_disabled: false,
-                    meta: SelectOptionMeta::default(),
-                },
-                ConfigMenuValue {
-                    value: "openrouter:gpt-5".to_string(),
-                    name: "OpenRouter / GPT-5".to_string(),
-                    description: None,
-                    is_disabled: false,
-                    meta: SelectOptionMeta::default(),
-                },
-                ConfigMenuValue {
-                    value: "codex:gpt-5-mini".to_string(),
-                    name: "Codex / GPT-5 Mini".to_string(),
-                    description: None,
-                    is_disabled: false,
-                    meta: SelectOptionMeta::default(),
-                },
-                ConfigMenuValue {
-                    value: "openrouter:gpt-5-mini".to_string(),
-                    name: "OpenRouter / GPT-5 Mini".to_string(),
-                    description: None,
-                    is_disabled: false,
-                    meta: SelectOptionMeta::default(),
-                },
-            ],
-            current_value_index: 0,
-            current_raw_value: "codex:gpt-5".to_string(),
-            entry_kind: ConfigMenuEntryKind::Select,
-            multi_select: true,
-            display_name: None,
-        };
-        let mut selector = ModelSelector::from_model_entry(&entry, None, None);
-        type_query(&mut selector, "gpt");
-        let lines = rendered_lines(&selector);
-
-        let codex_count = lines.iter().filter(|l| l.trim() == "Codex").count();
-        let openrouter_count = lines.iter().filter(|l| l.trim() == "OpenRouter").count();
-        assert_eq!(
-            codex_count, 1,
-            "expected exactly one Codex header, got {codex_count}: {lines:?}"
-        );
-        assert_eq!(
-            openrouter_count, 1,
-            "expected exactly one OpenRouter header, got {openrouter_count}: {lines:?}"
-        );
-    }
-
-    fn focused_provider_and_row(selector: &ModelSelector) -> (String, String) {
-        let lines = rendered_lines(selector);
-        let focused_idx = lines
-            .iter()
-            .position(|line| line.starts_with("▶"))
-            .expect("should have focused row");
-        let provider = lines[..focused_idx]
-            .iter()
-            .rev()
-            .map(|line| line.trim())
-            .find(|line| {
-                !line.is_empty()
-                    && !line.contains("Model search:")
-                    && !line.contains("Selected:")
-                    && !line.starts_with('[')
-                    && !line.starts_with('▶')
-            })
-            .expect("should find provider header")
-            .to_string();
-
-        (provider, lines[focused_idx].clone())
-    }
-
-    #[test]
-    fn grouped_navigation_follows_rendered_order() {
-        let mut selector = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
-
-        let (provider, focused) = focused_provider_and_row(&selector);
-        assert_eq!(provider, "Anthropic");
-        assert!(focused.contains("Claude Sonnet 4.5"));
-
-        selector.on_event(&Event::Key(key(KeyCode::Down)));
-        let (provider, focused) = focused_provider_and_row(&selector);
-        assert_eq!(provider, "Google");
-        assert!(focused.contains("Gemini 2.5 Pro"));
-
-        selector.on_event(&Event::Key(key(KeyCode::Down)));
-        let (provider, focused) = focused_provider_and_row(&selector);
-        assert_eq!(provider, "OpenRouter");
-        assert!(focused.contains("Claude Sonnet 4.5"));
-    }
-
-    #[test]
-    fn grouped_navigation_after_search_follows_rendered_order() {
-        let mut selector = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
-        type_query(&mut selector, "2.5");
-
-        let (provider, focused) = focused_provider_and_row(&selector);
-        assert_eq!(provider, "Google");
-        assert!(focused.contains("Gemini 2.5 Pro"));
-
-        selector.on_event(&Event::Key(key(KeyCode::Down)));
-        let (provider, focused) = focused_provider_and_row(&selector);
-        assert_eq!(provider, "OpenRouter");
-        assert!(focused.contains("Gemini 2.5 Pro"));
-    }
-
-    #[test]
-    fn grouped_render_respects_small_height() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
-        let context = ViewContext::new((120, 6));
-        builder.update_viewport(6);
-        let frame = builder.render(&context);
-        let lines: Vec<String> = frame
-            .lines()
-            .iter()
-            .map(Line::plain_text)
-            .collect();
-
-        assert!(
-            lines.len() <= 6,
-            "rendered too many lines for viewport: {lines:?}"
-        );
-        assert!(
-            !lines
-                .iter()
-                .any(|l| l.contains("model selected") || l.contains("selected")),
-            "did not expect bottom selected-count footer: {lines:?}"
-        );
-    }
-
-    #[test]
     fn escape_returns_done_action() {
         let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
         let outcome = builder.on_event(&Event::Key(key(KeyCode::Esc)));
@@ -711,46 +484,6 @@ mod tests {
             }
             other => panic!("expected Done with model change, got: {other:?}"),
         }
-    }
-
-    #[test]
-    fn render_shows_selected_models_at_top() {
-        let builder = ModelSelector::from_model_entry(
-            &model_entry(),
-            Some("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"),
-            None,
-        );
-        let lines = rendered_lines(&builder);
-        // Second line after header should be a spacer, then selected models line
-        assert!(
-            lines[1].trim().is_empty(),
-            "expected spacer line after header"
-        );
-        assert!(
-            lines[2].contains("Selected:"),
-            "expected Selected line, got: {}",
-            lines[2]
-        );
-        assert!(lines[2].contains("Claude Sonnet 4.5"));
-        assert!(lines[2].contains("DeepSeek Chat"));
-        assert!(
-            lines.get(3).is_some_and(|l| l.trim().is_empty()),
-            "expected spacer line after selected line"
-        );
-    }
-
-    #[test]
-    fn render_hides_selected_line_when_none_selected() {
-        let builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-        let lines = rendered_lines(&builder);
-        assert!(
-            !lines.iter().any(|l| l.contains("Selected:")),
-            "should not show Selected line when nothing is selected"
-        );
-        assert!(
-            lines.get(1).is_some_and(|l| l.trim().is_empty()),
-            "expected blank line after search header"
-        );
     }
 
     #[test]
@@ -869,41 +602,6 @@ mod tests {
 
         selector.on_event(&Event::Key(key(KeyCode::Right)));
         assert_eq!(selector.reasoning_effort, None);
-    }
-
-    #[test]
-    fn render_shows_bar_on_focused_reasoning_row() {
-        use crate::tui::test_picker::rendered_raw_lines_with_context;
-        let selector =
-            ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, Some("medium"));
-        let lines = rendered_raw_lines_with_context(|ctx| selector.render(ctx), (120, 40));
-        let focused_line = lines
-            .iter()
-            .find(|l| l.plain_text().contains("▶"))
-            .expect("should have focused line");
-        let text = focused_line.plain_text();
-        // Medium = 2 filled, 1 empty
-        assert!(
-            text.contains("[■■·]"),
-            "expected reasoning bar, got: {text}"
-        );
-    }
-
-    #[test]
-    fn render_no_bar_on_non_reasoning_focused_row() {
-        let mut selector =
-            ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, Some("medium"));
-        // Move to non-reasoning model
-        selector.on_event(&Event::Key(key(KeyCode::Down)));
-        let lines = rendered_lines(&selector);
-        let focused_line = lines
-            .iter()
-            .find(|l| l.contains("▶"))
-            .expect("should have focused line");
-        assert!(
-            !focused_line.contains('■'),
-            "should not show bar on non-reasoning model"
-        );
     }
 
     #[test]

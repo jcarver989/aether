@@ -1,17 +1,44 @@
 use std::io::{self, Write};
 
+use crossterm::style::Color;
+
+use crate::Style;
+
+/// A single cell in the terminal buffer, storing both a character and its style.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Cell {
+    pub ch: char,
+    pub style: Style,
+}
+
+impl Default for Cell {
+    fn default() -> Self {
+        Self {
+            ch: ' ',
+            style: Style::default(),
+        }
+    }
+}
+
+impl Cell {
+    fn new(ch: char, style: Style) -> Self {
+        Self { ch, style }
+    }
+}
+
 /// A virtual terminal buffer for testing terminal output.
-/// Captures all writes, tracks cursor position, and parses ANSI escape sequences.
+/// Captures all writes, tracks cursor position, and parses ANSI escape sequences
+/// including SGR (Select Graphic Rendition) codes for style tracking.
 ///
 /// Implements delayed wrapping (DEC-style): when the cursor reaches the last
 /// column, it stays there with a pending-wrap flag. The next printable character
 /// triggers the wrap to column 0 of the next line. A `\r` clears the flag.
 #[derive(Debug, Clone)]
 pub struct TestTerminal {
-    /// 2D buffer of characters (row, column)
-    buffer: Vec<Vec<char>>,
+    /// 2D buffer of cells (row, column)
+    buffer: Vec<Vec<Cell>>,
     /// Rows that have scrolled off the top of the visible buffer.
-    scrollback: Vec<Vec<char>>,
+    scrollback: Vec<Vec<Cell>>,
     /// Current cursor position (column, row)
     cursor: (u16, u16),
     /// Saved cursor position (for save/restore)
@@ -22,12 +49,14 @@ pub struct TestTerminal {
     escape_buffer: Vec<u8>,
     /// Delayed wrap: cursor hit last column but hasn't wrapped yet
     pending_wrap: bool,
+    /// Current SGR style applied to newly written characters
+    current_style: Style,
 }
 
 impl TestTerminal {
     /// Create a new test terminal with given size
     pub fn new(columns: u16, rows: u16) -> Self {
-        let buffer = vec![vec![' '; columns as usize]; rows as usize];
+        let buffer = vec![vec![Cell::default(); columns as usize]; rows as usize];
         Self {
             buffer,
             scrollback: Vec::new(),
@@ -36,6 +65,7 @@ impl TestTerminal {
             size: (columns, rows),
             escape_buffer: Vec::new(),
             pending_wrap: false,
+            current_style: Style::default(),
         }
     }
 
@@ -43,7 +73,7 @@ impl TestTerminal {
     pub fn resize(&mut self, columns: u16, rows: u16) {
         let columns = columns.max(1);
         let rows = rows.max(1);
-        self.buffer = vec![vec![' '; columns as usize]; rows as usize];
+        self.buffer = vec![vec![Cell::default(); columns as usize]; rows as usize];
         self.scrollback.clear();
         self.size = (columns, rows);
         self.cursor = (0, rows.saturating_sub(1));
@@ -97,7 +127,7 @@ impl TestTerminal {
             .collect();
 
         while self.buffer.len() < rows_usize {
-            self.buffer.push(vec![' '; columns as usize]);
+            self.buffer.push(vec![Cell::default(); columns as usize]);
         }
 
         self.size = (columns, rows);
@@ -106,9 +136,13 @@ impl TestTerminal {
         self.pending_wrap = false;
     }
 
-    fn line_to_row(line: &str, columns: u16) -> Vec<char> {
-        let mut row: Vec<char> = line.chars().take(columns as usize).collect();
-        row.resize(columns as usize, ' ');
+    fn line_to_row(line: &str, columns: u16) -> Vec<Cell> {
+        let mut row: Vec<Cell> = line
+            .chars()
+            .take(columns as usize)
+            .map(|ch| Cell::new(ch, Style::default()))
+            .collect();
+        row.resize(columns as usize, Cell::default());
         row
     }
 
@@ -116,7 +150,14 @@ impl TestTerminal {
     pub fn get_lines(&self) -> Vec<String> {
         self.buffer
             .iter()
-            .map(|chars| chars.iter().collect::<String>().trim_end().to_string())
+            .map(|cells| {
+                cells
+                    .iter()
+                    .map(|c| c.ch)
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string()
+            })
             .collect()
     }
 
@@ -125,7 +166,14 @@ impl TestTerminal {
         self.scrollback
             .iter()
             .chain(self.buffer.iter())
-            .map(|chars| chars.iter().collect::<String>().trim_end().to_string())
+            .map(|cells| {
+                cells
+                    .iter()
+                    .map(|c| c.ch)
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string()
+            })
             .collect()
     }
 
@@ -135,11 +183,31 @@ impl TestTerminal {
         self.cursor
     }
 
+    /// Get the style at a specific buffer position.
+    pub fn get_style_at(&self, row: usize, col: usize) -> Style {
+        self.buffer
+            .get(row)
+            .and_then(|r| r.get(col))
+            .map_or(Style::default(), |c| c.style)
+    }
+
+    /// Find the first occurrence of `text` on the given row and return its style.
+    ///
+    /// Returns the style of the first character of the matched text.
+    pub fn style_of_text(&self, row: usize, text: &str) -> Option<Style> {
+        let row_data = self.buffer.get(row)?;
+        let row_text: String = row_data.iter().map(|c| c.ch).collect();
+        let byte_offset = row_text.find(text)?;
+        // Convert byte offset to character index
+        let char_index = row_text[..byte_offset].chars().count();
+        Some(row_data[char_index].style)
+    }
+
     /// Clear the entire buffer
     pub fn clear(&mut self) {
         for row in &mut self.buffer {
-            for ch in row {
-                *ch = ' ';
+            for cell in row {
+                *cell = Cell::default();
             }
         }
     }
@@ -147,8 +215,8 @@ impl TestTerminal {
     /// Clear the current line
     pub fn clear_line(&mut self) {
         if let Some(row) = self.buffer.get_mut(self.cursor.1 as usize) {
-            for ch in row {
-                *ch = ' ';
+            for cell in row {
+                *cell = Cell::default();
             }
         }
     }
@@ -186,23 +254,20 @@ impl TestTerminal {
             '\n' => {
                 self.pending_wrap = false;
                 if self.cursor.1 >= self.size.1.saturating_sub(1) {
-                    // At last row: scroll buffer up by 1
                     let removed = self.buffer.remove(0);
                     self.scrollback.push(removed);
-                    self.buffer.push(vec![' '; self.size.0 as usize]);
-                    // Cursor stays at last row
+                    self.buffer
+                        .push(vec![Cell::default(); self.size.0 as usize]);
                 } else {
                     self.cursor.1 += 1;
                 }
                 self.cursor.0 = 0;
             }
             '\r' => {
-                // Move to column 0, clear pending wrap
                 self.cursor.0 = 0;
                 self.pending_wrap = false;
             }
             '\t' => {
-                // Tab = 4 spaces
                 for _ in 0..4 {
                     self.write_char_at_cursor(' ');
                 }
@@ -218,14 +283,14 @@ impl TestTerminal {
     /// When the cursor is at the last column with `pending_wrap` set,
     /// the next printable character triggers the wrap first.
     fn write_char_at_cursor(&mut self, ch: char) {
-        // If pending wrap, commit the wrap now before writing
         if self.pending_wrap {
             self.pending_wrap = false;
             self.cursor.0 = 0;
             if self.cursor.1 >= self.size.1.saturating_sub(1) {
                 let removed = self.buffer.remove(0);
                 self.scrollback.push(removed);
-                self.buffer.push(vec![' '; self.size.0 as usize]);
+                self.buffer
+                    .push(vec![Cell::default(); self.size.0 as usize]);
             } else {
                 self.cursor.1 += 1;
             }
@@ -234,11 +299,9 @@ impl TestTerminal {
         if let Some(row) = self.buffer.get_mut(self.cursor.1 as usize)
             && let Some(cell) = row.get_mut(self.cursor.0 as usize)
         {
-            *cell = ch;
+            *cell = Cell::new(ch, self.current_style);
             self.cursor.0 += 1;
             if self.cursor.0 >= self.size.0 {
-                // Don't wrap immediately — set pending flag.
-                // Cursor stays at last column visually.
                 self.cursor.0 = self.size.0 - 1;
                 self.pending_wrap = true;
             }
@@ -252,17 +315,14 @@ impl TestTerminal {
 
         while let Some(ch) = chars.next() {
             if ch == '\x1b' {
-                // Start of ANSI escape sequence
                 if chars.peek() == Some(&'[') {
-                    chars.next(); // consume '['
+                    chars.next();
                     self.process_csi_sequence(&mut chars);
                 } else if chars.peek() == Some(&'7') {
-                    // DEC Save Cursor (ESC 7)
-                    chars.next(); // consume '7'
+                    chars.next();
                     self.saved_cursor = Some(self.cursor);
                 } else if chars.peek() == Some(&'8') {
-                    // DEC Restore Cursor (ESC 8)
-                    chars.next(); // consume '8'
+                    chars.next();
                     if let Some(saved) = self.saved_cursor {
                         self.cursor = saved;
                     }
@@ -276,7 +336,6 @@ impl TestTerminal {
     /// Process a CSI (Control Sequence Introducer) escape sequence
     #[allow(clippy::too_many_lines)]
     fn process_csi_sequence(&mut self, chars: &mut std::iter::Peekable<std::str::Chars>) {
-        // Detect private mode prefix (e.g., `?` in `CSI ?2026h`)
         let private_mode = if chars.peek() == Some(&'?') {
             chars.next();
             true
@@ -286,9 +345,8 @@ impl TestTerminal {
 
         let mut params = String::new();
 
-        // Collect parameters (numbers and semicolons)
         while let Some(&ch) = chars.peek() {
-            if ch.is_ascii_digit() || ch == ';' {
+            if ch.is_ascii_digit() || ch == ';' || ch == ':' {
                 params.push(ch);
                 chars.next();
             } else {
@@ -296,56 +354,46 @@ impl TestTerminal {
             }
         }
 
-        // Consume the final command character for private mode sequences and return
         if private_mode {
-            chars.next(); // consume 'h', 'l', etc.
+            chars.next();
             return;
         }
 
-        // Get the command character
         if let Some(cmd) = chars.next() {
             match cmd {
                 'H' | 'f' => {
-                    // Cursor Position (ANSI format is row;column, 1-indexed)
                     let parts: Vec<u16> =
                         params.split(';').filter_map(|s| s.parse().ok()).collect();
                     let row = parts.first().copied().unwrap_or(1).saturating_sub(1);
                     let col = parts.get(1).copied().unwrap_or(1).saturating_sub(1);
-                    self.move_to(col, row); // move_to takes (col, row)
+                    self.move_to(col, row);
                 }
                 'A' => {
-                    // Cursor Up
                     let n = params.parse().unwrap_or(1);
                     self.cursor.1 = self.cursor.1.saturating_sub(n);
                     self.pending_wrap = false;
                 }
                 'B' => {
-                    // Cursor Down
                     let n = params.parse().unwrap_or(1);
                     self.cursor.1 = (self.cursor.1 + n).min(self.size.1.saturating_sub(1));
                     self.pending_wrap = false;
                 }
                 'C' => {
-                    // Cursor Forward (Right)
                     let n = params.parse().unwrap_or(1);
                     self.move_right(n);
                 }
                 'D' => {
-                    // Cursor Back (Left)
                     let n = params.parse().unwrap_or(1);
                     self.move_left(n);
                 }
                 'G' => {
-                    // Cursor to Column
                     let col = params.parse::<u16>().unwrap_or(1).saturating_sub(1);
                     self.move_to_column(col);
                 }
                 'J' => {
-                    // Erase in Display
                     let n = params.parse().unwrap_or(0);
                     match n {
                         0 => {
-                            // Clear from cursor to end of screen
                             for row in self.cursor.1..self.size.1 {
                                 if let Some(r) = self.buffer.get_mut(row as usize) {
                                     let start = if row == self.cursor.1 {
@@ -353,65 +401,183 @@ impl TestTerminal {
                                     } else {
                                         0
                                     };
-                                    for ch in r.iter_mut().skip(start) {
-                                        *ch = ' ';
+                                    for cell in r.iter_mut().skip(start) {
+                                        *cell = Cell::default();
                                     }
                                 }
                             }
                         }
                         2 => {
-                            // Clear entire screen
                             self.clear();
                         }
                         _ => {}
                     }
                 }
                 'K' => {
-                    // Erase in Line
                     let n = params.parse().unwrap_or(0);
                     match n {
                         0 => {
-                            // Clear from cursor to end of line
                             if let Some(row) = self.buffer.get_mut(self.cursor.1 as usize) {
-                                for ch in row.iter_mut().skip(self.cursor.0 as usize) {
-                                    *ch = ' ';
+                                for cell in row.iter_mut().skip(self.cursor.0 as usize) {
+                                    *cell = Cell::default();
                                 }
                             }
                         }
                         2 => {
-                            // Clear entire line
                             self.clear_line();
                         }
                         _ => {}
                     }
                 }
                 's' => {
-                    // Save cursor position
                     self.saved_cursor = Some(self.cursor);
                 }
                 'u' => {
-                    // Restore cursor position
                     if let Some(saved) = self.saved_cursor {
                         self.cursor = saved;
                         self.pending_wrap = false;
                     }
                 }
-                // SGR, unknown sequences — ignored (content-only testing)
+                'm' => {
+                    self.apply_sgr(&params);
+                }
                 _ => {}
             }
         }
+    }
+
+    /// Apply SGR (Select Graphic Rendition) parameters to update `current_style`.
+    fn apply_sgr(&mut self, params: &str) {
+        if params.is_empty() {
+            self.current_style = Style::default();
+            return;
+        }
+
+        // Split on ';' for parameter groups, then take the first colon-delimited
+        // sub-parameter as the primary code (e.g. "4:1" → 4 for underline style).
+        let codes: Vec<u16> = params
+            .split(';')
+            .filter_map(|s| {
+                let primary = s.split(':').next().unwrap_or(s);
+                primary.parse().ok()
+            })
+            .collect();
+        let mut i = 0;
+        while i < codes.len() {
+            match codes[i] {
+                0 => self.current_style = Style::default(),
+                1 => self.current_style.bold = true,
+                2 => self.current_style.dim = true,
+                3 => self.current_style.italic = true,
+                4 => self.current_style.underline = true,
+                9 => self.current_style.strikethrough = true,
+                22 => {
+                    self.current_style.bold = false;
+                    self.current_style.dim = false;
+                }
+                23 => self.current_style.italic = false,
+                24 => self.current_style.underline = false,
+                29 => self.current_style.strikethrough = false,
+                30..=37 => {
+                    self.current_style.fg = Some(standard_color(codes[i] as u8 - 30));
+                }
+                38 => {
+                    i += 1;
+                    if i < codes.len() {
+                        match codes[i] {
+                            5 if i + 1 < codes.len() => {
+                                i += 1;
+                                self.current_style.fg =
+                                    Some(Color::AnsiValue(codes[i] as u8));
+                            }
+                            2 if i + 3 < codes.len() => {
+                                self.current_style.fg = Some(Color::Rgb {
+                                    r: codes[i + 1] as u8,
+                                    g: codes[i + 2] as u8,
+                                    b: codes[i + 3] as u8,
+                                });
+                                i += 3;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                39 => self.current_style.fg = None,
+                40..=47 => {
+                    self.current_style.bg = Some(standard_color(codes[i] as u8 - 40));
+                }
+                48 => {
+                    i += 1;
+                    if i < codes.len() {
+                        match codes[i] {
+                            5 if i + 1 < codes.len() => {
+                                i += 1;
+                                self.current_style.bg =
+                                    Some(Color::AnsiValue(codes[i] as u8));
+                            }
+                            2 if i + 3 < codes.len() => {
+                                self.current_style.bg = Some(Color::Rgb {
+                                    r: codes[i + 1] as u8,
+                                    g: codes[i + 2] as u8,
+                                    b: codes[i + 3] as u8,
+                                });
+                                i += 3;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                49 => self.current_style.bg = None,
+                90..=97 => {
+                    self.current_style.fg = Some(bright_color(codes[i] as u8 - 90));
+                }
+                100..=107 => {
+                    self.current_style.bg = Some(bright_color(codes[i] as u8 - 100));
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+    }
+}
+
+/// Map ANSI standard color index (0-7) to crossterm Color.
+fn standard_color(index: u8) -> Color {
+    match index {
+        0 => Color::Black,
+        1 => Color::DarkRed,
+        2 => Color::DarkGreen,
+        3 => Color::DarkYellow,
+        4 => Color::DarkBlue,
+        5 => Color::DarkMagenta,
+        6 => Color::DarkCyan,
+        7 => Color::Grey,
+        _ => Color::Reset,
+    }
+}
+
+/// Map ANSI bright color index (0-7) to crossterm Color.
+fn bright_color(index: u8) -> Color {
+    match index {
+        0 => Color::DarkGrey,
+        1 => Color::Red,
+        2 => Color::Green,
+        3 => Color::Yellow,
+        4 => Color::Blue,
+        5 => Color::Magenta,
+        6 => Color::Cyan,
+        7 => Color::White,
+        _ => Color::Reset,
     }
 }
 
 impl Write for TestTerminal {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        // Accumulate all bytes in buffer
         self.escape_buffer.extend_from_slice(buf);
         Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        // Process all accumulated bytes when flushed
         if !self.escape_buffer.is_empty() {
             let bytes = std::mem::take(&mut self.escape_buffer);
             self.process_bytes(&bytes);
@@ -473,7 +639,6 @@ mod tests {
     #[test]
     fn test_ansi_cursor_position() {
         let mut term = TestTerminal::new(80, 24);
-        // CSI sequence for moving to row 3, column 5 (1-indexed)
         write!(term, "\x1b[3;5HX").unwrap();
         term.flush().unwrap();
         let lines = term.get_lines();
@@ -484,7 +649,6 @@ mod tests {
     fn test_ansi_clear_line() {
         let mut term = TestTerminal::new(80, 24);
         write!(term, "Hello World").unwrap();
-        // CSI K - clear from cursor to end of line
         write!(term, "\x1b[1G\x1b[K").unwrap();
         term.flush().unwrap();
         let lines = term.get_lines();
@@ -513,7 +677,6 @@ mod tests {
     #[test]
     fn test_private_mode_sequences_ignored() {
         let mut term = TestTerminal::new(80, 24);
-        // Synchronized update begin/end sequences should not leak into buffer
         write!(term, "\x1b[?2026hHello\x1b[?2026l").unwrap();
         term.flush().unwrap();
         let lines = term.get_lines();
@@ -524,23 +687,15 @@ mod tests {
     fn test_cursor_save_restore() {
         let mut term = TestTerminal::new(80, 24);
 
-        // Move to (10, 5) and write "First" (cursor ends at col 15)
         write!(term, "\x1b[6;11HFirst").unwrap();
-
-        // Save cursor position (should save col 15, row 5)
-        write!(term, "\x1b7").unwrap(); // DEC save cursor
-
-        // Move somewhere else and write
+        write!(term, "\x1b7").unwrap();
         write!(term, "\x1b[1;1HSecond").unwrap();
-
-        // Restore cursor position (back to col 15, row 5) and write
-        write!(term, "\x1b8Third").unwrap(); // DEC restore cursor
+        write!(term, "\x1b8Third").unwrap();
 
         term.flush().unwrap();
 
         let lines = term.get_lines();
         assert_eq!(lines[0], "Second");
-        // "First" starts at column 10, cursor saved at 15, "Third" written at 15
         assert_eq!(lines[5], "          FirstThird");
     }
 
@@ -556,5 +711,51 @@ mod tests {
 
         let transcript = term.get_transcript_lines();
         assert_eq!(transcript, vec!["L1", "L2", "L3"]);
+    }
+
+    #[test]
+    fn test_sgr_bold() {
+        let mut term = TestTerminal::new(80, 24);
+        write!(term, "\x1b[1mbold\x1b[0m").unwrap();
+        term.flush().unwrap();
+        let lines = term.get_lines();
+        assert_eq!(lines[0], "bold");
+        assert!(term.get_style_at(0, 0).bold);
+        assert!(!term.get_style_at(0, 4).bold);
+    }
+
+    #[test]
+    fn test_sgr_fg_color() {
+        let mut term = TestTerminal::new(80, 24);
+        write!(term, "\x1b[31mred\x1b[0m").unwrap();
+        term.flush().unwrap();
+        assert_eq!(term.get_style_at(0, 0).fg, Some(Color::DarkRed));
+        assert_eq!(term.get_style_at(0, 3).fg, None);
+    }
+
+    #[test]
+    fn test_sgr_rgb_color() {
+        let mut term = TestTerminal::new(80, 24);
+        write!(term, "\x1b[38;2;255;128;0mrgb\x1b[0m").unwrap();
+        term.flush().unwrap();
+        assert_eq!(
+            term.get_style_at(0, 0).fg,
+            Some(Color::Rgb {
+                r: 255,
+                g: 128,
+                b: 0
+            })
+        );
+    }
+
+    #[test]
+    fn test_style_of_text() {
+        let mut term = TestTerminal::new(80, 24);
+        write!(term, "plain \x1b[1mbold\x1b[0m rest").unwrap();
+        term.flush().unwrap();
+        let style = term.style_of_text(0, "bold").unwrap();
+        assert!(style.bold);
+        let style = term.style_of_text(0, "plain").unwrap();
+        assert!(!style.bold);
     }
 }

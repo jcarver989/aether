@@ -108,14 +108,8 @@ fn build_styled_command_line(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::test_picker::{
-        rendered_lines_from, rendered_lines_with_context, rendered_raw_lines_with_context,
-        type_query,
-    };
+    use crate::tui::test_picker::type_query;
     use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
-    use crate::tui::{Span, ViewContext, display_width_text};
-
-    const DEFAULT_SIZE: (u16, u16) = (120, 40);
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
@@ -147,162 +141,6 @@ mod tests {
         ]
     }
 
-    fn selected_text(picker: &CommandPicker) -> Option<String> {
-        let context = ViewContext::new(DEFAULT_SIZE);
-        let frame = picker.render(&context);
-        frame
-            .lines()
-            .iter()
-            .find(|line| line.plain_text().starts_with("▶ "))
-            .map(|line| line.plain_text())
-    }
-
-    #[test]
-    fn init_shows_all_commands() {
-        let picker = CommandPicker::new(sample_commands());
-        let lines = rendered_lines_from(&picker.render(&ViewContext::new(DEFAULT_SIZE)));
-        assert_eq!(lines.len(), 3);
-        assert!(lines.iter().any(|l| l.contains("/config")));
-        assert!(lines.iter().any(|l| l.contains("/search")));
-        assert!(lines.iter().any(|l| l.contains("/web")));
-    }
-
-    #[test]
-    fn query_filters_by_name() {
-        let mut picker = CommandPicker::new(sample_commands());
-        type_query(&mut picker, "conf");
-        let lines = rendered_lines_from(&picker.render(&ViewContext::new(DEFAULT_SIZE)));
-        assert_eq!(lines.len(), 1);
-        assert!(lines[0].contains("/config"));
-    }
-
-    #[test]
-    fn query_filters_by_description() {
-        let mut picker = CommandPicker::new(sample_commands());
-        type_query(&mut picker, "browse");
-        let lines = rendered_lines_from(&picker.render(&ViewContext::new(DEFAULT_SIZE)));
-        assert_eq!(lines.len(), 1);
-        assert!(lines[0].contains("/web"));
-    }
-
-    #[test]
-    fn selection_wraps() {
-        let mut picker = CommandPicker::new(sample_commands());
-        let first = selected_text(&picker).unwrap();
-
-        picker.on_event(&Event::Key(key(KeyCode::Up)));
-        let last = selected_text(&picker).unwrap();
-        assert_ne!(first, last);
-
-        picker.on_event(&Event::Key(key(KeyCode::Down)));
-        let back_to_first = selected_text(&picker).unwrap();
-        assert_eq!(first, back_to_first);
-    }
-
-    #[test]
-    fn selected_command_changes_on_move() {
-        let mut picker = CommandPicker::new(sample_commands());
-        let first = selected_text(&picker).unwrap();
-        picker.on_event(&Event::Key(key(KeyCode::Down)));
-        let second = selected_text(&picker).unwrap();
-        assert_ne!(first, second);
-    }
-
-    #[test]
-    fn type_and_delete_updates_query() {
-        let mut picker = CommandPicker::new(sample_commands());
-        type_query(&mut picker, "co");
-        assert_eq!(picker.query(), "co");
-
-        picker.on_event(&Event::Key(key(KeyCode::Backspace)));
-        assert_eq!(picker.query(), "c");
-
-        picker.on_event(&Event::Key(key(KeyCode::Backspace)));
-        assert_eq!(picker.query(), "");
-    }
-
-    #[test]
-    fn render_includes_hint_for_commands_with_hint() {
-        let picker = CommandPicker::new(sample_commands());
-        let lines = rendered_lines_from(&picker.render(&ViewContext::new(DEFAULT_SIZE)));
-
-        assert!(
-            lines.iter().any(|l| l.contains("[query pattern]")),
-            "Should render hint for search command. Got: {lines:?}",
-        );
-        assert!(
-            lines.iter().any(|l| l.contains("[url]")),
-            "Should render hint for web command. Got: {lines:?}",
-        );
-    }
-
-    #[test]
-    fn render_omits_hint_brackets_for_commands_without_hint() {
-        let picker = CommandPicker::new(sample_commands());
-        let lines = rendered_lines_from(&picker.render(&ViewContext::new(DEFAULT_SIZE)));
-
-        let config_line = lines
-            .iter()
-            .find(|l| l.contains("/config"))
-            .expect("config command should be rendered");
-        assert!(
-            !config_line.contains("  ["),
-            "Config command should not have hint brackets. Got: {config_line}",
-        );
-    }
-
-    #[test]
-    fn selected_entry_has_highlight_background() {
-        let picker = CommandPicker::new(sample_commands());
-        let context = ViewContext::new((80, 24));
-        let frame = picker.render(&context);
-        let selected_line = frame
-            .lines()
-            .iter()
-            .find(|line| line.plain_text().starts_with("▶ "))
-            .expect("should render a selected line");
-
-        let has_bg = selected_line
-            .spans()
-            .iter()
-            .any(|span| span.style().bg == Some(context.theme.highlight_bg()));
-        assert!(has_bg, "selected entry should have highlight background");
-    }
-
-    #[test]
-    fn selected_entry_has_text_primary_foreground() {
-        let picker = CommandPicker::new(sample_commands());
-        let context = ViewContext::new((80, 24));
-        let lines = rendered_raw_lines_with_context(|ctx| picker.render(ctx), (80, 24));
-        let selected_line = lines
-            .iter()
-            .find(|line| line.plain_text().starts_with("▶ "))
-            .expect("should render a selected line");
-
-        let has_fg = selected_line
-            .spans()
-            .iter()
-            .any(|span| span.style().fg == Some(context.theme.text_primary()));
-        assert!(has_fg, "selected entry should have text_primary foreground");
-    }
-
-    #[test]
-    fn selected_entry_highlight_fills_full_line_width() {
-        let picker = CommandPicker::new(sample_commands());
-        let context = ViewContext::new((30, 24));
-        let lines = rendered_raw_lines_with_context(|ctx| picker.render(ctx), (30, 24));
-        let selected_line = lines
-            .iter()
-            .find(|line| line.plain_text().starts_with("▶ "))
-            .expect("should render a selected line");
-
-        assert_eq!(
-            selected_line.display_width(),
-            context.size.width as usize,
-            "selected row should fill the full visible width",
-        );
-    }
-
     #[test]
     fn handle_key_enter_returns_selected_command() {
         let mut picker = CommandPicker::new(sample_commands());
@@ -328,92 +166,6 @@ mod tests {
             outcome.unwrap().as_slice(),
             [PickerMessage::CloseAndPopChar]
         ));
-    }
-
-    #[test]
-    fn non_selected_items_have_multi_span_styling() {
-        let picker = CommandPicker::new(sample_commands());
-        let raw_lines = rendered_raw_lines_with_context(|ctx| picker.render(ctx), DEFAULT_SIZE);
-
-        let non_selected = raw_lines
-            .iter()
-            .find(|l| l.plain_text().starts_with("  /"))
-            .expect("should have a non-selected command line");
-
-        // Non-selected items should have multiple spans with different styles:
-        // the name part in default style and the description in muted style
-        assert!(
-            non_selected.spans().len() >= 2,
-            "Non-selected item should have multiple spans for different styling, \
-             got {} span(s): {:?}",
-            non_selected.spans().len(),
-            non_selected
-                .spans()
-                .iter()
-                .map(Span::text)
-                .collect::<Vec<_>>(),
-        );
-
-        let first_style = non_selected.spans()[0].style();
-        let last_style = non_selected.spans().last().unwrap().style();
-        assert_ne!(
-            first_style, last_style,
-            "Name and description spans should have different styles",
-        );
-    }
-
-    #[test]
-    fn descriptions_are_column_aligned() {
-        let picker = CommandPicker::new(sample_commands());
-        let lines = rendered_lines_from(&picker.render(&ViewContext::new(DEFAULT_SIZE)));
-
-        let command_lines: Vec<&str> = lines.iter().map(std::string::String::as_str).collect();
-        assert_eq!(command_lines.len(), 3);
-
-        // All descriptions should start at the same display column.
-        // Find the display column where the description text begins for each line.
-        let desc_positions: Vec<usize> = sample_commands()
-            .iter()
-            .zip(command_lines.iter())
-            .map(|(cmd, line)| {
-                let byte_pos = line.find(&cmd.description).unwrap_or_else(|| {
-                    panic!("description '{}' not found in '{}'", cmd.description, line)
-                });
-                display_width_text(&line[..byte_pos])
-            })
-            .collect();
-
-        assert!(
-            desc_positions.windows(2).all(|w| w[0] == w[1]),
-            "Descriptions should start at the same column, but positions are: {desc_positions:?}\nLines: {command_lines:?}",
-        );
-    }
-
-    #[test]
-    fn long_commands_are_truncated_to_terminal_width() {
-        let commands = vec![CommandEntry {
-            name: "verylongcommandnamethatgoesonandon".into(),
-            description: "This is a very long description that would normally wrap to multiple lines if we didn't truncate it".into(),
-            has_input: false,
-            hint: Some("some hint text".into()),
-            builtin: false,
-        }];
-
-        let picker = CommandPicker::new(commands);
-        let lines = rendered_lines_with_context(|ctx| picker.render(ctx), (30, 10));
-        let command_line = &lines[0];
-
-        assert_eq!(lines.len(), 1);
-        assert!(
-            command_line.ends_with("..."),
-            "Expected truncation, got: {command_line}"
-        );
-
-        let width = display_width_text(command_line);
-        assert!(
-            width <= 30,
-            "Line width {width} exceeds terminal width 30: {command_line}"
-        );
     }
 
     #[test]
@@ -459,5 +211,18 @@ mod tests {
             [PickerMessage::PopChar]
         ));
         assert_eq!(picker.query(), "c");
+    }
+
+    #[test]
+    fn type_and_delete_updates_query() {
+        let mut picker = CommandPicker::new(sample_commands());
+        type_query(&mut picker, "co");
+        assert_eq!(picker.query(), "co");
+
+        picker.on_event(&Event::Key(key(KeyCode::Backspace)));
+        assert_eq!(picker.query(), "c");
+
+        picker.on_event(&Event::Key(key(KeyCode::Backspace)));
+        assert_eq!(picker.query(), "");
     }
 }

@@ -65,13 +65,6 @@ impl ConfigOverlay {
         }
     }
 
-    #[cfg(test)]
-    pub fn with_server_overlay(mut self) -> Self {
-        self.active_pane =
-            ConfigPane::ServerStatus(ServerStatusOverlay::new(self.server_statuses.clone()));
-        self
-    }
-
     pub fn with_reasoning_effort_from_options(mut self, options: &[SessionConfigOption]) -> Self {
         self.current_reasoning_effort = Self::extract_reasoning_effort(options);
         self
@@ -90,7 +83,7 @@ impl ConfigOverlay {
             })
     }
 
-    pub(crate) fn update_child_viewport(&mut self, max_height: usize) {
+    pub fn update_child_viewport(&mut self, max_height: usize) {
         match &mut self.active_pane {
             ConfigPane::ModelSelector(ms) => ms.update_viewport(max_height),
             ConfigPane::Picker(p) => p.update_viewport(max_height),
@@ -383,7 +376,6 @@ fn theme_file_from_picker_value(value: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::Line;
     use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
     use acp_utils::config_option_id::THEME_CONFIG_ID;
     use acp_utils::notifications::McpServerStatus;
@@ -487,218 +479,11 @@ mod tests {
     }
 
     #[test]
-    fn bordered_box_fills_terminal_height_minus_one() {
-        let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        let context = ViewContext::new((80, 24));
-        let frame = overlay.render(&context);
-        // Should fill exactly height - 1 = 23 lines
-        assert_eq!(frame.lines().len(), 23);
-    }
-
-    #[test]
-    fn title_contains_configuration() {
-        let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        let context = ViewContext::new((80, 24));
-        let frame = overlay.render(&context);
-        assert!(frame.lines()[0].plain_text().contains("Configuration"));
-    }
-
-    #[test]
-    fn footer_shows_select_and_close_for_menu() {
-        let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        let context = ViewContext::new((80, 24));
-        let frame = overlay.render(&context);
-        let lines = frame.lines();
-        let footer = lines[lines.len() - 2].plain_text(); // second to last (last is bottom border)
-        assert!(footer.contains("[Enter] Select"), "footer: {footer}");
-        assert!(footer.contains("[Esc] Close"), "footer: {footer}");
-    }
-
-    #[test]
-    fn footer_shows_confirm_and_back_for_picker() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        // Open picker
-        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
-        let context = ViewContext::new((80, 24));
-        let frame = overlay.render(&context);
-        let lines = frame.lines();
-        let footer = lines[lines.len() - 2].plain_text();
-        assert!(footer.contains("[Enter] Confirm"), "footer: {footer}");
-        assert!(footer.contains("[Esc] Back"), "footer: {footer}");
-    }
-
-    #[test]
-    fn footer_shows_authenticate_and_back_for_servers() {
-        let menu = make_menu();
-        let statuses = make_server_statuses();
-        let overlay = ConfigOverlay::new(menu, statuses, vec![]).with_server_overlay();
-        let context = ViewContext::new((80, 24));
-        let frame = overlay.render(&context);
-        let lines = frame.lines();
-        let footer = lines[lines.len() - 2].plain_text();
-        assert!(footer.contains("[Enter] Authenticate"), "footer: {footer}");
-        assert!(footer.contains("[Esc] Back"), "footer: {footer}");
-    }
-
-    #[test]
-    fn selected_entry_has_bg_color() {
-        let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        let context = ViewContext::new((80, 24));
-        let frame = overlay.render(&context);
-        let selected_line = frame
-            .lines()
-            .iter()
-            .find(|line| line.plain_text().contains("Provider: OpenRouter"))
-            .expect("expected provider row to be rendered");
-        let has_bg = selected_line
-            .spans()
-            .iter()
-            .any(|s| s.style().bg == Some(context.theme.highlight_bg()));
-        assert!(has_bg, "selected entry should have highlight_bg");
-    }
-
-    #[test]
-    fn render_root_menu_shows_top_level_rows() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-
-        let lines = render_plain_text(&mut overlay);
-        let text = lines.join("\n");
-
-        assert!(text.contains("Provider: OpenRouter"), "rendered:\n{text}");
-        assert!(text.contains("Model: GPT-4o"), "rendered:\n{text}");
-        assert!(text.contains("[Enter] Select"), "rendered:\n{text}");
-        assert!(text.contains("[Esc] Close"), "rendered:\n{text}");
-    }
-
-    #[test]
-    fn render_picker_hides_top_level_rows() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
-
-        let lines = render_plain_text(&mut overlay);
-        let text = lines.join("\n");
-
-        assert!(text.contains("Provider search:"), "rendered:\n{text}");
-        assert!(!text.contains("Provider: OpenRouter"), "rendered:\n{text}");
-        assert!(!text.contains("Model: GPT-4o"), "rendered:\n{text}");
-        assert!(text.contains("[Enter] Confirm"), "rendered:\n{text}");
-        assert!(text.contains("[Esc] Back"), "rendered:\n{text}");
-    }
-
-    #[test]
-    fn render_model_selector_hides_top_level_rows() {
-        let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
-        overlay.on_event(&Event::Key(key(KeyCode::Down)));
-        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
-
-        let lines = render_plain_text(&mut overlay);
-        let text = lines.join("\n");
-
-        assert!(text.contains("Model search:"), "rendered:\n{text}");
-        assert!(!text.contains("Provider: OpenRouter"), "rendered:\n{text}");
-        assert!(!text.contains("Model: GPT-4o"), "rendered:\n{text}");
-        assert!(text.contains("Toggle"), "rendered:\n{text}");
-        assert!(text.contains("Reasoning"), "rendered:\n{text}");
-        assert!(text.contains("[Esc] Done"), "rendered:\n{text}");
-    }
-
-    #[test]
-    fn render_server_overlay_hides_top_level_rows() {
-        let menu = make_menu();
-        let statuses = make_server_statuses();
-        let mut overlay = ConfigOverlay::new(menu, statuses, vec![]).with_server_overlay();
-
-        let lines = render_plain_text(&mut overlay);
-        let text = lines.join("\n");
-
-        assert!(text.contains("github  ✓ 5 tools"), "rendered:\n{text}");
-        assert!(
-            text.contains("linear  ⚡ needs authentication"),
-            "rendered:\n{text}"
-        );
-        assert!(!text.contains("Provider: OpenRouter"), "rendered:\n{text}");
-        assert!(!text.contains("Model: GPT-4o"), "rendered:\n{text}");
-        assert!(text.contains("[Enter] Authenticate"), "rendered:\n{text}");
-        assert!(text.contains("[Esc] Back"), "rendered:\n{text}");
-    }
-
-    #[test]
-    fn render_provider_login_overlay_hides_top_level_rows() {
-        let mut menu = make_menu();
-        menu.add_provider_logins_entry("2 needs login");
-        let mut overlay = ConfigOverlay::new(menu, vec![], make_auth_methods());
-        overlay.on_event(&Event::Key(key(KeyCode::Down)));
-        overlay.on_event(&Event::Key(key(KeyCode::Down)));
-        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Enter)));
-        assert!(outcome.is_some());
-
-        let lines = render_plain_text(&mut overlay);
-        let text = lines.join("\n");
-
-        assert!(
-            text.contains("Anthropic  ⚡ needs login"),
-            "rendered:\n{text}"
-        );
-        assert!(
-            text.contains("OpenRouter  ⚡ needs login"),
-            "rendered:\n{text}"
-        );
-        assert!(!text.contains("Provider: OpenRouter"), "rendered:\n{text}");
-        assert!(!text.contains("Model: GPT-4o"), "rendered:\n{text}");
-        assert!(text.contains("[Enter] Authenticate"), "rendered:\n{text}");
-        assert!(text.contains("[Esc] Back"), "rendered:\n{text}");
-    }
-
-    #[test]
-    fn provider_login_overlay_closes_when_empty() {
-        let mut menu = make_menu();
-        menu.add_provider_logins_entry("2 needs login");
-        let mut overlay = ConfigOverlay::new(menu, vec![], make_auth_methods());
-        overlay.on_event(&Event::Key(key(KeyCode::Down)));
-        overlay.on_event(&Event::Key(key(KeyCode::Down)));
-        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
-        assert!(matches!(overlay.active_pane, ConfigPane::ProviderLogin(_)));
-
-        overlay.remove_auth_method("anthropic");
-        overlay.remove_auth_method("openrouter");
-
-        assert!(matches!(overlay.active_pane, ConfigPane::Menu));
-
-        let lines = render_plain_text(&mut overlay);
-        let text = lines.join("\n");
-
-        assert!(text.contains("Provider: OpenRouter"), "rendered:\n{text}");
-    }
-
-    #[test]
-    fn picker_cursor_row_offset_matches_submenu_only_layout() {
-        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
-
-        assert_eq!(overlay.cursor_row_offset(), TOP_CHROME);
-    }
-
-    #[test]
     fn esc_closes_overlay() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc)));
         let messages = outcome.unwrap();
         assert!(matches!(messages.as_slice(), [ConfigOverlayMessage::Close]));
-    }
-
-    #[test]
-    fn config_overlay_picker_confirm_updates_menu_row_immediately() {
-        let mut menu = ConfigMenu::from_config_options(&[]);
-        menu.add_theme_entry(None, &["nord.tmTheme".to_string()]);
-        let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
-
-        overlay.on_event(&Event::Key(key(KeyCode::Enter))); // open picker on Theme
-        let _ = overlay.on_event(&Event::Key(key(KeyCode::Down))); // select nord.tmTheme
-        let _ = overlay.on_event(&Event::Key(key(KeyCode::Enter))); // confirm
-
-        assert_eq!(overlay.menu.options()[0].config_id, THEME_CONFIG_ID);
-        assert_eq!(overlay.menu.options()[0].current_raw_value, "nord.tmTheme");
-        assert_eq!(overlay.menu.options()[0].current_value_index, 1);
     }
 
     #[test]
@@ -740,16 +525,18 @@ mod tests {
     }
 
     #[test]
-    fn server_overlay_esc_closes_server_not_config_overlay() {
-        let menu = make_menu();
-        let statuses = make_server_statuses();
-        let mut overlay = ConfigOverlay::new(menu, statuses, vec![]).with_server_overlay();
-        assert!(render_footer(&mut overlay).contains("Authenticate"));
+    fn config_overlay_picker_confirm_updates_menu_row_immediately() {
+        let mut menu = ConfigMenu::from_config_options(&[]);
+        menu.add_theme_entry(None, &["nord.tmTheme".to_string()]);
+        let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
 
-        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc)));
-        assert!(outcome.is_some());
-        assert!(render_footer(&mut overlay).contains("[Enter] Select"));
-        assert!(outcome.unwrap().is_empty());
+        overlay.on_event(&Event::Key(key(KeyCode::Enter))); // open picker on Theme
+        let _ = overlay.on_event(&Event::Key(key(KeyCode::Down))); // select nord.tmTheme
+        let _ = overlay.on_event(&Event::Key(key(KeyCode::Enter))); // confirm
+
+        assert_eq!(overlay.menu.options()[0].config_id, THEME_CONFIG_ID);
+        assert_eq!(overlay.menu.options()[0].current_raw_value, "nord.tmTheme");
+        assert_eq!(overlay.menu.options()[0].current_value_index, 1);
     }
 
     #[test]
@@ -768,101 +555,11 @@ mod tests {
     }
 
     #[test]
-    fn narrow_terminal_does_not_panic() {
-        let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        let context = ViewContext::new((4, 3));
-        let frame = overlay.render(&context);
-        assert!(!frame.lines().is_empty());
-    }
-
-    #[test]
-    fn very_small_terminal_shows_fallback() {
-        let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        let context = ViewContext::new((3, 2));
-        let frame = overlay.render(&context);
-        assert_eq!(frame.lines().len(), 1);
-        assert!(frame.lines()[0].plain_text().contains("too small"));
-    }
-
-    #[test]
-    fn update_config_options_preserves_mcp_servers_entry() {
-        use crate::components::config_menu::ConfigMenuEntryKind;
-        use crate::test_helpers::with_wisp_home;
-
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let themes_dir = temp_dir.path().join("themes");
-        std::fs::create_dir_all(&themes_dir).unwrap();
-        std::fs::write(themes_dir.join("custom.tmTheme"), "x").unwrap();
-
-        with_wisp_home(temp_dir.path(), || {
-            let mut menu = make_menu();
-            menu.add_mcp_servers_entry("1 connected, 1 needs auth");
-            let statuses = make_server_statuses();
-            let mut overlay = ConfigOverlay::new(menu, statuses, vec![]);
-
-            // Verify MCP servers entry exists initially
-            assert!(
-                overlay
-                    .menu
-                    .options()
-                    .iter()
-                    .any(|e| e.entry_kind == ConfigMenuEntryKind::McpServers),
-                "MCP servers entry should exist before update"
-            );
-
-            // Simulate config update (e.g. after model selection)
-            let new_options = vec![
-                agent_client_protocol::SessionConfigOption::select(
-                    "provider",
-                    "Provider",
-                    "ollama",
-                    vec![
-                        SessionConfigSelectOption::new("openrouter", "OpenRouter"),
-                        SessionConfigSelectOption::new("ollama", "Ollama"),
-                    ],
-                ),
-                agent_client_protocol::SessionConfigOption::select(
-                    "model",
-                    "Model",
-                    "llama",
-                    vec![SessionConfigSelectOption::new("llama", "Llama")],
-                ),
-            ];
-            overlay.update_config_options(&new_options);
-
-            // Theme and MCP entries should still be present after update
-            assert!(
-                overlay
-                    .menu
-                    .options()
-                    .iter()
-                    .any(|e| e.config_id == THEME_CONFIG_ID),
-                "Theme entry should survive update_config_options"
-            );
-            assert!(
-                overlay
-                    .menu
-                    .options()
-                    .iter()
-                    .any(|e| e.entry_kind == ConfigMenuEntryKind::McpServers),
-                "MCP servers entry should survive update_config_options"
-            );
-        });
-    }
-
-    #[test]
-    fn multi_select_entry_opens_model_selector() {
-        let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
-
-        // Navigate to the model entry (index 1: provider=0, model=1)
-        overlay.on_event(&Event::Key(key(KeyCode::Down)));
+    fn picker_cursor_row_offset_matches_submenu_only_layout() {
+        let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         overlay.on_event(&Event::Key(key(KeyCode::Enter)));
 
-        let footer = render_footer(&mut overlay);
-        assert!(
-            footer.contains("Toggle"),
-            "expected model selector, got: {footer}"
-        );
+        assert_eq!(overlay.cursor_row_offset(), TOP_CHROME);
     }
 
     #[test]
@@ -913,124 +610,6 @@ mod tests {
             footer.contains("Toggle"),
             "Enter should toggle, not close; got: {footer}"
         );
-    }
-
-    #[test]
-    fn tall_terminal_shows_more_picker_items() {
-        // Create a menu with many model options
-        let many_models: Vec<SessionConfigSelectOption> = (0..20)
-            .map(|i| SessionConfigSelectOption::new(format!("model-{i}"), format!("Model {i}")))
-            .collect();
-        let options = vec![agent_client_protocol::SessionConfigOption::select(
-            "model",
-            "Model",
-            "model-0",
-            many_models,
-        )];
-        let menu = ConfigMenu::from_config_options(&options);
-        let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
-        overlay.on_event(&Event::Key(key(KeyCode::Enter))); // open picker
-
-        // Render at a tall terminal (60 rows)
-        let context_tall = ViewContext::new((80, 60));
-        let height_tall = (context_tall.size.height.saturating_sub(1)) as usize;
-        overlay.update_child_viewport(height_tall.saturating_sub(4));
-        let frame_tall = overlay.render(&context_tall);
-        let tall_model_lines = frame_tall
-            .lines()
-            .iter()
-            .filter(|l| l.plain_text().contains("Model "))
-            .count();
-
-        // Render at a short terminal (15 rows)
-        let context_short = ViewContext::new((80, 15));
-        let height_short = (context_short.size.height.saturating_sub(1)) as usize;
-        overlay.update_child_viewport(height_short.saturating_sub(4));
-        let frame_short = overlay.render(&context_short);
-        let short_model_lines = frame_short
-            .lines()
-            .iter()
-            .filter(|l| l.plain_text().contains("Model "))
-            .count();
-
-        assert!(
-            tall_model_lines > short_model_lines,
-            "tall terminal ({tall_model_lines} items) should show more picker items than short ({short_model_lines})"
-        );
-    }
-
-    #[test]
-    fn update_config_options_never_renders_reasoning_row() {
-        // Initial options include model + reasoning_effort
-        let initial_options = vec![
-            agent_client_protocol::SessionConfigOption::select(
-                "model",
-                "Model",
-                "claude-opus",
-                vec![
-                    SessionConfigSelectOption::new("claude-opus", "Claude Opus"),
-                    SessionConfigSelectOption::new("deepseek-chat", "DeepSeek Chat"),
-                ],
-            ),
-            agent_client_protocol::SessionConfigOption::select(
-                "reasoning_effort",
-                "Reasoning Effort",
-                "high",
-                vec![
-                    SessionConfigSelectOption::new("none", "None"),
-                    SessionConfigSelectOption::new("low", "Low"),
-                    SessionConfigSelectOption::new("medium", "Medium"),
-                    SessionConfigSelectOption::new("high", "High"),
-                ],
-            ),
-        ];
-        let menu = ConfigMenu::from_config_options(&initial_options);
-        let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
-
-        // Rendered lines do not contain Reasoning Effort
-        let context = ViewContext::new((80, 24));
-        let frame = overlay.render(&context);
-        let text: Vec<String> = frame.lines().iter().map(Line::plain_text).collect();
-        assert!(
-            !text.iter().any(|l| l.contains("Reasoning Effort")),
-            "Reasoning Effort should NOT appear initially; got:\n{}",
-            text.join("\n")
-        );
-
-        // After update to model-only options, still no Reasoning Effort
-        let updated_options = vec![agent_client_protocol::SessionConfigOption::select(
-            "model",
-            "Model",
-            "deepseek-chat",
-            vec![
-                SessionConfigSelectOption::new("claude-opus", "Claude Opus"),
-                SessionConfigSelectOption::new("deepseek-chat", "DeepSeek Chat"),
-            ],
-        )];
-        overlay.update_config_options(&updated_options);
-
-        let frame = overlay.render(&context);
-        let text: Vec<String> = frame.lines().iter().map(Line::plain_text).collect();
-        assert!(
-            !text.iter().any(|l| l.contains("Reasoning Effort")),
-            "Reasoning Effort should NOT appear after update; got:\n{}",
-            text.join("\n")
-        );
-    }
-
-    #[test]
-    fn footer_shows_toggle_when_model_selector_open() {
-        let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
-
-        overlay.on_event(&Event::Key(key(KeyCode::Down)));
-        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
-
-        let context = ViewContext::new((80, 24));
-        let frame = overlay.render(&context);
-        let lines = frame.lines();
-        let footer = lines[lines.len() - 2].plain_text();
-        assert!(footer.contains("Toggle"), "footer: {footer}");
-        assert!(footer.contains("[Esc] Done"), "footer: {footer}");
     }
 
     #[test]
@@ -1123,6 +702,93 @@ mod tests {
     }
 
     #[test]
+    fn update_config_options_preserves_mcp_servers_entry() {
+        use crate::components::config_menu::ConfigMenuEntryKind;
+        use crate::test_helpers::with_wisp_home;
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let themes_dir = temp_dir.path().join("themes");
+        std::fs::create_dir_all(&themes_dir).unwrap();
+        std::fs::write(themes_dir.join("custom.tmTheme"), "x").unwrap();
+
+        with_wisp_home(temp_dir.path(), || {
+            let mut menu = make_menu();
+            menu.add_mcp_servers_entry("1 connected, 1 needs auth");
+            let statuses = make_server_statuses();
+            let mut overlay = ConfigOverlay::new(menu, statuses, vec![]);
+
+            // Verify MCP servers entry exists initially
+            assert!(
+                overlay
+                    .menu
+                    .options()
+                    .iter()
+                    .any(|e| e.entry_kind == ConfigMenuEntryKind::McpServers),
+                "MCP servers entry should exist before update"
+            );
+
+            // Simulate config update (e.g. after model selection)
+            let new_options = vec![
+                agent_client_protocol::SessionConfigOption::select(
+                    "provider",
+                    "Provider",
+                    "ollama",
+                    vec![
+                        SessionConfigSelectOption::new("openrouter", "OpenRouter"),
+                        SessionConfigSelectOption::new("ollama", "Ollama"),
+                    ],
+                ),
+                agent_client_protocol::SessionConfigOption::select(
+                    "model",
+                    "Model",
+                    "llama",
+                    vec![SessionConfigSelectOption::new("llama", "Llama")],
+                ),
+            ];
+            overlay.update_config_options(&new_options);
+
+            // Theme and MCP entries should still be present after update
+            assert!(
+                overlay
+                    .menu
+                    .options()
+                    .iter()
+                    .any(|e| e.config_id == THEME_CONFIG_ID),
+                "Theme entry should survive update_config_options"
+            );
+            assert!(
+                overlay
+                    .menu
+                    .options()
+                    .iter()
+                    .any(|e| e.entry_kind == ConfigMenuEntryKind::McpServers),
+                "MCP servers entry should survive update_config_options"
+            );
+        });
+    }
+
+    #[test]
+    fn provider_login_overlay_closes_when_empty() {
+        let mut menu = make_menu();
+        menu.add_provider_logins_entry("2 needs login");
+        let mut overlay = ConfigOverlay::new(menu, vec![], make_auth_methods());
+        overlay.on_event(&Event::Key(key(KeyCode::Down)));
+        overlay.on_event(&Event::Key(key(KeyCode::Down)));
+        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
+        assert!(matches!(overlay.active_pane, ConfigPane::ProviderLogin(_)));
+
+        overlay.remove_auth_method("anthropic");
+        overlay.remove_auth_method("openrouter");
+
+        assert!(matches!(overlay.active_pane, ConfigPane::Menu));
+
+        let lines = render_plain_text(&mut overlay);
+        let text = lines.join("\n");
+
+        assert!(text.contains("Provider: OpenRouter"), "rendered:\n{text}");
+    }
+
+    #[test]
     fn theme_default_value_maps_to_none() {
         assert_eq!(theme_file_from_picker_value("   "), None);
     }
@@ -1148,7 +814,7 @@ mod tests {
         fs::write(themes_dir.join("custom.tmTheme"), CUSTOM_TMTHEME).unwrap();
 
         with_wisp_home(temp_dir.path(), || {
-            let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+            let _overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
             let messages = ConfigOverlay::process_config_changes(vec![ConfigChange {
                 config_id: THEME_CONFIG_ID.to_string(),
                 new_value: "custom.tmTheme".to_string(),
@@ -1191,7 +857,7 @@ mod tests {
             })
             .unwrap();
 
-            let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+            let _overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
             let _messages = ConfigOverlay::process_config_changes(vec![ConfigChange {
                 config_id: THEME_CONFIG_ID.to_string(),
                 new_value: "   ".to_string(),
@@ -1204,7 +870,7 @@ mod tests {
 
     #[test]
     fn process_non_theme_change_produces_set_config_option() {
-        let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+        let _overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
         let messages = ConfigOverlay::process_config_changes(vec![ConfigChange {
             config_id: "provider".to_string(),
             new_value: "ollama".to_string(),

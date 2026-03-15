@@ -16,13 +16,13 @@ struct Segment {
     content: SegmentContent,
 }
 
-pub(crate) struct ConversationBuffer {
+pub struct ConversationBuffer {
     segments: Vec<Segment>,
     thought_block_open: bool,
 }
 
 impl ConversationBuffer {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             segments: Vec::new(),
             thought_block_open: false,
@@ -34,15 +34,7 @@ impl ConversationBuffer {
         self.segments.iter().map(|s| &s.content)
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_segments(&mut self, segments: Vec<SegmentContent>) {
-        self.segments = segments
-            .into_iter()
-            .map(|content| Segment { content })
-            .collect();
-    }
-
-    pub(crate) fn append_text_chunk(&mut self, chunk: &str) {
+    pub fn append_text_chunk(&mut self, chunk: &str) {
         if chunk.is_empty() {
             return;
         }
@@ -60,7 +52,7 @@ impl ConversationBuffer {
         }
     }
 
-    pub(crate) fn append_thought_chunk(&mut self, chunk: &str) {
+    pub fn append_thought_chunk(&mut self, chunk: &str) {
         if chunk.is_empty() {
             return;
         }
@@ -134,7 +126,7 @@ impl ConversationBuffer {
 
 }
 
-pub(crate) struct ConversationWindow<'a> {
+pub struct ConversationWindow<'a> {
     pub loader: &'a Spinner,
     pub conversation: &'a ConversationBuffer,
     pub tool_call_statuses: &'a ToolCallStatuses,
@@ -207,97 +199,6 @@ fn extend_with_vertical_margin(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::BRAILLE_FRAMES;
-
-    #[test]
-    fn renders_empty_when_loader_and_segments_are_empty() {
-        let loader = Spinner::default();
-        let conversation = ConversationBuffer::new();
-        let statuses = ToolCallStatuses::new();
-        let context = ViewContext::new((80, 24));
-        let view = ConversationWindow {
-            loader: &loader,
-            conversation: &conversation,
-            tool_call_statuses: &statuses,
-        };
-
-        let lines = view.render(&context);
-        assert!(lines.is_empty());
-    }
-
-    #[test]
-    fn inserts_vertical_margin_between_different_segment_kinds() {
-        let loader = Spinner::default();
-        let mut conversation = ConversationBuffer::new();
-        conversation.set_segments(vec![
-            SegmentContent::Text("one".to_string()),
-            SegmentContent::Thought("two".to_string()),
-            SegmentContent::Text("three".to_string()),
-        ]);
-        let statuses = ToolCallStatuses::new();
-        let context = ViewContext::new((80, 24));
-        let view = ConversationWindow {
-            loader: &loader,
-            conversation: &conversation,
-            tool_call_statuses: &statuses,
-        };
-
-        let lines = view.render(&context);
-        assert_eq!(lines.len(), 5);
-        assert!(lines[0].plain_text().contains("one"));
-        assert_eq!(lines[1].plain_text(), "");
-        assert!(lines[2].plain_text().starts_with("│ "));
-        assert!(lines[2].plain_text().contains("two"));
-        assert_eq!(lines[3].plain_text(), "");
-        assert!(lines[4].plain_text().contains("three"));
-    }
-
-    #[test]
-    fn does_not_insert_vertical_margin_for_same_kind_segments() {
-        let loader = Spinner::default();
-        let mut conversation = ConversationBuffer::new();
-        conversation.set_segments(vec![
-            SegmentContent::Text("first".to_string()),
-            SegmentContent::Text("second".to_string()),
-        ]);
-        let statuses = ToolCallStatuses::new();
-        let context = ViewContext::new((80, 24));
-        let view = ConversationWindow {
-            loader: &loader,
-            conversation: &conversation,
-            tool_call_statuses: &statuses,
-        };
-
-        let lines = view.render(&context);
-        assert_eq!(lines.len(), 2);
-        assert!(lines[0].plain_text().contains("first"));
-        assert!(lines[1].plain_text().contains("second"));
-    }
-
-    #[test]
-    fn renders_loader_before_segments() {
-        let mut loader = Spinner::default();
-        loader.visible = true;
-        let mut conversation = ConversationBuffer::new();
-        conversation.append_text_chunk("hello");
-        let statuses = ToolCallStatuses::new();
-        let context = ViewContext::new((80, 24));
-        let view = ConversationWindow {
-            loader: &loader,
-            conversation: &conversation,
-            tool_call_statuses: &statuses,
-        };
-
-        let lines = view.render(&context);
-        assert_eq!(lines.len(), 2);
-        let loader_line = lines[0].plain_text();
-        assert!(
-            BRAILLE_FRAMES
-                .iter()
-                .any(|frame| loader_line.contains(frame.to_string().as_str()))
-        );
-        assert!(lines[1].plain_text().contains("hello"));
-    }
 
     #[test]
     fn buffer_closes_thought_block_when_text_arrives() {
