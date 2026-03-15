@@ -524,19 +524,56 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn config_overlay_picker_confirm_updates_menu_row_immediately() {
-        let mut menu = ConfigMenu::from_config_options(&[]);
-        menu.add_theme_entry(None, &["nord.tmTheme".to_string()]);
-        let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
+    #[test]
+    fn config_overlay_picker_confirm_updates_menu_row_immediately() {
+        use crate::test_helpers::with_wisp_home;
+        use tempfile::TempDir;
 
-        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await; // open picker on Theme
-        let _ = overlay.on_event(&Event::Key(key(KeyCode::Down))).await; // select nord.tmTheme
-        let _ = overlay.on_event(&Event::Key(key(KeyCode::Enter))).await; // confirm
+        let temp_dir = TempDir::new().unwrap();
+        with_wisp_home(temp_dir.path(), || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                let mut menu = ConfigMenu::from_config_options(&[]);
+                menu.add_theme_entry(None, &["nord.tmTheme".to_string()]);
+                let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
 
-        assert_eq!(overlay.menu.options()[0].config_id, THEME_CONFIG_ID);
-        assert_eq!(overlay.menu.options()[0].current_raw_value, "nord.tmTheme");
-        assert_eq!(overlay.menu.options()[0].current_value_index, 1);
+                overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
+                let _ = overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
+                let _ = overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
+
+                assert_eq!(overlay.menu.options()[0].config_id, THEME_CONFIG_ID);
+                assert_eq!(overlay.menu.options()[0].current_raw_value, "nord.tmTheme");
+                assert_eq!(overlay.menu.options()[0].current_value_index, 1);
+            });
+        });
+    }
+
+    #[test]
+    fn config_overlay_picker_confirm_persists_theme_to_settings() {
+        use crate::settings::load_or_create_settings;
+        use crate::test_helpers::with_wisp_home;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        with_wisp_home(temp_dir.path(), || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                let mut menu = ConfigMenu::from_config_options(&[]);
+                menu.add_theme_entry(None, &["nord.tmTheme".to_string()]);
+                let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
+
+                overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
+                let _ = overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
+                let _ = overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
+
+                let settings = load_or_create_settings();
+                assert_eq!(
+                    settings.theme.file.as_deref(),
+                    Some("nord.tmTheme"),
+                    "theme selection should be persisted to settings.json"
+                );
+            });
+        });
     }
 
     #[test]
