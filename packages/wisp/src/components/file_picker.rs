@@ -93,7 +93,7 @@ impl Component for FilePicker {
         self.combobox.handle_picker_event(event)
     }
 
-    fn render(&self, context: &ViewContext) -> Frame {
+    fn render(&mut self, context: &ViewContext) -> Frame {
         let mut lines = Vec::new();
 
         if self.combobox.is_empty() {
@@ -142,7 +142,7 @@ mod tests {
         }
     }
 
-    fn selected_text(picker: &FilePicker) -> Option<String> {
+    fn selected_text(picker: &mut FilePicker) -> Option<String> {
         let context = ViewContext::new(DEFAULT_SIZE);
         let frame = picker.render(&context);
         frame
@@ -186,20 +186,20 @@ mod tests {
             file_match("c.rs"),
         ]);
 
-        let first = selected_text(&picker).unwrap();
+        let first = selected_text(&mut picker).unwrap();
 
         picker.on_event(&Event::Key(key(KeyCode::Up))).await;
-        let last = selected_text(&picker).unwrap();
+        let last = selected_text(&mut picker).unwrap();
         assert_ne!(first, last);
 
         picker.on_event(&Event::Key(key(KeyCode::Down))).await;
-        let back_to_first = selected_text(&picker).unwrap();
+        let back_to_first = selected_text(&mut picker).unwrap();
         assert_eq!(first, back_to_first);
     }
 
     #[test]
     fn selected_entry_has_highlight_background() {
-        let picker = FilePicker::new_with_entries(vec![
+        let mut picker = FilePicker::new_with_entries(vec![
             file_match("a.rs"),
             file_match("b.rs"),
             file_match("c.rs"),
@@ -221,7 +221,7 @@ mod tests {
 
     #[test]
     fn selected_entry_has_text_primary_foreground() {
-        let picker = FilePicker::new_with_entries(vec![file_match("a.rs")]);
+        let mut picker = FilePicker::new_with_entries(vec![file_match("a.rs")]);
         let context = ViewContext::new((80, 24));
         let lines = rendered_raw_lines_with_context(|ctx| picker.render(ctx), (80, 24));
         let selected_line = lines
@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn selected_entry_highlight_fills_full_line_width() {
-        let picker = FilePicker::new_with_entries(vec![file_match("a.rs")]);
+        let mut picker = FilePicker::new_with_entries(vec![file_match("a.rs")]);
         let context = ViewContext::new((20, 24));
         let lines = rendered_raw_lines_with_context(|ctx| picker.render(ctx), (20, 24));
         let selected_line = lines

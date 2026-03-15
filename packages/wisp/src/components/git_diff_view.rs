@@ -133,7 +133,7 @@ impl Component for GitDiffView<'_> {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Frame {
+    fn render(&mut self, context: &ViewContext) -> Frame {
         Frame::new(render_git_diff_state(self.state, context))
     }
 }

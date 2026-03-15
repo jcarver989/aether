@@ -62,7 +62,7 @@ impl Component for Spinner {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Frame {
+    fn render(&mut self, context: &ViewContext) -> Frame {
         if !self.visible {
             return Frame::new(vec![]);
         }
@@ -86,7 +86,7 @@ mod tests {
 
     #[test]
     fn invisible_renders_empty() {
-        let spinner = Spinner::default();
+        let mut spinner = Spinner::default();
         let ctx = ViewContext::new((80, 24));
         let frame = spinner.render(&ctx);
         assert!(frame.lines().is_empty());

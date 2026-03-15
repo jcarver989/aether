@@ -65,7 +65,7 @@ impl Component for ProviderLoginOverlay {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Frame {
+    fn render(&mut self, context: &ViewContext) -> Frame {
         self.list.render(context)
     }
 }
@@ -151,7 +151,7 @@ mod tests {
 
     #[test]
     fn renders_entries_with_status_indicators() {
-        let overlay = ProviderLoginOverlay::new(sample_entries());
+        let mut overlay = ProviderLoginOverlay::new(sample_entries());
         let ctx = ViewContext::new((80, 24));
         let frame = overlay.render(&ctx);
 
@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn empty_entries_shows_placeholder() {
-        let overlay = ProviderLoginOverlay::new(vec![]);
+        let mut overlay = ProviderLoginOverlay::new(vec![]);
         let ctx = ViewContext::new((80, 24));
         let frame = overlay.render(&ctx);
         assert!(

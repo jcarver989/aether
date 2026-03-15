@@ -5,14 +5,14 @@ use tui::advanced::Renderer;
 
 #[test]
 fn empty_renders_cursor() {
-    let tf = TextField::new(String::new());
+    let mut tf = TextField::new(String::new());
     let term = render_component(|ctx| tf.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["▏"]);
 }
 
 #[test]
 fn with_value_renders_text_and_cursor() {
-    let tf = TextField::new("hello".to_string());
+    let mut tf = TextField::new("hello".to_string());
     let term = render_component(|ctx| tf.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["hello▏"]);
 }

@@ -93,7 +93,7 @@ fn make_view_state(doc: GitDiffDocument) -> GitDiffViewState {
 #[test]
 fn render_empty_state() {
     let mut state = GitDiffViewState::new(GitDiffLoadState::Empty);
-    let view = GitDiffView { state: &mut state };
+    let mut view = GitDiffView { state: &mut state };
     let term = render_component(|ctx| view.render(ctx), 80, 24);
     let output = term.get_lines();
     let text = output.join("");
@@ -105,7 +105,7 @@ fn render_error_state() {
     let mut state = GitDiffViewState::new(GitDiffLoadState::Error {
         message: "not a repo".to_string(),
     });
-    let view = GitDiffView { state: &mut state };
+    let mut view = GitDiffView { state: &mut state };
     let term = render_component(|ctx| view.render(ctx), 80, 24);
     let output = term.get_lines();
     let text = output.join("");
@@ -117,7 +117,7 @@ fn render_error_state() {
 fn render_shows_file_list_and_patch() {
     let doc = make_test_doc();
     let mut state = make_view_state(doc);
-    let view = GitDiffView { state: &mut state };
+    let mut view = GitDiffView { state: &mut state };
     let term = render_component(|ctx| view.render(ctx), 100, 24);
     let output = term.get_lines();
     assert!(!output.is_empty());

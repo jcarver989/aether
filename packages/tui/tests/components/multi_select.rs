@@ -4,14 +4,14 @@ use tui::MultiSelect;
 
 #[test]
 fn renders_all_unchecked() {
-    let ms = MultiSelect::new(sample_options(), vec![false, false, false]);
+    let mut ms = MultiSelect::new(sample_options(), vec![false, false, false]);
     let term = render_component(|ctx| ms.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["[ ] Alpha", "[ ] Beta", "[ ] Gamma"]);
 }
 
 #[test]
 fn renders_some_checked() {
-    let ms = MultiSelect::new(sample_options(), vec![true, false, true]);
+    let mut ms = MultiSelect::new(sample_options(), vec![true, false, true]);
     let term = render_component(|ctx| ms.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["[x] Alpha", "[ ] Beta", "[x] Gamma"]);
 }

@@ -10,7 +10,7 @@ async fn type_query(picker: &mut ModelSelector, text: &str) {
     }
 }
 
-fn rendered_lines(selector: &ModelSelector) -> Vec<String> {
+fn rendered_lines(selector: &mut ModelSelector) -> Vec<String> {
     let term = render_component(|ctx| selector.render(ctx), 120, 40);
     let lines = term.get_lines();
     let last_non_empty = lines.iter().rposition(|l| !l.is_empty()).map_or(0, |i| i + 1);
@@ -98,7 +98,7 @@ fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
 
-fn focused_provider_and_row(selector: &ModelSelector) -> (String, String) {
+fn focused_provider_and_row(selector: &mut ModelSelector) -> (String, String) {
     let lines = rendered_lines(selector);
     let focused_idx = lines
         .iter()
@@ -159,15 +159,15 @@ fn model_entry_with_reasoning() -> ConfigMenuEntry {
 async fn search_filters_entries() {
     let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
     type_query(&mut builder, "deepseek").await;
-    let lines = rendered_lines(&builder);
+    let lines = rendered_lines(&mut builder);
     assert!(lines.iter().any(|l| l.trim() == "DeepSeek"));
     assert!(lines.iter().any(|l| l.contains("[ ] DeepSeek Chat")));
 }
 
 #[test]
 fn render_groups_models_under_provider_headers() {
-    let builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
-    let lines = rendered_lines(&builder);
+    let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
+    let lines = rendered_lines(&mut builder);
 
     let openrouter_headers = lines.iter().filter(|l| l.trim() == "OpenRouter").count();
     assert_eq!(openrouter_headers, 1, "expected one OpenRouter header line");
@@ -185,7 +185,7 @@ fn render_groups_models_under_provider_headers() {
 async fn search_filters_and_keeps_provider_headers() {
     let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
     type_query(&mut builder, "gemini").await;
-    let lines = rendered_lines(&builder);
+    let lines = rendered_lines(&mut builder);
 
     assert!(
         lines.iter().any(|l| l.trim() == "OpenRouter"),
@@ -241,7 +241,7 @@ async fn search_does_not_duplicate_provider_headers() {
     };
     let mut selector = ModelSelector::from_model_entry(&entry, None, None);
     type_query(&mut selector, "gpt").await;
-    let lines = rendered_lines(&selector);
+    let lines = rendered_lines(&mut selector);
 
     let codex_count = lines.iter().filter(|l| l.trim() == "Codex").count();
     let openrouter_count = lines.iter().filter(|l| l.trim() == "OpenRouter").count();
@@ -259,17 +259,17 @@ async fn search_does_not_duplicate_provider_headers() {
 async fn grouped_navigation_follows_rendered_order() {
     let mut selector = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
 
-    let (provider, focused) = focused_provider_and_row(&selector);
+    let (provider, focused) = focused_provider_and_row(&mut selector);
     assert_eq!(provider, "Anthropic");
     assert!(focused.contains("Claude Sonnet 4.5"));
 
     selector.on_event(&Event::Key(key(KeyCode::Down))).await;
-    let (provider, focused) = focused_provider_and_row(&selector);
+    let (provider, focused) = focused_provider_and_row(&mut selector);
     assert_eq!(provider, "Google");
     assert!(focused.contains("Gemini 2.5 Pro"));
 
     selector.on_event(&Event::Key(key(KeyCode::Down))).await;
-    let (provider, focused) = focused_provider_and_row(&selector);
+    let (provider, focused) = focused_provider_and_row(&mut selector);
     assert_eq!(provider, "OpenRouter");
     assert!(focused.contains("Claude Sonnet 4.5"));
 }
@@ -279,12 +279,12 @@ async fn grouped_navigation_after_search_follows_rendered_order() {
     let mut selector = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
     type_query(&mut selector, "2.5").await;
 
-    let (provider, focused) = focused_provider_and_row(&selector);
+    let (provider, focused) = focused_provider_and_row(&mut selector);
     assert_eq!(provider, "Google");
     assert!(focused.contains("Gemini 2.5 Pro"));
 
     selector.on_event(&Event::Key(key(KeyCode::Down))).await;
-    let (provider, focused) = focused_provider_and_row(&selector);
+    let (provider, focused) = focused_provider_and_row(&mut selector);
     assert_eq!(provider, "OpenRouter");
     assert!(focused.contains("Gemini 2.5 Pro"));
 }
@@ -310,12 +310,12 @@ fn grouped_render_respects_small_height() {
 
 #[test]
 fn render_shows_selected_models_at_top() {
-    let builder = ModelSelector::from_model_entry(
+    let mut builder = ModelSelector::from_model_entry(
         &model_entry(),
         Some("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"),
         None,
     );
-    let lines = rendered_lines(&builder);
+    let lines = rendered_lines(&mut builder);
     // Second line after header should be a spacer, then selected models line
     assert!(
         lines[1].trim().is_empty(),
@@ -336,8 +336,8 @@ fn render_shows_selected_models_at_top() {
 
 #[test]
 fn render_hides_selected_line_when_none_selected() {
-    let builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-    let lines = rendered_lines(&builder);
+    let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
+    let lines = rendered_lines(&mut builder);
     assert!(
         !lines.iter().any(|l| l.contains("Selected:")),
         "should not show Selected line when nothing is selected"
@@ -350,7 +350,7 @@ fn render_hides_selected_line_when_none_selected() {
 
 #[test]
 fn render_shows_bar_on_focused_reasoning_row() {
-    let selector =
+    let mut selector =
         ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, Some("medium"));
     let term = render_component(|ctx| selector.render(ctx), 120, 40);
     let output = term.get_lines();
@@ -370,7 +370,7 @@ async fn render_no_bar_on_non_reasoning_focused_row() {
         ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, Some("medium"));
     // Move to non-reasoning model
     selector.on_event(&Event::Key(key(KeyCode::Down))).await;
-    let lines = rendered_lines(&selector);
+    let lines = rendered_lines(&mut selector);
     let focused_line = lines
         .iter()
         .find(|l| l.contains("▶"))

@@ -102,7 +102,7 @@ impl Component for ConfigMenu {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Frame {
+    fn render(&mut self, context: &ViewContext) -> Frame {
         self.list.render(context)
     }
 }

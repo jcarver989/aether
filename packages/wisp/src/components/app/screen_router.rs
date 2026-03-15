@@ -81,7 +81,7 @@ impl Component for ScreenRouter {
         Some(router_messages)
     }
 
-    fn render(&self, ctx: &ViewContext) -> Frame {
+    fn render(&mut self, ctx: &ViewContext) -> Frame {
         let diff_height = ctx.size.height.saturating_sub(STATUS_LINE_HEIGHT);
         let diff_context = ctx.with_size((ctx.size.width, diff_height));
         let lines = self.git_diff_mode.render_lines(&diff_context);

@@ -129,7 +129,7 @@ impl Component for ConfigPicker {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Frame {
+    fn render(&mut self, context: &ViewContext) -> Frame {
         let mut lines = Vec::new();
         let header = format!("  {} search: {}", self.title, self.combobox.query());
         lines.push(Line::styled(header, context.theme.muted()));
@@ -181,7 +181,7 @@ mod tests {
     use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
     use acp_utils::config_meta::SelectOptionMeta;
 
-    fn rendered_lines(picker: &ConfigPicker) -> Vec<String> {
+    fn rendered_lines(picker: &mut ConfigPicker) -> Vec<String> {
         rendered_lines_from(&picker.render(&ViewContext::new((120, 40))))
     }
 
@@ -222,8 +222,8 @@ mod tests {
 
     #[test]
     fn initializes_with_current_value_selected() {
-        let picker = ConfigPicker::from_entry(&entry()).expect("picker");
-        let lines = rendered_lines(&picker);
+        let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
+        let lines = rendered_lines(&mut picker);
         let selected = lines.iter().find(|l| l.starts_with("▶")).unwrap();
         assert!(selected.contains("GPT-4o"));
     }
@@ -232,7 +232,7 @@ mod tests {
     async fn query_filters_by_name() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
         type_query(&mut picker, "gemini").await;
-        let lines = rendered_lines(&picker);
+        let lines = rendered_lines(&mut picker);
         // header + 1 match
         assert_eq!(lines.len(), 2);
         assert!(lines[1].contains("Gemini 2.5 Pro"));
@@ -242,7 +242,7 @@ mod tests {
     async fn query_filters_by_value() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
         type_query(&mut picker, "anthropic/claude").await;
-        let lines = rendered_lines(&picker);
+        let lines = rendered_lines(&mut picker);
         // header + 1 match
         assert_eq!(lines.len(), 2);
         assert!(lines[1].contains("Claude Sonnet"));

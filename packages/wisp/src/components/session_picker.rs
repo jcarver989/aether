@@ -59,7 +59,7 @@ impl Component for SessionPicker {
         Some(mapped)
     }
 
-    fn render(&self, context: &ViewContext) -> Frame {
+    fn render(&mut self, context: &ViewContext) -> Frame {
         if self.combobox.is_empty() {
             return Frame::new(vec![
                 Line::new(String::new()),
@@ -178,14 +178,14 @@ mod tests {
 
     #[test]
     fn empty_sessions_shows_message() {
-        let picker = SessionPicker::new(vec![]);
+        let mut picker = SessionPicker::new(vec![]);
         let term = render_component(|ctx| picker.render(ctx), W, H);
         assert_buffer_eq(&term, &["", "  No previous sessions found."]);
     }
 
     #[test]
     fn renders_titles_and_dates_with_first_selected() {
-        let picker = SessionPicker::new(sample_sessions());
+        let mut picker = SessionPicker::new(sample_sessions());
         let d1 = expected_date("2026-03-10T10:00:00Z");
         let d2 = expected_date("2026-03-09T10:00:00Z");
         let term = render_component(|ctx| picker.render(ctx), W, H);
@@ -226,7 +226,7 @@ mod tests {
             acp::SessionInfo::new("sess-ccc-333", PathBuf::from("/home/user/my-project"))
                 .updated_at("2026-03-10T10:00:00Z".to_string()),
         )];
-        let picker = SessionPicker::new(sessions);
+        let mut picker = SessionPicker::new(sessions);
         let d = expected_date("2026-03-10T10:00:00Z");
         let term = render_component(|ctx| picker.render(ctx), W, H);
         assert_buffer_eq(

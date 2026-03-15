@@ -41,7 +41,7 @@ fn component_renders_selected_row() {
             &[("code", "Code"), ("chat", "Chat")],
         ),
     ];
-    let menu = ConfigMenu::from_config_options(&opts);
+    let mut menu = ConfigMenu::from_config_options(&opts);
 
     let term = render_component(|ctx| menu.render(ctx), 80, 24);
     let output = term.get_lines();
@@ -58,7 +58,7 @@ fn component_renders_selected_row() {
 
 #[test]
 fn empty_options_renders_placeholder() {
-    let menu = ConfigMenu::from_config_options(&[]);
+    let mut menu = ConfigMenu::from_config_options(&[]);
 
     let term = render_component(|ctx| menu.render(ctx), 80, 24);
     let output = term.get_lines();
@@ -70,7 +70,7 @@ fn empty_options_renders_placeholder() {
 
 #[test]
 fn multi_select_with_display_name_not_dimmed_when_first_value_disabled() {
-    let menu = ConfigMenu::from_entries(vec![ConfigMenuEntry {
+    let mut menu = ConfigMenu::from_entries(vec![ConfigMenuEntry {
         config_id: "model".to_string(),
         title: "Model".to_string(),
         values: vec![

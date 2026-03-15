@@ -5,12 +5,12 @@ use wisp::components::tool_call_statuses::ToolCallStatuses;
 
 #[test]
 fn renders_empty_when_loader_and_segments_are_empty() {
-    let loader = Spinner::default();
+    let mut loader = Spinner::default();
     let conversation = ConversationBuffer::new();
     let statuses = ToolCallStatuses::new();
     let context = ViewContext::new((80, 24));
-    let view = ConversationWindow {
-        loader: &loader,
+    let mut view = ConversationWindow {
+        loader: &mut loader,
         conversation: &conversation,
         tool_call_statuses: &statuses,
     };
@@ -21,15 +21,15 @@ fn renders_empty_when_loader_and_segments_are_empty() {
 
 #[test]
 fn inserts_vertical_margin_between_different_segment_kinds() {
-    let loader = Spinner::default();
+    let mut loader = Spinner::default();
     let mut conversation = ConversationBuffer::new();
     conversation.append_text_chunk("one");
     conversation.append_thought_chunk("two");
     conversation.append_text_chunk("three");
     let statuses = ToolCallStatuses::new();
     let context = ViewContext::new((80, 24));
-    let view = ConversationWindow {
-        loader: &loader,
+    let mut view = ConversationWindow {
+        loader: &mut loader,
         conversation: &conversation,
         tool_call_statuses: &statuses,
     };
@@ -48,14 +48,14 @@ fn inserts_vertical_margin_between_different_segment_kinds() {
 
 #[test]
 fn consecutive_text_chunks_render_without_margin() {
-    let loader = Spinner::default();
+    let mut loader = Spinner::default();
     let mut conversation = ConversationBuffer::new();
     conversation.append_text_chunk("first ");
     conversation.append_text_chunk("second");
     let statuses = ToolCallStatuses::new();
     let context = ViewContext::new((80, 24));
-    let view = ConversationWindow {
-        loader: &loader,
+    let mut view = ConversationWindow {
+        loader: &mut loader,
         conversation: &conversation,
         tool_call_statuses: &statuses,
     };
@@ -77,8 +77,8 @@ fn renders_loader_before_segments() {
     conversation.append_text_chunk("hello");
     let statuses = ToolCallStatuses::new();
     let context = ViewContext::new((80, 24));
-    let view = ConversationWindow {
-        loader: &loader,
+    let mut view = ConversationWindow {
+        loader: &mut loader,
         conversation: &conversation,
         tool_call_statuses: &statuses,
     };

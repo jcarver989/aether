@@ -186,7 +186,7 @@ impl Component for Form {
         Some(vec![])
     }
 
-    fn render(&self, context: &ViewContext) -> Frame {
+    fn render(&mut self, context: &ViewContext) -> Frame {
         let mut lines = vec![self.render_title(context)];
         lines.extend(self.render_fields(context));
         lines.extend(Self::render_footer(context));
@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn render_does_not_panic_when_title_wider_than_terminal() {
-        let form = Form::new(
+        let mut form = Form::new(
             "This is a very long message that exceeds the terminal width".to_string(),
             vec![FormField {
                 name: "name".to_string(),

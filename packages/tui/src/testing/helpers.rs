@@ -18,7 +18,7 @@ fn frame_from_lines(lines: &[crate::line::Line], _width: u16, _rows: u16) -> Fra
 }
 
 pub fn render_component(
-    render: impl Fn(&ViewContext) -> Frame,
+    mut render: impl FnMut(&ViewContext) -> Frame,
     width: u16,
     rows: u16,
 ) -> TestTerminal {
@@ -31,7 +31,7 @@ pub fn render_component(
 }
 
 pub fn render_component_with_renderer(
-    render: impl Fn(&ViewContext) -> Frame,
+    mut render: impl FnMut(&ViewContext) -> Frame,
     renderer: &mut Renderer<TestTerminal>,
     width: u16,
     rows: u16,
