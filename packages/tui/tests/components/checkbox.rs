@@ -16,27 +16,27 @@ fn checked_renders_bracket_x() {
     assert_buffer_eq(&term, &["[x]"]);
 }
 
-#[test]
-fn space_toggle_updates_render() {
+#[tokio::test]
+async fn space_toggle_updates_render() {
     let mut cb = Checkbox::new(false);
-    cb.on_event(&Event::Key(key(KeyCode::Char(' '))));
+    cb.on_event(&Event::Key(key(KeyCode::Char(' ')))).await;
     let term = render_component(|ctx| cb.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["[x]"]);
 }
 
-#[test]
-fn double_toggle_returns_to_unchecked() {
+#[tokio::test]
+async fn double_toggle_returns_to_unchecked() {
     let mut cb = Checkbox::new(false);
-    cb.on_event(&Event::Key(key(KeyCode::Char(' '))));
-    cb.on_event(&Event::Key(key(KeyCode::Char(' '))));
+    cb.on_event(&Event::Key(key(KeyCode::Char(' ')))).await;
+    cb.on_event(&Event::Key(key(KeyCode::Char(' ')))).await;
     let term = render_component(|ctx| cb.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["[ ]"]);
 }
 
-#[test]
-fn non_space_key_does_not_change_render() {
+#[tokio::test]
+async fn non_space_key_does_not_change_render() {
     let mut cb = Checkbox::new(false);
-    cb.on_event(&Event::Key(key(KeyCode::Enter)));
+    cb.on_event(&Event::Key(key(KeyCode::Enter))).await;
     let term = render_component(|ctx| cb.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["[ ]"]);
 }

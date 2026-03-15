@@ -52,9 +52,9 @@ impl ConfigManager {
         self.config_overlay.is_some()
     }
 
-    pub fn on_overlay_event(&mut self, event: &Event) -> Option<Vec<ConfigManagerMessage>> {
+    pub async fn on_overlay_event(&mut self, event: &Event) -> Option<Vec<ConfigManagerMessage>> {
         let overlay = self.config_overlay.as_mut()?;
-        let outcome = overlay.on_event(event);
+        let outcome = overlay.on_event(event).await;
         let overlay_messages = outcome.unwrap_or_default();
 
         let mut messages = Vec::new();

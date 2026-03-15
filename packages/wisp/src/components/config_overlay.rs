@@ -228,7 +228,7 @@ impl Component for ConfigOverlay {
 
         match &mut self.active_pane {
             ConfigPane::ServerStatus(overlay) => {
-                let outcome = overlay.on_event(event);
+                let outcome = overlay.on_event(event).await;
                 match outcome.unwrap_or_default().into_iter().next() {
                     Some(ServerStatusMessage::Close) => {
                         self.active_pane = ConfigPane::Menu;
@@ -241,7 +241,7 @@ impl Component for ConfigOverlay {
                 }
             }
             ConfigPane::ProviderLogin(overlay) => {
-                let outcome = overlay.on_event(event);
+                let outcome = overlay.on_event(event).await;
                 match outcome.unwrap_or_default().into_iter().next() {
                     Some(ProviderLoginMessage::Close) => {
                         self.active_pane = ConfigPane::Menu;
@@ -254,7 +254,7 @@ impl Component for ConfigOverlay {
                 }
             }
             ConfigPane::ModelSelector(selector) => {
-                let outcome = selector.on_event(event);
+                let outcome = selector.on_event(event).await;
                 match outcome.unwrap_or_default().into_iter().next() {
                     Some(ModelSelectorMessage::Done(changes)) => {
                         self.active_pane = ConfigPane::Menu;
@@ -268,7 +268,7 @@ impl Component for ConfigOverlay {
                 }
             }
             ConfigPane::Picker(picker) => {
-                let outcome = picker.on_event(event);
+                let outcome = picker.on_event(event).await;
                 match outcome.unwrap_or_default().into_iter().next() {
                     Some(ConfigPickerMessage::Close) => {
                         self.active_pane = ConfigPane::Menu;
@@ -288,7 +288,7 @@ impl Component for ConfigOverlay {
                 }
             }
             ConfigPane::Menu => {
-                let outcome = self.menu.on_event(event);
+                let outcome = self.menu.on_event(event).await;
                 let messages = outcome.unwrap_or_default();
                 match messages.as_slice() {
                     [ConfigMenuMessage::CloseAll] => Some(vec![ConfigOverlayMessage::Close]),
@@ -478,41 +478,41 @@ mod tests {
         ]
     }
 
-    #[test]
-    fn esc_closes_overlay() {
+    #[tokio::test]
+    async fn esc_closes_overlay() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc)));
+        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc))).await;
         let messages = outcome.unwrap();
         assert!(matches!(messages.as_slice(), [ConfigOverlayMessage::Close]));
     }
 
-    #[test]
-    fn enter_opens_picker() {
+    #[tokio::test]
+    async fn enter_opens_picker() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Enter)));
+        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
         assert!(outcome.is_some());
         assert!(overlay.has_picker());
     }
 
-    #[test]
-    fn picker_esc_closes_picker_not_overlay() {
+    #[tokio::test]
+    async fn picker_esc_closes_picker_not_overlay() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        overlay.on_event(&Event::Key(key(KeyCode::Enter))); // open picker
+        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await; // open picker
         assert!(overlay.has_picker());
 
-        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc)));
+        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc))).await;
         assert!(outcome.is_some());
         assert!(!overlay.has_picker());
         // No messages — overlay remains open
         assert!(outcome.unwrap().is_empty());
     }
 
-    #[test]
-    fn picker_confirm_returns_config_change_action() {
+    #[tokio::test]
+    async fn picker_confirm_returns_config_change_action() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        overlay.on_event(&Event::Key(key(KeyCode::Enter))); // open picker
-        overlay.on_event(&Event::Key(key(KeyCode::Down))); // move to second option
-        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Enter))); // confirm
+        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await; // open picker
+        overlay.on_event(&Event::Key(key(KeyCode::Down))).await; // move to second option
+        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Enter))).await; // confirm
 
         let messages = outcome.unwrap();
         match messages.as_slice() {
@@ -524,15 +524,15 @@ mod tests {
         }
     }
 
-    #[test]
-    fn config_overlay_picker_confirm_updates_menu_row_immediately() {
+    #[tokio::test]
+    async fn config_overlay_picker_confirm_updates_menu_row_immediately() {
         let mut menu = ConfigMenu::from_config_options(&[]);
         menu.add_theme_entry(None, &["nord.tmTheme".to_string()]);
         let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
 
-        overlay.on_event(&Event::Key(key(KeyCode::Enter))); // open picker on Theme
-        let _ = overlay.on_event(&Event::Key(key(KeyCode::Down))); // select nord.tmTheme
-        let _ = overlay.on_event(&Event::Key(key(KeyCode::Enter))); // confirm
+        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await; // open picker on Theme
+        let _ = overlay.on_event(&Event::Key(key(KeyCode::Down))).await; // select nord.tmTheme
+        let _ = overlay.on_event(&Event::Key(key(KeyCode::Enter))).await; // confirm
 
         assert_eq!(overlay.menu.options()[0].config_id, THEME_CONFIG_ID);
         assert_eq!(overlay.menu.options()[0].current_raw_value, "nord.tmTheme");
@@ -545,34 +545,34 @@ mod tests {
         assert_eq!(overlay.cursor_col(), 0);
     }
 
-    #[test]
-    fn cursor_col_with_picker_includes_border_and_prefix() {
+    #[tokio::test]
+    async fn cursor_col_with_picker_includes_border_and_prefix() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        overlay.on_event(&Event::Key(key(KeyCode::Enter))); // open picker for Provider
+        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await; // open picker for Provider
         let col = overlay.cursor_col();
         // "│ " (2) + "  Provider search: " (19) + query (0) = should be > 0
         assert!(col > 0);
     }
 
-    #[test]
-    fn picker_cursor_row_offset_matches_submenu_only_layout() {
+    #[tokio::test]
+    async fn picker_cursor_row_offset_matches_submenu_only_layout() {
         let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
+        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
 
         assert_eq!(overlay.cursor_row_offset(), TOP_CHROME);
     }
 
-    #[test]
-    fn model_selector_esc_without_toggle_returns_no_change() {
+    #[tokio::test]
+    async fn model_selector_esc_without_toggle_returns_no_change() {
         let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
         // Navigate to model and open model selector
-        overlay.on_event(&Event::Key(key(KeyCode::Down)));
-        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
+        overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
+        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
         assert!(render_footer(&mut overlay).contains("Toggle"));
 
         // Selector pre-selects current model (gpt-4o); Esc without toggling returns no change
-        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc)));
+        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc))).await;
         assert!(outcome.is_some());
         assert!(render_footer(&mut overlay).contains("[Enter] Select"));
         assert!(
@@ -581,30 +581,30 @@ mod tests {
         );
     }
 
-    #[test]
-    fn model_selector_esc_after_deselecting_all_returns_no_change() {
+    #[tokio::test]
+    async fn model_selector_esc_after_deselecting_all_returns_no_change() {
         let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
-        overlay.on_event(&Event::Key(key(KeyCode::Down)));
-        overlay.on_event(&Event::Key(key(KeyCode::Enter))); // open model selector
+        overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
+        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await; // open model selector
         // Deselect the pre-selected model
-        overlay.on_event(&Event::Key(key(KeyCode::Char(' '))));
+        overlay.on_event(&Event::Key(key(KeyCode::Char(' ')))).await;
 
-        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc)));
+        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc))).await;
         assert!(render_footer(&mut overlay).contains("[Enter] Select"));
         assert!(outcome.unwrap().is_empty()); // No selections => no change
     }
 
-    #[test]
-    fn model_selector_enter_toggles_not_confirms() {
+    #[tokio::test]
+    async fn model_selector_enter_toggles_not_confirms() {
         let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
-        overlay.on_event(&Event::Key(key(KeyCode::Down)));
-        overlay.on_event(&Event::Key(key(KeyCode::Enter))); // open model selector
+        overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
+        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await; // open model selector
         assert!(render_footer(&mut overlay).contains("Toggle"));
 
         // Enter should toggle, not close the selector
-        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
+        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
         let footer = render_footer(&mut overlay);
         assert!(
             footer.contains("Toggle"),
@@ -612,8 +612,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn model_selector_uses_overlay_reasoning_prefill_after_menu_removal() {
+    #[tokio::test]
+    async fn model_selector_uses_overlay_reasoning_prefill_after_menu_removal() {
         use crate::components::config_menu::{
             ConfigMenuEntry, ConfigMenuEntryKind, ConfigMenuValue,
         };
@@ -672,15 +672,15 @@ mod tests {
         ];
         overlay = overlay.with_reasoning_effort_from_options(&options_with_reasoning);
 
-        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
+        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
         assert!(
             render_footer(&mut overlay).contains("Toggle"),
             "model selector should be open"
         );
 
-        overlay.on_event(&Event::Key(key(KeyCode::Right)));
+        overlay.on_event(&Event::Key(key(KeyCode::Right))).await;
 
-        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc)));
+        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc))).await;
 
         let messages = outcome.unwrap();
         let reasoning_msg = messages.iter().find(|m| {
@@ -767,14 +767,14 @@ mod tests {
         });
     }
 
-    #[test]
-    fn provider_login_overlay_closes_when_empty() {
+    #[tokio::test]
+    async fn provider_login_overlay_closes_when_empty() {
         let mut menu = make_menu();
         menu.add_provider_logins_entry("2 needs login");
         let mut overlay = ConfigOverlay::new(menu, vec![], make_auth_methods());
-        overlay.on_event(&Event::Key(key(KeyCode::Down)));
-        overlay.on_event(&Event::Key(key(KeyCode::Down)));
-        overlay.on_event(&Event::Key(key(KeyCode::Enter)));
+        overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
+        overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
+        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
         assert!(matches!(overlay.active_pane, ConfigPane::ProviderLogin(_)));
 
         overlay.remove_auth_method("anthropic");

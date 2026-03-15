@@ -163,23 +163,23 @@ mod tests {
         assert!(!should_exclude_path(Path::new("src/main.rs")));
     }
 
-    #[test]
-    fn query_filters_matches() {
+    #[tokio::test]
+    async fn query_filters_matches() {
         let mut picker = FilePicker::new_with_entries(vec![
             file_match("src/main.rs"),
             file_match("src/renderer.rs"),
             file_match("README.md"),
         ]);
 
-        type_query(&mut picker, "rend");
+        type_query(&mut picker, "rend").await;
 
         let lines = rendered_lines_from(&picker.render(&ViewContext::new(DEFAULT_SIZE)));
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("src/renderer.rs"));
     }
 
-    #[test]
-    fn selection_wraps() {
+    #[tokio::test]
+    async fn selection_wraps() {
         let mut picker = FilePicker::new_with_entries(vec![
             file_match("a.rs"),
             file_match("b.rs"),
@@ -188,11 +188,11 @@ mod tests {
 
         let first = selected_text(&picker).unwrap();
 
-        picker.on_event(&Event::Key(key(KeyCode::Up)));
+        picker.on_event(&Event::Key(key(KeyCode::Up))).await;
         let last = selected_text(&picker).unwrap();
         assert_ne!(first, last);
 
-        picker.on_event(&Event::Key(key(KeyCode::Down)));
+        picker.on_event(&Event::Key(key(KeyCode::Down))).await;
         let back_to_first = selected_text(&picker).unwrap();
         assert_eq!(first, back_to_first);
     }
@@ -253,11 +253,11 @@ mod tests {
         );
     }
 
-    #[test]
-    fn handle_key_char_updates_query_and_returns_char_typed() {
+    #[tokio::test]
+    async fn handle_key_char_updates_query_and_returns_char_typed() {
         let mut picker = FilePicker::new_with_entries(vec![file_match("src/renderer.rs")]);
 
-        let outcome = picker.on_event(&Event::Key(key(KeyCode::Char('r'))));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Char('r')))).await;
 
         assert!(outcome.is_some());
 
@@ -268,11 +268,11 @@ mod tests {
         assert_eq!(picker.query(), "r");
     }
 
-    #[test]
-    fn handle_key_whitespace_closes_picker() {
+    #[tokio::test]
+    async fn handle_key_whitespace_closes_picker() {
         let mut picker = FilePicker::new_with_entries(vec![file_match("src/main.rs")]);
 
-        let outcome = picker.on_event(&Event::Key(key(KeyCode::Char(' '))));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Char(' ')))).await;
 
         assert!(outcome.is_some());
 
@@ -282,11 +282,11 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn handle_key_enter_requests_confirmation() {
+    #[tokio::test]
+    async fn handle_key_enter_requests_confirmation() {
         let mut picker = FilePicker::new_with_entries(vec![file_match("src/main.rs")]);
 
-        let outcome = picker.on_event(&Event::Key(key(KeyCode::Enter)));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Enter))).await;
 
         assert!(outcome.is_some());
 
@@ -296,11 +296,11 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn backspace_with_empty_query_closes_and_pops() {
+    #[tokio::test]
+    async fn backspace_with_empty_query_closes_and_pops() {
         let mut picker = FilePicker::new_with_entries(vec![file_match("src/main.rs")]);
 
-        let outcome = picker.on_event(&Event::Key(key(KeyCode::Backspace)));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Backspace))).await;
 
         assert!(outcome.is_some());
 
@@ -310,12 +310,12 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn backspace_with_query_pops_char() {
+    #[tokio::test]
+    async fn backspace_with_query_pops_char() {
         let mut picker = FilePicker::new_with_entries(vec![file_match("src/main.rs")]);
-        type_query(&mut picker, "ma");
+        type_query(&mut picker, "ma").await;
 
-        let outcome = picker.on_event(&Event::Key(key(KeyCode::Backspace)));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Backspace))).await;
 
         assert!(outcome.is_some());
 

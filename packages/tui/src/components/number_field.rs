@@ -82,42 +82,42 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
-    #[test]
-    fn integer_accepts_digits_and_leading_minus() {
+    #[tokio::test]
+    async fn integer_accepts_digits_and_leading_minus() {
         let mut field = NumberField::new(String::new(), true);
-        field.on_event(&Event::Key(key(KeyCode::Char('-'))));
-        field.on_event(&Event::Key(key(KeyCode::Char('4'))));
-        field.on_event(&Event::Key(key(KeyCode::Char('2'))));
+        field.on_event(&Event::Key(key(KeyCode::Char('-')))).await;
+        field.on_event(&Event::Key(key(KeyCode::Char('4')))).await;
+        field.on_event(&Event::Key(key(KeyCode::Char('2')))).await;
         assert_eq!(field.value, "-42");
     }
 
-    #[test]
-    fn integer_rejects_dot() {
+    #[tokio::test]
+    async fn integer_rejects_dot() {
         let mut field = NumberField::new("1".to_string(), true);
-        field.on_event(&Event::Key(key(KeyCode::Char('.'))));
+        field.on_event(&Event::Key(key(KeyCode::Char('.')))).await;
         assert_eq!(field.value, "1");
     }
 
-    #[test]
-    fn float_accepts_single_dot() {
+    #[tokio::test]
+    async fn float_accepts_single_dot() {
         let mut field = NumberField::new(String::new(), false);
-        field.on_event(&Event::Key(key(KeyCode::Char('3'))));
-        field.on_event(&Event::Key(key(KeyCode::Char('.'))));
-        field.on_event(&Event::Key(key(KeyCode::Char('5'))));
+        field.on_event(&Event::Key(key(KeyCode::Char('3')))).await;
+        field.on_event(&Event::Key(key(KeyCode::Char('.')))).await;
+        field.on_event(&Event::Key(key(KeyCode::Char('5')))).await;
         assert_eq!(field.value, "3.5");
     }
 
-    #[test]
-    fn float_rejects_second_dot() {
+    #[tokio::test]
+    async fn float_rejects_second_dot() {
         let mut field = NumberField::new("1.2".to_string(), false);
-        field.on_event(&Event::Key(key(KeyCode::Char('.'))));
+        field.on_event(&Event::Key(key(KeyCode::Char('.')))).await;
         assert_eq!(field.value, "1.2");
     }
 
-    #[test]
-    fn minus_rejected_when_not_first() {
+    #[tokio::test]
+    async fn minus_rejected_when_not_first() {
         let mut field = NumberField::new("5".to_string(), true);
-        field.on_event(&Event::Key(key(KeyCode::Char('-'))));
+        field.on_event(&Event::Key(key(KeyCode::Char('-')))).await;
         assert_eq!(field.value, "5");
     }
 
@@ -141,10 +141,10 @@ mod tests {
         assert_eq!(field.to_json(), serde_json::Value::Null);
     }
 
-    #[test]
-    fn backspace_removes_last() {
+    #[tokio::test]
+    async fn backspace_removes_last() {
         let mut field = NumberField::new("12".to_string(), true);
-        field.on_event(&Event::Key(key(KeyCode::Backspace)));
+        field.on_event(&Event::Key(key(KeyCode::Backspace))).await;
         assert_eq!(field.value, "1");
     }
 }

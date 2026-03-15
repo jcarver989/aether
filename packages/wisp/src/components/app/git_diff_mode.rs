@@ -357,11 +357,11 @@ impl GitDiffMode {
         self.state = GitDiffViewState::new(GitDiffLoadState::Empty);
     }
 
-    pub(crate) fn on_key_event(&mut self, event: &Event) -> Vec<GitDiffViewMessage> {
+    pub(crate) async fn on_key_event(&mut self, event: &Event) -> Vec<GitDiffViewMessage> {
         let mut view = GitDiffView {
             state: &mut self.state,
         };
-        let outcome = view.on_event(event);
+        let outcome = view.on_event(event).await;
         outcome.unwrap_or_default()
     }
 

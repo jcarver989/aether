@@ -48,7 +48,7 @@ impl Component for ProviderLoginOverlay {
     type Message = ProviderLoginMessage;
 
     async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
-        let outcome = self.list.on_event(event);
+        let outcome = self.list.on_event(event).await;
         match outcome.as_deref() {
             Some([SelectListMessage::Close]) => Some(vec![ProviderLoginMessage::Close]),
             Some([SelectListMessage::Select(_)]) => {
@@ -161,13 +161,13 @@ mod tests {
         assert!(text.contains("⚡"), "needs login should show bolt");
     }
 
-    #[test]
-    fn enter_on_needs_login_emits_authenticate() {
+    #[tokio::test]
+    async fn enter_on_needs_login_emits_authenticate() {
         let mut overlay = ProviderLoginOverlay::new(sample_entries());
         let outcome = overlay.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::NONE,
-        )));
+        ))).await;
         let messages = outcome.unwrap();
         match messages.as_slice() {
             [ProviderLoginMessage::Authenticate(id)] => assert_eq!(id, "codex"),
@@ -175,23 +175,23 @@ mod tests {
         }
     }
 
-    #[test]
-    fn enter_on_authenticating_is_noop() {
+    #[tokio::test]
+    async fn enter_on_authenticating_is_noop() {
         let mut entries = sample_entries();
         entries[0].status = ProviderLoginStatus::Authenticating;
         let mut overlay = ProviderLoginOverlay::new(entries);
         let outcome = overlay.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::NONE,
-        )));
+        ))).await;
         assert!(outcome.unwrap().is_empty());
     }
 
-    #[test]
-    fn esc_closes_overlay() {
+    #[tokio::test]
+    async fn esc_closes_overlay() {
         let mut overlay = ProviderLoginOverlay::new(sample_entries());
         let outcome =
-            overlay.on_event(&Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)));
+            overlay.on_event(&Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))).await;
         let messages = outcome.unwrap();
         assert!(matches!(messages.as_slice(), [ProviderLoginMessage::Close]));
     }

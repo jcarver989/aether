@@ -387,15 +387,15 @@ mod tests {
         KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE)
     }
 
-    #[test]
-    fn toggle_adds_and_removes_model() {
+    #[tokio::test]
+    async fn toggle_adds_and_removes_model() {
         let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
         assert_eq!(builder.selected_count(), 0);
 
-        builder.on_event(&Event::Key(space())); // toggle first
+        builder.on_event(&Event::Key(space())).await; // toggle first
         assert_eq!(builder.selected_count(), 1);
 
-        builder.on_event(&Event::Key(space())); // toggle first again
+        builder.on_event(&Event::Key(space())).await; // toggle first again
         assert_eq!(builder.selected_count(), 0);
     }
 
@@ -405,22 +405,22 @@ mod tests {
         assert!(builder.confirm().is_empty());
     }
 
-    #[test]
-    fn confirm_with_one_returns_single_model() {
+    #[tokio::test]
+    async fn confirm_with_one_returns_single_model() {
         let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-        builder.on_event(&Event::Key(space())); // select first
+        builder.on_event(&Event::Key(space())).await; // select first
         let changes = builder.confirm();
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].config_id, "model");
         assert_eq!(changes[0].new_value, "anthropic:claude-sonnet-4-5");
     }
 
-    #[test]
-    fn confirm_with_two_returns_comma_joined() {
+    #[tokio::test]
+    async fn confirm_with_two_returns_comma_joined() {
         let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-        builder.on_event(&Event::Key(space())); // select first
-        builder.on_event(&Event::Key(key(KeyCode::Down)));
-        builder.on_event(&Event::Key(space())); // select second
+        builder.on_event(&Event::Key(space())).await; // select first
+        builder.on_event(&Event::Key(key(KeyCode::Down))).await;
+        builder.on_event(&Event::Key(space())).await; // select second
 
         let changes = builder.confirm();
         assert_eq!(changes.len(), 1);
@@ -441,10 +441,10 @@ mod tests {
         assert_eq!(builder.selected_count(), 2);
     }
 
-    #[test]
-    fn escape_returns_done_action() {
+    #[tokio::test]
+    async fn escape_returns_done_action() {
         let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-        let outcome = builder.on_event(&Event::Key(key(KeyCode::Esc)));
+        let outcome = builder.on_event(&Event::Key(key(KeyCode::Esc))).await;
         let messages = outcome.unwrap();
         match messages.as_slice() {
             [ModelSelectorMessage::Done(changes)] => assert!(changes.is_empty()),
@@ -452,26 +452,26 @@ mod tests {
         }
     }
 
-    #[test]
-    fn enter_toggles_focused_model() {
+    #[tokio::test]
+    async fn enter_toggles_focused_model() {
         let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
         assert_eq!(builder.selected_count(), 0);
 
-        builder.on_event(&Event::Key(key(KeyCode::Enter))); // toggle first
+        builder.on_event(&Event::Key(key(KeyCode::Enter))).await; // toggle first
         assert_eq!(builder.selected_count(), 1);
 
-        builder.on_event(&Event::Key(key(KeyCode::Enter))); // toggle first again
+        builder.on_event(&Event::Key(key(KeyCode::Enter))).await; // toggle first again
         assert_eq!(builder.selected_count(), 0);
     }
 
-    #[test]
-    fn escape_with_selections_returns_done_with_change() {
+    #[tokio::test]
+    async fn escape_with_selections_returns_done_with_change() {
         let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-        builder.on_event(&Event::Key(space())); // select first
-        builder.on_event(&Event::Key(key(KeyCode::Down)));
-        builder.on_event(&Event::Key(space())); // select second
+        builder.on_event(&Event::Key(space())).await; // select first
+        builder.on_event(&Event::Key(key(KeyCode::Down))).await;
+        builder.on_event(&Event::Key(space())).await; // select second
 
-        let outcome = builder.on_event(&Event::Key(key(KeyCode::Esc)));
+        let outcome = builder.on_event(&Event::Key(key(KeyCode::Esc))).await;
         let messages = outcome.unwrap();
         match messages.as_slice() {
             [ModelSelectorMessage::Done(changes)] => {
@@ -497,16 +497,16 @@ mod tests {
         assert!(builder.confirm().is_empty());
     }
 
-    #[test]
-    fn escape_after_toggle_returns_change() {
+    #[tokio::test]
+    async fn escape_after_toggle_returns_change() {
         let mut builder = ModelSelector::from_model_entry(
             &model_entry(),
             Some("anthropic:claude-sonnet-4-5"),
             None,
         );
         // Toggle a second model on
-        builder.on_event(&Event::Key(key(KeyCode::Down)));
-        builder.on_event(&Event::Key(space()));
+        builder.on_event(&Event::Key(key(KeyCode::Down))).await;
+        builder.on_event(&Event::Key(space())).await;
         let changes = builder.confirm();
         assert_eq!(changes.len(), 1);
         let change = &changes[0];
@@ -579,39 +579,39 @@ mod tests {
         assert_eq!(cycle_reasoning_left(None), None);
     }
 
-    #[test]
-    fn right_on_reasoning_model_cycles_level() {
+    #[tokio::test]
+    async fn right_on_reasoning_model_cycles_level() {
         let mut selector =
             ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, None);
         assert_eq!(selector.reasoning_effort, None);
 
-        selector.on_event(&Event::Key(key(KeyCode::Right)));
+        selector.on_event(&Event::Key(key(KeyCode::Right))).await;
         assert_eq!(selector.reasoning_effort, Some(ReasoningEffort::Low));
 
-        selector.on_event(&Event::Key(key(KeyCode::Right)));
+        selector.on_event(&Event::Key(key(KeyCode::Right))).await;
         assert_eq!(selector.reasoning_effort, Some(ReasoningEffort::Medium));
     }
 
-    #[test]
-    fn left_right_on_non_reasoning_model_is_noop() {
+    #[tokio::test]
+    async fn left_right_on_non_reasoning_model_is_noop() {
         let mut selector =
             ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, None);
         // Move to non-reasoning model (DeepSeek)
-        selector.on_event(&Event::Key(key(KeyCode::Down)));
+        selector.on_event(&Event::Key(key(KeyCode::Down))).await;
         assert!(!selector.combobox.selected().unwrap().supports_reasoning);
 
-        selector.on_event(&Event::Key(key(KeyCode::Right)));
+        selector.on_event(&Event::Key(key(KeyCode::Right))).await;
         assert_eq!(selector.reasoning_effort, None);
     }
 
-    #[test]
-    fn confirm_returns_both_model_and_reasoning_changes() {
+    #[tokio::test]
+    async fn confirm_returns_both_model_and_reasoning_changes() {
         let mut selector =
             ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, None);
         // Toggle a model on
-        selector.on_event(&Event::Key(space()));
+        selector.on_event(&Event::Key(space())).await;
         // Change reasoning
-        selector.on_event(&Event::Key(key(KeyCode::Right)));
+        selector.on_event(&Event::Key(key(KeyCode::Right))).await;
 
         let changes = selector.confirm();
         assert_eq!(changes.len(), 2, "expected model + reasoning changes");
@@ -623,16 +623,16 @@ mod tests {
         );
     }
 
-    #[test]
-    fn confirm_returns_only_reasoning_when_only_reasoning_changed() {
+    #[tokio::test]
+    async fn confirm_returns_only_reasoning_when_only_reasoning_changed() {
         let mut selector = ModelSelector::from_model_entry(
             &model_entry_with_reasoning(),
             Some("anthropic:claude-opus-4-6"),
             None,
         );
         // Don't change models, just reasoning
-        selector.on_event(&Event::Key(key(KeyCode::Right)));
-        selector.on_event(&Event::Key(key(KeyCode::Right)));
+        selector.on_event(&Event::Key(key(KeyCode::Right))).await;
+        selector.on_event(&Event::Key(key(KeyCode::Right))).await;
 
         let changes = selector.confirm();
         assert_eq!(changes.len(), 1);

@@ -98,16 +98,16 @@ fn make_auth_methods() -> Vec<acp::AuthMethod> {
 
 /// Helper to create a ConfigOverlay with the server status overlay open.
 /// Replaces the old `with_server_overlay()` test-only method.
-fn open_server_overlay(
+async fn open_server_overlay(
     mut menu: ConfigMenu,
     statuses: Vec<McpServerStatusEntry>,
 ) -> ConfigOverlay {
     menu.add_mcp_servers_entry("1 connected, 1 needs auth");
     let mut overlay = ConfigOverlay::new(menu, statuses, vec![]);
     // Navigate past provider (0) and model (1) to MCP servers (2)
-    overlay.on_event(&Event::Key(key(KeyCode::Down)));
-    overlay.on_event(&Event::Key(key(KeyCode::Down)));
-    overlay.on_event(&Event::Key(key(KeyCode::Enter)));
+    overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
+    overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
+    overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
     overlay
 }
 
@@ -139,11 +139,11 @@ fn footer_shows_select_and_close_for_menu() {
     assert!(footer.contains("[Esc] Close"), "footer: {footer}");
 }
 
-#[test]
-fn footer_shows_confirm_and_back_for_picker() {
+#[tokio::test]
+async fn footer_shows_confirm_and_back_for_picker() {
     let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
     // Open picker
-    overlay.on_event(&Event::Key(key(KeyCode::Enter)));
+    overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
     let term = render_component(|ctx| overlay.render(ctx), 80, 24);
     let output = term.get_lines();
     let footer = &output[21];
@@ -151,11 +151,11 @@ fn footer_shows_confirm_and_back_for_picker() {
     assert!(footer.contains("[Esc] Back"), "footer: {footer}");
 }
 
-#[test]
-fn footer_shows_authenticate_and_back_for_servers() {
+#[tokio::test]
+async fn footer_shows_authenticate_and_back_for_servers() {
     let menu = make_menu();
     let statuses = make_server_statuses();
-    let mut overlay = open_server_overlay(menu, statuses);
+    let mut overlay = open_server_overlay(menu, statuses).await;
     let footer = render_footer(&mut overlay);
     assert!(footer.contains("[Enter] Authenticate"), "footer: {footer}");
     assert!(footer.contains("[Esc] Back"), "footer: {footer}");
@@ -185,10 +185,10 @@ fn render_root_menu_shows_top_level_rows() {
     assert!(text.contains("[Esc] Close"), "rendered:\n{text}");
 }
 
-#[test]
-fn render_picker_hides_top_level_rows() {
+#[tokio::test]
+async fn render_picker_hides_top_level_rows() {
     let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
-    overlay.on_event(&Event::Key(key(KeyCode::Enter)));
+    overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
 
     let lines = render_plain_text(&mut overlay);
     let text = lines.join("\n");
@@ -200,11 +200,11 @@ fn render_picker_hides_top_level_rows() {
     assert!(text.contains("[Esc] Back"), "rendered:\n{text}");
 }
 
-#[test]
-fn render_model_selector_hides_top_level_rows() {
+#[tokio::test]
+async fn render_model_selector_hides_top_level_rows() {
     let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
-    overlay.on_event(&Event::Key(key(KeyCode::Down)));
-    overlay.on_event(&Event::Key(key(KeyCode::Enter)));
+    overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
+    overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
 
     let lines = render_plain_text(&mut overlay);
     let text = lines.join("\n");
@@ -217,11 +217,11 @@ fn render_model_selector_hides_top_level_rows() {
     assert!(text.contains("[Esc] Done"), "rendered:\n{text}");
 }
 
-#[test]
-fn render_server_overlay_hides_top_level_rows() {
+#[tokio::test]
+async fn render_server_overlay_hides_top_level_rows() {
     let menu = make_menu();
     let statuses = make_server_statuses();
-    let mut overlay = open_server_overlay(menu, statuses);
+    let mut overlay = open_server_overlay(menu, statuses).await;
 
     let lines = render_plain_text(&mut overlay);
     let text = lines.join("\n");
@@ -237,14 +237,14 @@ fn render_server_overlay_hides_top_level_rows() {
     assert!(text.contains("[Esc] Back"), "rendered:\n{text}");
 }
 
-#[test]
-fn render_provider_login_overlay_hides_top_level_rows() {
+#[tokio::test]
+async fn render_provider_login_overlay_hides_top_level_rows() {
     let mut menu = make_menu();
     menu.add_provider_logins_entry("2 needs login");
     let mut overlay = ConfigOverlay::new(menu, vec![], make_auth_methods());
-    overlay.on_event(&Event::Key(key(KeyCode::Down)));
-    overlay.on_event(&Event::Key(key(KeyCode::Down)));
-    let outcome = overlay.on_event(&Event::Key(key(KeyCode::Enter)));
+    overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
+    overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
+    let outcome = overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
     assert!(outcome.is_some());
 
     let lines = render_plain_text(&mut overlay);
@@ -340,12 +340,12 @@ fn update_config_options_never_renders_reasoning_row() {
     );
 }
 
-#[test]
-fn footer_shows_toggle_when_model_selector_open() {
+#[tokio::test]
+async fn footer_shows_toggle_when_model_selector_open() {
     let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
-    overlay.on_event(&Event::Key(key(KeyCode::Down)));
-    overlay.on_event(&Event::Key(key(KeyCode::Enter)));
+    overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
+    overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
 
     let term = render_component(|ctx| overlay.render(ctx), 80, 24);
     let output = term.get_lines();
@@ -354,8 +354,8 @@ fn footer_shows_toggle_when_model_selector_open() {
     assert!(footer.contains("[Esc] Done"), "footer: {footer}");
 }
 
-#[test]
-fn tall_terminal_shows_more_picker_items() {
+#[tokio::test]
+async fn tall_terminal_shows_more_picker_items() {
     // Create a menu with many model options
     let many_models: Vec<SessionConfigSelectOption> = (0..20)
         .map(|i| SessionConfigSelectOption::new(format!("model-{i}"), format!("Model {i}")))
@@ -368,7 +368,7 @@ fn tall_terminal_shows_more_picker_items() {
     )];
     let menu = ConfigMenu::from_config_options(&options);
     let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
-    overlay.on_event(&Event::Key(key(KeyCode::Enter))); // open picker
+    overlay.on_event(&Event::Key(key(KeyCode::Enter))).await; // open picker
 
     // Render at a tall terminal (60 rows)
     let height_tall = 59_usize; // 60 - 1
@@ -396,26 +396,26 @@ fn tall_terminal_shows_more_picker_items() {
     );
 }
 
-#[test]
-fn server_overlay_esc_closes_server_not_config_overlay() {
+#[tokio::test]
+async fn server_overlay_esc_closes_server_not_config_overlay() {
     let menu = make_menu();
     let statuses = make_server_statuses();
-    let mut overlay = open_server_overlay(menu, statuses);
+    let mut overlay = open_server_overlay(menu, statuses).await;
     assert!(render_footer(&mut overlay).contains("Authenticate"));
 
-    let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc)));
+    let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc))).await;
     assert!(outcome.is_some());
     assert!(render_footer(&mut overlay).contains("[Enter] Select"));
     assert!(outcome.unwrap().is_empty());
 }
 
-#[test]
-fn multi_select_entry_opens_model_selector() {
+#[tokio::test]
+async fn multi_select_entry_opens_model_selector() {
     let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
     // Navigate to the model entry (index 1: provider=0, model=1)
-    overlay.on_event(&Event::Key(key(KeyCode::Down)));
-    overlay.on_event(&Event::Key(key(KeyCode::Enter)));
+    overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
+    overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
 
     let footer = render_footer(&mut overlay);
     assert!(

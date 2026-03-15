@@ -121,7 +121,7 @@ impl Component for TextInput {
                 self.insert_paste(text);
                 Some(vec![])
             }
-            Event::Key(key_event) => self.handle_key(key_event),
+            Event::Key(key_event) => self.handle_key(key_event).await,
             _ => None,
         }
     }
@@ -132,7 +132,7 @@ impl Component for TextInput {
 }
 
 impl TextInput {
-    fn handle_key(&mut self, key_event: &KeyEvent) -> Option<Vec<TextInputMessage>> {
+    async fn handle_key(&mut self, key_event: &KeyEvent) -> Option<Vec<TextInputMessage>> {
         if self.keybindings.submit.matches(*key_event) {
             return Some(vec![TextInputMessage::Submit]);
         }
@@ -152,7 +152,7 @@ impl TextInput {
         }
 
         // Delegate cursor navigation, char input, and backspace to TextField
-        self.field.on_event(&Event::Key(*key_event)).map(|_| vec![])
+        self.field.on_event(&Event::Key(*key_event)).await.map(|_| vec![])
     }
 }
 
@@ -176,126 +176,126 @@ mod tests {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
     }
 
-    #[test]
-    fn left_arrow_moves_cursor_back_one_char() {
+    #[tokio::test]
+    async fn left_arrow_moves_cursor_back_one_char() {
         let mut input = TextInput::default();
         input.set_input("hello".to_string());
 
-        input.on_event(&key(KeyCode::Left));
+        input.on_event(&key(KeyCode::Left)).await;
 
         assert_eq!(input.cursor_index(None), 4);
     }
 
-    #[test]
-    fn right_arrow_moves_cursor_forward_one_char() {
+    #[tokio::test]
+    async fn right_arrow_moves_cursor_forward_one_char() {
         let mut input = TextInput::default();
         input.set_input("hello".to_string());
         input.set_cursor_pos(2);
 
-        input.on_event(&key(KeyCode::Right));
+        input.on_event(&key(KeyCode::Right)).await;
 
         assert_eq!(input.cursor_index(None), 3);
     }
 
-    #[test]
-    fn left_at_start_stays_at_zero() {
+    #[tokio::test]
+    async fn left_at_start_stays_at_zero() {
         let mut input = TextInput::default();
         input.set_input("hello".to_string());
         input.set_cursor_pos(0);
 
-        input.on_event(&key(KeyCode::Left));
+        input.on_event(&key(KeyCode::Left)).await;
 
         assert_eq!(input.cursor_index(None), 0);
     }
 
-    #[test]
-    fn right_at_end_stays_at_end() {
+    #[tokio::test]
+    async fn right_at_end_stays_at_end() {
         let mut input = TextInput::default();
         input.set_input("hello".to_string());
 
-        input.on_event(&key(KeyCode::Right));
+        input.on_event(&key(KeyCode::Right)).await;
 
         assert_eq!(input.cursor_index(None), 5);
     }
 
-    #[test]
-    fn home_moves_to_start() {
+    #[tokio::test]
+    async fn home_moves_to_start() {
         let mut input = TextInput::default();
         input.set_input("hello".to_string());
         input.set_cursor_pos(3);
 
-        input.on_event(&key(KeyCode::Home));
+        input.on_event(&key(KeyCode::Home)).await;
 
         assert_eq!(input.cursor_index(None), 0);
     }
 
-    #[test]
-    fn end_moves_to_end() {
+    #[tokio::test]
+    async fn end_moves_to_end() {
         let mut input = TextInput::default();
         input.set_input("hello".to_string());
         input.set_cursor_pos(1);
 
-        input.on_event(&key(KeyCode::End));
+        input.on_event(&key(KeyCode::End)).await;
 
         assert_eq!(input.cursor_index(None), 5);
     }
 
-    #[test]
-    fn typing_inserts_at_cursor_position() {
+    #[tokio::test]
+    async fn typing_inserts_at_cursor_position() {
         let mut input = TextInput::default();
         input.set_input("hllo".to_string());
         input.set_cursor_pos(1);
 
-        input.on_event(&key(KeyCode::Char('e')));
+        input.on_event(&key(KeyCode::Char('e'))).await;
 
         assert_eq!(input.buffer(), "hello");
         assert_eq!(input.cursor_index(None), 2);
     }
 
-    #[test]
-    fn backspace_at_cursor_middle_deletes_correct_char() {
+    #[tokio::test]
+    async fn backspace_at_cursor_middle_deletes_correct_char() {
         let mut input = TextInput::default();
         input.set_input("hello".to_string());
         input.set_cursor_pos(3);
 
-        input.on_event(&key(KeyCode::Backspace));
+        input.on_event(&key(KeyCode::Backspace)).await;
 
         assert_eq!(input.buffer(), "helo");
         assert_eq!(input.cursor_index(None), 2);
     }
 
-    #[test]
-    fn backspace_at_start_does_nothing() {
+    #[tokio::test]
+    async fn backspace_at_start_does_nothing() {
         let mut input = TextInput::default();
         input.set_input("hello".to_string());
         input.set_cursor_pos(0);
 
-        let outcome = input.on_event(&key(KeyCode::Backspace));
+        let outcome = input.on_event(&key(KeyCode::Backspace)).await;
 
         assert!(outcome.is_some());
         assert_eq!(input.buffer(), "hello");
         assert_eq!(input.cursor_index(None), 0);
     }
 
-    #[test]
-    fn multibyte_utf8_cursor_navigation() {
+    #[tokio::test]
+    async fn multibyte_utf8_cursor_navigation() {
         let mut input = TextInput::default();
         // "a中b" — 'a' is 1 byte, '中' is 3 bytes, 'b' is 1 byte = 5 bytes total
         input.set_input("a中b".to_string());
 
-        input.on_event(&key(KeyCode::Left));
+        input.on_event(&key(KeyCode::Left)).await;
         assert_eq!(input.cursor_index(None), 4); // before 'b'
 
-        input.on_event(&key(KeyCode::Left));
+        input.on_event(&key(KeyCode::Left)).await;
         assert_eq!(input.cursor_index(None), 1); // before '中'
 
-        input.on_event(&key(KeyCode::Left));
+        input.on_event(&key(KeyCode::Left)).await;
         assert_eq!(input.cursor_index(None), 0); // before 'a'
 
-        input.on_event(&key(KeyCode::Right));
+        input.on_event(&key(KeyCode::Right)).await;
         assert_eq!(input.cursor_index(None), 1); // after 'a'
 
-        input.on_event(&key(KeyCode::Right));
+        input.on_event(&key(KeyCode::Right)).await;
         assert_eq!(input.cursor_index(None), 4); // after '中'
     }
 
@@ -311,11 +311,11 @@ mod tests {
         assert_eq!(input.cursor_index(None), 10);
     }
 
-    #[test]
-    fn slash_on_empty_returns_open_command_picker() {
+    #[tokio::test]
+    async fn slash_on_empty_returns_open_command_picker() {
         let mut input = TextInput::default();
 
-        let outcome = input.on_event(&key(KeyCode::Char('/')));
+        let outcome = input.on_event(&key(KeyCode::Char('/'))).await;
 
         assert!(outcome.is_some());
         assert!(matches!(
@@ -325,11 +325,11 @@ mod tests {
         assert_eq!(input.buffer(), "/");
     }
 
-    #[test]
-    fn at_sign_returns_open_file_picker() {
+    #[tokio::test]
+    async fn at_sign_returns_open_file_picker() {
         let mut input = TextInput::default();
 
-        let outcome = input.on_event(&key(KeyCode::Char('@')));
+        let outcome = input.on_event(&key(KeyCode::Char('@'))).await;
 
         assert!(outcome.is_some());
         assert!(matches!(
@@ -339,12 +339,12 @@ mod tests {
         assert_eq!(input.buffer(), "@");
     }
 
-    #[test]
-    fn enter_returns_submit() {
+    #[tokio::test]
+    async fn enter_returns_submit() {
         let mut input = TextInput::default();
         input.set_input("hello".to_string());
 
-        let outcome = input.on_event(&key(KeyCode::Enter));
+        let outcome = input.on_event(&key(KeyCode::Enter)).await;
 
         assert!(outcome.is_some());
         assert!(matches!(

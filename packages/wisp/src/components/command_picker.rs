@@ -141,11 +141,11 @@ mod tests {
         ]
     }
 
-    #[test]
-    fn handle_key_enter_returns_selected_command() {
+    #[tokio::test]
+    async fn handle_key_enter_returns_selected_command() {
         let mut picker = CommandPicker::new(sample_commands());
 
-        let outcome = picker.on_event(&Event::Key(key(KeyCode::Enter)));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Enter))).await;
 
         assert!(outcome.is_some());
         assert!(matches!(
@@ -154,11 +154,11 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn handle_key_backspace_on_empty_query_requests_close() {
+    #[tokio::test]
+    async fn handle_key_backspace_on_empty_query_requests_close() {
         let mut picker = CommandPicker::new(sample_commands());
 
-        let outcome = picker.on_event(&Event::Key(key(KeyCode::Backspace)));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Backspace))).await;
 
         assert!(outcome.is_some());
 
@@ -168,11 +168,11 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn handle_key_char_returns_char_typed() {
+    #[tokio::test]
+    async fn handle_key_char_returns_char_typed() {
         let mut picker = CommandPicker::new(sample_commands());
 
-        let outcome = picker.on_event(&Event::Key(key(KeyCode::Char('r'))));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Char('r')))).await;
 
         assert!(outcome.is_some());
 
@@ -183,11 +183,11 @@ mod tests {
         assert_eq!(picker.query(), "r");
     }
 
-    #[test]
-    fn handle_key_whitespace_closes_picker() {
+    #[tokio::test]
+    async fn handle_key_whitespace_closes_picker() {
         let mut picker = CommandPicker::new(sample_commands());
 
-        let outcome = picker.on_event(&Event::Key(key(KeyCode::Char(' '))));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Char(' ')))).await;
 
         assert!(outcome.is_some());
 
@@ -197,12 +197,12 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn handle_key_backspace_with_query_returns_pop_char() {
+    #[tokio::test]
+    async fn handle_key_backspace_with_query_returns_pop_char() {
         let mut picker = CommandPicker::new(sample_commands());
-        type_query(&mut picker, "co");
+        type_query(&mut picker, "co").await;
 
-        let outcome = picker.on_event(&Event::Key(key(KeyCode::Backspace)));
+        let outcome = picker.on_event(&Event::Key(key(KeyCode::Backspace))).await;
 
         assert!(outcome.is_some());
 
@@ -213,16 +213,16 @@ mod tests {
         assert_eq!(picker.query(), "c");
     }
 
-    #[test]
-    fn type_and_delete_updates_query() {
+    #[tokio::test]
+    async fn type_and_delete_updates_query() {
         let mut picker = CommandPicker::new(sample_commands());
-        type_query(&mut picker, "co");
+        type_query(&mut picker, "co").await;
         assert_eq!(picker.query(), "co");
 
-        picker.on_event(&Event::Key(key(KeyCode::Backspace)));
+        picker.on_event(&Event::Key(key(KeyCode::Backspace))).await;
         assert_eq!(picker.query(), "c");
 
-        picker.on_event(&Event::Key(key(KeyCode::Backspace)));
+        picker.on_event(&Event::Key(key(KeyCode::Backspace))).await;
         assert_eq!(picker.query(), "");
     }
 }

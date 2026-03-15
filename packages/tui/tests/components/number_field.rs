@@ -9,65 +9,65 @@ fn empty_renders_cursor() {
     assert_buffer_eq(&term, &["▏"]);
 }
 
-#[test]
-fn integer_input_renders() {
+#[tokio::test]
+async fn integer_input_renders() {
     let mut nf = NumberField::new(String::new(), true);
-    nf.on_event(&Event::Key(key(KeyCode::Char('-'))));
-    nf.on_event(&Event::Key(key(KeyCode::Char('4'))));
-    nf.on_event(&Event::Key(key(KeyCode::Char('2'))));
+    nf.on_event(&Event::Key(key(KeyCode::Char('-')))).await;
+    nf.on_event(&Event::Key(key(KeyCode::Char('4')))).await;
+    nf.on_event(&Event::Key(key(KeyCode::Char('2')))).await;
     let term = render_component(|ctx| nf.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["-42▏"]);
 }
 
-#[test]
-fn float_input_renders() {
+#[tokio::test]
+async fn float_input_renders() {
     let mut nf = NumberField::new(String::new(), false);
-    nf.on_event(&Event::Key(key(KeyCode::Char('3'))));
-    nf.on_event(&Event::Key(key(KeyCode::Char('.'))));
-    nf.on_event(&Event::Key(key(KeyCode::Char('1'))));
-    nf.on_event(&Event::Key(key(KeyCode::Char('4'))));
+    nf.on_event(&Event::Key(key(KeyCode::Char('3')))).await;
+    nf.on_event(&Event::Key(key(KeyCode::Char('.')))).await;
+    nf.on_event(&Event::Key(key(KeyCode::Char('1')))).await;
+    nf.on_event(&Event::Key(key(KeyCode::Char('4')))).await;
     let term = render_component(|ctx| nf.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["3.14▏"]);
 }
 
-#[test]
-fn integer_rejects_dot() {
+#[tokio::test]
+async fn integer_rejects_dot() {
     let mut nf = NumberField::new(String::new(), true);
-    nf.on_event(&Event::Key(key(KeyCode::Char('1'))));
-    nf.on_event(&Event::Key(key(KeyCode::Char('.'))));
-    nf.on_event(&Event::Key(key(KeyCode::Char('2'))));
+    nf.on_event(&Event::Key(key(KeyCode::Char('1')))).await;
+    nf.on_event(&Event::Key(key(KeyCode::Char('.')))).await;
+    nf.on_event(&Event::Key(key(KeyCode::Char('2')))).await;
     let term = render_component(|ctx| nf.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["12▏"]);
 }
 
-#[test]
-fn rejects_alpha() {
+#[tokio::test]
+async fn rejects_alpha() {
     let mut nf = NumberField::new(String::new(), false);
-    nf.on_event(&Event::Key(key(KeyCode::Char('1'))));
-    nf.on_event(&Event::Key(key(KeyCode::Char('a'))));
-    nf.on_event(&Event::Key(key(KeyCode::Char('2'))));
+    nf.on_event(&Event::Key(key(KeyCode::Char('1')))).await;
+    nf.on_event(&Event::Key(key(KeyCode::Char('a')))).await;
+    nf.on_event(&Event::Key(key(KeyCode::Char('2')))).await;
     let term = render_component(|ctx| nf.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["12▏"]);
 }
 
-#[test]
-fn rejects_second_dot() {
+#[tokio::test]
+async fn rejects_second_dot() {
     let mut nf = NumberField::new(String::new(), false);
-    nf.on_event(&Event::Key(key(KeyCode::Char('1'))));
-    nf.on_event(&Event::Key(key(KeyCode::Char('.'))));
-    nf.on_event(&Event::Key(key(KeyCode::Char('2'))));
-    nf.on_event(&Event::Key(key(KeyCode::Char('.'))));
-    nf.on_event(&Event::Key(key(KeyCode::Char('3'))));
+    nf.on_event(&Event::Key(key(KeyCode::Char('1')))).await;
+    nf.on_event(&Event::Key(key(KeyCode::Char('.')))).await;
+    nf.on_event(&Event::Key(key(KeyCode::Char('2')))).await;
+    nf.on_event(&Event::Key(key(KeyCode::Char('.')))).await;
+    nf.on_event(&Event::Key(key(KeyCode::Char('3')))).await;
     let term = render_component(|ctx| nf.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["1.23▏"]);
 }
 
-#[test]
-fn backspace_renders() {
+#[tokio::test]
+async fn backspace_renders() {
     let mut nf = NumberField::new(String::new(), true);
-    nf.on_event(&Event::Key(key(KeyCode::Char('9'))));
-    nf.on_event(&Event::Key(key(KeyCode::Char('9'))));
-    nf.on_event(&Event::Key(key(KeyCode::Backspace)));
+    nf.on_event(&Event::Key(key(KeyCode::Char('9')))).await;
+    nf.on_event(&Event::Key(key(KeyCode::Char('9')))).await;
+    nf.on_event(&Event::Key(key(KeyCode::Backspace))).await;
     let term = render_component(|ctx| nf.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["9▏"]);
 }
