@@ -1,7 +1,7 @@
 use crate::components::app::git_diff_mode::{QueuedComment, format_review_prompt};
 use crate::components::app::{GitDiffLoadState, GitDiffViewState, PatchFocus};
 use crate::components::file_list_renderer::render_file_list_cell;
-pub(crate) use crate::components::patch_renderer::build_patch_lines;
+pub use crate::components::patch_renderer::build_patch_lines;
 use crate::git_diff::{FileDiff, FileStatus, PatchLineKind};
 use crate::tui::{Component, Event, Frame, KeyCode, Line, Style, ViewContext, truncate_text};
 
@@ -462,7 +462,6 @@ fn build_queued_comment(state: &GitDiffViewState) -> Option<QueuedComment> {
 mod tests {
     use super::*;
     use crate::git_diff::{FileDiff, FileStatus, GitDiffDocument, Hunk, PatchLine, PatchLineKind};
-    use crate::tui::Span;
     use crate::tui::{KeyEvent, KeyModifiers};
     use std::path::PathBuf;
 
@@ -635,80 +634,6 @@ mod tests {
         let mut view = GitDiffView { state: &mut state };
         view.on_event(&Event::Key(key(KeyCode::Char('j'))));
         assert_eq!(view.state.patch_scroll, 0);
-    }
-
-    #[test]
-    fn render_empty_state() {
-        let mut state = GitDiffViewState::new(GitDiffLoadState::Empty);
-        let view = GitDiffView { state: &mut state };
-        let context = ViewContext::new((80, 24));
-        let frame = view.render(&context);
-        let text: String = frame.lines().iter().map(|l| l.plain_text()).collect();
-        assert!(text.contains("No changes"));
-    }
-
-    #[test]
-    fn render_error_state() {
-        let mut state = GitDiffViewState::new(GitDiffLoadState::Error {
-            message: "not a repo".to_string(),
-        });
-        let view = GitDiffView { state: &mut state };
-        let context = ViewContext::new((80, 24));
-        let frame = view.render(&context);
-        let text: String = frame.lines().iter().map(|l| l.plain_text()).collect();
-        assert!(text.contains("Git diff unavailable"));
-        assert!(text.contains("not a repo"));
-    }
-
-    #[test]
-    fn render_shows_file_list_and_patch() {
-        let doc = make_test_doc();
-        let mut state = make_view_state(doc);
-        let view = GitDiffView { state: &mut state };
-        let context = ViewContext::new((100, 24));
-        let frame = view.render(&context);
-        assert!(!frame.lines().is_empty());
-
-        // First line should have file list entry and file header
-        let first_text = frame.lines()[0].plain_text();
-        assert!(
-            first_text.contains("a.rs"),
-            "Should show file name: {first_text}"
-        );
-    }
-
-    #[test]
-    fn patch_lines_have_syntax_highlighted_spans() {
-        let doc = make_test_doc();
-        let context = ViewContext::new((100, 24));
-        let file = &doc.files[0];
-        let (patch_lines, _refs) = build_patch_lines(file, &context);
-
-        // Context line "fn main() {" should have multiple spans from syntax highlighting
-        // (gutter span + syntax spans for "fn", "main", etc.)
-        let context_line = &patch_lines[1]; // index 1 = first Context line after HunkHeader
-        assert!(
-            context_line.spans().len() > 2,
-            "Expected syntax-highlighted spans for context line, got {} spans",
-            context_line.spans().len()
-        );
-
-        // Added line should also have syntax spans with bg overlay
-        let added_line = &patch_lines[3]; // Added line
-        let content_spans: Vec<&Span> = added_line.spans().iter().skip(1).collect(); // skip gutter
-        assert!(
-            !content_spans.is_empty(),
-            "Added line should have content spans"
-        );
-        // All content spans should have the added bg color
-        let theme = &context.theme;
-        for span in &content_spans {
-            assert_eq!(
-                span.style().bg,
-                Some(theme.diff_added_bg()),
-                "Added line spans should have diff_added_bg"
-            );
-        }
     }
 
     fn make_state_with_cache() -> GitDiffViewState {

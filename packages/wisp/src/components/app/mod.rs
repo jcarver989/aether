@@ -884,11 +884,22 @@ mod tests {
             .on_tool_call(&tool_call);
         app.conversation_screen.grid_loader.visible = false;
 
-        let tick_before = app.conversation_screen.tool_call_statuses.tick();
+        let ctx = ViewContext::new((80, 24));
+        let lines_before = app
+            .conversation_screen
+            .tool_call_statuses
+            .render_tool("tool-1", &ctx);
         app.on_event(&Event::Tick);
-        let tick_after = app.conversation_screen.tool_call_statuses.tick();
+        let lines_after = app
+            .conversation_screen
+            .tool_call_statuses
+            .render_tool("tool-1", &ctx);
 
-        assert!(tick_after > tick_before);
+        assert_ne!(
+            lines_before[0].plain_text(),
+            lines_after[0].plain_text(),
+            "tick should advance the spinner animation"
+        );
     }
 
     #[test]

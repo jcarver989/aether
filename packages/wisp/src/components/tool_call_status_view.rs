@@ -8,7 +8,7 @@ use crate::components::tracked_tool_call::TrackedToolCall;
 use crate::tui::{DiffLine, DiffPreview, DiffTag, Line, ViewContext, highlight_diff};
 use crate::tui::BRAILLE_FRAMES as FRAMES;
 
-pub(crate) const MAX_TOOL_ARG_LENGTH: usize = 200;
+pub const MAX_TOOL_ARG_LENGTH: usize = 200;
 
 /// Render a tool call and its sub-agent hierarchy (if any) as status lines.
 pub(crate) fn render_tool_tree(
