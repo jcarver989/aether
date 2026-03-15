@@ -1,10 +1,10 @@
 use agent_client_protocol as acp;
-use tui::testing::TestTerminal;
 use tui::KeyCode;
-use tui::KeyModifiers;
 use tui::KeyEvent;
 use tui::KeyEventKind;
 use tui::KeyEventState;
+use tui::KeyModifiers;
+use tui::testing::TestTerminal;
 
 use super::common::*;
 

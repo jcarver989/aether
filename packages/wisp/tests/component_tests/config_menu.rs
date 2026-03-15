@@ -1,7 +1,7 @@
 use acp_utils::config_meta::SelectOptionMeta;
 use agent_client_protocol::SessionConfigSelectOption;
-use tui::testing::render_component;
 use tui::ViewContext;
+use tui::testing::render_component;
 use wisp::components::config_menu::{
     ConfigMenu, ConfigMenuEntry, ConfigMenuEntryKind, ConfigMenuValue,
 };
@@ -46,12 +46,30 @@ fn component_renders_selected_row() {
     let term = render_component(|ctx| menu.render(ctx), 80, 24);
     let output = term.get_lines();
 
-    assert!(output[0].contains("▶"), "first row should have selection indicator");
-    assert!(output[0].contains("Model"), "first row should contain 'Model'");
-    assert!(output[0].contains("GPT-4o"), "first row should contain 'GPT-4o'");
-    assert!(output[1].contains("Mode"), "second row should contain 'Mode'");
-    assert!(output[1].contains("Code"), "second row should contain 'Code'");
-    assert!(!output[1].contains("▶"), "second row should not have selection indicator");
+    assert!(
+        output[0].contains("▶"),
+        "first row should have selection indicator"
+    );
+    assert!(
+        output[0].contains("Model"),
+        "first row should contain 'Model'"
+    );
+    assert!(
+        output[0].contains("GPT-4o"),
+        "first row should contain 'GPT-4o'"
+    );
+    assert!(
+        output[1].contains("Mode"),
+        "second row should contain 'Mode'"
+    );
+    assert!(
+        output[1].contains("Code"),
+        "second row should contain 'Code'"
+    );
+    assert!(
+        !output[1].contains("▶"),
+        "second row should not have selection indicator"
+    );
     // Rows after the two entries should be empty
     assert!(output[2].trim().is_empty(), "row 2 should be empty");
 }
@@ -63,7 +81,10 @@ fn empty_options_renders_placeholder() {
     let term = render_component(|ctx| menu.render(ctx), 80, 24);
     let output = term.get_lines();
 
-    assert!(output[0].contains("no config options"), "should show placeholder text");
+    assert!(
+        output[0].contains("no config options"),
+        "should show placeholder text"
+    );
     // Second row should be empty
     assert!(output[1].trim().is_empty(), "row 1 should be empty");
 }

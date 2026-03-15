@@ -152,7 +152,10 @@ impl TextInput {
         }
 
         // Delegate cursor navigation, char input, and backspace to TextField
-        self.field.on_event(&Event::Key(*key_event)).await.map(|_| vec![])
+        self.field
+            .on_event(&Event::Key(*key_event))
+            .await
+            .map(|_| vec![])
     }
 }
 

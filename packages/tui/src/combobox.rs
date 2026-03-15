@@ -264,4 +264,3 @@ pub fn classify_key(key: KeyEvent, query_is_empty: bool) -> PickerKey {
         _ => PickerKey::Other,
     }
 }
-

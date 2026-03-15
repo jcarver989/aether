@@ -1,6 +1,7 @@
 use crate::components::config_menu::ConfigMenu;
 use crate::components::config_overlay::{ConfigOverlay, ConfigOverlayMessage};
 use crate::components::server_status::server_status_summary;
+use crate::components::status_line::{extract_reasoning_effort, is_cycleable_mode_option};
 use crate::settings::{list_theme_files, load_or_create_settings};
 use crate::tui::{Component, Cursor, Event, Frame, Layout, Theme, ViewContext};
 use acp_utils::config_option_id::ConfigOptionId;
@@ -25,10 +26,7 @@ pub struct ConfigManager {
 }
 
 impl ConfigManager {
-    pub fn new(
-        config_options: &[SessionConfigOption],
-        auth_methods: Vec<acp::AuthMethod>,
-    ) -> Self {
+    pub fn new(config_options: &[SessionConfigOption], auth_methods: Vec<acp::AuthMethod>) -> Self {
         Self {
             config_options: config_options.to_vec(),
             config_overlay: None,
@@ -103,7 +101,7 @@ impl ConfigManager {
         let option = self
             .config_options
             .iter()
-            .find(|option| crate::components::status_line::is_cycleable_mode_option(option))?;
+            .find(|option| is_cycleable_mode_option(option))?;
 
         let SessionConfigKind::Select(ref select) = option.kind else {
             return None;
@@ -134,8 +132,7 @@ impl ConfigManager {
             .any(|option| option.id.0.as_ref() == ConfigOptionId::ReasoningEffort.as_str());
 
         if has_reasoning {
-            let current =
-                crate::components::status_line::extract_reasoning_effort(&self.config_options);
+            let current = extract_reasoning_effort(&self.config_options);
             let next = ReasoningEffort::cycle_next(current);
             Some((
                 ConfigOptionId::ReasoningEffort.as_str().to_string(),
@@ -195,9 +192,10 @@ impl ConfigManager {
 
     pub fn update_overlay_viewport(&mut self, max_height: usize) {
         if let Some(ref mut overlay) = self.config_overlay
-            && max_height >= 3 {
-                overlay.update_child_viewport(max_height.saturating_sub(4));
-            }
+            && max_height >= 3
+        {
+            overlay.update_child_viewport(max_height.saturating_sub(4));
+        }
     }
 
     fn decorate_config_menu(&self, mut menu: ConfigMenu) -> ConfigMenu {

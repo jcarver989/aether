@@ -445,7 +445,10 @@ impl Agent for SessionManager {
         Ok(AuthenticateResponse::default())
     }
 
-    async fn new_session(&self, mut args: NewSessionRequest) -> Result<NewSessionResponse, acp::Error> {
+    async fn new_session(
+        &self,
+        mut args: NewSessionRequest,
+    ) -> Result<NewSessionResponse, acp::Error> {
         // Inside a sandbox container the client sends the *host* cwd, but the
         // project is mounted at the container's working directory.
         if std::env::var("AETHER_INSIDE_SANDBOX").is_ok() {

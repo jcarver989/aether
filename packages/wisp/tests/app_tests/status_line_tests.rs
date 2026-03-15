@@ -1,7 +1,7 @@
 use agent_client_protocol as acp;
-use tui::testing::TestTerminal;
 use tui::KeyCode;
 use tui::KeyModifiers;
+use tui::testing::TestTerminal;
 
 use super::common::*;
 
@@ -36,7 +36,12 @@ async fn test_status_line_shows_model_from_config_options() {
     ];
 
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, "aether-acp".to_string(), &config_options, (80, 24));
+    let mut renderer = Renderer::new(
+        terminal,
+        "aether-acp".to_string(),
+        &config_options,
+        (80, 24),
+    );
 
     renderer.initial_render().unwrap();
 
@@ -66,7 +71,12 @@ async fn test_status_line_updates_on_config_option_update() {
     ];
 
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(terminal, "aether-acp".to_string(), &config_options, (80, 24));
+    let mut renderer = Renderer::new(
+        terminal,
+        "aether-acp".to_string(),
+        &config_options,
+        (80, 24),
+    );
     renderer.initial_render().unwrap();
 
     // Send a ConfigOptionUpdate with a new model

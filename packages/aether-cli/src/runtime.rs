@@ -9,6 +9,7 @@ use aether_core::mcp::run_mcp_task::McpCommand;
 use aether_project::load_agent_catalog;
 use llm::{ChatMessage, LlmModel, ToolDefinition};
 use mcp_servers::McpBuilderExt;
+use mcp_utils::client::oauth::OAuthHandler;
 use mcp_utils::client::{ElicitationRequest, McpServerConfig};
 use mcp_utils::status::McpServerStatusEntry;
 use std::path::{Path, PathBuf};
@@ -42,10 +43,8 @@ pub struct PromptInfo {
 impl RuntimeBuilder {
     pub fn new(cwd: &Path, model: &str) -> Result<Self, CliError> {
         let cwd = cwd.canonicalize().map_err(CliError::IoError)?;
-        let parsed_model: LlmModel =
-            model.parse().map_err(|e: String| CliError::ModelError(e))?;
-        let catalog =
-            load_agent_catalog(&cwd).map_err(|e| CliError::AgentError(e.to_string()))?;
+        let parsed_model: LlmModel = model.parse().map_err(|e: String| CliError::ModelError(e))?;
+        let catalog = load_agent_catalog(&cwd).map_err(|e| CliError::AgentError(e.to_string()))?;
         let spec = catalog.resolve_default(&parsed_model, None, &cwd);
 
         Ok(Self {
@@ -84,10 +83,7 @@ impl RuntimeBuilder {
         self
     }
 
-    pub fn oauth_handler<H: mcp_utils::client::oauth::OAuthHandler + 'static>(
-        mut self,
-        handler: H,
-    ) -> Self {
+    pub fn oauth_handler<H: OAuthHandler + 'static>(mut self, handler: H) -> Self {
         self.oauth_applicator = Some(Box::new(|builder| builder.with_oauth_handler(handler)));
         self
     }
@@ -146,9 +142,7 @@ impl RuntimeBuilder {
             builder = apply_oauth(builder);
         }
 
-        let mcp_config_path = self
-            .mcp_config
-            .or(self.spec.mcp_config_path.clone());
+        let mcp_config_path = self.mcp_config.or(self.spec.mcp_config_path.clone());
 
         if let Some(ref config_path) = mcp_config_path {
             debug!("Loading MCP config from: {}", config_path.display());

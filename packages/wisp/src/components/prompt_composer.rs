@@ -425,7 +425,9 @@ mod tests {
         composer.on_event(&key(KeyCode::Char('@'))).await;
         assert!(composer.has_file_picker());
 
-        let outcome = composer.on_event(&Event::Paste("pasted text".to_string())).await;
+        let outcome = composer
+            .on_event(&Event::Paste("pasted text".to_string()))
+            .await;
         assert!(outcome.is_some());
         assert!(outcome.unwrap().is_empty());
         assert!(!composer.has_active_picker());

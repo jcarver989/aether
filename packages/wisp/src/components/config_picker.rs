@@ -257,10 +257,12 @@ mod tests {
     #[tokio::test]
     async fn confirm_selection_returns_change_for_new_value() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
-        picker.on_event(&Event::Key(KeyEvent::new(
-            KeyCode::Down,
-            KeyModifiers::NONE,
-        ))).await;
+        picker
+            .on_event(&Event::Key(KeyEvent::new(
+                KeyCode::Down,
+                KeyModifiers::NONE,
+            )))
+            .await;
         let change = picker.confirm_selection().expect("config change");
         assert_eq!(change.config_id, "model");
         assert_eq!(
@@ -284,15 +286,19 @@ mod tests {
     #[tokio::test]
     async fn handle_key_enter_returns_apply_selection_message() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
-        picker.on_event(&Event::Key(KeyEvent::new(
-            KeyCode::Down,
-            KeyModifiers::NONE,
-        ))).await;
+        picker
+            .on_event(&Event::Key(KeyEvent::new(
+                KeyCode::Down,
+                KeyModifiers::NONE,
+            )))
+            .await;
 
-        let outcome = picker.on_event(&Event::Key(KeyEvent::new(
-            KeyCode::Enter,
-            KeyModifiers::NONE,
-        ))).await;
+        let outcome = picker
+            .on_event(&Event::Key(KeyEvent::new(
+                KeyCode::Enter,
+                KeyModifiers::NONE,
+            )))
+            .await;
 
         assert!(outcome.is_some());
 
@@ -309,7 +315,9 @@ mod tests {
     async fn handle_key_escape_returns_close_message() {
         let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
 
-        let outcome = picker.on_event(&Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))).await;
+        let outcome = picker
+            .on_event(&Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)))
+            .await;
 
         assert!(outcome.is_some());
 

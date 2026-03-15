@@ -391,27 +391,32 @@ mod tests {
         let mut menu = ConfigMenu::from_config_options(&opts);
         assert_eq!(menu.selected_index(), 0);
 
-        menu.on_event(&Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE))).await;
+        menu.on_event(&Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)))
+            .await;
         assert_eq!(menu.selected_index(), 2);
 
         menu.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Down,
             KeyModifiers::NONE,
-        ))).await;
+        )))
+        .await;
         assert_eq!(menu.selected_index(), 0);
 
         menu.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Down,
             KeyModifiers::NONE,
-        ))).await;
+        )))
+        .await;
         menu.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Down,
             KeyModifiers::NONE,
-        ))).await;
+        )))
+        .await;
         menu.on_event(&Event::Key(KeyEvent::new(
             KeyCode::Down,
             KeyModifiers::NONE,
-        ))).await;
+        )))
+        .await;
         assert_eq!(menu.selected_index(), 0);
     }
 
@@ -474,10 +479,12 @@ mod tests {
         let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
         let mut menu = ConfigMenu::from_config_options(&opts);
 
-        let outcome = menu.on_event(&Event::Key(KeyEvent::new(
-            KeyCode::Enter,
-            KeyModifiers::NONE,
-        ))).await;
+        let outcome = menu
+            .on_event(&Event::Key(KeyEvent::new(
+                KeyCode::Enter,
+                KeyModifiers::NONE,
+            )))
+            .await;
 
         assert!(outcome.is_some());
 
@@ -493,7 +500,9 @@ mod tests {
         let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
         let mut menu = ConfigMenu::from_config_options(&opts);
 
-        let outcome = menu.on_event(&Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))).await;
+        let outcome = menu
+            .on_event(&Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)))
+            .await;
 
         assert!(outcome.is_some());
 
@@ -524,10 +533,12 @@ mod tests {
             .meta(meta.into_meta());
         let mut menu = ConfigMenu::from_config_options(&[opt]);
 
-        let outcome = menu.on_event(&Event::Key(KeyEvent::new(
-            KeyCode::Enter,
-            KeyModifiers::NONE,
-        ))).await;
+        let outcome = menu
+            .on_event(&Event::Key(KeyEvent::new(
+                KeyCode::Enter,
+                KeyModifiers::NONE,
+            )))
+            .await;
         let messages = outcome.unwrap();
         assert!(matches!(
             messages.as_slice(),

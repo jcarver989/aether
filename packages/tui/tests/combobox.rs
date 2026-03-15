@@ -1,6 +1,6 @@
-use tui::{Combobox, Searchable, ViewContext, Line, PickerKey, classify_key};
-use tui::{KeyCode, KeyEvent, KeyModifiers};
 use tui::testing::render_lines;
+use tui::{Combobox, Line, PickerKey, Searchable, ViewContext, classify_key};
+use tui::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Debug, Clone, PartialEq)]
 struct FakeItem {

@@ -1,5 +1,5 @@
 use tui::testing::render_lines;
-use tui::{Spinner, ViewContext, BRAILLE_FRAMES};
+use tui::{BRAILLE_FRAMES, Spinner, ViewContext};
 use wisp::components::conversation_window::{ConversationBuffer, ConversationWindow};
 use wisp::components::tool_call_statuses::ToolCallStatuses;
 

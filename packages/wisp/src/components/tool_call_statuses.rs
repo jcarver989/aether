@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use crate::components::sub_agent_tracker::SubAgentTracker;
 use crate::components::tool_call_status_view::{
-    ToolCallStatus, render_tool_tree, compute_diff_preview,
+    ToolCallStatus, compute_diff_preview, render_tool_tree,
 };
 use crate::components::tracked_tool_call::{
     TrackedToolCall, raw_input_fragment, upsert_tracked_tool_call,

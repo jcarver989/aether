@@ -56,9 +56,8 @@ pub fn search_notes(
             }
         };
 
-        let (yaml, body) = match split_frontmatter(&content) {
-            Some(parts) => parts,
-            None => continue,
+        let Some((yaml, body)) = split_frontmatter(&content) else {
+            continue;
         };
 
         let fm: NoteFrontmatter = match serde_yml::from_str(yaml) {

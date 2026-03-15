@@ -487,8 +487,7 @@ impl TestTerminal {
                         match codes[i] {
                             5 if i + 1 < codes.len() => {
                                 i += 1;
-                                self.current_style.fg =
-                                    Some(Color::AnsiValue(codes[i] as u8));
+                                self.current_style.fg = Some(Color::AnsiValue(codes[i] as u8));
                             }
                             2 if i + 3 < codes.len() => {
                                 self.current_style.fg = Some(Color::Rgb {
@@ -512,8 +511,7 @@ impl TestTerminal {
                         match codes[i] {
                             5 if i + 1 < codes.len() => {
                                 i += 1;
-                                self.current_style.bg =
-                                    Some(Color::AnsiValue(codes[i] as u8));
+                                self.current_style.bg = Some(Color::AnsiValue(codes[i] as u8));
                             }
                             2 if i + 3 < codes.len() => {
                                 self.current_style.bg = Some(Color::Rgb {

@@ -7,6 +7,7 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use oauth2::TokenResponse;
 use oauth2::basic::BasicClient;
+use oauth2::reqwest::redirect::Policy;
 use oauth2::{AuthUrl, AuthorizationCode, ClientId, PkceCodeChallenge, RedirectUrl, TokenUrl};
 use tokio::sync::Mutex;
 use url::Url;
@@ -65,7 +66,7 @@ pub async fn perform_codex_oauth_flow() -> Result<(), LlmError> {
         );
 
     let http_client = oauth2::reqwest::Client::builder()
-        .redirect(oauth2::reqwest::redirect::Policy::none())
+        .redirect(Policy::none())
         .build()
         .map_err(|e| OAuthError::TokenExchange(format!("failed to build HTTP client: {e}")))?;
 

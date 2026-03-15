@@ -214,26 +214,16 @@ impl Theme {
             text_secondary: b
                 .text_secondary
                 .ok_or(ThemeBuildError::MissingField("text_secondary"))?,
-            code_fg: b
-                .code_fg
-                .ok_or(ThemeBuildError::MissingField("code_fg"))?,
-            code_bg: b
-                .code_bg
-                .ok_or(ThemeBuildError::MissingField("code_bg"))?,
-            heading: b
-                .heading
-                .ok_or(ThemeBuildError::MissingField("heading"))?,
+            code_fg: b.code_fg.ok_or(ThemeBuildError::MissingField("code_fg"))?,
+            code_bg: b.code_bg.ok_or(ThemeBuildError::MissingField("code_bg"))?,
+            heading: b.heading.ok_or(ThemeBuildError::MissingField("heading"))?,
             link: b.link.ok_or(ThemeBuildError::MissingField("link"))?,
             blockquote: b
                 .blockquote
                 .ok_or(ThemeBuildError::MissingField("blockquote"))?,
             muted: b.muted.ok_or(ThemeBuildError::MissingField("muted"))?,
-            success: b
-                .success
-                .ok_or(ThemeBuildError::MissingField("success"))?,
-            warning: b
-                .warning
-                .ok_or(ThemeBuildError::MissingField("warning"))?,
+            success: b.success.ok_or(ThemeBuildError::MissingField("success"))?,
+            warning: b.warning.ok_or(ThemeBuildError::MissingField("warning"))?,
             error: b.error.ok_or(ThemeBuildError::MissingField("error"))?,
             info: b.info.ok_or(ThemeBuildError::MissingField("info"))?,
             secondary: b

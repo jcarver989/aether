@@ -1,19 +1,27 @@
-use wisp::components::model_selector::ModelSelector;
-use wisp::components::config_menu::{ConfigMenuEntry, ConfigMenuEntryKind, ConfigMenuValue};
-use tui::{Component, Event, KeyCode, KeyEvent, KeyModifiers};
-use tui::testing::render_component;
 use acp_utils::config_meta::SelectOptionMeta;
+use tui::testing::render_component;
+use tui::{Component, Event, KeyCode, KeyEvent, KeyModifiers};
+use wisp::components::config_menu::{ConfigMenuEntry, ConfigMenuEntryKind, ConfigMenuValue};
+use wisp::components::model_selector::ModelSelector;
 
 async fn type_query(picker: &mut ModelSelector, text: &str) {
     for c in text.chars() {
-        picker.on_event(&Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE))).await;
+        picker
+            .on_event(&Event::Key(KeyEvent::new(
+                KeyCode::Char(c),
+                KeyModifiers::NONE,
+            )))
+            .await;
     }
 }
 
 fn rendered_lines(selector: &mut ModelSelector) -> Vec<String> {
     let term = render_component(|ctx| selector.render(ctx), 120, 40);
     let lines = term.get_lines();
-    let last_non_empty = lines.iter().rposition(|l| !l.is_empty()).map_or(0, |i| i + 1);
+    let last_non_empty = lines
+        .iter()
+        .rposition(|l| !l.is_empty())
+        .map_or(0, |i| i + 1);
     lines[..last_non_empty].to_vec()
 }
 

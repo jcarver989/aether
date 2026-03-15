@@ -5,7 +5,7 @@ use super::frame::Cursor;
 use super::line::Line;
 use super::soft_wrap::soft_wrap_lines_with_map;
 
-/// Result of diffing two VisualFrames' visible lines.
+/// Result of diffing two `VisualFrames`' visible lines.
 #[derive(Debug)]
 pub struct LineDiff<'a> {
     /// Row index to start rewriting from.
@@ -102,7 +102,7 @@ impl VisualFrame {
         self.overflow
     }
 
-    /// Create an empty VisualFrame with no lines and no overflow.
+    /// Create an empty `VisualFrame` with no lines and no overflow.
     pub fn empty() -> Self {
         Self {
             scrollback_lines: Vec::new(),

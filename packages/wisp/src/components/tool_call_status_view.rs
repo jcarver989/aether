@@ -154,6 +154,8 @@ impl ToolCallStatusView<'_> {
 
 /// Compute a visual diff preview from an ACP `Diff` (full old/new text).
 pub(super) fn compute_diff_preview(diff: &acp::Diff) -> DiffPreview {
+    const CONTEXT_LINES: usize = 3;
+
     let old_text = diff.old_text.as_deref().unwrap_or("");
     let text_diff = TextDiff::from_lines(old_text, &diff.new_text);
 
@@ -186,8 +188,6 @@ pub(super) fn compute_diff_preview(diff: &acp::Diff) -> DiffPreview {
             content: change.value().trim_end_matches('\n').to_string(),
         });
     }
-
-    const CONTEXT_LINES: usize = 3;
 
     let first_change_idx = lines.iter().position(|l| l.tag != DiffTag::Context);
     let last_change_idx = lines.iter().rposition(|l| l.tag != DiffTag::Context);

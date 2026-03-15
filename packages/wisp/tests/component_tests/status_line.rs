@@ -1,8 +1,8 @@
-use wisp::components::status_line::StatusLine;
+use acp_utils::config_option_id::ConfigOptionId;
+use agent_client_protocol::{self as acp, SessionConfigOption, SessionConfigOptionCategory};
 use tui::ViewContext;
 use tui::testing::render_lines;
-use agent_client_protocol::{self as acp, SessionConfigOption, SessionConfigOptionCategory};
-use acp_utils::config_option_id::ConfigOptionId;
+use wisp::components::status_line::StatusLine;
 
 fn mode_option(value: impl Into<String>, name: impl Into<String>) -> SessionConfigOption {
     let value = value.into();
@@ -87,7 +87,10 @@ fn renders_model_display() {
     let ctx = ViewContext::new((80, 24));
     let term = render_lines(&status.render(&ctx), 80, 24);
     let output = term.get_lines();
-    assert!(output[0].contains("aether-acp"), "should contain agent name");
+    assert!(
+        output[0].contains("aether-acp"),
+        "should contain agent name"
+    );
     assert!(output[0].contains("gpt-4o"), "should contain model name");
 }
 
@@ -124,7 +127,10 @@ fn renders_context_usage_right_aligned() {
     let term = render_lines(&status.render(&ctx), 80, 24);
     let output = term.get_lines();
     assert!(output[0].contains("aether"), "should contain agent name");
-    assert!(output[0].contains("72% context"), "should contain context usage");
+    assert!(
+        output[0].contains("72% context"),
+        "should contain context usage"
+    );
 }
 
 #[test]
@@ -140,7 +146,10 @@ fn does_not_render_context_when_none() {
     let ctx = ViewContext::new((80, 24));
     let term = render_lines(&status.render(&ctx), 80, 24);
     let output = term.get_lines();
-    assert!(!output[0].contains("context"), "should not contain context info");
+    assert!(
+        !output[0].contains("context"),
+        "should not contain context info"
+    );
 }
 
 #[test]
@@ -383,25 +392,25 @@ fn renders_each_element_with_distinct_color() {
     let model_style = term.style_of_text(0, "gpt-4o");
 
     assert_ne!(
-        agent_style.map(|s| s.fg), mode_style.map(|s| s.fg),
+        agent_style.map(|s| s.fg),
+        mode_style.map(|s| s.fg),
         "agent and mode should have different colors"
     );
     assert_ne!(
-        mode_style.map(|s| s.fg), model_style.map(|s| s.fg),
+        mode_style.map(|s| s.fg),
+        model_style.map(|s| s.fg),
         "mode and model should have different colors"
     );
     assert_ne!(
-        agent_style.map(|s| s.fg), model_style.map(|s| s.fg),
+        agent_style.map(|s| s.fg),
+        model_style.map(|s| s.fg),
         "agent and model should have different colors"
     );
 }
 
 #[test]
 fn renders_reasoning_bar_next_to_model_when_reasoning_set() {
-    let options = vec![
-        model_option("gpt-4o", "gpt-4o"),
-        reasoning_option("medium"),
-    ];
+    let options = vec![model_option("gpt-4o", "gpt-4o"), reasoning_option("medium")];
     let status = StatusLine {
         agent_name: "wisp",
         config_options: &options,
@@ -439,8 +448,14 @@ fn does_not_render_reasoning_bar_when_model_absent() {
     let ctx = ViewContext::new((80, 24));
     let term = render_lines(&status.render(&ctx), 80, 24);
     let output = term.get_lines();
-    assert!(!output[0].contains('■'), "should not contain filled bar chars");
-    assert!(!output[0].contains('·'), "should not contain empty bar chars");
+    assert!(
+        !output[0].contains('■'),
+        "should not contain filled bar chars"
+    );
+    assert!(
+        !output[0].contains('·'),
+        "should not contain empty bar chars"
+    );
 }
 
 #[test]
@@ -456,15 +471,15 @@ fn renders_empty_reasoning_bar_for_none_effort() {
     let ctx = ViewContext::new((80, 24));
     let term = render_lines(&status.render(&ctx), 80, 24);
     let output = term.get_lines();
-    assert!(output[0].contains("[···]"), "should contain empty reasoning bar");
+    assert!(
+        output[0].contains("[···]"),
+        "should contain empty reasoning bar"
+    );
 }
 
 #[test]
 fn renders_reasoning_bar_with_model_semantic_color() {
-    let options = vec![
-        model_option("gpt-4o", "gpt-4o"),
-        reasoning_option("low"),
-    ];
+    let options = vec![model_option("gpt-4o", "gpt-4o"), reasoning_option("low")];
     let status = StatusLine {
         agent_name: "wisp",
         config_options: &options,

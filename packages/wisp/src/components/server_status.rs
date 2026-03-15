@@ -179,16 +179,20 @@ mod tests {
     async fn navigation_wraps_around() {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
 
-        overlay.on_event(&Event::Key(crate::tui::KeyEvent::new(
-            crate::tui::KeyCode::Up,
-            crate::tui::KeyModifiers::NONE,
-        ))).await;
+        overlay
+            .on_event(&Event::Key(crate::tui::KeyEvent::new(
+                crate::tui::KeyCode::Up,
+                crate::tui::KeyModifiers::NONE,
+            )))
+            .await;
         assert_eq!(overlay.list.selected_index(), 2);
 
-        overlay.on_event(&Event::Key(crate::tui::KeyEvent::new(
-            crate::tui::KeyCode::Down,
-            crate::tui::KeyModifiers::NONE,
-        ))).await;
+        overlay
+            .on_event(&Event::Key(crate::tui::KeyEvent::new(
+                crate::tui::KeyCode::Down,
+                crate::tui::KeyModifiers::NONE,
+            )))
+            .await;
         assert_eq!(overlay.list.selected_index(), 0);
     }
 
@@ -197,10 +201,12 @@ mod tests {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
         overlay.list.set_selected(1); // linear - NeedsOAuth
 
-        let outcome = overlay.on_event(&Event::Key(crate::tui::KeyEvent::new(
-            crate::tui::KeyCode::Enter,
-            crate::tui::KeyModifiers::NONE,
-        ))).await;
+        let outcome = overlay
+            .on_event(&Event::Key(crate::tui::KeyEvent::new(
+                crate::tui::KeyCode::Enter,
+                crate::tui::KeyModifiers::NONE,
+            )))
+            .await;
         let messages = outcome.unwrap();
         match messages.as_slice() {
             [ServerStatusMessage::Authenticate(name)] => assert_eq!(name, "linear"),
@@ -213,20 +219,24 @@ mod tests {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
         // index 0 = github (Connected)
 
-        let outcome = overlay.on_event(&Event::Key(crate::tui::KeyEvent::new(
-            crate::tui::KeyCode::Enter,
-            crate::tui::KeyModifiers::NONE,
-        ))).await;
+        let outcome = overlay
+            .on_event(&Event::Key(crate::tui::KeyEvent::new(
+                crate::tui::KeyCode::Enter,
+                crate::tui::KeyModifiers::NONE,
+            )))
+            .await;
         assert!(outcome.unwrap().is_empty());
     }
 
     #[tokio::test]
     async fn esc_closes_overlay() {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
-        let outcome = overlay.on_event(&Event::Key(crate::tui::KeyEvent::new(
-            crate::tui::KeyCode::Esc,
-            crate::tui::KeyModifiers::NONE,
-        ))).await;
+        let outcome = overlay
+            .on_event(&Event::Key(crate::tui::KeyEvent::new(
+                crate::tui::KeyCode::Esc,
+                crate::tui::KeyModifiers::NONE,
+            )))
+            .await;
         let messages = outcome.unwrap();
         assert!(matches!(messages.as_slice(), [ServerStatusMessage::Close]));
     }

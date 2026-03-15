@@ -1,16 +1,20 @@
-use wisp::components::tool_call_statuses::ToolCallStatuses;
-use wisp::components::tool_call_status_view::{ToolCallStatus, ToolCallStatusView, MAX_TOOL_ARG_LENGTH};
-use tui::{ViewContext, Line, BRAILLE_FRAMES as FRAMES};
-use tui::testing::render_lines;
 use acp_utils::notifications::SubAgentProgressParams;
 use agent_client_protocol as acp;
+use tui::testing::render_lines;
+use tui::{BRAILLE_FRAMES as FRAMES, Line, ViewContext};
+use wisp::components::tool_call_status_view::{
+    MAX_TOOL_ARG_LENGTH, ToolCallStatus, ToolCallStatusView,
+};
+use wisp::components::tool_call_statuses::ToolCallStatuses;
 
 fn ctx() -> ViewContext {
     ViewContext::new((80, 24))
 }
 
 fn render_all(statuses: &ToolCallStatuses, ids: &[&str], ctx: &ViewContext) -> Vec<Line> {
-    ids.iter().flat_map(|id| statuses.render_tool(id, ctx)).collect()
+    ids.iter()
+        .flat_map(|id| statuses.render_tool(id, ctx))
+        .collect()
 }
 
 fn make_tool_call(id: &str, title: &str, raw_input: Option<&str>) -> acp::ToolCall {
@@ -598,11 +602,8 @@ fn test_display_value_shown_while_running() {
 
     let mut meta_map = serde_json::Map::new();
     meta_map.insert("display_value".into(), "main.rs".into());
-    let update = acp::ToolCallUpdate::new(
-        "tool-1".to_string(),
-        acp::ToolCallUpdateFields::new(),
-    )
-    .meta(meta_map);
+    let update = acp::ToolCallUpdate::new("tool-1".to_string(), acp::ToolCallUpdateFields::new())
+        .meta(meta_map);
     statuses.on_tool_call_update(&update);
 
     let lines = render_all(&statuses, &["tool-1"], &ctx());

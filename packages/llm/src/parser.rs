@@ -115,8 +115,8 @@ impl ModelProviderParser {
             }
         }
 
-        let identity = first_identity
-            .ok_or_else(|| LlmError::Other("No providers parsed".to_string()))?;
+        let identity =
+            first_identity.ok_or_else(|| LlmError::Other("No providers parsed".to_string()))?;
 
         let provider: Box<dyn StreamingModelProvider> = if providers.len() == 1 {
             providers

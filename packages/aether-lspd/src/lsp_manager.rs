@@ -20,6 +20,7 @@ use lsp_types::{
 };
 use serde_json::Value;
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -579,7 +580,7 @@ fn spawn_lsp(root_path: &Path, command: &str, args: &[String]) -> DaemonResult<L
 }
 
 fn hash_content(content: &str) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let mut hasher = DefaultHasher::new();
     content.hash(&mut hasher);
     hasher.finish()
 }

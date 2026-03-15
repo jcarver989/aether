@@ -14,6 +14,7 @@ use rmcp::{
 };
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::RwLock;
 
 use super::tools::{AgentExecutor, SpawnSubAgentsInput, SpawnSubAgentsOutput};
@@ -112,7 +113,7 @@ impl SubAgentsMcp {
 
         let progress_token = context.meta.get_progress_token();
         let peer = Arc::new(context.peer.clone());
-        let message_counter = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let message_counter = Arc::new(AtomicU64::new(0));
 
         let progress_callback: ProgressCallback = {
             let progress_token = progress_token.clone();
@@ -122,8 +123,7 @@ impl SubAgentsMcp {
             Box::new(
                 move |task_id: &str, agent_name: &str, message: &AgentMessage| {
                     if let Some(ref token) = progress_token {
-                        let counter =
-                            message_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let counter = message_counter.fetch_add(1, Ordering::Relaxed);
                         let progress_payload = SubAgentProgressPayload {
                             task_id: task_id.to_string(),
                             agent_name: agent_name.to_string(),

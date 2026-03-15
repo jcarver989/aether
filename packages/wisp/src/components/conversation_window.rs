@@ -5,7 +5,7 @@ use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::tui::{Component, Line, Spinner, ViewContext, render_markdown};
 
 #[derive(Debug, Clone)]
- pub enum SegmentContent {
+pub enum SegmentContent {
     Text(String),
     Thought(String),
     ToolCall(String),
@@ -129,7 +129,6 @@ impl ConversationBuffer {
 
         (content, completed_tool_ids)
     }
-
 }
 
 pub struct ConversationWindow<'a> {
@@ -145,7 +144,8 @@ impl ConversationWindow<'_> {
 
         for segment in &self.conversation.segments {
             let kind = discriminant(&segment.content);
-            let rendered = render_stream_segment(&segment.content, self.tool_call_statuses, context);
+            let rendered =
+                render_stream_segment(&segment.content, self.tool_call_statuses, context);
             extend_with_vertical_margin(&mut lines, &mut last_segment_kind, kind, &rendered);
         }
 

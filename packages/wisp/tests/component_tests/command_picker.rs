@@ -12,10 +12,12 @@ fn key(code: KeyCode) -> KeyEvent {
 
 async fn type_query(picker: &mut CommandPicker, text: &str) {
     for c in text.chars() {
-        let _ = picker.on_event(&Event::Key(KeyEvent::new(
-            KeyCode::Char(c),
-            KeyModifiers::NONE,
-        ))).await;
+        let _ = picker
+            .on_event(&Event::Key(KeyEvent::new(
+                KeyCode::Char(c),
+                KeyModifiers::NONE,
+            )))
+            .await;
     }
 }
 
@@ -207,7 +209,10 @@ fn non_selected_items_have_multi_span_styling() {
 
     // Check that the command name and description have different styles
     // The non-selected line starting with "  /" will be /search or /web (not /config which is selected)
-    let name_style = term.style_of_text(row, "/search").or_else(|| term.style_of_text(row, "/web")).unwrap();
+    let name_style = term
+        .style_of_text(row, "/search")
+        .or_else(|| term.style_of_text(row, "/web"))
+        .unwrap();
     let desc_style = term
         .style_of_text(row, "Search code")
         .or_else(|| term.style_of_text(row, "Browse the web"))

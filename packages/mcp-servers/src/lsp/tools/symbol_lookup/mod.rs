@@ -340,7 +340,7 @@ async fn enrich_locations_with_context(output: &mut LspSymbolOutput, context_lin
         return;
     };
     if let Some(locations) = output.locations.as_mut() {
-        crate::lsp::common::enrich_locations(locations, n).await;
+        super::super::common::enrich_locations(locations, n).await;
     }
 }
 

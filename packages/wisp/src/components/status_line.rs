@@ -37,10 +37,7 @@ impl StatusLine<'_> {
             left_line.push_styled(" · ", sep);
             left_line.push_styled(model.as_str(), context.theme.success());
             left_line.push_text(" ");
-            left_line.push_styled(
-                reasoning_bar(reasoning_effort),
-                context.theme.success(),
-            );
+            left_line.push_styled(reasoning_bar(reasoning_effort), context.theme.success());
         }
 
         let (right, color) = if self.waiting_for_response {

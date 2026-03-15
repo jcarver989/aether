@@ -212,7 +212,7 @@ struct AcpThreadContext<F> {
     child_stdout: tokio::process::ChildStdout,
     event_tx: mpsc::UnboundedSender<AcpEvent>,
     cmd_rx: mpsc::UnboundedReceiver<PromptCommand>,
-    session_tx: tokio::sync::oneshot::Sender<HandshakeResult>,
+    session_tx: oneshot::Sender<HandshakeResult>,
     client_factory: F,
     init_request: InitializeRequest,
     new_session_request: acp::NewSessionRequest,

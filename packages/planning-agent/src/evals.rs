@@ -1,10 +1,10 @@
 use crate::PrInfo;
 use crate::claude_code::ClaudeCode;
-use utils::substitution::substitute_parameters;
 use crucible::{Eval, EvalAssertion, EvalMetric, WorkingDirectory};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use utils::substitution::substitute_parameters;
 
 const JOIST_ORM_REPO: &str = "https://github.com/joist-orm/joist-orm";
 
