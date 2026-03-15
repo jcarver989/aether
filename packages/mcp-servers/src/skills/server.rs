@@ -1,5 +1,5 @@
 use clap::Parser;
-use mcp_utils::substitution::substitute_parameters;
+use utils::substitution::substitute_parameters;
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
     handler::server::{

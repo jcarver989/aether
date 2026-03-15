@@ -61,6 +61,7 @@ rmcp = { workspace = true }
 schemars = { workspace = true }
 clap = { workspace = true, features = ["env"] }
 mcp_utils = { path = "../mcp-utils" }
+utils = { path = "../utils" }
 aether-lspd = { path = "../aether-lspd", optional = true }
 futures = { workspace = true, optional = true }
 glob = { workspace = true, optional = true }

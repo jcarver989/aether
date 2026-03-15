@@ -26,6 +26,7 @@ acp_utils = { path = "../acp-utils", default-features = false }
 glob = { workspace = true }
 mcp_utils = { path = "../mcp-utils"}
 llm = { path = "../llm" }
+utils = { path = "../utils" }
 
 [features]
 testing = []

@@ -17,12 +17,20 @@ pub struct MarkdownFile<T: DeserializeOwned> {
 impl<T: DeserializeOwned + Send + 'static> MarkdownFile<T> {
     pub fn parse(path: impl AsRef<Path>) -> Result<Self, ParseError> {
         let raw_content = fs::read_to_string(path)?;
-        let (frontmatter, content) = split_frontmatter(&raw_content);
 
-        Ok(Self {
-            frontmatter,
-            content,
-        })
+        match split_frontmatter(&raw_content) {
+            Some((yaml_str, body)) => {
+                let frontmatter = serde_yml::from_str(yaml_str).ok();
+                Ok(Self {
+                    frontmatter,
+                    content: body.to_string(),
+                })
+            }
+            None => Ok(Self {
+                frontmatter: None,
+                content: raw_content.trim().to_string(),
+            }),
+        }
     }
 
     /// List all markdown files in a directory
@@ -157,6 +165,17 @@ impl<T: DeserializeOwned + Send + 'static> MarkdownFile<T> {
     }
 }
 
+/// Split YAML frontmatter from markdown content.
+///
+/// Returns `(yaml_str, body)` if frontmatter delimiters (`---`) are found,
+/// or `None` if the content has no frontmatter.
+pub fn split_frontmatter(content: &str) -> Option<(&str, &str)> {
+    let content = content.trim();
+    let rest = content.strip_prefix("---")?;
+    let end_pos = rest.find("\n---")?;
+    Some((&rest[..end_pos], rest[end_pos + 4..].trim()))
+}
+
 /// List all subdirectories in a directory
 fn list_subdirs(dir: impl AsRef<Path>) -> Result<Vec<PathBuf>, io::Error> {
     let paths: Vec<_> = fs::read_dir(dir)?
@@ -167,29 +186,6 @@ fn list_subdirs(dir: impl AsRef<Path>) -> Result<Vec<PathBuf>, io::Error> {
         .collect();
 
     Ok(paths)
-}
-
-/// Split YAML frontmatter from markdown content
-fn split_frontmatter<T: DeserializeOwned>(content: &str) -> (Option<T>, String) {
-    let content = content.trim();
-
-    if !content.starts_with("---") {
-        return (None, content.to_string());
-    }
-
-    // Find the end of frontmatter (second ---)
-    let rest = &content[3..];
-    let Some(end_pos) = rest.find("\n---") else {
-        return (None, content.to_string());
-    };
-
-    let frontmatter_str = &rest[..end_pos];
-    let template = rest[end_pos + 4..].trim().to_string();
-
-    match serde_yml::from_str(frontmatter_str) {
-        Ok(frontmatter) => (Some(frontmatter), template),
-        Err(_) => (None, content.to_string()),
-    }
 }
 
 #[derive(Debug)]
