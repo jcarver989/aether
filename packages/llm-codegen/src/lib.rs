@@ -476,6 +476,7 @@ fn emit_llm_model_impl(out: &mut String) {
     emit_llm_provider_display_name(out);
     emit_llm_context_window(out);
     emit_llm_required_env_var(out);
+    emit_llm_all_required_env_vars(out);
     emit_llm_oauth_provider_id(out);
     emit_llm_supports_reasoning(out);
     emit_llm_all(out);
@@ -658,6 +659,25 @@ fn emit_llm_required_env_var(out: &mut String) {
     );
     pushln(out, "        }");
     pushln(out, "    }");
+    blank(out);
+}
+
+fn emit_llm_all_required_env_vars(out: &mut String) {
+    let vars: Vec<&str> = PROVIDERS.iter().filter_map(|cfg| cfg.env_var).collect();
+    pushln(
+        out,
+        "    /// All provider API key env var names (deduplicated, static)",
+    );
+    pushln(
+        out,
+        format!(
+            "    pub const ALL_REQUIRED_ENV_VARS: &[&str] = &[{}];",
+            vars.iter()
+                .map(|v| format!("\"{v}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    );
     blank(out);
 }
 
