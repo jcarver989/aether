@@ -53,10 +53,12 @@ async fn test_save_note_creates_new() {
     let parsed = parse_tool_result(&result);
     assert_eq!(parsed["topic"], "agent-spec");
     assert_eq!(parsed["status"], "created");
-    assert!(parsed["content"]
-        .as_str()
-        .unwrap()
-        .contains("Core owns AgentSpec"));
+    assert!(
+        parsed["content"]
+            .as_str()
+            .unwrap()
+            .contains("Core owns AgentSpec")
+    );
 
     // Verify file on disk
     let note_md = temp_dir.path().join("notes/agent-spec.md");
@@ -335,20 +337,26 @@ async fn test_full_lifecycle() {
     let parsed = parse_tool_result(&result);
     let results = parsed["results"].as_array().unwrap();
     assert_eq!(results.len(), 1);
-    assert!(results[0]["content"]
-        .as_str()
-        .unwrap()
-        .contains("Second insight."));
-    assert!(results[0]["tags"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|t| t == "test"));
-    assert!(results[0]["tags"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|t| t == "lifecycle"));
+    assert!(
+        results[0]["content"]
+            .as_str()
+            .unwrap()
+            .contains("Second insight.")
+    );
+    assert!(
+        results[0]["tags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t == "test")
+    );
+    assert!(
+        results[0]["tags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t == "lifecycle")
+    );
 
     // 4. get_skills still works for curated skills
     let skills_dir = temp_dir.path().join("skills").join("curated");
@@ -369,8 +377,10 @@ async fn test_full_lifecycle() {
         .await
         .unwrap();
     let parsed = parse_tool_result(&result);
-    assert!(parsed["files"][0]["content"]
-        .as_str()
-        .unwrap()
-        .contains("Hand-written skill."));
+    assert!(
+        parsed["files"][0]["content"]
+            .as_str()
+            .unwrap()
+            .contains("Hand-written skill.")
+    );
 }

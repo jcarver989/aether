@@ -1,5 +1,5 @@
-use tui::testing::{render_lines, TestTerminal};
-use tui::{render_markdown, Line, Theme, ViewContext};
+use tui::testing::{TestTerminal, render_lines};
+use tui::{Line, Theme, ViewContext, render_markdown};
 use unicode_width::UnicodeWidthStr;
 
 fn test_theme() -> Theme {
@@ -40,9 +40,7 @@ fn render_tall_with_theme(md: &str, theme: &Theme) -> TestTerminal {
 
 /// Find the row index containing the given text in the terminal output.
 fn find_row(term: &TestTerminal, text: &str) -> Option<usize> {
-    term.get_lines()
-        .iter()
-        .position(|line| line.contains(text))
+    term.get_lines().iter().position(|line| line.contains(text))
 }
 
 #[test]
@@ -321,8 +319,7 @@ fn table_cell_inline_code_does_not_leak_line() {
 #[test]
 fn table_cell_preserves_inline_styles() {
     let theme = test_theme();
-    let md =
-        "| A | B | C |\n|---|---|---|\n| **bold** | [link](https://example.com) | `code` |";
+    let md = "| A | B | C |\n|---|---|---|\n| **bold** | [link](https://example.com) | `code` |";
     let term = render_tall_with_theme(md, &theme);
     let output = term.get_lines();
 
@@ -362,10 +359,7 @@ fn table_unicode_alignment_uses_display_width() {
     let md = "| Left | Right |\n|------|-------|\n| a | 你 |\n| bb | 😀 |";
     let term = render_tall(md);
     let output = term.get_lines();
-    let row_texts: Vec<&String> = output
-        .iter()
-        .filter(|text| text.starts_with('│'))
-        .collect();
+    let row_texts: Vec<&String> = output.iter().filter(|text| text.starts_with('│')).collect();
 
     assert!(row_texts.len() >= 3);
     let expected_widths = row_inner_display_widths(row_texts[0]);
@@ -379,10 +373,7 @@ fn table_row_cell_count_normalization() {
     let md = "| A | B | C |\n|---|---|---|\n| 1 | 2 |\n| 3 | 4 | 5 | 6 |";
     let term = render_tall(md);
     let output = term.get_lines();
-    let row_texts: Vec<&String> = output
-        .iter()
-        .filter(|text| text.starts_with('│'))
-        .collect();
+    let row_texts: Vec<&String> = output.iter().filter(|text| text.starts_with('│')).collect();
 
     assert_eq!(row_texts.len(), 3);
     for row in &row_texts {

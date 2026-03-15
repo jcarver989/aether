@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use super::common::TaskSummary;
 use crate::tasks::task_store::TaskStore;
-use crate::tasks::types::TaskStatus;
+use crate::tasks::types::{TaskId, TaskStatus};
 use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
 
 /// Input for the `task_list` tool
@@ -79,7 +79,7 @@ pub fn execute_task_list(input: &TaskListInput, store: &TaskStore) -> TaskListOu
             .map(TaskSummary::from)
             .collect()
     } else if let Some(tree_id) = &input.tree_id {
-        let tree_id = crate::tasks::types::TaskId::from(tree_id.as_str());
+        let tree_id = TaskId::from(tree_id.as_str());
         store
             .get_tree(&tree_id)
             .map(|tasks| tasks.into_iter().map(TaskSummary::from).collect())

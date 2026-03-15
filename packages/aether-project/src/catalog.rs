@@ -82,7 +82,8 @@ impl AgentCatalog {
         reasoning_effort: Option<ReasoningEffort>,
         cwd: &Path,
     ) -> AgentSpec {
-        let mut spec = AgentSpec::default_spec(model, reasoning_effort, self.inherited_prompts.clone());
+        let mut spec =
+            AgentSpec::default_spec(model, reasoning_effort, self.inherited_prompts.clone());
         spec.resolve_mcp_config(self.inherited_mcp_config_path.as_deref(), cwd);
         spec
     }
@@ -209,7 +210,10 @@ mod tests {
         );
 
         let spec = catalog.resolve("planner", dir.path()).unwrap();
-        assert_eq!(spec.mcp_config_path, Some(dir.path().join("agent-mcp.json")));
+        assert_eq!(
+            spec.mcp_config_path,
+            Some(dir.path().join("agent-mcp.json"))
+        );
     }
 
     #[test]
@@ -226,7 +230,10 @@ mod tests {
         );
 
         let spec = catalog.resolve("planner", dir.path()).unwrap();
-        assert_eq!(spec.mcp_config_path, Some(dir.path().join("inherited-mcp.json")));
+        assert_eq!(
+            spec.mcp_config_path,
+            Some(dir.path().join("inherited-mcp.json"))
+        );
     }
 
     #[test]

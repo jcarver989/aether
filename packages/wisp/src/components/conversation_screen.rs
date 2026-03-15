@@ -1,3 +1,5 @@
+use crate::components::app::PromptAttachment;
+use crate::components::command_picker::CommandEntry;
 use crate::components::conversation_window::{
     ConversationBuffer, ConversationWindow, SegmentContent,
 };
@@ -10,14 +12,16 @@ use crate::components::session_picker::{SessionEntry, SessionPicker, SessionPick
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::keybindings::Keybindings;
 use crate::tui::{Component, Event, Frame, Layout, Spinner, ViewContext};
+use acp_utils::notifications::ElicitationResponse;
 use agent_client_protocol::{self as acp, SessionId};
 use std::path::PathBuf;
 use std::time::Instant;
+use tokio::sync::oneshot;
 
 pub enum ConversationScreenMessage {
     SendPrompt {
         user_input: String,
-        attachments: Vec<crate::components::app::PromptAttachment>,
+        attachments: Vec<PromptAttachment>,
     },
     ClearScreen,
     OpenConfig,
@@ -153,7 +157,7 @@ impl ConversationScreen {
                             }
                             _ => None,
                         };
-                        crate::components::command_picker::CommandEntry {
+                        CommandEntry {
                             name: cmd.name.clone(),
                             description: cmd.description.clone(),
                             has_input: cmd.input.is_some(),
@@ -198,7 +202,7 @@ impl ConversationScreen {
     pub fn on_elicitation_request(
         &mut self,
         params: acp_utils::notifications::ElicitationParams,
-        response_tx: tokio::sync::oneshot::Sender<acp_utils::notifications::ElicitationResponse>,
+        response_tx: oneshot::Sender<ElicitationResponse>,
     ) {
         self.active_modal = Some(Modal::Elicitation(ElicitationForm::from_params(
             params,

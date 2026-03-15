@@ -1,6 +1,6 @@
 mod app_tests {
-    mod common;
     mod command_picker_tests;
+    mod common;
     mod config_menu_tests;
     mod file_picker_tests;
     mod input_prompt_tests;

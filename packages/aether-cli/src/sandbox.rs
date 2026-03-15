@@ -6,7 +6,6 @@ use std::process::{Command, ExitCode};
 
 use llm::LlmModel;
 
-
 const EXTRA_FORWARDED_KEYS: &[&str] = &["OLLAMA_HOST"];
 
 const AETHER_ENV_PREFIX: &str = "AETHER_";
@@ -133,9 +132,7 @@ fn filter_sandbox_arg(args: &[String]) -> Vec<String> {
     result
 }
 
-fn select_forwarded_vars(
-    vars: impl Iterator<Item = (String, String)>,
-) -> Vec<(String, String)> {
+fn select_forwarded_vars(vars: impl Iterator<Item = (String, String)>) -> Vec<(String, String)> {
     vars.filter(|(key, _)| {
         LlmModel::ALL_REQUIRED_ENV_VARS.contains(&key.as_str())
             || EXTRA_FORWARDED_KEYS.contains(&key.as_str())
@@ -278,7 +275,10 @@ mod tests {
     #[test]
     fn select_forwarded_vars_includes_extra_keys() {
         let vars = vec![
-            ("OLLAMA_HOST".to_string(), "http://localhost:11434".to_string()),
+            (
+                "OLLAMA_HOST".to_string(),
+                "http://localhost:11434".to_string(),
+            ),
             ("HOME".to_string(), "/root".to_string()),
         ];
         let forwarded = select_forwarded_vars(vars.into_iter());
@@ -329,7 +329,13 @@ mod tests {
             "gpt-4".to_string(),
         ];
 
-        let args = build_docker_args("test-image:latest", cwd, aether_home, &env_vars, &inner_args);
+        let args = build_docker_args(
+            "test-image:latest",
+            cwd,
+            aether_home,
+            &env_vars,
+            &inner_args,
+        );
 
         assert!(args.contains(&"run".to_string()));
         assert!(args.contains(&"--rm".to_string()));
@@ -372,7 +378,13 @@ mod tests {
     fn build_docker_args_skips_binary_name_only() {
         let cwd = Path::new("/tmp");
         let aether_home = Path::new("/home/user/.aether");
-        let args = build_docker_args("test-image:latest", cwd, aether_home, &[], &["aether".to_string()]);
+        let args = build_docker_args(
+            "test-image:latest",
+            cwd,
+            aether_home,
+            &[],
+            &["aether".to_string()],
+        );
 
         // Only the binary name — nothing after image
         assert_eq!(args.last().unwrap(), "test-image:latest");
@@ -385,21 +397,27 @@ mod tests {
             "Docker is not installed or not in PATH"
         );
 
-        assert!(SandboxError::DockerNotRunning("connection refused".into())
-            .to_string()
-            .contains("connection refused"));
+        assert!(
+            SandboxError::DockerNotRunning("connection refused".into())
+                .to_string()
+                .contains("connection refused")
+        );
 
         let img_err = SandboxError::ImageNotFound("aether-sandbox:latest".into());
         assert!(img_err.to_string().contains("aether-sandbox:latest"));
         assert!(img_err.to_string().contains("cargo build"));
 
-        assert!(SandboxError::HomeNotResolvable
-            .to_string()
-            .contains("home directory"));
+        assert!(
+            SandboxError::HomeNotResolvable
+                .to_string()
+                .contains("home directory")
+        );
 
         let io_err = io::Error::new(io::ErrorKind::NotFound, "not found");
-        assert!(SandboxError::ExecFailed(io_err)
-            .to_string()
-            .contains("not found"));
+        assert!(
+            SandboxError::ExecFailed(io_err)
+                .to_string()
+                .contains("not found")
+        );
     }
 }

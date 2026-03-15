@@ -13,6 +13,7 @@ use crate::{
 };
 use llm::StreamingModelProvider;
 use std::path::{Path, PathBuf};
+use tokio::sync::mpsc;
 
 pub struct Eval {
     pub name: String,
@@ -169,7 +170,7 @@ impl Eval {
         }
 
         let messages = {
-            let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+            let (tx, mut rx) = mpsc::channel(100);
 
             let task_prompt = [
                 "Complete the following task:".to_string(),

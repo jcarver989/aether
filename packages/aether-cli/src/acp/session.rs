@@ -41,8 +41,7 @@ impl Session {
         debug!("MCP config: {:?}", spec.mcp_config_path);
         debug!("Using project root: {:?}", cwd);
 
-        let mut rb = RuntimeBuilder::from_spec(cwd, spec)
-            .extra_servers(extra_mcp_servers);
+        let mut rb = RuntimeBuilder::from_spec(cwd, spec).extra_servers(extra_mcp_servers);
 
         match BrowserOAuthHandler::new() {
             Ok(handler) => {

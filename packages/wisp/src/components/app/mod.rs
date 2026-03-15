@@ -89,7 +89,6 @@ impl App {
         std::mem::take(&mut self.pending_scrollback_lines)
     }
 
-
     fn git_diff_mode_mut(&mut self) -> &mut GitDiffMode {
         self.screen_router.git_diff_mode_mut()
     }

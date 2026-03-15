@@ -1,6 +1,6 @@
-use agent_client_protocol as acp;
 use acp_utils::client::AcpEvent;
 use acp_utils::client::AcpPromptHandle;
+use agent_client_protocol as acp;
 use tui::Theme;
 use tui::advanced::Renderer as FrameRenderer;
 use tui::advanced::RendererCommand;
@@ -38,7 +38,10 @@ impl Renderer {
             AcpPromptHandle::noop(),
         );
         let frame_renderer = FrameRenderer::new(terminal, Theme::default(), size);
-        Self { app, frame_renderer }
+        Self {
+            app,
+            frame_renderer,
+        }
     }
 
     pub(super) fn writer(&self) -> &TestTerminal {
@@ -55,8 +58,7 @@ impl Renderer {
         if !scrollback.is_empty() {
             self.frame_renderer.push_to_scrollback(&scrollback)?;
         }
-        self.frame_renderer
-            .render_frame(|ctx| self.app.render(ctx))
+        self.frame_renderer.render_frame(|ctx| self.app.render(ctx))
     }
 
     pub(super) fn initial_render(&mut self) -> std::io::Result<()> {
@@ -89,7 +91,8 @@ impl Renderer {
     }
 
     pub(super) async fn on_paste(&mut self, text: &str) -> Result<(), Box<dyn std::error::Error>> {
-        self.handle_terminal_event(Event::Paste(text.to_string())).await?;
+        self.handle_terminal_event(Event::Paste(text.to_string()))
+            .await?;
         Ok(())
     }
 
@@ -99,7 +102,8 @@ impl Renderer {
         rows: u16,
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.frame_renderer.on_resize((cols, rows));
-        self.handle_terminal_event(Event::Resize((cols, rows).into())).await?;
+        self.handle_terminal_event(Event::Resize((cols, rows).into()))
+            .await?;
         Ok(())
     }
 
@@ -111,7 +115,9 @@ impl Renderer {
         Ok(())
     }
 
-    pub(super) fn on_connection_closed(&mut self) -> Result<LoopAction, Box<dyn std::error::Error>> {
+    pub(super) fn on_connection_closed(
+        &mut self,
+    ) -> Result<LoopAction, Box<dyn std::error::Error>> {
         self.handle_acp_event(AcpEvent::ConnectionClosed)
     }
 
@@ -294,7 +300,10 @@ pub(super) fn tool_complete(id: &str) -> TestEvent {
     )))
 }
 
-pub(super) fn tool_complete_with_display_meta(id: &str, display_meta: &serde_json::Value) -> TestEvent {
+pub(super) fn tool_complete_with_display_meta(
+    id: &str,
+    display_meta: &serde_json::Value,
+) -> TestEvent {
     let title = display_meta["title"].as_str().unwrap_or("");
     let value = display_meta["value"].as_str().unwrap_or("");
 
@@ -389,4 +398,3 @@ pub(super) fn make_config_options() -> Vec<acp::SessionConfigOption> {
         .category(acp::SessionConfigOptionCategory::Model),
     ]
 }
-

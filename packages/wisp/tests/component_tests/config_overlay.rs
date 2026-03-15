@@ -1,9 +1,9 @@
-use wisp::components::config_overlay::ConfigOverlay;
-use wisp::components::config_menu::ConfigMenu;
-use tui::testing::render_component;
-use tui::{Component, Event, ViewContext, KeyCode, KeyEvent, KeyModifiers};
 use acp_utils::notifications::{McpServerStatus, McpServerStatusEntry};
 use agent_client_protocol::{self as acp, SessionConfigSelectOption};
+use tui::testing::render_component;
+use tui::{Component, Event, KeyCode, KeyEvent, KeyModifiers, ViewContext};
+use wisp::components::config_menu::ConfigMenu;
+use wisp::components::config_overlay::ConfigOverlay;
 
 fn make_menu() -> ConfigMenu {
     let options = vec![
@@ -167,9 +167,16 @@ fn selected_entry_has_bg_color() {
     let ctx = ViewContext::new((80, 24));
     let term = render_component(|c| overlay.render(c), 80, 24);
     let output = term.get_lines();
-    let row = output.iter().position(|l| l.contains("Provider: OpenRouter")).expect("expected provider row to be rendered");
+    let row = output
+        .iter()
+        .position(|l| l.contains("Provider: OpenRouter"))
+        .expect("expected provider row to be rendered");
     let style = term.style_of_text(row, "Provider: OpenRouter").unwrap();
-    assert_eq!(style.bg, Some(ctx.theme.highlight_bg()), "selected entry should have highlight_bg");
+    assert_eq!(
+        style.bg,
+        Some(ctx.theme.highlight_bg()),
+        "selected entry should have highlight_bg"
+    );
 }
 
 #[test]
@@ -226,7 +233,10 @@ async fn render_server_overlay_hides_top_level_rows() {
     let lines = render_plain_text(&mut overlay);
     let text = lines.join("\n");
 
-    assert!(text.contains("github  \u{2713} 5 tools"), "rendered:\n{text}");
+    assert!(
+        text.contains("github  \u{2713} 5 tools"),
+        "rendered:\n{text}"
+    );
     assert!(
         text.contains("linear  \u{26A1} needs authentication"),
         "rendered:\n{text}"
@@ -375,20 +385,14 @@ async fn tall_terminal_shows_more_picker_items() {
     overlay.update_child_viewport(height_tall.saturating_sub(4));
     let term_tall = render_component(|ctx| overlay.render(ctx), 80, 60);
     let tall_lines = term_tall.get_lines();
-    let tall_model_lines = tall_lines
-        .iter()
-        .filter(|l| l.contains("Model "))
-        .count();
+    let tall_model_lines = tall_lines.iter().filter(|l| l.contains("Model ")).count();
 
     // Render at a short terminal (15 rows)
     let height_short = 14_usize; // 15 - 1
     overlay.update_child_viewport(height_short.saturating_sub(4));
     let term_short = render_component(|ctx| overlay.render(ctx), 80, 15);
     let short_lines = term_short.get_lines();
-    let short_model_lines = short_lines
-        .iter()
-        .filter(|l| l.contains("Model "))
-        .count();
+    let short_model_lines = short_lines.iter().filter(|l| l.contains("Model ")).count();
 
     assert!(
         tall_model_lines > short_model_lines,

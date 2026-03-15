@@ -164,10 +164,12 @@ mod tests {
     #[tokio::test]
     async fn enter_on_needs_login_emits_authenticate() {
         let mut overlay = ProviderLoginOverlay::new(sample_entries());
-        let outcome = overlay.on_event(&Event::Key(KeyEvent::new(
-            KeyCode::Enter,
-            KeyModifiers::NONE,
-        ))).await;
+        let outcome = overlay
+            .on_event(&Event::Key(KeyEvent::new(
+                KeyCode::Enter,
+                KeyModifiers::NONE,
+            )))
+            .await;
         let messages = outcome.unwrap();
         match messages.as_slice() {
             [ProviderLoginMessage::Authenticate(id)] => assert_eq!(id, "codex"),
@@ -180,18 +182,21 @@ mod tests {
         let mut entries = sample_entries();
         entries[0].status = ProviderLoginStatus::Authenticating;
         let mut overlay = ProviderLoginOverlay::new(entries);
-        let outcome = overlay.on_event(&Event::Key(KeyEvent::new(
-            KeyCode::Enter,
-            KeyModifiers::NONE,
-        ))).await;
+        let outcome = overlay
+            .on_event(&Event::Key(KeyEvent::new(
+                KeyCode::Enter,
+                KeyModifiers::NONE,
+            )))
+            .await;
         assert!(outcome.unwrap().is_empty());
     }
 
     #[tokio::test]
     async fn esc_closes_overlay() {
         let mut overlay = ProviderLoginOverlay::new(sample_entries());
-        let outcome =
-            overlay.on_event(&Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))).await;
+        let outcome = overlay
+            .on_event(&Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)))
+            .await;
         let messages = outcome.unwrap();
         assert!(matches!(messages.as_slice(), [ProviderLoginMessage::Close]));
     }

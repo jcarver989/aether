@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{self, Write};
 use std::path::Path;
 
 use schemars::JsonSchema;
@@ -156,16 +156,16 @@ fn merge_tags(existing: &[String], new: &[String]) -> Vec<String> {
 fn render_note(fm: &NoteFrontmatter, body: &str) -> String {
     let mut out = String::from("---\n");
 
-    out.push_str(&format!("topic: {}\n", fm.topic));
+    let _ = writeln!(out, "topic: {}", fm.topic);
 
     if !fm.tags.is_empty() {
         out.push_str("tags:\n");
         for tag in &fm.tags {
-            out.push_str(&format!("- {tag}\n"));
+            let _ = writeln!(out, "- {tag}");
         }
     }
 
-    out.push_str(&format!("updated: \"{}\"\n", fm.updated));
+    let _ = writeln!(out, "updated: \"{}\"", fm.updated);
     out.push_str("---\n");
     out.push_str(body);
     out.push('\n');

@@ -154,8 +154,7 @@ fn resolve_agent_entry(
         });
     }
 
-    let mcp_config_path =
-        resolve_mcp_config_path(project_root, entry.mcp_servers.as_deref())?;
+    let mcp_config_path = resolve_mcp_config_path(project_root, entry.mcp_servers.as_deref())?;
 
     let mut prompts = Vec::with_capacity(inherited_prompts.len() + entry.prompts.len());
     prompts.extend_from_slice(inherited_prompts);

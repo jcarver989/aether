@@ -4,6 +4,7 @@ use owo_colors::OwoColorize;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::broadcast;
 use tokio::task::{JoinError, JoinHandle};
 use tracing::Instrument;
 use tracing_subscriber::layer::SubscriberExt;
@@ -27,13 +28,13 @@ type EvalTaskOutput = (
     Uuid,
     EvalTaskResult,
     Duration,
-    Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
+    Option<broadcast::Sender<server::SseEvent>>,
 );
 
 /// Server handles returned from `start_axum_server`
 type ServerHandles = (
     Option<JoinHandle<()>>,
-    Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
+    Option<broadcast::Sender<server::SseEvent>>,
 );
 
 /// Context for spawning a single eval task
@@ -42,7 +43,7 @@ struct EvalTaskContext<R, T, J> {
     agent_prompt: Option<String>,
     runner: Arc<R>,
     judge_llm: Arc<J>,
-    sse_tx: Option<tokio::sync::broadcast::Sender<server::SseEvent>>,
+    sse_tx: Option<broadcast::Sender<server::SseEvent>>,
     results_store: Arc<T>,
 }
 
@@ -338,7 +339,7 @@ where
         agent_prompt: Option<&str>,
         runner: &Arc<R>,
         judge_llm: &Arc<J>,
-        sse_tx: Option<&tokio::sync::broadcast::Sender<server::SseEvent>>,
+        sse_tx: Option<&broadcast::Sender<server::SseEvent>>,
         results_store: &Arc<T>,
     ) where
         J: StreamingModelProvider + 'static,

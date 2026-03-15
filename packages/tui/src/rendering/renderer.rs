@@ -114,7 +114,10 @@ impl<W: Write> Renderer<W> {
 
     fn render_frame_internal(&mut self, frame: &Frame) -> io::Result<()> {
         let next_frame = {
-            let flushed = self.prev_frame.as_ref().map_or(0, |f| f.overflow());
+            let flushed = self
+                .prev_frame
+                .as_ref()
+                .map_or(0, super::visual_frame::VisualFrame::overflow);
             VisualFrame::from_frame(frame, self.size, flushed)
         };
 
@@ -185,7 +188,10 @@ impl<W: Write> Renderer<W> {
             return Ok(());
         }
 
-        let flushed = self.prev_frame.as_ref().map_or(0, |f| f.overflow());
+        let flushed = self
+            .prev_frame
+            .as_ref()
+            .map_or(0, super::visual_frame::VisualFrame::overflow);
         let remaining = &visual[flushed.min(visual.len())..];
         let mut commands = vec![TerminalCommand::RestoreCursorPosition];
 

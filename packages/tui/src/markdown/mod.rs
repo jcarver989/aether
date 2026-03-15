@@ -9,7 +9,7 @@ use crate::span::Span;
 use crate::style::Style;
 use crate::theme::Theme;
 
-use table::{line_display_width, CellBuilder, TableCell, TableState};
+use table::{CellBuilder, TableCell, TableState, line_display_width};
 
 pub fn render_markdown(text: &str, context: &ViewContext) -> Vec<Line> {
     let renderer = MarkdownRenderer::new(context);
@@ -429,4 +429,3 @@ impl<'a> MarkdownRenderer<'a> {
         }
     }
 }
-

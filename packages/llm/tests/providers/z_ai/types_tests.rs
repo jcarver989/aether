@@ -173,9 +173,9 @@ fn test_deserialize_zai_network_error_finish_reason() {
 
 #[test]
 fn test_zai_network_error_maps_to_stop_reason_error() {
-    use llm::providers::openai_compatible::process_compatible_stream;
     use llm::LlmResponse;
     use llm::StopReason;
+    use llm::providers::openai_compatible::process_compatible_stream;
 
     let json = r#"{
         "id": "202603151451299c7a89c25180405d",

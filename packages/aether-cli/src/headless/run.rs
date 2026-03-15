@@ -2,6 +2,7 @@ use aether_core::core::Prompt;
 use aether_core::events::{AgentMessage, UserMessage};
 use std::io;
 use std::process::ExitCode;
+use tokio::sync::mpsc;
 
 use super::error::CliError;
 use super::{OutputFormat, RunConfig};
@@ -24,10 +25,7 @@ pub async fn run(config: RunConfig) -> Result<ExitCode, CliError> {
     Ok(stream_output(agent.agent_rx, &config.output).await)
 }
 
-async fn stream_output(
-    mut rx: tokio::sync::mpsc::Receiver<AgentMessage>,
-    format: &OutputFormat,
-) -> ExitCode {
+async fn stream_output(mut rx: mpsc::Receiver<AgentMessage>, format: &OutputFormat) -> ExitCode {
     while let Some(msg) = rx.recv().await {
         match format {
             OutputFormat::Text => emit_text(&msg),
