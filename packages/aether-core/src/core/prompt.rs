@@ -194,9 +194,7 @@ fn format_mcp_instructions(instructions: &[ServerInstructions]) -> String {
     }
 
     let mut parts = vec!["# MCP Server Instructions\n".to_string()];
-    parts.push(
-        "The following MCP servers have provided instructions for how to use their tools and resources:\n".to_string(),
-    );
+    parts.push("You are connected to the following MCP servers:\n".to_string());
 
     for instr in instructions {
         parts.push(format!(
