@@ -4,7 +4,7 @@ use tui::NumberField;
 
 #[test]
 fn empty_renders_cursor() {
-    let nf = NumberField::new(String::new(), false);
+    let mut nf = NumberField::new(String::new(), false);
     let term = render_component(|ctx| nf.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["▏"]);
 }

@@ -263,7 +263,7 @@ impl Component for PromptComposer {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Frame {
+    fn render(&mut self, context: &ViewContext) -> Frame {
         let picker_query_len = self.file_picker.as_ref().map(|picker| picker.query().len());
         let mut lines = InputPrompt {
             input: self.text_input.buffer(),
@@ -272,11 +272,11 @@ impl Component for PromptComposer {
         .layout(context)
         .lines;
 
-        if let Some(ref picker) = self.file_picker {
+        if let Some(ref mut picker) = self.file_picker {
             lines.extend(picker.render(context).into_lines());
         }
 
-        if let Some(ref picker) = self.command_picker {
+        if let Some(ref mut picker) = self.command_picker {
             lines.extend(picker.render(context).into_lines());
         }
 

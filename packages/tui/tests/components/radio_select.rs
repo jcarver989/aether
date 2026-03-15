@@ -4,14 +4,14 @@ use tui::RadioSelect;
 
 #[test]
 fn renders_all_options_first_selected() {
-    let rs = RadioSelect::new(sample_options(), 0);
+    let mut rs = RadioSelect::new(sample_options(), 0);
     let term = render_component(|ctx| rs.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["● Alpha", "○ Beta", "○ Gamma"]);
 }
 
 #[test]
 fn renders_second_selected() {
-    let rs = RadioSelect::new(sample_options(), 1);
+    let mut rs = RadioSelect::new(sample_options(), 1);
     let term = render_component(|ctx| rs.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["○ Alpha", "● Beta", "○ Gamma"]);
 }

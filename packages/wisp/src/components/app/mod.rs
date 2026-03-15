@@ -75,28 +75,20 @@ impl App {
         self.conversation_screen.wants_tick()
     }
 
-    pub fn drain_scrollback(&mut self) -> Vec<Line> {
-        std::mem::take(&mut self.pending_scrollback_lines)
-    }
-
-    pub fn prepare_for_render(&mut self, context: &ViewContext) {
+    pub fn drain_scrollback(&mut self, ctx: &ViewContext) -> Vec<Line> {
         let pending_segments = std::mem::take(&mut self.pending_scrollback_segments);
         for (segments, tool_ids) in pending_segments {
             let lines = render_segments_to_lines(
                 &segments,
                 &self.conversation_screen.tool_call_statuses,
-                context,
+                ctx,
             );
             self.pending_scrollback_lines.extend(lines);
             self.conversation_screen.remove_tools(&tool_ids);
         }
-
-        self.conversation_screen.refresh_caches(context);
-        self.screen_router.refresh_caches(context);
-
-        let height = (context.size.height.saturating_sub(1)) as usize;
-        self.config_manager.update_overlay_viewport(height);
+        std::mem::take(&mut self.pending_scrollback_lines)
     }
+
 
     fn git_diff_mode_mut(&mut self) -> &mut GitDiffMode {
         self.screen_router.git_diff_mode_mut()
@@ -418,7 +410,13 @@ impl Component for App {
         Some(commands)
     }
 
-    fn render(&self, ctx: &ViewContext) -> Frame {
+    fn render(&mut self, ctx: &ViewContext) -> Frame {
+        self.conversation_screen.refresh_caches(ctx);
+        self.screen_router.refresh_caches(ctx);
+
+        let height = (ctx.size.height.saturating_sub(1)) as usize;
+        self.config_manager.update_overlay_viewport(height);
+
         view::build_frame(self, ctx)
     }
 }
@@ -492,8 +490,6 @@ mod tests {
     }
 
     fn render_app(renderer: &mut Renderer<Vec<u8>>, app: &mut App, context: &ViewContext) -> Frame {
-        let ctx = renderer.context();
-        app.prepare_for_render(&ctx);
         renderer.render_frame(|ctx| app.render(ctx)).unwrap();
         app.render(context)
     }
@@ -702,7 +698,7 @@ mod tests {
 
         app.on_acp_event(AcpEvent::SessionsListed { sessions });
 
-        let picker = match &app.conversation_screen.active_modal {
+        let picker = match &mut app.conversation_screen.active_modal {
             Some(crate::components::conversation_screen::Modal::SessionPicker(p)) => p,
             _ => panic!("expected session picker modal"),
         };
@@ -843,7 +839,8 @@ mod tests {
         app.handle_conversation_messages(&mut commands, outcome)
             .await;
 
-        let scrollback = app.drain_scrollback();
+        let ctx = ViewContext::new((80, 24));
+        let scrollback = app.drain_scrollback(&ctx);
         assert!(
             scrollback.iter().any(|l| l.plain_text() == "hello"),
             "echo lines should contain the user input"

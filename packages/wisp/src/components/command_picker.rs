@@ -44,7 +44,7 @@ impl Component for CommandPicker {
         self.combobox.handle_picker_event(event)
     }
 
-    fn render(&self, context: &ViewContext) -> Frame {
+    fn render(&mut self, context: &ViewContext) -> Frame {
         let mut lines = Vec::new();
 
         if self.combobox.is_empty() {

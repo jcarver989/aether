@@ -303,9 +303,9 @@ impl Component for ConversationScreen {
         None
     }
 
-    fn render(&self, ctx: &ViewContext) -> Frame {
-        let conversation_window = ConversationWindow {
-            loader: &self.grid_loader,
+    fn render(&mut self, ctx: &ViewContext) -> Frame {
+        let mut conversation_window = ConversationWindow {
+            loader: &mut self.grid_loader,
             conversation: &self.conversation,
             tool_call_statuses: &self.tool_call_statuses,
         };
@@ -319,7 +319,7 @@ impl Component for ConversationScreen {
         layout.section(self.progress_indicator.render(ctx));
         let prompt_frame = self.prompt_composer.render(ctx);
         layout.section_with_cursor(prompt_frame.lines().to_vec(), prompt_frame.cursor());
-        match &self.active_modal {
+        match &mut self.active_modal {
             Some(Modal::SessionPicker(picker)) => {
                 layout.section(picker.render(ctx).into_lines());
             }

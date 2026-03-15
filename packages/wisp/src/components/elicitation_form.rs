@@ -39,7 +39,7 @@ impl Component for ElicitationForm {
         Some(vec![])
     }
 
-    fn render(&self, ctx: &ViewContext) -> Frame {
+    fn render(&mut self, ctx: &ViewContext) -> Frame {
         self.form.render(ctx)
     }
 }

@@ -126,7 +126,7 @@ impl Component for TextInput {
         }
     }
 
-    fn render(&self, _context: &ViewContext) -> Frame {
+    fn render(&mut self, _context: &ViewContext) -> Frame {
         Frame::new(vec![Line::new(self.field.value.clone())])
     }
 }

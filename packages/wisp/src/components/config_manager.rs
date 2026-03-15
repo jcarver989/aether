@@ -180,8 +180,8 @@ impl ConfigManager {
         }
     }
 
-    pub fn build_overlay_frame(&self, ctx: &ViewContext) -> Option<Frame> {
-        let overlay = self.config_overlay.as_ref()?;
+    pub fn build_overlay_frame(&mut self, ctx: &ViewContext) -> Option<Frame> {
+        let overlay = self.config_overlay.as_mut()?;
         let cursor = if overlay.has_picker() {
             Cursor::visible(overlay.cursor_row_offset(), overlay.cursor_col())
         } else {

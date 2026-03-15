@@ -113,7 +113,7 @@ async fn open_server_overlay(
 
 #[test]
 fn bordered_box_fills_terminal_height_minus_one() {
-    let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+    let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
     let term = render_component(|ctx| overlay.render(ctx), 80, 24);
     let output = term.get_lines();
     // Frame fills 23 lines, leaving the last row (index 23) empty
@@ -123,7 +123,7 @@ fn bordered_box_fills_terminal_height_minus_one() {
 
 #[test]
 fn title_contains_configuration() {
-    let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+    let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
     let term = render_component(|ctx| overlay.render(ctx), 80, 24);
     let output = term.get_lines();
     assert!(output[0].contains("Configuration"));
@@ -131,7 +131,7 @@ fn title_contains_configuration() {
 
 #[test]
 fn footer_shows_select_and_close_for_menu() {
-    let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+    let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
     let term = render_component(|ctx| overlay.render(ctx), 80, 24);
     let output = term.get_lines();
     let footer = &output[21]; // second to last content line (last is bottom border at 22)
@@ -163,7 +163,7 @@ async fn footer_shows_authenticate_and_back_for_servers() {
 
 #[test]
 fn selected_entry_has_bg_color() {
-    let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+    let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
     let ctx = ViewContext::new((80, 24));
     let term = render_component(|c| overlay.render(c), 80, 24);
     let output = term.get_lines();
@@ -266,7 +266,7 @@ async fn render_provider_login_overlay_hides_top_level_rows() {
 
 #[test]
 fn narrow_terminal_does_not_panic() {
-    let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+    let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
     let term = render_component(|ctx| overlay.render(ctx), 4, 3);
     let output = term.get_lines();
     assert!(!output.is_empty());
@@ -274,7 +274,7 @@ fn narrow_terminal_does_not_panic() {
 
 #[test]
 fn very_small_terminal_shows_fallback() {
-    let overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+    let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
     // Width must be >= text length to avoid truncation, but small enough to trigger fallback
     // MIN_WIDTH=6, MIN_HEIGHT=3, height = rows-1, so rows=3 gives height=2 < 3
     let term = render_component(|ctx| overlay.render(ctx), 30, 3);

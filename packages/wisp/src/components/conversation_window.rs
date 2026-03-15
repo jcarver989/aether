@@ -133,13 +133,13 @@ impl ConversationBuffer {
 }
 
 pub struct ConversationWindow<'a> {
-    pub loader: &'a Spinner,
+    pub loader: &'a mut Spinner,
     pub conversation: &'a ConversationBuffer,
     pub tool_call_statuses: &'a ToolCallStatuses,
 }
 
 impl ConversationWindow<'_> {
-    pub fn render(&self, context: &ViewContext) -> Vec<Line> {
+    pub fn render(&mut self, context: &ViewContext) -> Vec<Line> {
         let mut lines = self.loader.render(context).into_lines();
         let mut last_segment_kind = None;
 

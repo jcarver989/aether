@@ -106,7 +106,7 @@ impl<T: SelectItem> Component for SelectList<T> {
         }
     }
 
-    fn render(&self, ctx: &ViewContext) -> Frame {
+    fn render(&mut self, ctx: &ViewContext) -> Frame {
         if self.items.is_empty() {
             return Frame::new(vec![Line::new(format!("  ({})", self.placeholder))]);
         }
@@ -193,7 +193,7 @@ mod tests {
 
     #[test]
     fn empty_list_shows_placeholder() {
-        let list: SelectList<TestItem> = SelectList::new(vec![], "no items");
+        let mut list: SelectList<TestItem> = SelectList::new(vec![], "no items");
         let ctx = ViewContext::new((80, 24));
         let frame = list.render(&ctx);
         assert_eq!(frame.lines().len(), 1);
@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn render_shows_selected_indicator() {
-        let list = SelectList::new(items(&["alpha", "beta"]), "empty");
+        let mut list = SelectList::new(items(&["alpha", "beta"]), "empty");
         let ctx = ViewContext::new((80, 24));
         let frame = list.render(&ctx);
         assert_eq!(frame.lines().len(), 2);

@@ -45,13 +45,13 @@ fn sample_commands() -> Vec<CommandEntry> {
     ]
 }
 
-fn rendered_lines(picker: &CommandPicker, width: u16, height: u16) -> Vec<String> {
+fn rendered_lines(picker: &mut CommandPicker, width: u16, height: u16) -> Vec<String> {
     let term = render_component(|ctx| picker.render(ctx), width, height);
     let all_lines = term.get_lines();
     all_lines.into_iter().filter(|l| !l.is_empty()).collect()
 }
 
-fn selected_text(picker: &CommandPicker) -> Option<String> {
+fn selected_text(picker: &mut CommandPicker) -> Option<String> {
     let term = render_component(|ctx| picker.render(ctx), DEFAULT_SIZE.0, DEFAULT_SIZE.1);
     let output = term.get_lines();
     output.iter().find(|l| l.starts_with("▶ ")).cloned()
@@ -59,8 +59,8 @@ fn selected_text(picker: &CommandPicker) -> Option<String> {
 
 #[test]
 fn init_shows_all_commands() {
-    let picker = CommandPicker::new(sample_commands());
-    let lines = rendered_lines(&picker, DEFAULT_SIZE.0, DEFAULT_SIZE.1);
+    let mut picker = CommandPicker::new(sample_commands());
+    let lines = rendered_lines(&mut picker, DEFAULT_SIZE.0, DEFAULT_SIZE.1);
     assert_eq!(lines.len(), 3);
     assert!(lines.iter().any(|l| l.contains("/config")));
     assert!(lines.iter().any(|l| l.contains("/search")));
@@ -71,7 +71,7 @@ fn init_shows_all_commands() {
 async fn query_filters_by_name() {
     let mut picker = CommandPicker::new(sample_commands());
     type_query(&mut picker, "conf").await;
-    let lines = rendered_lines(&picker, DEFAULT_SIZE.0, DEFAULT_SIZE.1);
+    let lines = rendered_lines(&mut picker, DEFAULT_SIZE.0, DEFAULT_SIZE.1);
     assert_eq!(lines.len(), 1);
     assert!(lines[0].contains("/config"));
 }
@@ -80,7 +80,7 @@ async fn query_filters_by_name() {
 async fn query_filters_by_description() {
     let mut picker = CommandPicker::new(sample_commands());
     type_query(&mut picker, "browse").await;
-    let lines = rendered_lines(&picker, DEFAULT_SIZE.0, DEFAULT_SIZE.1);
+    let lines = rendered_lines(&mut picker, DEFAULT_SIZE.0, DEFAULT_SIZE.1);
     assert_eq!(lines.len(), 1);
     assert!(lines[0].contains("/web"));
 }
@@ -88,30 +88,30 @@ async fn query_filters_by_description() {
 #[tokio::test]
 async fn selection_wraps() {
     let mut picker = CommandPicker::new(sample_commands());
-    let first = selected_text(&picker).unwrap();
+    let first = selected_text(&mut picker).unwrap();
 
     picker.on_event(&Event::Key(key(KeyCode::Up))).await;
-    let last = selected_text(&picker).unwrap();
+    let last = selected_text(&mut picker).unwrap();
     assert_ne!(first, last);
 
     picker.on_event(&Event::Key(key(KeyCode::Down))).await;
-    let back_to_first = selected_text(&picker).unwrap();
+    let back_to_first = selected_text(&mut picker).unwrap();
     assert_eq!(first, back_to_first);
 }
 
 #[tokio::test]
 async fn selected_command_changes_on_move() {
     let mut picker = CommandPicker::new(sample_commands());
-    let first = selected_text(&picker).unwrap();
+    let first = selected_text(&mut picker).unwrap();
     picker.on_event(&Event::Key(key(KeyCode::Down))).await;
-    let second = selected_text(&picker).unwrap();
+    let second = selected_text(&mut picker).unwrap();
     assert_ne!(first, second);
 }
 
 #[test]
 fn render_includes_hint_for_commands_with_hint() {
-    let picker = CommandPicker::new(sample_commands());
-    let lines = rendered_lines(&picker, DEFAULT_SIZE.0, DEFAULT_SIZE.1);
+    let mut picker = CommandPicker::new(sample_commands());
+    let lines = rendered_lines(&mut picker, DEFAULT_SIZE.0, DEFAULT_SIZE.1);
 
     assert!(
         lines.iter().any(|l| l.contains("[query pattern]")),
@@ -125,8 +125,8 @@ fn render_includes_hint_for_commands_with_hint() {
 
 #[test]
 fn render_omits_hint_brackets_for_commands_without_hint() {
-    let picker = CommandPicker::new(sample_commands());
-    let lines = rendered_lines(&picker, DEFAULT_SIZE.0, DEFAULT_SIZE.1);
+    let mut picker = CommandPicker::new(sample_commands());
+    let lines = rendered_lines(&mut picker, DEFAULT_SIZE.0, DEFAULT_SIZE.1);
 
     let config_line = lines
         .iter()
@@ -140,7 +140,7 @@ fn render_omits_hint_brackets_for_commands_without_hint() {
 
 #[test]
 fn selected_entry_has_highlight_background() {
-    let picker = CommandPicker::new(sample_commands());
+    let mut picker = CommandPicker::new(sample_commands());
     let ctx = ViewContext::new((80, 24));
     let term = render_component(|c| picker.render(c), 80, 24);
     let output = term.get_lines();
@@ -159,7 +159,7 @@ fn selected_entry_has_highlight_background() {
 
 #[test]
 fn selected_entry_has_text_primary_foreground() {
-    let picker = CommandPicker::new(sample_commands());
+    let mut picker = CommandPicker::new(sample_commands());
     let ctx = ViewContext::new((80, 24));
     let term = render_component(|c| picker.render(c), 80, 24);
     let output = term.get_lines();
@@ -178,7 +178,7 @@ fn selected_entry_has_text_primary_foreground() {
 
 #[test]
 fn selected_entry_highlight_fills_full_line_width() {
-    let picker = CommandPicker::new(sample_commands());
+    let mut picker = CommandPicker::new(sample_commands());
     let term = render_component(|ctx| picker.render(ctx), 30, 24);
     let output = term.get_lines();
     let row = output
@@ -197,7 +197,7 @@ fn selected_entry_highlight_fills_full_line_width() {
 
 #[test]
 fn non_selected_items_have_multi_span_styling() {
-    let picker = CommandPicker::new(sample_commands());
+    let mut picker = CommandPicker::new(sample_commands());
     let term = render_component(|c| picker.render(c), DEFAULT_SIZE.0, DEFAULT_SIZE.1);
     let output = term.get_lines();
     let row = output
@@ -220,8 +220,8 @@ fn non_selected_items_have_multi_span_styling() {
 
 #[test]
 fn descriptions_are_column_aligned() {
-    let picker = CommandPicker::new(sample_commands());
-    let lines = rendered_lines(&picker, DEFAULT_SIZE.0, DEFAULT_SIZE.1);
+    let mut picker = CommandPicker::new(sample_commands());
+    let lines = rendered_lines(&mut picker, DEFAULT_SIZE.0, DEFAULT_SIZE.1);
 
     let command_lines: Vec<&str> = lines.iter().map(String::as_str).collect();
     assert_eq!(command_lines.len(), 3);
@@ -255,8 +255,8 @@ fn long_commands_are_truncated_to_terminal_width() {
         builtin: false,
     }];
 
-    let picker = CommandPicker::new(commands);
-    let lines = rendered_lines(&picker, 30, 10);
+    let mut picker = CommandPicker::new(commands);
+    let lines = rendered_lines(&mut picker, 30, 10);
     let command_line = &lines[0];
 
     assert_eq!(lines.len(), 1);

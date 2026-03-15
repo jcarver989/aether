@@ -97,7 +97,7 @@ impl Component for MultiSelect {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Frame {
+    fn render(&mut self, context: &ViewContext) -> Frame {
         Frame::new(self.render_field(context, true))
     }
 }

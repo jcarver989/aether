@@ -333,7 +333,7 @@ impl Component for ConfigOverlay {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Frame {
+    fn render(&mut self, context: &ViewContext) -> Frame {
         let height = (context.size.height.saturating_sub(1)) as usize;
         let width = context.size.width as usize;
         if height < MIN_HEIGHT || width < MIN_WIDTH {
@@ -346,7 +346,7 @@ impl Component for ConfigOverlay {
         let inner_w = Panel::inner_width(context.size.width);
         let child_context = context.with_size((inner_w, child_max_height));
 
-        let child_lines = match &self.active_pane {
+        let child_lines = match &mut self.active_pane {
             ConfigPane::ServerStatus(overlay) => overlay.render(&child_context).into_lines(),
             ConfigPane::ProviderLogin(overlay) => overlay.render(&child_context).into_lines(),
             ConfigPane::ModelSelector(selector) => selector.render(&child_context).into_lines(),

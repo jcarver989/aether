@@ -4,14 +4,14 @@ use tui::Checkbox;
 
 #[test]
 fn unchecked_renders_bracket_space() {
-    let cb = Checkbox::new(false);
+    let mut cb = Checkbox::new(false);
     let term = render_component(|ctx| cb.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["[ ]"]);
 }
 
 #[test]
 fn checked_renders_bracket_x() {
-    let cb = Checkbox::new(true);
+    let mut cb = Checkbox::new(true);
     let term = render_component(|ctx| cb.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["[x]"]);
 }

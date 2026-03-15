@@ -78,7 +78,7 @@ impl Component for ServerStatusOverlay {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Frame {
+    fn render(&mut self, context: &ViewContext) -> Frame {
         self.list.render(context)
     }
 }
@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn renders_all_entries_with_status_indicators() {
-        let overlay = ServerStatusOverlay::new(sample_entries());
+        let mut overlay = ServerStatusOverlay::new(sample_entries());
         let ctx = ViewContext::new((80, 24));
         let frame = overlay.render(&ctx);
 
@@ -167,7 +167,7 @@ mod tests {
 
     #[test]
     fn selected_entry_has_pointer() {
-        let overlay = ServerStatusOverlay::new(sample_entries());
+        let mut overlay = ServerStatusOverlay::new(sample_entries());
         let ctx = ViewContext::new((80, 24));
         let frame = overlay.render(&ctx);
 
@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn empty_entries_shows_placeholder() {
-        let overlay = ServerStatusOverlay::new(vec![]);
+        let mut overlay = ServerStatusOverlay::new(vec![]);
         let ctx = ViewContext::new((80, 24));
         let frame = overlay.render(&ctx);
         assert_eq!(frame.lines().len(), 1);

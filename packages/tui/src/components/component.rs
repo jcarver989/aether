@@ -43,7 +43,7 @@ pub trait Component {
     fn on_event(&mut self, event: &Event) -> impl Future<Output = Option<Vec<Self::Message>>>;
 
     /// Render the current state to a frame.
-    fn render(&self, ctx: &ViewContext) -> Frame;
+    fn render(&mut self, ctx: &ViewContext) -> Frame;
 }
 
 /// Merge two event outcomes. `None` (ignored) yields to the other.

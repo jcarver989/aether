@@ -233,7 +233,7 @@ impl Component for ModelSelector {
         }
     }
 
-    fn render(&self, context: &ViewContext) -> Frame {
+    fn render(&mut self, context: &ViewContext) -> Frame {
         let mut lines = Vec::new();
         let header = format!("  Model search: {}", self.combobox.query());
         lines.push(Line::new(header));
