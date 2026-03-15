@@ -37,7 +37,7 @@ impl<T: Searchable + Send + Sync + 'static> FuzzyMatcher<T> {
         fuzzy
     }
 
-    /// Creates a FuzzyMatcher with pre-populated matches (no Nucleo indexing).
+    /// Creates a `FuzzyMatcher` with pre-populated matches (no Nucleo indexing).
     pub fn from_matches(matches: Vec<T>) -> Self {
         let nucleo = Nucleo::new(Config::DEFAULT, Arc::new(|| {}), Some(1), 1);
         Self {

@@ -108,7 +108,7 @@ impl SubAgentTracker {
     }
 
     pub(crate) fn get(&self, tool_id: &str) -> Option<&[SubAgentState]> {
-        self.agents.get(tool_id).map(|v| v.as_slice())
+        self.agents.get(tool_id).map(std::vec::Vec::as_slice)
     }
 
     pub(crate) fn any_running(&self) -> bool {

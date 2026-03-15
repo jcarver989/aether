@@ -194,11 +194,10 @@ impl ConfigManager {
     }
 
     pub fn update_overlay_viewport(&mut self, max_height: usize) {
-        if let Some(ref mut overlay) = self.config_overlay {
-            if max_height >= 3 {
+        if let Some(ref mut overlay) = self.config_overlay
+            && max_height >= 3 {
                 overlay.update_child_viewport(max_height.saturating_sub(4));
             }
-        }
     }
 
     fn decorate_config_menu(&self, mut menu: ConfigMenu) -> ConfigMenu {

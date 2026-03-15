@@ -21,6 +21,12 @@ pub struct ConversationBuffer {
     thought_block_open: bool,
 }
 
+impl Default for ConversationBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConversationBuffer {
     pub fn new() -> Self {
         Self {

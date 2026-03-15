@@ -100,10 +100,10 @@ impl<'a> MarkdownRenderer<'a> {
             | Tag::BlockQuote(_)
             | Tag::List(_)
             | Tag::Item
-            | Tag::Paragraph => self.handle_block_start(tag),
+            | Tag::Paragraph => self.handle_block_start(&tag),
 
             Tag::Strong | Tag::Emphasis | Tag::Strikethrough | Tag::Link { .. } => {
-                self.handle_inline_start(tag)
+                self.handle_inline_start(tag);
             }
 
             Tag::CodeBlock(_) => self.handle_code_block_start(tag),
@@ -123,24 +123,24 @@ impl<'a> MarkdownRenderer<'a> {
             | TagEnd::Item => self.handle_block_end(tag_end),
 
             TagEnd::Strong | TagEnd::Emphasis | TagEnd::Strikethrough | TagEnd::Link => {
-                self.handle_inline_end(tag_end)
+                self.handle_inline_end(tag_end);
             }
 
             TagEnd::CodeBlock => self.handle_code_block_end(),
 
             TagEnd::Table | TagEnd::TableRow | TagEnd::TableHead | TagEnd::TableCell => {
-                self.handle_table_end(tag_end)
+                self.handle_table_end(tag_end);
             }
 
             _ => {}
         }
     }
 
-    fn handle_block_start(&mut self, tag: Tag<'_>) {
+    fn handle_block_start(&mut self, tag: &Tag<'_>) {
         match tag {
             Tag::Heading { level, .. } => {
                 self.finish_current_line();
-                let prefix = "#".repeat(level as usize);
+                let prefix = "#".repeat(*level as usize);
                 self.push_styled_text(
                     &format!("{prefix} "),
                     Style::fg(self.theme.heading()).bold(),
@@ -157,7 +157,7 @@ impl<'a> MarkdownRenderer<'a> {
                 if self.list_stack.is_empty() {
                     self.finish_current_line();
                 }
-                self.list_stack.push(start);
+                self.list_stack.push(*start);
             }
             Tag::Item => {
                 self.flush_line();
@@ -172,7 +172,6 @@ impl<'a> MarkdownRenderer<'a> {
                 };
                 self.push_styled_text(&format!("{indent}{marker}"), Style::fg(self.theme.muted()));
             }
-            Tag::Paragraph => {}
             _ => {}
         }
     }

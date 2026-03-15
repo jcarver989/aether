@@ -228,14 +228,14 @@ impl SkillsMcp {
         files
     }
 
-    fn load_skill_file(&self, request: SkillRequest) -> SkillFile {
+    fn load_skill_file(&self, request: &SkillRequest) -> SkillFile {
         let name = request.name.clone();
         let path = request
             .path
             .clone()
             .unwrap_or_else(|| SKILL_FILENAME.to_string());
 
-        let result = self.resolve_skill_file(&request).and_then(|(resolved, _)| {
+        let result = self.resolve_skill_file(request).and_then(|(resolved, _)| {
             fs::read_to_string(&resolved).map_err(|e| match e.kind() {
                 io::ErrorKind::InvalidData => SkillFileError::InvalidUtf8,
                 _ => SkillFileError::IoError(e),
@@ -359,7 +359,7 @@ impl SkillsMcp {
         let files: Vec<SkillFile> = args
             .requests
             .into_iter()
-            .map(|req| self.load_skill_file(req))
+            .map(|req| self.load_skill_file(&req))
             .collect();
 
         Ok(Json(LoadSkillsOutput { files }))
@@ -425,7 +425,7 @@ mod tests {
         );
 
         let server = SkillsMcp::new(temp_dir.path().to_path_buf());
-        let result = server.load_skill_file(SkillRequest {
+        let result = server.load_skill_file(&SkillRequest {
             name: "test-skill".to_string(),
             path: None,
         });
@@ -448,7 +448,7 @@ mod tests {
         );
 
         let server = SkillsMcp::new(temp_dir.path().to_path_buf());
-        let result = server.load_skill_file(SkillRequest {
+        let result = server.load_skill_file(&SkillRequest {
             name: "test-skill".to_string(),
             path: Some("traits.md".to_string()),
         });
@@ -469,7 +469,7 @@ mod tests {
         );
 
         let server = SkillsMcp::new(temp_dir.path().to_path_buf());
-        let result = server.load_skill_file(SkillRequest {
+        let result = server.load_skill_file(&SkillRequest {
             name: "test-skill".to_string(),
             path: Some("references/REF.md".to_string()),
         });
@@ -489,7 +489,7 @@ mod tests {
         );
 
         let server = SkillsMcp::new(temp_dir.path().to_path_buf());
-        let result = server.load_skill_file(SkillRequest {
+        let result = server.load_skill_file(&SkillRequest {
             name: "test-skill".to_string(),
             path: Some("/etc/passwd".to_string()),
         });
@@ -508,7 +508,7 @@ mod tests {
         );
 
         let server = SkillsMcp::new(temp_dir.path().to_path_buf());
-        let result = server.load_skill_file(SkillRequest {
+        let result = server.load_skill_file(&SkillRequest {
             name: "test-skill".to_string(),
             path: Some("../other-skill/SKILL.md".to_string()),
         });
@@ -527,7 +527,7 @@ mod tests {
         );
 
         let server = SkillsMcp::new(temp_dir.path().to_path_buf());
-        let result = server.load_skill_file(SkillRequest {
+        let result = server.load_skill_file(&SkillRequest {
             name: "test-skill".to_string(),
             path: Some(".".to_string()),
         });
@@ -551,7 +551,7 @@ mod tests {
         );
 
         let server = SkillsMcp::new(temp_dir.path().to_path_buf());
-        let result = server.load_skill_file(SkillRequest {
+        let result = server.load_skill_file(&SkillRequest {
             name: "test-skill".to_string(),
             path: None,
         });
@@ -577,7 +577,7 @@ mod tests {
         fs::create_dir_all(temp_dir.path().join("skills")).unwrap();
 
         let server = SkillsMcp::new(temp_dir.path().to_path_buf());
-        let result = server.load_skill_file(SkillRequest {
+        let result = server.load_skill_file(&SkillRequest {
             name: "nonexistent".to_string(),
             path: None,
         });
@@ -596,7 +596,7 @@ mod tests {
         );
 
         let server = SkillsMcp::new(temp_dir.path().to_path_buf());
-        let result = server.load_skill_file(SkillRequest {
+        let result = server.load_skill_file(&SkillRequest {
             name: "test-skill".to_string(),
             path: Some("nonexistent.md".to_string()),
         });
@@ -641,7 +641,7 @@ mod tests {
         let files: Vec<SkillFile> = input
             .requests
             .into_iter()
-            .map(|req| server.load_skill_file(req))
+            .map(|req| server.load_skill_file(&req))
             .collect();
 
         assert_eq!(files.len(), 3);
@@ -692,7 +692,7 @@ mod tests {
         let files: Vec<SkillFile> = input
             .requests
             .into_iter()
-            .map(|req| server.load_skill_file(req))
+            .map(|req| server.load_skill_file(&req))
             .collect();
 
         assert_eq!(files.len(), 3);

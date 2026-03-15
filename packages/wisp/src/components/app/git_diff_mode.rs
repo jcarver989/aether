@@ -168,6 +168,7 @@ impl GitDiffViewState {
         changed
     }
 
+    #[allow(dead_code)]
     pub(crate) fn scroll_patch(&mut self, delta: isize) -> bool {
         let max = self.max_patch_scroll();
         let next = if delta.is_negative() {
@@ -262,6 +263,7 @@ impl GitDiffViewState {
         self.cached_for_file = Some(self.selected_file);
     }
 
+    #[allow(dead_code)]
     fn apply_loaded_document(&mut self, doc: GitDiffDocument, restore: Option<RefreshState>) {
         if doc.files.is_empty() {
             self.load_state = GitDiffLoadState::Empty;
@@ -290,11 +292,13 @@ impl GitDiffViewState {
     }
 }
 
+#[allow(dead_code)]
 struct RefreshState {
     selected_path: Option<String>,
     focus: PatchFocus,
 }
 
+#[allow(dead_code)]
 pub struct GitDiffMode {
     working_dir: PathBuf,
     cached_repo_root: Option<PathBuf>,
@@ -326,6 +330,7 @@ impl GitDiffMode {
         self.state.invalidate_patch_cache();
     }
 
+    #[allow(dead_code)]
     pub(crate) async fn complete_load(&mut self) {
         match crate::git_diff::load_git_diff(&self.working_dir, self.cached_repo_root.as_deref())
             .await
@@ -360,6 +365,7 @@ impl GitDiffMode {
         outcome.unwrap_or_default()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn on_mouse_event(&mut self, event: &Event) {
         if let Event::Mouse(mouse) = event {
             match mouse.kind {

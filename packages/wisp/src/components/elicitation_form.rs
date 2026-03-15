@@ -21,7 +21,7 @@ impl Component for ElicitationForm {
 
     fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         let outcome = self.form.on_event(event)?;
-        for msg in outcome {
+        if let Some(msg) = outcome.into_iter().next() {
             match msg {
                 FormMessage::Close => {
                     let _ = self.response_tx.take().map(|tx| tx.send(Self::decline()));
