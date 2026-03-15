@@ -27,6 +27,7 @@ pub enum FinishReason {
     ContentFilter,
     FunctionCall,
     Error,
+    NetworkError,
     ModelContextWindowExceeded,
 }
 
@@ -206,7 +207,9 @@ impl From<ChatCompletionStreamResponse> for CreateChatCompletionStreamResponse {
 impl From<FinishReason> for OpenAiFinishReason {
     fn from(reason: FinishReason) -> Self {
         match reason {
-            FinishReason::Stop | FinishReason::Error => OpenAiFinishReason::Stop,
+            FinishReason::Stop | FinishReason::Error | FinishReason::NetworkError => {
+                OpenAiFinishReason::Stop
+            }
             FinishReason::Length | FinishReason::ModelContextWindowExceeded => {
                 OpenAiFinishReason::Length
             }
