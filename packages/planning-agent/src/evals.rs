@@ -1,6 +1,6 @@
 use crate::PrInfo;
 use crate::claude_code::ClaudeCode;
-use aether_core::core::substitute_parameters;
+use utils::substitution::substitute_parameters;
 use crucible::{Eval, EvalAssertion, EvalMetric, WorkingDirectory};
 use std::collections::HashMap;
 use std::fs;
