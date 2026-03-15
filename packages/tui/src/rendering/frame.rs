@@ -92,9 +92,7 @@ mod tests {
     #[test]
     fn clamp_cursor_clamps_out_of_bounds_row() {
         let frame = Frame::new(vec![Line::new("a")]).with_cursor(Cursor::visible(10, 100));
-
         let frame = frame.clamp_cursor();
-
         assert_eq!(frame.cursor().row, 0);
         assert_eq!(frame.cursor().col, 100);
     }
@@ -104,7 +102,6 @@ mod tests {
         let frame = Frame::new(vec![Line::new("hello")]);
         let new_cursor = Cursor::visible(0, 3);
         let frame = frame.with_cursor(new_cursor);
-
         assert_eq!(frame.cursor(), new_cursor);
         assert_eq!(frame.lines()[0].plain_text(), "hello");
     }

@@ -1,6 +1,8 @@
+use crate::Frame;
+use crate::rendering::render_context::Size;
+
 use super::frame::Cursor;
 use super::line::Line;
-use super::size::Size;
 use super::soft_wrap::soft_wrap_lines_with_map;
 
 /// Terminal-ready visual frame prepared for the terminal.
@@ -21,11 +23,7 @@ pub struct VisualFrame {
 
 impl VisualFrame {
     /// Creates a `VisualFrame` from a logical Frame, applying soft-wrap and viewport split.
-    pub fn from_frame(
-        frame: &super::frame::Frame,
-        size: Size,
-        flushed_visual_count: usize,
-    ) -> Self {
+    pub fn from_frame(frame: &Frame, size: Size, flushed_visual_count: usize) -> Self {
         let (wrapped_lines, logical_to_visual) =
             soft_wrap_lines_with_map(frame.lines(), size.width);
 
@@ -125,7 +123,6 @@ mod tests {
         });
 
         let visual = VisualFrame::from_frame(&frame, Size::from((3, 5)), 0);
-
         assert_eq!(
             visual.visible_lines(),
             &[Line::new("abc"), Line::new("def")]
@@ -145,7 +142,6 @@ mod tests {
 
         let visual = VisualFrame::from_frame(&frame, Size::from((3, 5)), 0);
         let (scrollback_lines, visible_lines, cursor, overflow) = visual.into_parts();
-
         assert!(scrollback_lines.is_empty());
         assert_eq!(visible_lines, vec![Line::new("abc"), Line::new("def")]);
         assert_eq!(cursor.row, 1);
@@ -168,7 +164,6 @@ mod tests {
         });
 
         let visual = VisualFrame::from_frame(&frame, Size::from((80, 2)), 0);
-
         assert_eq!(
             visual.scrollback_lines(),
             &[Line::new("L1"), Line::new("L2")]
@@ -215,7 +210,6 @@ mod tests {
             });
 
         let visual = VisualFrame::from_frame(&frame, Size::from((80, 2)), 0);
-
         assert_eq!(visual.cursor().row, 0);
         assert_eq!(visual.visible_lines().len(), 2);
     }
@@ -223,9 +217,7 @@ mod tests {
     #[test]
     fn visual_frame_empty_frame() {
         let frame = Frame::new(vec![]);
-
         let visual = VisualFrame::from_frame(&frame, Size::from((80, 24)), 0);
-
         assert!(visual.scrollback_lines().is_empty());
         assert!(visual.visible_lines().is_empty());
     }
@@ -239,7 +231,6 @@ mod tests {
         });
 
         let visual = VisualFrame::from_frame(&frame, Size::from((0, 5)), 0);
-
         assert_eq!(visual.visible_lines(), &[Line::new("abcdef")]);
         assert_eq!(visual.cursor().col, 0);
     }
@@ -247,7 +238,6 @@ mod tests {
     #[test]
     fn prepare_lines_for_scrollback_matches_visual_frame_wrapping() {
         let lines = vec![Line::new("abcdef")];
-
         let visual_frame_lines = {
             let frame = Frame::new(lines.clone()).with_cursor(Cursor {
                 row: 0,
@@ -259,7 +249,6 @@ mod tests {
         };
 
         let scrollback_lines = prepare_lines_for_scrollback(&lines, 3);
-
         assert_eq!(visual_frame_lines, scrollback_lines);
     }
 }

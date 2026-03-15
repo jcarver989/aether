@@ -1,13 +1,12 @@
-use std::io::{self, Write};
-use std::sync::Arc;
-
 use super::frame::Frame;
 use super::line::Line;
 use super::render_context::ViewContext;
-use super::size::Size;
 use super::terminal_screen::{TerminalCommand, TerminalScreen};
 use super::visual_frame::VisualFrame;
+use crate::rendering::render_context::Size;
 use crate::theme::Theme;
+use std::io::{self, Write};
+use std::sync::Arc;
 
 #[cfg(feature = "syntax")]
 use crate::syntax_highlighting::SyntaxHighlighter;
@@ -33,10 +32,10 @@ pub struct Renderer<W: Write> {
 }
 
 impl<W: Write> Renderer<W> {
-    pub fn new(writer: W, theme: Theme) -> Self {
+    pub fn new(writer: W, theme: Theme, size: impl Into<Size>) -> Self {
         Self {
             terminal: TerminalScreen::new(writer),
-            size: (0, 0).into(),
+            size: size.into(),
             theme: Arc::new(theme),
             #[cfg(feature = "syntax")]
             highlighter: Arc::new(SyntaxHighlighter::new()),
@@ -262,7 +261,7 @@ mod tests {
 
     #[test]
     fn set_theme_replaces_render_context_theme() {
-        let mut renderer = Renderer::new(Vec::new(), Theme::default());
+        let mut renderer = Renderer::new(Vec::new(), Theme::default(), (80, 24));
         let new_theme = Theme::default();
         let expected = new_theme.text_primary();
 
@@ -274,7 +273,7 @@ mod tests {
     #[cfg(feature = "syntax")]
     #[test]
     fn set_theme_replaces_render_context_theme_from_file() {
-        let mut renderer = Renderer::new(Vec::new(), Theme::default());
+        let mut renderer = Renderer::new(Vec::new(), Theme::default(), (80, 24));
 
         let custom_tmtheme = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -316,8 +315,7 @@ mod tests {
 
     #[test]
     fn empty_to_empty_is_noop() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
-        renderer.on_resize((80, 24));
+        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
         let empty_frame = Frame::new(vec![]);
         renderer.render_frame_internal(&empty_frame).unwrap();
         renderer.terminal.writer.bytes.clear();
@@ -331,8 +329,7 @@ mod tests {
 
     #[test]
     fn first_render_writes_all_lines() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
-        renderer.on_resize((80, 24));
+        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
         let f = frame(&["hello", "world"]);
         renderer.render_frame_internal(&f).unwrap();
         let output = String::from_utf8_lossy(&renderer.terminal.writer.bytes);
@@ -342,8 +339,7 @@ mod tests {
 
     #[test]
     fn identical_frames_produce_no_visible_rewrites() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
-        renderer.on_resize((80, 24));
+        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
         let f = frame(&["hello", "world"]);
         renderer.render_frame_internal(&f).unwrap();
 
@@ -356,8 +352,7 @@ mod tests {
 
     #[test]
     fn changing_middle_line_rewrites_from_diff() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
-        renderer.on_resize((80, 24));
+        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
         let frame1 = frame(&["aaa", "bbb", "ccc"]);
         renderer.render_frame_internal(&frame1).unwrap();
 
@@ -371,8 +366,7 @@ mod tests {
 
     #[test]
     fn appending_line_moves_to_next_row_before_writing() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
-        renderer.on_resize((80, 24));
+        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
         let frame1 = frame(&["aaa", "bbb"]);
         renderer.render_frame_internal(&frame1).unwrap();
 
@@ -391,8 +385,7 @@ mod tests {
 
     #[test]
     fn push_to_scrollback_restores_cursor_even_when_nothing_new_is_flushed() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
-        renderer.on_resize((80, 2));
+        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 2));
         let frame = Frame::new(vec![
             Line::new("L1"),
             Line::new("L2"),
@@ -424,8 +417,7 @@ mod tests {
 
     #[test]
     fn push_to_scrollback_clears_prev_visible_lines() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
-        renderer.on_resize((80, 24));
+        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
 
         let f = frame(&["managed line"]);
         renderer.render_frame_internal(&f).unwrap();
@@ -442,15 +434,14 @@ mod tests {
 
     #[test]
     fn push_to_scrollback_empty_is_noop() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
-        renderer.on_resize((80, 24));
+        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
         renderer.push_to_scrollback(&[]).unwrap();
         assert!(renderer.terminal.writer.bytes.is_empty());
     }
 
     #[test]
     fn clear_screen_emits_clear_all_and_purge() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
+        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
         renderer.clear_screen().unwrap();
         let output = String::from_utf8_lossy(&renderer.terminal.writer.bytes);
         assert!(output.contains("\x1b[2J"), "missing ClearType::All");
@@ -463,8 +454,7 @@ mod tests {
 
     #[test]
     fn clear_screen_resets_resize_state() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
-        renderer.on_resize((80, 24));
+        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
         renderer.clear_screen().unwrap();
 
         renderer.terminal.writer.bytes.clear();
@@ -481,8 +471,7 @@ mod tests {
 
     #[test]
     fn resize_marks_terminal_for_full_clear_and_redraw() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
-        renderer.on_resize((10, 4));
+        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (10, 4));
         let wide = frame(&["abcdefghij"]);
         renderer.render_frame_internal(&wide).unwrap();
 
@@ -499,8 +488,7 @@ mod tests {
 
     #[test]
     fn visual_frame_splits_overflow_from_visible_lines() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
-        renderer.on_resize((80, 2));
+        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 2));
 
         let f = Frame::new(vec![
             Line::new("L1"),
@@ -520,8 +508,7 @@ mod tests {
 
     #[test]
     fn cursor_remapped_after_wrap() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default());
-        renderer.on_resize((3, 24));
+        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (3, 24));
 
         let f = Frame::new(vec![Line::new("abcdef")]).with_cursor(Cursor {
             row: 0,

@@ -15,11 +15,11 @@ use crate::components::app::{App, AppMessage};
 use crate::components::conversation_window::render_segments_to_lines;
 use crate::error::AppError;
 use crate::runtime_state::RuntimeState;
-use crate::tui::{Component, Event};
 use crate::tui::advanced::{
     CrosstermEvent, MouseCapture, Renderer, TerminalSession, spawn_terminal_event_task,
     terminal_size,
 };
+use crate::tui::{Component, Event};
 use acp_utils::client::AcpPromptHandle;
 use clap::Parser;
 use std::fs::create_dir_all;
@@ -27,7 +27,8 @@ use std::io;
 use std::process::ExitCode;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tokio::time;
+use tokio::time::interval;
+use tokio::{select, time};
 use tracing_appender::rolling::daily;
 use tracing_subscriber::EnvFilter;
 
@@ -96,8 +97,7 @@ async fn process_messages(
                 completed_tool_ids,
             } => {
                 let context = renderer.context();
-                let lines =
-                    render_segments_to_lines(&content, app.tool_call_statuses(), &context);
+                let lines = render_segments_to_lines(&content, app.tool_call_statuses(), &context);
                 if !lines.is_empty() {
                     renderer.push_to_scrollback(&lines)?;
                 }
@@ -107,7 +107,10 @@ async fn process_messages(
                 user_input,
                 attachments,
             } => {
-                let echo = vec![tui::Line::new(String::new()), tui::Line::new(user_input.clone())];
+                let echo = vec![
+                    tui::Line::new(String::new()),
+                    tui::Line::new(user_input.clone()),
+                ];
                 renderer.push_to_scrollback(&echo)?;
 
                 let outcome = build_attachment_blocks(&attachments).await;
@@ -143,17 +146,18 @@ async fn run_app(
     theme: tui::Theme,
     mut event_rx: mpsc::UnboundedReceiver<acp_utils::client::AcpEvent>,
 ) -> Result<(), AppError> {
-    let _session = TerminalSession::enter(true, MouseCapture::Disabled)?;
-    let mut renderer = Renderer::new(io::stdout(), theme);
     let size = terminal_size().unwrap_or((80, 24));
-    renderer.on_resize(size);
-
+    let mut renderer = Renderer::new(io::stdout(), theme, size);
+    let _session = TerminalSession::new(true, MouseCapture::Disabled)?;
     let mut terminal_rx = spawn_terminal_event_task();
     render(&mut renderer, &mut app)?;
 
     let tick_rate = Duration::from_millis(100);
-    let mut tick_interval = time::interval(tick_rate);
-    tick_interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+    let mut tick_interval = {
+        let mut tick = interval(tick_rate);
+        tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+        tick
+    };
 
     loop {
         let tick_fut = async {
@@ -163,9 +167,7 @@ async fn run_app(
             tick_interval.tick().await;
         };
 
-        let external_fut = event_rx.recv();
-
-        tokio::select! {
+        select! {
             terminal_event = terminal_rx.recv() => {
                 let Some(event) = terminal_event else {
                     return Ok(());
@@ -181,7 +183,7 @@ async fn run_app(
                 }
             }
 
-            app_event = external_fut => {
+            app_event = event_rx.recv() => {
                 match app_event {
                     Some(event) => {
                         let messages = app.on_acp_event(event);

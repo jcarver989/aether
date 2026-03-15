@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use super::size::Size;
 use crate::theme::Theme;
 
 #[cfg(feature = "syntax")]
@@ -13,6 +12,13 @@ pub struct ViewContext {
     pub theme: Arc<Theme>,
     #[cfg(feature = "syntax")]
     pub(crate) highlighter: Arc<SyntaxHighlighter>,
+}
+
+/// Terminal dimensions in columns and rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Size {
+    pub width: u16,
+    pub height: u16,
 }
 
 impl ViewContext {
@@ -41,5 +47,11 @@ impl ViewContext {
             #[cfg(feature = "syntax")]
             highlighter: self.highlighter.clone(),
         }
+    }
+}
+
+impl From<(u16, u16)> for Size {
+    fn from((width, height): (u16, u16)) -> Self {
+        Self { width, height }
     }
 }
