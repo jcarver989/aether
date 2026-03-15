@@ -65,7 +65,7 @@ pub use theme::Theme;
 #[cfg(feature = "runtime")]
 pub mod advanced {
     /// Low-level renderer for manual frame control.
-    pub use crate::rendering::renderer::Renderer;
+    pub use crate::rendering::renderer::{Renderer, RendererCommand};
 
     /// Terminal session management for manual runtime control.
     pub use crate::runtime::{MouseCapture, TerminalSession, spawn_terminal_event_task};
