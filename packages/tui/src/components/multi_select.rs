@@ -85,11 +85,11 @@ impl Component for MultiSelect {
                 self.selected[self.cursor] = !self.selected[self.cursor];
                 Some(vec![])
             }
-            KeyCode::Up | KeyCode::Left => {
+            KeyCode::Up => {
                 self.cursor = (self.cursor + self.options.len() - 1) % self.options.len();
                 Some(vec![])
             }
-            KeyCode::Down | KeyCode::Right => {
+            KeyCode::Down => {
                 self.cursor = (self.cursor + 1) % self.options.len();
                 Some(vec![])
             }
@@ -178,5 +178,16 @@ mod tests {
         let mut ms = sample();
         ms.on_event(&Event::Key(key(KeyCode::Up))).await;
         assert_eq!(ms.cursor, 2); // wraps to end
+    }
+
+    #[tokio::test]
+    async fn left_right_ignored() {
+        let mut ms = sample();
+        let outcome = ms.on_event(&Event::Key(key(KeyCode::Right))).await;
+        assert!(outcome.is_none());
+        assert_eq!(ms.cursor, 0);
+        let outcome = ms.on_event(&Event::Key(key(KeyCode::Left))).await;
+        assert!(outcome.is_none());
+        assert_eq!(ms.cursor, 0);
     }
 }

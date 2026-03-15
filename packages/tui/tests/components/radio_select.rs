@@ -33,9 +33,9 @@ async fn up_from_first_wraps_to_last() {
 }
 
 #[tokio::test]
-async fn right_from_last_wraps_to_first() {
+async fn down_from_last_wraps_to_first() {
     let mut rs = RadioSelect::new(sample_options(), 2);
-    rs.on_event(&Event::Key(key(KeyCode::Right))).await;
+    rs.on_event(&Event::Key(key(KeyCode::Down))).await;
     let term = render_component(|ctx| rs.render(ctx), 80, 24);
     assert_buffer_eq(&term, &["● Alpha", "○ Beta", "○ Gamma"]);
 }

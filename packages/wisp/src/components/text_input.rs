@@ -36,6 +36,10 @@ impl TextInput {
         }
     }
 
+    pub fn set_content_width(&mut self, width: usize) {
+        self.field.set_content_width(width);
+    }
+
     pub fn buffer(&self) -> &str {
         &self.field.value
     }
@@ -84,11 +88,8 @@ impl TextInput {
     }
 
     pub fn insert_paste(&mut self, text: &str) {
-        for c in text.chars() {
-            if !c.is_control() {
-                self.field.insert_at_cursor(c);
-            }
-        }
+        let filtered: String = text.chars().filter(|c| !c.is_control()).collect();
+        self.field.insert_str_at_cursor(&filtered);
     }
 
     pub fn apply_file_selection(&mut self, path: PathBuf, display_name: String) {
@@ -395,5 +396,56 @@ mod tests {
 
         assert_eq!(input.buffer(), "");
         assert_eq!(input.cursor_index(None), 0);
+    }
+
+    #[tokio::test]
+    async fn up_moves_cursor_in_wrapped_text() {
+        let mut input = TextInput::default();
+        input.set_content_width(5);
+        // "hello world" → row 0: "hello", row 1: " worl", row 2: "d"
+        input.set_input("hello world".to_string());
+        input.set_cursor_pos(8); // display 8, row 1, col 3
+
+        input.on_event(&key(KeyCode::Up)).await;
+
+        // Target: row 0, col 3 → byte 3
+        assert_eq!(input.cursor_index(None), 3);
+    }
+
+    #[tokio::test]
+    async fn down_moves_cursor_in_wrapped_text() {
+        let mut input = TextInput::default();
+        input.set_content_width(5);
+        input.set_input("hello world".to_string());
+        input.set_cursor_pos(3); // display 3, row 0, col 3
+
+        input.on_event(&key(KeyCode::Down)).await;
+
+        // Target: row 1, col 3 → byte 8
+        assert_eq!(input.cursor_index(None), 8);
+    }
+
+    #[tokio::test]
+    async fn up_on_first_row_goes_home() {
+        let mut input = TextInput::default();
+        input.set_content_width(20);
+        input.set_input("hello".to_string());
+        input.set_cursor_pos(3);
+
+        input.on_event(&key(KeyCode::Up)).await;
+
+        assert_eq!(input.cursor_index(None), 0);
+    }
+
+    #[tokio::test]
+    async fn down_on_last_row_goes_end() {
+        let mut input = TextInput::default();
+        input.set_content_width(20);
+        input.set_input("hello".to_string());
+        input.set_cursor_pos(0);
+
+        input.on_event(&key(KeyCode::Down)).await;
+
+        assert_eq!(input.cursor_index(None), 5);
     }
 }

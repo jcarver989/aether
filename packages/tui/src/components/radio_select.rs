@@ -62,11 +62,11 @@ impl Component for RadioSelect {
         }
 
         match key.code {
-            KeyCode::Left | KeyCode::Up => {
+            KeyCode::Up => {
                 self.selected = (self.selected + self.options.len() - 1) % self.options.len();
                 Some(vec![])
             }
-            KeyCode::Right | KeyCode::Down => {
+            KeyCode::Down => {
                 self.selected = (self.selected + 1) % self.options.len();
                 Some(vec![])
             }
@@ -116,21 +116,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn right_cycles_forward() {
+    async fn down_cycles_forward() {
         let mut rs = RadioSelect::new(sample_options(), 0);
-        rs.on_event(&Event::Key(key(KeyCode::Right))).await;
+        rs.on_event(&Event::Key(key(KeyCode::Down))).await;
         assert_eq!(rs.selected, 1);
-        rs.on_event(&Event::Key(key(KeyCode::Right))).await;
+        rs.on_event(&Event::Key(key(KeyCode::Down))).await;
         assert_eq!(rs.selected, 2);
-        rs.on_event(&Event::Key(key(KeyCode::Right))).await;
+        rs.on_event(&Event::Key(key(KeyCode::Down))).await;
         assert_eq!(rs.selected, 0); // wraps
     }
 
     #[tokio::test]
-    async fn left_cycles_backward() {
+    async fn up_cycles_backward() {
         let mut rs = RadioSelect::new(sample_options(), 0);
-        rs.on_event(&Event::Key(key(KeyCode::Left))).await;
+        rs.on_event(&Event::Key(key(KeyCode::Up))).await;
         assert_eq!(rs.selected, 2); // wraps to end
+    }
+
+    #[tokio::test]
+    async fn left_right_ignored() {
+        let mut rs = RadioSelect::new(sample_options(), 0);
+        let outcome = rs.on_event(&Event::Key(key(KeyCode::Right))).await;
+        assert!(outcome.is_none());
+        assert_eq!(rs.selected, 0);
+        let outcome = rs.on_event(&Event::Key(key(KeyCode::Left))).await;
+        assert!(outcome.is_none());
+        assert_eq!(rs.selected, 0);
     }
 
     #[test]

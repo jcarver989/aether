@@ -17,10 +17,10 @@ pub enum FormMessage {
     Submit,
 }
 
-/// A multi-field form with Tab/`BackTab` focus navigation.
+/// A multi-field form rendered as a tabbed pane.
 ///
-/// Renders a bordered form with labeled fields. Supports text, number, boolean,
-/// single-select, and multi-select field types.
+/// Each field gets its own full pane with a tab bar at the top for navigation.
+/// A virtual "Submit" tab follows all field tabs.
 pub struct Form {
     pub message: String,
     pub fields: Vec<FormField>,
@@ -51,7 +51,7 @@ impl Form {
         Self {
             message,
             fields,
-            focus: FocusRing::new(len),
+            focus: FocusRing::new(len + 1), // +1 for virtual Submit tab
         }
     }
 
@@ -63,72 +63,148 @@ impl Form {
         serde_json::Value::Object(map)
     }
 
-    fn render_title(&self, context: &ViewContext) -> Line {
-        let title = format!("  {} ", self.message);
-        let width = context.size.width as usize;
-        let border_len = width.saturating_sub(title.len() + 4);
-        Line::styled(
-            format!("┌─{title}{}┐", "─".repeat(border_len)),
-            context.theme.primary(),
-        )
+    fn is_on_submit_tab(&self) -> bool {
+        self.focus.focused() == self.fields.len()
     }
 
-    fn render_fields(&self, context: &ViewContext) -> Vec<Line> {
-        let mut lines = Vec::new();
+    fn active_field_uses_horizontal_arrows(&self) -> bool {
+        self.fields
+            .get(self.focus.focused())
+            .is_some_and(|f| matches!(f.kind, FormFieldKind::Text(_) | FormFieldKind::Number(_)))
+    }
+
+    fn render_tab_bar(&self, context: &ViewContext) -> Line {
+        let mut line = Line::default();
+        let muted = context.theme.text_secondary();
+        let primary = context.theme.primary();
+        let success = context.theme.success();
+
         for (i, field) in self.fields.iter().enumerate() {
-            let is_selected = self.focus.is_focused(i);
-            let prefix = if is_selected { "▶ " } else { "  " };
-            let required_marker = if field.required { "*" } else { "" };
-            let label_style = if is_selected {
-                Style::fg(context.theme.primary()).bold()
+            if i > 0 {
+                line.push_styled(" · ", muted);
+            }
+
+            let is_active = self.focus.is_focused(i);
+            let indicator = if field.kind.is_answered() {
+                "✓ "
             } else {
-                Style::fg(context.theme.text_primary())
+                "□ "
             };
 
-            let mut label_line = Line::with_style(
-                format!("│ {prefix}{}{required_marker}: ", field.label),
-                label_style,
-            );
-
-            let field_lines = field.kind.render_field(context, is_selected);
-            if let Some((first, rest)) = field_lines.split_first() {
-                label_line.append_line(first);
-                lines.push(label_line);
-
-                if is_selected {
-                    if let Some(desc) = &field.description {
-                        lines.push(Line::styled(format!("│     {desc}"), context.theme.muted()));
-                    }
-
-                    for extra_line in rest {
-                        let mut prefixed = Line::with_style("│       ", Style::default());
-                        prefixed.append_line(extra_line);
-                        lines.push(prefixed);
-                    }
-                }
+            let style = if is_active {
+                Style::fg(primary).bold()
             } else {
-                lines.push(label_line);
-            }
+                Style::fg(muted)
+            };
+            line.push_with_style(format!("{indicator}{}", field.label), style);
         }
+
+        // Submit tab
+        if !self.fields.is_empty() {
+            line.push_styled(" · ", muted);
+        }
+        let submit_style = if self.is_on_submit_tab() {
+            Style::fg(success).bold()
+        } else {
+            Style::fg(muted)
+        };
+        line.push_with_style("Submit", submit_style);
+
+        line
+    }
+
+    fn render_active_field(&self, context: &ViewContext) -> Vec<Line> {
+        if self.is_on_submit_tab() {
+            return self.render_submit_summary(context);
+        }
+
+        let Some(field) = self.fields.get(self.focus.focused()) else {
+            return vec![];
+        };
+
+        let mut lines = Vec::new();
+        let required_marker = if field.required { "*" } else { "" };
+        let mut label_line = Line::with_style(
+            format!("{}{required_marker}: ", field.label),
+            Style::fg(context.theme.text_primary()).bold(),
+        );
+
+        let field_lines = field.kind.render_field(context, true);
+        if let Some((first, rest)) = field_lines.split_first() {
+            label_line.append_line(first);
+            lines.push(label_line);
+            lines.extend_from_slice(rest);
+        } else {
+            lines.push(label_line);
+        }
+
+        if let Some(desc) = &field.description {
+            lines.push(Line::styled(desc, context.theme.muted()));
+        }
+
         lines
     }
 
-    fn render_footer(context: &ViewContext) -> Vec<Line> {
-        let border_width = context.size.width.saturating_sub(2) as usize;
-        vec![
-            Line::styled(
-                format!("│ {}", "[Enter] Submit  [Esc] Cancel"),
-                context.theme.muted(),
-            ),
-            Line::styled(
-                format!("└{}┘", "─".repeat(border_width)),
-                context.theme.primary(),
-            ),
-        ]
+    fn render_submit_summary(&self, context: &ViewContext) -> Vec<Line> {
+        let mut lines = vec![Line::with_style(
+            "Review & Submit",
+            Style::fg(context.theme.text_primary()).bold(),
+        )];
+        lines.push(Line::default());
+
+        for field in &self.fields {
+            let mut line = Line::with_style(
+                format!("{}: ", field.label),
+                Style::fg(context.theme.text_secondary()),
+            );
+            let value_lines = field.kind.render_field(context, false);
+            if let Some(first) = value_lines.first() {
+                line.append_line(first);
+            }
+            lines.push(line);
+        }
+
+        lines
+    }
+
+    fn render_footer(&self, context: &ViewContext) -> Line {
+        let muted = context.theme.muted();
+
+        if self.is_on_submit_tab() {
+            return Line::styled("Enter to submit · Esc to cancel", muted);
+        }
+
+        let Some(field) = self.fields.get(self.focus.focused()) else {
+            return Line::default();
+        };
+
+        let hints = match &field.kind {
+            FormFieldKind::Text(_) | FormFieldKind::Number(_) => {
+                "Type your answer · Tab to navigate · Esc to cancel"
+            }
+            FormFieldKind::Boolean(_) => "Space to toggle · Tab to navigate · Esc to cancel",
+            FormFieldKind::SingleSelect(_) => {
+                "↑↓ to select · Tab to navigate · Enter to confirm · Esc to cancel"
+            }
+            FormFieldKind::MultiSelect(_) => {
+                "Space to toggle · ↑↓ to move · Tab to navigate · Esc to cancel"
+            }
+        };
+
+        Line::styled(hints, muted)
     }
 }
 
 impl FormFieldKind {
+    pub fn is_answered(&self) -> bool {
+        match self {
+            Self::Text(w) => !w.value.is_empty(),
+            Self::Number(w) => !w.value.is_empty(),
+            Self::Boolean(_) | Self::SingleSelect(_) => true,
+            Self::MultiSelect(w) => w.selected.iter().any(|&s| s),
+        }
+    }
+
     fn to_json(&self) -> serde_json::Value {
         match self {
             Self::Text(w) => w.to_json(),
@@ -169,34 +245,107 @@ impl Component for Form {
         };
         match key.code {
             KeyCode::Esc => return Some(vec![FormMessage::Close]),
-            KeyCode::Enter => return Some(vec![FormMessage::Submit]),
-            KeyCode::Tab | KeyCode::BackTab => {
-                self.focus.handle_key(*key);
+            KeyCode::Enter => {
+                if self.is_on_submit_tab() {
+                    return Some(vec![FormMessage::Submit]);
+                }
+                self.focus.focus_next();
+                return Some(vec![]);
+            }
+            KeyCode::Tab => {
+                self.focus.focus_next();
+                return Some(vec![]);
+            }
+            KeyCode::BackTab => {
+                self.focus.focus_prev();
+                return Some(vec![]);
+            }
+            KeyCode::Left if !self.active_field_uses_horizontal_arrows() => {
+                self.focus.focus_prev();
+                return Some(vec![]);
+            }
+            KeyCode::Right if !self.active_field_uses_horizontal_arrows() => {
+                self.focus.focus_next();
                 return Some(vec![]);
             }
             _ => {}
         }
 
         if let Some(field) = self.fields.get_mut(self.focus.focused()) {
-            let result = field.kind.handle_event(event).await;
-            if result.is_some() {
-                return Some(vec![]);
-            }
+            field.kind.handle_event(event).await;
         }
         Some(vec![])
     }
 
     fn render(&mut self, context: &ViewContext) -> Frame {
-        let mut lines = vec![self.render_title(context)];
-        lines.extend(self.render_fields(context));
-        lines.extend(Self::render_footer(context));
+        let mut lines = vec![self.render_tab_bar(context)];
+        lines.push(Line::default());
+        lines.extend(self.render_active_field(context));
+        lines.push(Line::default());
+        lines.push(self.render_footer(context));
         Frame::new(lines)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::select_option::SelectOption;
     use super::*;
+    use crossterm::event::{KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn sample_fields() -> Vec<FormField> {
+        vec![
+            FormField {
+                name: "lang".to_string(),
+                label: "Language".to_string(),
+                description: Some("Pick a language".to_string()),
+                required: true,
+                kind: FormFieldKind::SingleSelect(RadioSelect::new(
+                    vec![
+                        SelectOption {
+                            value: "rust".into(),
+                            title: "Rust".into(),
+                        },
+                        SelectOption {
+                            value: "ts".into(),
+                            title: "TypeScript".into(),
+                        },
+                    ],
+                    0,
+                )),
+            },
+            FormField {
+                name: "name".to_string(),
+                label: "Name".to_string(),
+                description: None,
+                required: false,
+                kind: FormFieldKind::Text(TextField::new(String::new())),
+            },
+            FormField {
+                name: "features".to_string(),
+                label: "Features".to_string(),
+                description: None,
+                required: false,
+                kind: FormFieldKind::MultiSelect(MultiSelect::new(
+                    vec![
+                        SelectOption {
+                            value: "a".into(),
+                            title: "Alpha".into(),
+                        },
+                        SelectOption {
+                            value: "b".into(),
+                            title: "Beta".into(),
+                        },
+                    ],
+                    vec![false, false],
+                )),
+            },
+        ]
+    }
 
     #[test]
     fn render_does_not_panic_when_title_wider_than_terminal() {
@@ -212,8 +361,179 @@ mod tests {
         );
         let context = ViewContext::new((10, 10));
 
-        // Should not panic with "attempt to subtract with overflow"
+        // Should not panic
         let frame = form.render(&context);
         assert!(!frame.lines().is_empty());
+    }
+
+    #[test]
+    fn tab_bar_shows_all_field_labels() {
+        let form = Form::new("Survey".to_string(), sample_fields());
+        let context = ViewContext::new((80, 24));
+        let tab_bar = form.render_tab_bar(&context);
+        let text = tab_bar.plain_text();
+        assert!(text.contains("Language"), "tab bar missing 'Language'");
+        assert!(text.contains("Name"), "tab bar missing 'Name'");
+        assert!(text.contains("Features"), "tab bar missing 'Features'");
+        assert!(text.contains("Submit"), "tab bar missing 'Submit'");
+    }
+
+    #[test]
+    fn renders_only_active_field() {
+        let mut form = Form::new("Survey".to_string(), sample_fields());
+        let context = ViewContext::new((80, 24));
+
+        // Focus is on field 0 (Language / RadioSelect)
+        let frame = form.render(&context);
+        let text: String = frame
+            .lines()
+            .iter()
+            .map(|l| l.plain_text())
+            .collect::<Vec<_>>()
+            .join("\n");
+        // The active field's options should be visible
+        assert!(text.contains("Rust"), "active field options not visible");
+        assert!(
+            text.contains("TypeScript"),
+            "active field options not visible"
+        );
+        // The non-active fields' expanded content should NOT be visible
+        // (MultiSelect options Alpha/Beta should not appear as expanded options)
+        // But the tab bar mentions "Features", so just check that the expanded
+        // checkbox options aren't rendered
+        assert!(
+            !text.contains("Alpha"),
+            "inactive field content should not appear"
+        );
+    }
+
+    #[tokio::test]
+    async fn tab_advances_to_next_pane() {
+        let mut form = Form::new("Survey".to_string(), sample_fields());
+        assert_eq!(form.focus.focused(), 0);
+        form.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        assert_eq!(form.focus.focused(), 1);
+        form.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        assert_eq!(form.focus.focused(), 2);
+        form.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        assert_eq!(form.focus.focused(), 3); // Submit tab
+    }
+
+    #[tokio::test]
+    async fn enter_on_submit_tab_emits_submit() {
+        let mut form = Form::new("Survey".to_string(), sample_fields());
+        // Navigate to submit tab (index 3)
+        form.focus.focus(3);
+        let msgs = form
+            .on_event(&Event::Key(key(KeyCode::Enter)))
+            .await
+            .unwrap();
+        assert!(msgs.iter().any(|m| matches!(m, FormMessage::Submit)));
+    }
+
+    #[tokio::test]
+    async fn enter_on_field_advances() {
+        let mut form = Form::new("Survey".to_string(), sample_fields());
+        assert_eq!(form.focus.focused(), 0);
+        form.on_event(&Event::Key(key(KeyCode::Enter))).await;
+        assert_eq!(form.focus.focused(), 1);
+    }
+
+    #[tokio::test]
+    async fn left_right_navigate_tabs_for_select_fields() {
+        let mut form = Form::new("Survey".to_string(), sample_fields());
+        // Field 0 is a RadioSelect — Right should navigate to next tab
+        assert_eq!(form.focus.focused(), 0);
+        form.on_event(&Event::Key(key(KeyCode::Right))).await;
+        assert_eq!(form.focus.focused(), 1);
+
+        // Field 2 is a MultiSelect — Left should navigate to previous tab
+        form.focus.focus(2);
+        form.on_event(&Event::Key(key(KeyCode::Left))).await;
+        assert_eq!(form.focus.focused(), 1);
+    }
+
+    #[tokio::test]
+    async fn left_right_delegate_to_text_field() {
+        let mut form = Form::new("Survey".to_string(), sample_fields());
+        // Navigate to field 1 (Text field), type something, then use Left
+        form.focus.focus(1);
+        form.on_event(&Event::Key(key(KeyCode::Char('h')))).await;
+        form.on_event(&Event::Key(key(KeyCode::Char('i')))).await;
+        assert_eq!(form.focus.focused(), 1);
+
+        // Left should move cursor within text field, not change tab
+        form.on_event(&Event::Key(key(KeyCode::Left))).await;
+        assert_eq!(form.focus.focused(), 1); // still on same tab
+
+        // Verify the cursor moved in the text field
+        if let FormFieldKind::Text(ref tf) = form.fields[1].kind {
+            assert_eq!(tf.cursor_pos(), 1); // moved left from 2 to 1
+        } else {
+            panic!("expected Text field");
+        }
+    }
+
+    #[test]
+    fn is_answered_text_field() {
+        assert!(!FormFieldKind::Text(TextField::new(String::new())).is_answered());
+        assert!(FormFieldKind::Text(TextField::new("hello".to_string())).is_answered());
+    }
+
+    #[test]
+    fn is_answered_multi_select() {
+        let none_selected = FormFieldKind::MultiSelect(MultiSelect::new(
+            vec![SelectOption {
+                value: "a".into(),
+                title: "A".into(),
+            }],
+            vec![false],
+        ));
+        assert!(!none_selected.is_answered());
+
+        let some_selected = FormFieldKind::MultiSelect(MultiSelect::new(
+            vec![SelectOption {
+                value: "a".into(),
+                title: "A".into(),
+            }],
+            vec![true],
+        ));
+        assert!(some_selected.is_answered());
+    }
+
+    #[tokio::test]
+    async fn esc_emits_close() {
+        let mut form = Form::new("Survey".to_string(), sample_fields());
+        let msgs = form.on_event(&Event::Key(key(KeyCode::Esc))).await.unwrap();
+        assert!(msgs.iter().any(|m| matches!(m, FormMessage::Close)));
+    }
+
+    #[tokio::test]
+    async fn backtab_moves_backward() {
+        let mut form = Form::new("Survey".to_string(), sample_fields());
+        form.focus.focus(2);
+        form.on_event(&Event::Key(KeyEvent::new(
+            KeyCode::BackTab,
+            KeyModifiers::SHIFT,
+        )))
+        .await;
+        assert_eq!(form.focus.focused(), 1);
+    }
+
+    #[test]
+    fn submit_tab_renders_summary() {
+        let mut form = Form::new("Survey".to_string(), sample_fields());
+        form.focus.focus(3); // Submit tab
+        let context = ViewContext::new((80, 24));
+        let frame = form.render(&context);
+        let text: String = frame
+            .lines()
+            .iter()
+            .map(|l| l.plain_text())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("Review & Submit"));
+        assert!(text.contains("Language:"));
+        assert!(text.contains("Name:"));
     }
 }
