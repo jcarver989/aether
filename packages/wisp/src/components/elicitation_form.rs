@@ -1,5 +1,7 @@
 use crate::tui::{Checkbox, MultiSelect, NumberField, RadioSelect, SelectOption, TextField};
-use crate::tui::{Component, Event, Form, FormField, FormFieldKind, FormMessage, Frame, ViewContext};
+use crate::tui::{
+    Component, Event, Form, FormField, FormFieldKind, FormMessage, Frame, ViewContext,
+};
 use acp_utils::notifications::{ElicitationAction, ElicitationParams, ElicitationResponse};
 use acp_utils::{
     ConstTitle, ElicitationSchema, EnumSchema, MultiSelectEnumSchema, PrimitiveSchema,
@@ -19,7 +21,7 @@ pub struct ElicitationForm {
 impl Component for ElicitationForm {
     type Message = ElicitationMessage;
 
-    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         let outcome = self.form.on_event(event)?;
         if let Some(msg) = outcome.into_iter().next() {
             match msg {

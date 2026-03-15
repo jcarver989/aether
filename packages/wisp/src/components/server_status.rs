@@ -62,7 +62,7 @@ pub enum ServerStatusMessage {
 impl Component for ServerStatusOverlay {
     type Message = ServerStatusMessage;
 
-    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         let outcome = self.list.on_event(event);
         match outcome.as_deref() {
             Some([SelectListMessage::Close]) => Some(vec![ServerStatusMessage::Close]),
@@ -237,7 +237,11 @@ mod tests {
         let ctx = ViewContext::new((80, 24));
         let frame = overlay.render(&ctx);
         assert_eq!(frame.lines().len(), 1);
-        assert!(frame.lines()[0].plain_text().contains("no MCP servers configured"));
+        assert!(
+            frame.lines()[0]
+                .plain_text()
+                .contains("no MCP servers configured")
+        );
     }
 
     #[test]

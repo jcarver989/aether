@@ -81,7 +81,7 @@ impl<T: SelectItem> SelectList<T> {
 impl<T: SelectItem> Component for SelectList<T> {
     type Message = SelectListMessage;
 
-    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         let Event::Key(key) = event else {
             return None;
         };

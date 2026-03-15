@@ -1,6 +1,4 @@
-use crate::tui::{
-    Combobox, Component, Event, Frame, Line, PickerMessage, Searchable, ViewContext,
-};
+use crate::tui::{Combobox, Component, Event, Frame, Line, PickerMessage, Searchable, ViewContext};
 use ignore::WalkBuilder;
 use std::env::current_dir;
 use std::path::{Path, PathBuf};
@@ -91,7 +89,7 @@ fn should_exclude_path(path: &Path) -> bool {
 impl Component for FilePicker {
     type Message = FilePickerMessage;
 
-    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         self.combobox.handle_picker_event(event)
     }
 

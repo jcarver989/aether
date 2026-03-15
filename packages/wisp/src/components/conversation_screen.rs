@@ -1,4 +1,6 @@
-use crate::components::conversation_window::{ConversationBuffer, ConversationWindow, SegmentContent};
+use crate::components::conversation_window::{
+    ConversationBuffer, ConversationWindow, SegmentContent,
+};
 use crate::components::elicitation_form::{ElicitationForm, ElicitationMessage};
 use crate::components::plan_tracker::PlanTracker;
 use crate::components::plan_view::PlanView;
@@ -241,10 +243,7 @@ impl ConversationScreen {
                             self.active_modal = None;
                             self.reset_after_context_cleared();
                             out.push(ConversationScreenMessage::ClearScreen);
-                            out.push(ConversationScreenMessage::LoadSession {
-                                session_id,
-                                cwd,
-                            });
+                            out.push(ConversationScreenMessage::LoadSession { session_id, cwd });
                         }
                     }
                 }
@@ -291,7 +290,7 @@ impl ConversationScreen {
 impl Component for ConversationScreen {
     type Message = ConversationScreenMessage;
 
-    fn on_event(&mut self, event: &Event) -> Option<Vec<ConversationScreenMessage>> {
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<ConversationScreenMessage>> {
         if self.active_modal.is_some() {
             return self.handle_modal_key(event);
         }

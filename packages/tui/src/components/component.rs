@@ -40,7 +40,7 @@ pub trait Component {
     /// - `None` — event not recognized, propagate to parent
     /// - `Some(vec![])` — event consumed, no messages
     /// - `Some(vec![msg, ...])` — event consumed, emit messages
-    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>>;
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>>;
 
     /// Render the current state to a frame.
     fn render(&self, ctx: &ViewContext) -> Frame;

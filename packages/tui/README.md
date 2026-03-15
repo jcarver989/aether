@@ -24,7 +24,7 @@ struct MyWidget { count: i32 }
 
 impl Component for MyWidget {
     type Message = ();
-    fn on_event(&mut self, event: &Event) -> Option<Vec<()>> {
+async fn on_event(&mut self, event: &Event) -> Option<Vec<()>> {
         if let Event::Key(key) = event {
             match key.code {
                 KeyCode::Char('j') => self.count += 1,

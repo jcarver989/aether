@@ -54,16 +54,21 @@ fn render_git_diff_state(state: &GitDiffViewState, context: &ViewContext) -> Vec
             available_height,
             theme,
         ),
-        GitDiffLoadState::Ready(doc) => {
-            render_ready(&doc.files, state, left_width, right_width, available_height, context)
-        }
+        GitDiffLoadState::Ready(doc) => render_ready(
+            &doc.files,
+            state,
+            left_width,
+            right_width,
+            available_height,
+            context,
+        ),
     }
 }
 
 impl Component for GitDiffView<'_> {
     type Message = GitDiffViewMessage;
 
-    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         let Event::Key(key) = event else {
             return None;
         };
@@ -256,8 +261,7 @@ fn render_ready(
         let mut line = Line::default();
 
         // Show queue indicator in last file list row
-        let queue_row =
-            !state.queued_comments.is_empty() && i == content_height.saturating_sub(1);
+        let queue_row = !state.queued_comments.is_empty() && i == content_height.saturating_sub(1);
 
         if queue_row {
             let indicator = format!(
@@ -316,7 +320,6 @@ fn render_ready(
 
     rows
 }
-
 
 #[allow(clippy::too_many_arguments)]
 fn render_patch_cell(
@@ -398,7 +401,6 @@ fn render_message_layout(
     }
     rows
 }
-
 
 fn char_to_byte_pos(s: &str, char_idx: usize) -> usize {
     s.char_indices().nth(char_idx).map_or(s.len(), |(i, _)| i)

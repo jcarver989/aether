@@ -52,7 +52,7 @@ impl Spinner {
 impl Component for Spinner {
     type Message = ();
 
-    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         match event {
             Event::Tick => {
                 self.on_tick();

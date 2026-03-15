@@ -151,7 +151,6 @@ async fn run_app(
     let _session = TerminalSession::new(true, MouseCapture::Disabled)?;
     let mut terminal_rx = spawn_terminal_event_task();
     render(&mut renderer, &mut app)?;
-
     let tick_rate = Duration::from_millis(100);
     let mut tick_interval = {
         let mut tick = interval(tick_rate);

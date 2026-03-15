@@ -149,13 +149,13 @@ impl FormFieldKind {
         }
     }
 
-    fn handle_event(&mut self, event: &Event) -> Option<Vec<()>> {
+    async fn handle_event(&mut self, event: &Event) -> Option<Vec<()>> {
         match self {
-            Self::Text(w) => w.on_event(event),
-            Self::Number(w) => w.on_event(event),
-            Self::Boolean(w) => w.on_event(event),
-            Self::SingleSelect(w) => w.on_event(event),
-            Self::MultiSelect(w) => w.on_event(event),
+            Self::Text(w) => w.on_event(event).await,
+            Self::Number(w) => w.on_event(event).await,
+            Self::Boolean(w) => w.on_event(event).await,
+            Self::SingleSelect(w) => w.on_event(event).await,
+            Self::MultiSelect(w) => w.on_event(event).await,
         }
     }
 }
@@ -163,7 +163,7 @@ impl FormFieldKind {
 impl Component for Form {
     type Message = FormMessage;
 
-    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         let Event::Key(key) = event else {
             return None;
         };
@@ -178,7 +178,7 @@ impl Component for Form {
         }
 
         if let Some(field) = self.fields.get_mut(self.focus.focused()) {
-            let result = field.kind.handle_event(event);
+            let result = field.kind.handle_event(event).await;
             if result.is_some() {
                 return Some(vec![]);
             }

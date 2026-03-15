@@ -41,7 +41,7 @@ impl SessionPicker {
 impl Component for SessionPicker {
     type Message = SessionPickerMessage;
 
-    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         let msgs = self.combobox.handle_picker_event(event)?;
         let mapped = msgs
             .into_iter()

@@ -40,7 +40,7 @@ impl CommandPicker {
 impl Component for CommandPicker {
     type Message = CommandPickerMessage;
 
-    fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         self.combobox.handle_picker_event(event)
     }
 
