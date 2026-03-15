@@ -14,14 +14,3 @@ A single rename updates all references — no manual file-by-file editing needed
 - `line` — optional, 1-indexed line (skips auto-resolution)
 
 **Returns:** files affected, line/column ranges, total edit count.
-
-## When to Use
-
-- Renaming functions, methods, variables, constants
-- Renaming structs, enums, traits, type aliases
-- Any symbol needing consistent workspace-wide rename
-
-## When NOT to Use
-
-- String replacements in comments/docs → `edit_file`
-- Renaming files → file system operations

@@ -10,13 +10,4 @@ Lists tasks with optional filters.
 {"ready_only": true}
 ```
 
-## Filters
-
-| Filter | Description |
-|--------|-------------|
-| `assignee` | filter by agent/worker |
-| `status` | `pending`, `in_progress`, `completed`, `blocked` |
-| `tree_id` | list all tasks in a specific tree |
-| `ready_only` | only tasks ready to start (pending, all deps completed) |
-
 No filters → returns all active tasks.
