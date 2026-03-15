@@ -91,7 +91,7 @@ mod tests {
     fn lookup_context_window_known_model() {
         assert_eq!(
             get_context_window("anthropic", "claude-opus-4-6"),
-            Some(200_000)
+            Some(1_000_000)
         );
     }
 
