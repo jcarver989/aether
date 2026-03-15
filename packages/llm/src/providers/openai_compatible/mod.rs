@@ -14,7 +14,7 @@ use async_openai::types::chat::ChatCompletionStreamOptions;
 use crate::providers::openai::mappers::map_tools;
 use crate::{Context, LlmError};
 
-pub use streaming::create_custom_stream_generic;
+pub use streaming::{create_custom_stream_generic, process_compatible_stream};
 pub use types::{ChatCompletionStreamResponse, CompatibleChatRequest};
 
 /// Build a chat completion request from a context

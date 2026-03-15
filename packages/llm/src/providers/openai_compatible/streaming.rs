@@ -148,7 +148,7 @@ fn map_openai_compatible_finish_reason(reason: FinishReason) -> StopReason {
         FinishReason::ToolCalls => StopReason::ToolCalls,
         FinishReason::ContentFilter => StopReason::ContentFilter,
         FinishReason::FunctionCall => StopReason::FunctionCall,
-        FinishReason::Error => StopReason::Error,
+        FinishReason::Error | FinishReason::NetworkError => StopReason::Error,
     }
 }
 

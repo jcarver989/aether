@@ -143,3 +143,73 @@ fn test_deserialize_zai_response_with_tool_calls() {
     assert_eq!(function.name, Some("get_weather".to_string()));
     assert_eq!(function.arguments, Some("{\"location\":".to_string()));
 }
+
+#[test]
+fn test_deserialize_zai_network_error_finish_reason() {
+    let json = r#"{
+        "id": "202603151451299c7a89c25180405d",
+        "created": 1773557520,
+        "model": "glm-5",
+        "choices": [{
+            "index": 0,
+            "finish_reason": "network_error",
+            "delta": {
+                "role": "assistant",
+                "content": ""
+            }
+        }]
+    }"#;
+
+    let result: Result<ChatCompletionStreamResponse, _> = serde_json::from_str(json);
+    assert!(
+        result.is_ok(),
+        "Failed to deserialize Z.ai network_error response: {:?}",
+        result.err()
+    );
+
+    let response = result.unwrap();
+    assert!(response.choices[0].finish_reason.is_some());
+}
+
+#[test]
+fn test_zai_network_error_maps_to_stop_reason_error() {
+    use llm::providers::openai_compatible::process_compatible_stream;
+    use llm::LlmResponse;
+    use llm::StopReason;
+
+    let json = r#"{
+        "id": "202603151451299c7a89c25180405d",
+        "created": 1773557520,
+        "model": "glm-5",
+        "choices": [{
+            "index": 0,
+            "finish_reason": "network_error",
+            "delta": {
+                "role": "assistant",
+                "content": ""
+            }
+        }]
+    }"#;
+
+    let response: ChatCompletionStreamResponse = serde_json::from_str(json).unwrap();
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        use tokio_stream::StreamExt;
+
+        let stream = tokio_stream::iter(vec![Ok::<_, std::io::Error>(response)]);
+        let mut processed = Box::pin(process_compatible_stream(stream));
+
+        let mut events = Vec::new();
+        while let Some(event) = processed.next().await {
+            events.push(event.unwrap());
+        }
+
+        assert!(matches!(
+            events.last(),
+            Some(LlmResponse::Done {
+                stop_reason: Some(StopReason::Error)
+            })
+        ));
+    });
+}
