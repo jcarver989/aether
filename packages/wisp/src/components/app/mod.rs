@@ -11,11 +11,13 @@ use crate::components::config_manager::ConfigManager;
 use crate::components::config_manager::ConfigManagerMessage;
 use crate::components::conversation_screen::ConversationScreen;
 use crate::components::conversation_screen::ConversationScreenMessage;
-use crate::components::conversation_window::SegmentContent;
+use crate::components::conversation_window::{SegmentContent, render_segments_to_lines};
 use crate::keybindings::Keybindings;
-use crate::tui::{Component, Event, Frame, KeyEvent, Theme, ViewContext};
+use crate::tui::advanced::RendererCommand;
+use crate::tui::{Component, Event, Frame, KeyEvent, Line, ViewContext};
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
 use agent_client_protocol::{self as acp, SessionId};
+use attachments::build_attachment_blocks;
 use std::path::PathBuf;
 use std::time::Instant;
 use tokio::sync::oneshot;
@@ -24,34 +26,6 @@ use tokio::sync::oneshot;
 pub struct PromptAttachment {
     pub path: PathBuf,
     pub display_name: String,
-}
-
-pub enum AppMessage {
-    ClearScreen,
-    SetTheme(Theme),
-    PushToScrollbackContent {
-        content: Vec<SegmentContent>,
-        completed_tool_ids: Vec<String>,
-    },
-    SendPrompt {
-        user_input: String,
-        attachments: Vec<PromptAttachment>,
-    },
-    LoadGitDiff,
-    RefreshGitDiff,
-}
-
-impl From<ScreenRouterMessage> for AppMessage {
-    fn from(msg: ScreenRouterMessage) -> Self {
-        match msg {
-            ScreenRouterMessage::LoadGitDiff => AppMessage::LoadGitDiff,
-            ScreenRouterMessage::RefreshGitDiff => AppMessage::RefreshGitDiff,
-            ScreenRouterMessage::SendPrompt { user_input } => AppMessage::SendPrompt {
-                user_input,
-                attachments: vec![],
-            },
-        }
-    }
 }
 
 pub struct App {
@@ -64,6 +38,8 @@ pub struct App {
     keybindings: Keybindings,
     session_id: SessionId,
     prompt_handle: AcpPromptHandle,
+    pending_scrollback_lines: Vec<Line>,
+    pending_scrollback_segments: Vec<(Vec<SegmentContent>, Vec<String>)>,
 }
 
 impl App {
@@ -86,6 +62,8 @@ impl App {
             keybindings,
             session_id,
             prompt_handle,
+            pending_scrollback_lines: Vec::new(),
+            pending_scrollback_segments: Vec::new(),
         }
     }
 
@@ -97,19 +75,22 @@ impl App {
         self.conversation_screen.wants_tick()
     }
 
-    pub fn session_id(&self) -> &SessionId {
-        &self.session_id
-    }
-
-    pub fn tool_call_statuses(&self) -> &crate::components::tool_call_statuses::ToolCallStatuses {
-        &self.conversation_screen.tool_call_statuses
-    }
-
-    pub fn remove_tools(&mut self, tool_ids: &[String]) {
-        self.conversation_screen.remove_tools(tool_ids);
+    pub fn drain_scrollback(&mut self) -> Vec<Line> {
+        std::mem::take(&mut self.pending_scrollback_lines)
     }
 
     pub fn prepare_for_render(&mut self, context: &ViewContext) {
+        let pending_segments = std::mem::take(&mut self.pending_scrollback_segments);
+        for (segments, tool_ids) in pending_segments {
+            let lines = render_segments_to_lines(
+                &segments,
+                &self.conversation_screen.tool_call_statuses,
+                context,
+            );
+            self.pending_scrollback_lines.extend(lines);
+            self.conversation_screen.remove_tools(&tool_ids);
+        }
+
         self.conversation_screen.refresh_caches(context);
         self.screen_router.refresh_caches(context);
 
@@ -117,18 +98,17 @@ impl App {
         self.config_manager.update_overlay_viewport(height);
     }
 
-    pub fn git_diff_mode_mut(&mut self) -> &mut GitDiffMode {
+    fn git_diff_mode_mut(&mut self) -> &mut GitDiffMode {
         self.screen_router.git_diff_mode_mut()
     }
 
-    pub fn on_acp_event(&mut self, event: AcpEvent) -> Vec<AppMessage> {
-        let mut messages = Vec::new();
+    pub fn on_acp_event(&mut self, event: AcpEvent) {
         match event {
             AcpEvent::SessionUpdate(update) => self.on_session_update(&update),
             AcpEvent::ExtNotification(notification) => {
                 self.on_ext_notification(&notification);
             }
-            AcpEvent::PromptDone(_) => self.on_prompt_done(&mut messages),
+            AcpEvent::PromptDone(_) => self.on_prompt_done(),
             AcpEvent::PromptError(error) => {
                 self.conversation_screen.on_prompt_error(&error);
             }
@@ -161,10 +141,9 @@ impl App {
                 self.exit_requested = true;
             }
         }
-        messages
     }
 
-    async fn handle_key(&mut self, messages: &mut Vec<AppMessage>, key_event: KeyEvent) {
+    async fn handle_key(&mut self, commands: &mut Vec<RendererCommand>, key_event: KeyEvent) {
         if self.keybindings.exit.matches(key_event) {
             self.exit_requested = true;
             return;
@@ -174,7 +153,7 @@ impl App {
             && !self.conversation_screen.has_modal()
         {
             if let Some(msg) = self.screen_router.toggle_git_diff() {
-                Self::handle_screen_router_message(messages, msg);
+                self.handle_screen_router_message(commands, msg).await;
             }
             return;
         }
@@ -182,25 +161,30 @@ impl App {
         let event = Event::Key(key_event);
 
         if self.screen_router.is_git_diff() {
-            for msg in self.screen_router.on_event(&event).await.unwrap_or_default() {
-                Self::handle_screen_router_message(messages, msg);
+            for msg in self
+                .screen_router
+                .on_event(&event)
+                .await
+                .unwrap_or_default()
+            {
+                self.handle_screen_router_message(commands, msg).await;
             }
         } else if self.config_manager.is_overlay_open() {
             let outcome = self.config_manager.on_overlay_event(&event).await;
-            self.handle_config_manager_messages(messages, outcome);
+            self.handle_config_manager_messages(commands, outcome);
         } else {
             let outcome = self.conversation_screen.on_event(&event).await;
             let consumed = outcome.is_some();
-            self.handle_conversation_messages(messages, outcome);
+            self.handle_conversation_messages(commands, outcome).await;
             if !consumed {
                 self.handle_fallthrough_keybindings(key_event);
             }
         }
     }
 
-    fn handle_conversation_messages(
+    async fn handle_conversation_messages(
         &mut self,
-        messages: &mut Vec<AppMessage>,
+        commands: &mut Vec<RendererCommand>,
         outcome: Option<Vec<ConversationScreenMessage>>,
     ) {
         for msg in outcome.unwrap_or_default() {
@@ -209,13 +193,28 @@ impl App {
                     user_input,
                     attachments,
                 } => {
-                    messages.push(AppMessage::SendPrompt {
-                        user_input,
-                        attachments,
-                    });
+                    self.pending_scrollback_lines.push(Line::new(String::new()));
+                    self.pending_scrollback_lines
+                        .push(Line::new(user_input.clone()));
+
+                    let outcome = build_attachment_blocks(&attachments).await;
+                    for w in outcome.warnings {
+                        self.pending_scrollback_lines
+                            .push(Line::new(format!("[wisp] {w}")));
+                    }
+
+                    let _ = self.prompt_handle.prompt(
+                        &self.session_id,
+                        &user_input,
+                        if outcome.blocks.is_empty() {
+                            None
+                        } else {
+                            Some(outcome.blocks)
+                        },
+                    );
                 }
                 ConversationScreenMessage::ClearScreen => {
-                    messages.push(AppMessage::ClearScreen);
+                    commands.push(RendererCommand::ClearScreen);
                     let _ = self.prompt_handle.prompt(&self.session_id, "/clear", None);
                 }
                 ConversationScreenMessage::OpenConfig => {
@@ -228,10 +227,8 @@ impl App {
                     content,
                     completed_tool_ids,
                 } => {
-                    messages.push(AppMessage::PushToScrollbackContent {
-                        content,
-                        completed_tool_ids,
-                    });
+                    self.pending_scrollback_segments
+                        .push((content, completed_tool_ids));
                 }
                 ConversationScreenMessage::LoadSession { session_id, cwd } => {
                     if let Err(e) = self.prompt_handle.load_session(&session_id, &cwd) {
@@ -271,7 +268,7 @@ impl App {
 
     fn handle_config_manager_messages(
         &mut self,
-        messages: &mut Vec<AppMessage>,
+        commands: &mut Vec<RendererCommand>,
         outcome: Option<Vec<ConfigManagerMessage>>,
     ) {
         for msg in outcome.unwrap_or_default() {
@@ -282,7 +279,7 @@ impl App {
                             .set_config_option(&self.session_id, &config_id, &value);
                 }
                 ConfigManagerMessage::SetTheme(theme) => {
-                    messages.push(AppMessage::SetTheme(theme));
+                    commands.push(RendererCommand::SetTheme(theme));
                 }
                 ConfigManagerMessage::AuthenticateServer(name) => {
                     let _ = self
@@ -298,8 +295,25 @@ impl App {
         }
     }
 
-    fn handle_screen_router_message(messages: &mut Vec<AppMessage>, msg: ScreenRouterMessage) {
-        messages.push(msg.into());
+    async fn handle_screen_router_message(
+        &mut self,
+        commands: &mut Vec<RendererCommand>,
+        msg: ScreenRouterMessage,
+    ) {
+        match msg {
+            ScreenRouterMessage::LoadGitDiff | ScreenRouterMessage::RefreshGitDiff => {
+                self.git_diff_mode_mut().complete_load().await;
+            }
+            ScreenRouterMessage::SendPrompt { user_input } => {
+                self.pending_scrollback_lines.push(Line::new(String::new()));
+                self.pending_scrollback_lines
+                    .push(Line::new(user_input.clone()));
+                let _ = self
+                    .prompt_handle
+                    .prompt(&self.session_id, &user_input, None);
+            }
+        }
+        let _ = commands;
     }
 
     fn on_session_update(&mut self, update: &acp::SessionUpdate) {
@@ -311,9 +325,14 @@ impl App {
         }
     }
 
-    fn on_prompt_done(&mut self, messages: &mut Vec<AppMessage>) {
-        if let Some(msg) = self.conversation_screen.on_prompt_done() {
-            self.handle_conversation_messages(messages, Some(vec![msg]));
+    fn on_prompt_done(&mut self) {
+        if let Some(ConversationScreenMessage::PushToScrollback {
+            content,
+            completed_tool_ids,
+        }) = self.conversation_screen.on_prompt_done()
+        {
+            self.pending_scrollback_segments
+                .push((content, completed_tool_ids));
         }
     }
 
@@ -378,16 +397,17 @@ impl App {
 }
 
 impl Component for App {
-    type Message = AppMessage;
+    type Message = RendererCommand;
 
-    async fn on_event(&mut self, event: &Event) -> Option<Vec<AppMessage>> {
-        let mut messages = Vec::new();
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<RendererCommand>> {
+        let mut commands = Vec::new();
         match event {
-            Event::Key(key_event) => self.handle_key(&mut messages, *key_event).await,
+            Event::Key(key_event) => self.handle_key(&mut commands, *key_event).await,
             Event::Paste(_) => {
                 self.config_manager.close_overlay();
                 let outcome = self.conversation_screen.on_event(event).await;
-                self.handle_conversation_messages(&mut messages, outcome);
+                self.handle_conversation_messages(&mut commands, outcome)
+                    .await;
             }
             Event::Tick => {
                 let now = Instant::now();
@@ -395,7 +415,7 @@ impl Component for App {
             }
             Event::Mouse(_) | Event::Resize(_) => {}
         }
-        Some(messages)
+        Some(commands)
     }
 
     fn render(&self, ctx: &ViewContext) -> Frame {
@@ -450,10 +470,6 @@ pub(crate) mod test_helpers {
             AcpPromptHandle::noop(),
         )
     }
-
-    pub fn has_message<F: Fn(&AppMessage) -> bool>(messages: &[AppMessage], predicate: F) -> bool {
-        messages.iter().any(predicate)
-    }
 }
 
 #[cfg(test)]
@@ -466,7 +482,7 @@ mod tests {
     use crate::test_helpers::with_wisp_home;
     use crate::tui::advanced::Renderer;
     use crate::tui::testing::render_component;
-    use crate::tui::{Frame, ViewContext};
+    use crate::tui::{Frame, Theme, ViewContext};
     use std::fs;
     use std::time::Duration;
     use tempfile::TempDir;
@@ -740,13 +756,9 @@ mod tests {
 
         let mut app = make_app();
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
-        let messages = app.on_event(&Event::Key(key)).await.unwrap_or_default();
+        app.on_event(&Event::Key(key)).await;
 
         assert!(app.screen_router.is_git_diff());
-        assert!(has_message(&messages, |m| matches!(
-            m,
-            AppMessage::LoadGitDiff
-        )));
     }
 
     #[tokio::test]
@@ -819,21 +831,23 @@ mod tests {
         app.on_event(&Event::Mouse(mouse)).await;
     }
 
-    #[test]
-    fn prompt_composer_submit_returns_send_prompt_message() {
+    #[tokio::test]
+    async fn prompt_composer_submit_pushes_echo_lines() {
         let mut app = make_app();
         let outcome = Some(vec![ConversationScreenMessage::SendPrompt {
             user_input: "hello".to_string(),
             attachments: vec![],
         }]);
 
-        let mut messages = Vec::new();
-        app.handle_conversation_messages(&mut messages, outcome);
+        let mut commands = Vec::new();
+        app.handle_conversation_messages(&mut commands, outcome)
+            .await;
 
-        assert!(has_message(&messages, |m| matches!(
-            m,
-            AppMessage::SendPrompt { user_input, .. } if user_input == "hello"
-        )));
+        let scrollback = app.drain_scrollback();
+        assert!(
+            scrollback.iter().any(|l| l.plain_text() == "hello"),
+            "echo lines should contain the user input"
+        );
     }
 
     #[test]
@@ -841,8 +855,9 @@ mod tests {
         let mut app = make_app();
         let outcome = Some(vec![ConversationScreenMessage::OpenConfig]);
 
-        let mut messages = Vec::new();
-        app.handle_conversation_messages(&mut messages, outcome);
+        let mut commands = Vec::new();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(app.handle_conversation_messages(&mut commands, outcome));
 
         assert!(
             app.config_manager.is_overlay_open(),
@@ -958,20 +973,23 @@ mod tests {
         assert!(app.exit_requested());
     }
 
-    #[test]
-    fn clear_screen_returns_clear_message() {
+    #[tokio::test]
+    async fn clear_screen_returns_clear_command() {
         let mut app = make_app();
 
-        let mut messages = Vec::new();
+        let mut commands = Vec::new();
         app.handle_conversation_messages(
-            &mut messages,
+            &mut commands,
             Some(vec![ConversationScreenMessage::ClearScreen]),
-        );
+        )
+        .await;
 
-        assert!(has_message(&messages, |m| matches!(
-            m,
-            AppMessage::ClearScreen
-        )));
+        assert!(
+            commands
+                .iter()
+                .any(|c| matches!(c, RendererCommand::ClearScreen)),
+            "should contain ClearScreen command"
+        );
     }
 
     #[tokio::test]

@@ -11,6 +11,11 @@ use std::sync::Arc;
 #[cfg(feature = "syntax")]
 use crate::syntax_highlighting::SyntaxHighlighter;
 
+pub enum RendererCommand {
+    ClearScreen,
+    SetTheme(Theme),
+}
+
 /// Pure TUI renderer with frame diffing and terminal state management.
 ///
 /// Uses relative cursor movement (`MoveUp` + `\r`) to navigate back to the
@@ -85,6 +90,16 @@ impl<W: Write> Renderer<W> {
 
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = Arc::new(theme);
+    }
+
+    pub fn apply_commands(&mut self, commands: Vec<RendererCommand>) -> io::Result<()> {
+        for cmd in commands {
+            match cmd {
+                RendererCommand::ClearScreen => self.clear_screen()?,
+                RendererCommand::SetTheme(theme) => self.set_theme(theme),
+            }
+        }
+        Ok(())
     }
 
     pub fn writer(&self) -> &W {

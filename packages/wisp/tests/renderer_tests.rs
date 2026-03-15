@@ -3,8 +3,8 @@ use tui::Theme;
 use tui::advanced::Renderer as FrameRenderer;
 use tui::testing::{TestTerminal, assert_buffer_eq};
 use acp_utils::client::AcpPromptHandle;
-use wisp::components::app::{App, AppMessage};
-use wisp::components::conversation_window::render_segments_to_lines;
+use tui::advanced::RendererCommand;
+use wisp::components::app::App;
 
 use acp_utils::client::AcpEvent;
 use tui::{Component, Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
@@ -53,6 +53,10 @@ impl Renderer {
     fn render(&mut self) -> std::io::Result<()> {
         let context = self.frame_renderer.context();
         self.app.prepare_for_render(&context);
+        let scrollback = self.app.drain_scrollback();
+        if !scrollback.is_empty() {
+            self.frame_renderer.push_to_scrollback(&scrollback)?;
+        }
         let app = &self.app;
         self.frame_renderer.render_frame(|ctx| app.render(ctx))
     }
@@ -117,44 +121,23 @@ impl Renderer {
         &mut self,
         event: Event,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
-        let messages = self.app.on_event(&event).await.unwrap_or_default();
-        self.apply_messages(messages)
+        let commands = self.app.on_event(&event).await.unwrap_or_default();
+        self.drain_and_render(commands)
     }
 
     fn handle_acp_event(
         &mut self,
         event: AcpEvent,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
-        let messages = self.app.on_acp_event(event);
-        self.apply_messages(messages)
+        self.app.on_acp_event(event);
+        self.drain_and_render(vec![])
     }
 
-    fn apply_messages(
+    fn drain_and_render(
         &mut self,
-        messages: Vec<AppMessage>,
+        commands: Vec<RendererCommand>,
     ) -> Result<LoopAction, Box<dyn std::error::Error>> {
-        for message in messages {
-            match message {
-                AppMessage::ClearScreen => self.frame_renderer.clear_screen()?,
-                AppMessage::SetTheme(theme) => self.frame_renderer.set_theme(theme),
-                AppMessage::PushToScrollbackContent { content, completed_tool_ids } => {
-                    let context = self.frame_renderer.context();
-                    let lines = render_segments_to_lines(&content, self.app.tool_call_statuses(), &context);
-                    if !lines.is_empty() {
-                        self.frame_renderer.push_to_scrollback(&lines)?;
-                    }
-                    self.app.remove_tools(&completed_tool_ids);
-                }
-                AppMessage::SendPrompt { user_input, .. } => {
-                    let lines = vec![
-                        tui::Line::new(String::new()),
-                        tui::Line::new(user_input),
-                    ];
-                    self.frame_renderer.push_to_scrollback(&lines)?;
-                }
-                AppMessage::LoadGitDiff | AppMessage::RefreshGitDiff => {}
-            }
-        }
+        self.frame_renderer.apply_commands(commands)?;
 
         if self.app.exit_requested() {
             return Ok(LoopAction::Exit);

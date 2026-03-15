@@ -10,9 +10,7 @@ mod test_helpers;
 mod tui;
 
 use crate::cli::Cli;
-use crate::components::app::attachments::build_attachment_blocks;
-use crate::components::app::{App, AppMessage};
-use crate::components::conversation_window::render_segments_to_lines;
+use crate::components::app::App;
 use crate::error::AppError;
 use crate::runtime_state::RuntimeState;
 use crate::tui::advanced::{
@@ -20,7 +18,6 @@ use crate::tui::advanced::{
     terminal_size,
 };
 use crate::tui::{Component, Event};
-use acp_utils::client::AcpPromptHandle;
 use clap::Parser;
 use std::fs::create_dir_all;
 use std::io;
@@ -62,10 +59,10 @@ async fn main() -> ExitCode {
         &config_options,
         auth_methods,
         working_dir,
-        prompt_handle.clone(),
+        prompt_handle,
     );
 
-    match run_app(app, prompt_handle, theme, event_rx).await {
+    match run_app(app, theme, event_rx).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("Fatal error: {e}");
@@ -77,72 +74,17 @@ async fn main() -> ExitCode {
 fn render(renderer: &mut Renderer<impl io::Write>, app: &mut App) -> Result<(), AppError> {
     let context = renderer.context();
     app.prepare_for_render(&context);
-    let app: &App = app;
-    renderer.render_frame(|ctx| app.render(ctx))?;
-    Ok(())
-}
-
-async fn process_messages(
-    renderer: &mut Renderer<impl io::Write>,
-    app: &mut App,
-    prompt_handle: &AcpPromptHandle,
-    messages: Vec<AppMessage>,
-) -> Result<(), AppError> {
-    for msg in messages {
-        match msg {
-            AppMessage::ClearScreen => renderer.clear_screen()?,
-            AppMessage::SetTheme(theme) => renderer.set_theme(theme),
-            AppMessage::PushToScrollbackContent {
-                content,
-                completed_tool_ids,
-            } => {
-                let context = renderer.context();
-                let lines = render_segments_to_lines(&content, app.tool_call_statuses(), &context);
-                if !lines.is_empty() {
-                    renderer.push_to_scrollback(&lines)?;
-                }
-                app.remove_tools(&completed_tool_ids);
-            }
-            AppMessage::SendPrompt {
-                user_input,
-                attachments,
-            } => {
-                let echo = vec![
-                    tui::Line::new(String::new()),
-                    tui::Line::new(user_input.clone()),
-                ];
-                renderer.push_to_scrollback(&echo)?;
-
-                let outcome = build_attachment_blocks(&attachments).await;
-                if !outcome.warnings.is_empty() {
-                    let lines: Vec<tui::Line> = outcome
-                        .warnings
-                        .into_iter()
-                        .map(|w| tui::Line::new(format!("[wisp] {w}")))
-                        .collect();
-                    renderer.push_to_scrollback(&lines)?;
-                }
-                prompt_handle.prompt(
-                    app.session_id(),
-                    &user_input,
-                    if outcome.blocks.is_empty() {
-                        None
-                    } else {
-                        Some(outcome.blocks)
-                    },
-                )?;
-            }
-            AppMessage::LoadGitDiff | AppMessage::RefreshGitDiff => {
-                app.git_diff_mode_mut().complete_load().await;
-            }
-        }
+    let scrollback = app.drain_scrollback();
+    if !scrollback.is_empty() {
+        renderer.push_to_scrollback(&scrollback)?;
     }
+    let app_ref: &App = app;
+    renderer.render_frame(|ctx| app_ref.render(ctx))?;
     Ok(())
 }
 
 async fn run_app(
     mut app: App,
-    prompt_handle: AcpPromptHandle,
     theme: tui::Theme,
     mut event_rx: mpsc::UnboundedReceiver<acp_utils::client::AcpEvent>,
 ) -> Result<(), AppError> {
@@ -150,14 +92,13 @@ async fn run_app(
     let mut renderer = Renderer::new(io::stdout(), theme, size);
     let _session = TerminalSession::new(true, MouseCapture::Disabled)?;
     let mut terminal_rx = spawn_terminal_event_task();
-    render(&mut renderer, &mut app)?;
-    let tick_rate = Duration::from_millis(100);
     let mut tick_interval = {
-        let mut tick = interval(tick_rate);
+        let mut tick = interval(Duration::from_millis(100));
         tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
         tick
     };
 
+    render(&mut renderer, &mut app)?;
     loop {
         let tick_fut = async {
             if !app.wants_tick() {
@@ -175,8 +116,8 @@ async fn run_app(
                     renderer.on_resize((*cols, *rows));
                 }
                 if let Ok(tui_event) = Event::try_from(event) {
-                    let messages = app.on_event(&tui_event).await.unwrap_or_default();
-                    process_messages(&mut renderer, &mut app, &prompt_handle, messages).await?;
+                    let commands = app.on_event(&tui_event).await.unwrap_or_default();
+                    renderer.apply_commands(commands)?;
                     if app.exit_requested() { return Ok(()); }
                     render(&mut renderer, &mut app)?;
                 }
@@ -185,8 +126,7 @@ async fn run_app(
             app_event = event_rx.recv() => {
                 match app_event {
                     Some(event) => {
-                        let messages = app.on_acp_event(event);
-                        process_messages(&mut renderer, &mut app, &prompt_handle, messages).await?;
+                        app.on_acp_event(event);
                         if app.exit_requested() { return Ok(()); }
                         render(&mut renderer, &mut app)?;
                     }
@@ -195,8 +135,7 @@ async fn run_app(
             }
 
             () = tick_fut => {
-                let messages = app.on_event(&Event::Tick).await.unwrap_or_default();
-                process_messages(&mut renderer, &mut app, &prompt_handle, messages).await?;
+                app.on_event(&Event::Tick).await;
                 if app.exit_requested() { return Ok(()); }
                 render(&mut renderer, &mut app)?;
             }
