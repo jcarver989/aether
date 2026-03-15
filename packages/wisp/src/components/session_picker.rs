@@ -1,6 +1,5 @@
 use crate::tui::{
-    Combobox, Component, Event, Frame, Line, PickerKey, Searchable, Style, ViewContext,
-    classify_key,
+    Combobox, Component, Event, Frame, Line, PickerMessage, Searchable, Style, ViewContext,
     display_width_text, pad_text_to_width, truncate_text,
 };
 use agent_client_protocol as acp;
@@ -43,45 +42,21 @@ impl Component for SessionPicker {
     type Message = SessionPickerMessage;
 
     fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
-        let Event::Key(key_event) = event else {
-            return None;
-        };
-        match classify_key(*key_event, self.combobox.query().is_empty()) {
-            PickerKey::Escape | PickerKey::BackspaceOnEmpty => {
-                Some(vec![SessionPickerMessage::Close])
-            }
-            PickerKey::MoveUp => {
-                self.combobox.move_up();
-                Some(vec![])
-            }
-            PickerKey::MoveDown => {
-                self.combobox.move_down();
-                Some(vec![])
-            }
-            PickerKey::Confirm => {
-                if let Some(entry) = self.combobox.selected().cloned() {
-                    let info = entry.0;
-                    Some(vec![SessionPickerMessage::LoadSession {
-                        session_id: acp::SessionId::new(info.session_id.0.to_string()),
-                        cwd: info.cwd,
-                    }])
-                } else {
-                    Some(vec![SessionPickerMessage::Close])
+        let msgs = self.combobox.handle_picker_event(event)?;
+        let mapped = msgs
+            .into_iter()
+            .filter_map(|m| match m {
+                PickerMessage::Close | PickerMessage::CloseAndPopChar => {
+                    Some(SessionPickerMessage::Close)
                 }
-            }
-            PickerKey::Char(c) => {
-                self.combobox.push_query_char(c);
-                Some(vec![])
-            }
-            PickerKey::Backspace => {
-                self.combobox.pop_query_char();
-                Some(vec![])
-            }
-            PickerKey::MoveLeft
-            | PickerKey::MoveRight
-            | PickerKey::ControlChar
-            | PickerKey::Other => Some(vec![]),
-        }
+                PickerMessage::Confirm(entry) => Some(SessionPickerMessage::LoadSession {
+                    session_id: acp::SessionId::new(entry.0.session_id.0.to_string()),
+                    cwd: entry.0.cwd,
+                }),
+                _ => None,
+            })
+            .collect();
+        Some(mapped)
     }
 
     fn render(&self, context: &ViewContext) -> Frame {

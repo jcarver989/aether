@@ -1,11 +1,95 @@
 use agent_client_protocol as acp;
 use similar::{ChangeTag, TextDiff};
+use std::collections::HashMap;
 use std::path::Path;
 
+use crate::components::sub_agent_tracker::{SUB_AGENT_VISIBLE_TOOL_LIMIT, SubAgentState, SubAgentTracker};
+use crate::components::tracked_tool_call::TrackedToolCall;
 use crate::tui::{DiffLine, DiffPreview, DiffTag, Line, ViewContext, highlight_diff};
 use crate::tui::BRAILLE_FRAMES as FRAMES;
 
 pub(crate) const MAX_TOOL_ARG_LENGTH: usize = 200;
+
+/// Render a tool call and its sub-agent hierarchy (if any) as status lines.
+pub(crate) fn render_tool_tree(
+    id: &str,
+    tool_calls: &HashMap<String, TrackedToolCall>,
+    sub_agents: &SubAgentTracker,
+    tick: u16,
+    context: &ViewContext,
+) -> Vec<Line> {
+    let has_sub_agents = sub_agents.has_sub_agents(id);
+
+    let mut lines = if has_sub_agents {
+        Vec::new()
+    } else {
+        tool_calls
+            .get(id)
+            .map(|tc| tool_call_view(tc, tick).render(context))
+            .unwrap_or_default()
+    };
+
+    if let Some(agents) = sub_agents.get(id) {
+        for (i, agent) in agents.iter().enumerate() {
+            if i > 0 {
+                lines.push(Line::default());
+            }
+            lines.push(render_agent_header(agent, tick, context));
+
+            let hidden_count = agent
+                .tool_order
+                .len()
+                .saturating_sub(SUB_AGENT_VISIBLE_TOOL_LIMIT);
+
+            if hidden_count > 0 {
+                let mut summary = Line::default();
+                summary.push_styled(
+                    format!("  … {hidden_count} earlier tool calls"),
+                    context.theme.muted(),
+                );
+                lines.push(summary);
+            }
+
+            let mut visible = agent
+                .tool_order
+                .iter()
+                .skip(hidden_count)
+                .filter_map(|tool_id| agent.tool_calls.get(tool_id))
+                .peekable();
+
+            while let Some(tc) = visible.next() {
+                let connector = if visible.peek().is_some() {
+                    "  ├─ "
+                } else {
+                    "  └─ "
+                };
+
+                let view = tool_call_view(tc, tick);
+                for tool_line in view.render(context) {
+                    let mut indented = Line::default();
+                    indented.push_styled(connector, context.theme.muted());
+                    for span in tool_line.spans() {
+                        indented.push_with_style(span.text(), span.style());
+                    }
+                    lines.push(indented);
+                }
+            }
+        }
+    }
+
+    lines
+}
+
+pub(crate) fn tool_call_view(tc: &TrackedToolCall, tick: u16) -> ToolCallStatusView<'_> {
+    ToolCallStatusView {
+        name: &tc.name,
+        arguments: &tc.arguments,
+        display_value: tc.display_value.as_deref(),
+        diff_preview: tc.diff_preview.as_ref(),
+        status: &tc.status,
+        tick,
+    }
+}
 
 /// Renders a single tool call status line.
 pub struct ToolCallStatusView<'a> {
@@ -115,6 +199,20 @@ pub(super) fn compute_diff_preview(diff: &acp::Diff) -> DiffPreview {
         lang_hint,
         start_line: first_change_line,
     }
+}
+
+fn render_agent_header(agent: &SubAgentState, tick: u16, context: &ViewContext) -> Line {
+    let mut line = Line::default();
+    line.push_text("  ");
+    if agent.done {
+        line.push_styled("✓".to_string(), context.theme.success());
+    } else {
+        let frame = FRAMES[tick as usize % FRAMES.len()];
+        line.push_styled(frame.to_string(), context.theme.info());
+    }
+    line.push_text(" ");
+    line.push_text(&agent.agent_name);
+    line
 }
 
 fn format_arguments(arguments: &str) -> String {

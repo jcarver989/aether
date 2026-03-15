@@ -128,29 +128,35 @@ impl Form {
     }
 }
 
-macro_rules! dispatch_field {
-    ($self:expr, $w:ident => $body:expr) => {
-        match $self {
-            FormFieldKind::Text($w) => $body,
-            FormFieldKind::Number($w) => $body,
-            FormFieldKind::Boolean($w) => $body,
-            FormFieldKind::SingleSelect($w) => $body,
-            FormFieldKind::MultiSelect($w) => $body,
-        }
-    };
-}
-
 impl FormFieldKind {
     fn to_json(&self) -> serde_json::Value {
-        dispatch_field!(self, w => w.to_json())
+        match self {
+            Self::Text(w) => w.to_json(),
+            Self::Number(w) => w.to_json(),
+            Self::Boolean(w) => w.to_json(),
+            Self::SingleSelect(w) => w.to_json(),
+            Self::MultiSelect(w) => w.to_json(),
+        }
     }
 
     fn render_field(&self, context: &ViewContext, focused: bool) -> Vec<Line> {
-        dispatch_field!(self, w => w.render_field(context, focused))
+        match self {
+            Self::Text(w) => w.render_field(context, focused),
+            Self::Number(w) => w.render_field(context, focused),
+            Self::Boolean(w) => w.render_field(context, focused),
+            Self::SingleSelect(w) => w.render_field(context, focused),
+            Self::MultiSelect(w) => w.render_field(context, focused),
+        }
     }
 
     fn handle_event(&mut self, event: &Event) -> Option<Vec<()>> {
-        dispatch_field!(self, w => w.on_event(event))
+        match self {
+            Self::Text(w) => w.on_event(event),
+            Self::Number(w) => w.on_event(event),
+            Self::Boolean(w) => w.on_event(event),
+            Self::SingleSelect(w) => w.on_event(event),
+            Self::MultiSelect(w) => w.on_event(event),
+        }
     }
 }
 

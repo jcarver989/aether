@@ -32,6 +32,9 @@ pub mod test_picker;
 #[cfg(feature = "picker")]
 pub(crate) mod combobox;
 
+#[cfg(feature = "picker")]
+pub(crate) mod fuzzy_matcher;
+
 #[cfg(feature = "runtime")]
 pub mod runtime;
 
@@ -95,6 +98,9 @@ pub use syntax_highlighting::SyntaxHighlighter;
 
 #[cfg(feature = "picker")]
 pub use combobox::{Combobox, PickerKey, Searchable, classify_key};
+
+#[cfg(feature = "picker")]
+pub use fuzzy_matcher::FuzzyMatcher;
 
 // Terminal event types (re-exported from crossterm)
 pub use crossterm::event::{
