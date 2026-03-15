@@ -56,6 +56,11 @@ build-sandbox TAG="aether-sandbox:latest":
 run-sandbox:
     cargo run -p wisp -- -a 'cargo run -p aether-cli -- --sandbox-image aether-sandbox:latest acp'
 
+# Install aether-cli and wisp binaries locally
+install:
+    cargo install --path packages/aether-cli --force
+    cargo install --path packages/wisp --force
+
 # Clean everything
 clean:
     cargo clean

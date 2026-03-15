@@ -123,23 +123,26 @@ impl ConfigOverlay {
         }
     }
 
-    pub fn remove_auth_method(&mut self, method_id: &str) {
-        self.auth_methods.retain(|m| m.id().0.as_ref() != method_id);
+    pub fn on_authenticate_complete(&mut self, method_id: &str) {
         if let ConfigPane::ProviderLogin(ref mut overlay) = self.active_pane {
-            overlay.remove_entry(method_id);
-            if overlay.is_empty() {
-                self.active_pane = ConfigPane::Menu;
-            }
+            overlay.set_logged_in(method_id);
         }
     }
 
     fn build_login_entries(&self) -> Vec<ProviderLoginEntry> {
         self.auth_methods
             .iter()
-            .map(|m| ProviderLoginEntry {
-                method_id: m.id().0.to_string(),
-                name: m.name().to_string(),
-                status: ProviderLoginStatus::NeedsLogin,
+            .map(|m| {
+                let status = if m.description() == Some("authenticated") {
+                    ProviderLoginStatus::LoggedIn
+                } else {
+                    ProviderLoginStatus::NeedsLogin
+                };
+                ProviderLoginEntry {
+                    method_id: m.id().0.to_string(),
+                    name: m.name().to_string(),
+                    status,
+                }
             })
             .collect()
     }
@@ -457,18 +460,6 @@ mod tests {
         let frame = overlay.render(&context);
         let lines = frame.lines();
         lines[lines.len() - 2].plain_text()
-    }
-
-    fn render_plain_text(overlay: &mut ConfigOverlay) -> Vec<String> {
-        let context = ViewContext::new((80, 24));
-        let height = (context.size.height.saturating_sub(1)) as usize;
-        overlay.update_child_viewport(height.saturating_sub(4));
-        overlay
-            .render(&context)
-            .into_lines()
-            .into_iter()
-            .map(|line| line.plain_text())
-            .collect()
     }
 
     fn make_auth_methods() -> Vec<acp::AuthMethod> {
@@ -805,7 +796,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn provider_login_overlay_closes_when_empty() {
+    async fn authenticate_complete_sets_logged_in_status() {
         let mut menu = make_menu();
         menu.add_provider_logins_entry("2 needs login");
         let mut overlay = ConfigOverlay::new(menu, vec![], make_auth_methods());
@@ -814,15 +805,19 @@ mod tests {
         overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
         assert!(matches!(overlay.active_pane, ConfigPane::ProviderLogin(_)));
 
-        overlay.remove_auth_method("anthropic");
-        overlay.remove_auth_method("openrouter");
+        overlay.on_authenticate_complete("anthropic");
 
-        assert!(matches!(overlay.active_pane, ConfigPane::Menu));
+        // Overlay should stay open (entries are not removed)
+        assert!(matches!(overlay.active_pane, ConfigPane::ProviderLogin(_)));
 
-        let lines = render_plain_text(&mut overlay);
-        let text = lines.join("\n");
-
-        assert!(text.contains("Provider: OpenRouter"), "rendered:\n{text}");
+        if let ConfigPane::ProviderLogin(ref overlay_inner) = overlay.active_pane {
+            let entry = overlay_inner
+                .entries()
+                .iter()
+                .find(|e| e.method_id == "anthropic")
+                .expect("anthropic entry should still exist");
+            assert_eq!(entry.status, ProviderLoginStatus::LoggedIn);
+        }
     }
 
     #[test]

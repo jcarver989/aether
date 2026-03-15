@@ -939,7 +939,7 @@ mod tests {
     }
 
     #[test]
-    fn on_authenticate_complete_removes_method() {
+    fn on_authenticate_complete_does_not_exit() {
         let mut app = make_app_with_auth(vec![acp::AuthMethod::Agent(acp::AuthMethodAgent::new(
             "anthropic",
             "Anthropic",
@@ -947,7 +947,6 @@ mod tests {
 
         app.on_authenticate_complete("anthropic");
 
-        assert!(app.config_manager.config_options().is_empty() || true);
         assert!(!app.exit_requested());
     }
 

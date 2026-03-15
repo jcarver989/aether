@@ -16,6 +16,7 @@ pub struct ProviderLoginEntry {
 pub enum ProviderLoginStatus {
     NeedsLogin,
     Authenticating,
+    LoggedIn,
 }
 
 pub enum ProviderLoginMessage {
@@ -29,9 +30,21 @@ impl SelectItem for ProviderLoginEntry {
         let (indicator, detail) = match &self.status {
             ProviderLoginStatus::NeedsLogin => ("⚡", "needs login"),
             ProviderLoginStatus::Authenticating => ("⏳", "authenticating..."),
+            ProviderLoginStatus::LoggedIn => ("✓", "logged in"),
         };
         let text = format!("{prefix}{}  {indicator} {detail}", self.name);
-        if selected {
+        if self.status == ProviderLoginStatus::LoggedIn {
+            if selected {
+                Line::with_style(
+                    text,
+                    context
+                        .theme
+                        .selected_row_style_with_fg(context.theme.success()),
+                )
+            } else {
+                Line::styled(text, context.theme.success())
+            }
+        } else if selected {
             Line::with_style(
                 text,
                 context
@@ -53,7 +66,7 @@ impl Component for ProviderLoginOverlay {
             Some([SelectListMessage::Close]) => Some(vec![ProviderLoginMessage::Close]),
             Some([SelectListMessage::Select(_)]) => {
                 if let Some(entry) = self.list.selected_item()
-                    && entry.status == ProviderLoginStatus::NeedsLogin
+                    && entry.status != ProviderLoginStatus::Authenticating
                 {
                     return Some(vec![ProviderLoginMessage::Authenticate(
                         entry.method_id.clone(),
@@ -82,15 +95,24 @@ pub fn provider_login_summary(entries: &[ProviderLoginEntry]) -> String {
         .iter()
         .filter(|e| e.status == ProviderLoginStatus::Authenticating)
         .count();
-    [
+    let logged_in = entries
+        .iter()
+        .filter(|e| e.status == ProviderLoginStatus::LoggedIn)
+        .count();
+    let parts: Vec<String> = [
         (needs_login, "needs login"),
         (authenticating, "authenticating"),
+        (logged_in, "logged in"),
     ]
     .iter()
     .filter(|(count, _)| *count > 0)
     .map(|(count, label)| format!("{count} {label}"))
-    .collect::<Vec<_>>()
-    .join(", ")
+    .collect();
+    if parts.is_empty() {
+        "all logged in".to_string()
+    } else {
+        parts.join(", ")
+    }
 }
 
 impl ProviderLoginOverlay {
@@ -105,10 +127,6 @@ impl ProviderLoginOverlay {
         self.list.items()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.list.is_empty()
-    }
-
     pub fn reset_to_needs_login(&mut self, method_id: &str) {
         if let Some(entry) = self
             .list
@@ -117,6 +135,17 @@ impl ProviderLoginOverlay {
             .find(|e| e.method_id == method_id)
         {
             entry.status = ProviderLoginStatus::NeedsLogin;
+        }
+    }
+
+    pub fn set_logged_in(&mut self, method_id: &str) {
+        if let Some(entry) = self
+            .list
+            .items_mut()
+            .iter_mut()
+            .find(|e| e.method_id == method_id)
+        {
+            entry.status = ProviderLoginStatus::LoggedIn;
         }
     }
 
@@ -131,6 +160,7 @@ impl ProviderLoginOverlay {
         }
     }
 
+    #[cfg(test)]
     pub fn remove_entry(&mut self, method_id: &str) {
         self.list.retain(|e| e.method_id != method_id);
     }
@@ -248,5 +278,75 @@ mod tests {
     fn provider_login_summary_formats_correctly() {
         assert_eq!(provider_login_summary(&[]), "all logged in");
         assert_eq!(provider_login_summary(&sample_entries()), "1 needs login");
+    }
+
+    #[test]
+    fn provider_login_summary_shows_logged_in() {
+        let entries = vec![ProviderLoginEntry {
+            method_id: "codex".to_string(),
+            name: "Codex".to_string(),
+            status: ProviderLoginStatus::LoggedIn,
+        }];
+        assert_eq!(provider_login_summary(&entries), "1 logged in");
+    }
+
+    #[test]
+    fn provider_login_summary_mixed_statuses() {
+        let entries = vec![
+            ProviderLoginEntry {
+                method_id: "a".to_string(),
+                name: "A".to_string(),
+                status: ProviderLoginStatus::NeedsLogin,
+            },
+            ProviderLoginEntry {
+                method_id: "b".to_string(),
+                name: "B".to_string(),
+                status: ProviderLoginStatus::LoggedIn,
+            },
+        ];
+        assert_eq!(provider_login_summary(&entries), "1 needs login, 1 logged in");
+    }
+
+    #[test]
+    fn set_logged_in_updates_status() {
+        let mut overlay = ProviderLoginOverlay::new(sample_entries());
+        overlay.set_logged_in("codex");
+        assert_eq!(overlay.entries()[0].status, ProviderLoginStatus::LoggedIn);
+    }
+
+    #[test]
+    fn renders_logged_in_with_check_mark() {
+        let entries = vec![ProviderLoginEntry {
+            method_id: "codex".to_string(),
+            name: "Codex".to_string(),
+            status: ProviderLoginStatus::LoggedIn,
+        }];
+        let mut overlay = ProviderLoginOverlay::new(entries);
+        let ctx = ViewContext::new((80, 24));
+        let frame = overlay.render(&ctx);
+        let text = frame.lines()[0].plain_text();
+        assert!(text.contains("✓"), "logged in should show check mark");
+        assert!(text.contains("logged in"), "should show 'logged in' text");
+    }
+
+    #[tokio::test]
+    async fn enter_on_logged_in_emits_authenticate_for_reauth() {
+        let entries = vec![ProviderLoginEntry {
+            method_id: "codex".to_string(),
+            name: "Codex".to_string(),
+            status: ProviderLoginStatus::LoggedIn,
+        }];
+        let mut overlay = ProviderLoginOverlay::new(entries);
+        let outcome = overlay
+            .on_event(&Event::Key(KeyEvent::new(
+                KeyCode::Enter,
+                KeyModifiers::NONE,
+            )))
+            .await;
+        let messages = outcome.unwrap();
+        match messages.as_slice() {
+            [ProviderLoginMessage::Authenticate(id)] => assert_eq!(id, "codex"),
+            _ => panic!("Expected Authenticate message for re-auth"),
+        }
     }
 }

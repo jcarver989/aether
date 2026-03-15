@@ -1,5 +1,8 @@
 use crate::components::config_menu::ConfigMenu;
 use crate::components::config_overlay::{ConfigOverlay, ConfigOverlayMessage};
+use crate::components::provider_login::{
+    ProviderLoginEntry, ProviderLoginStatus, provider_login_summary,
+};
 use crate::components::server_status::server_status_summary;
 use crate::components::status_line::{extract_reasoning_effort, is_cycleable_mode_option};
 use crate::settings::{list_theme_files, load_or_create_settings};
@@ -164,10 +167,8 @@ impl ConfigManager {
     }
 
     pub fn on_authenticate_complete(&mut self, method_id: &str) {
-        self.auth_methods
-            .retain(|method| method.id().0.as_ref() != method_id);
         if let Some(ref mut overlay) = self.config_overlay {
-            overlay.remove_auth_method(method_id);
+            overlay.on_authenticate_complete(method_id);
         }
     }
 
@@ -198,6 +199,24 @@ impl ConfigManager {
         }
     }
 
+    fn build_login_entries(&self) -> Vec<ProviderLoginEntry> {
+        self.auth_methods
+            .iter()
+            .map(|m| {
+                let status = if m.description() == Some("authenticated") {
+                    ProviderLoginStatus::LoggedIn
+                } else {
+                    ProviderLoginStatus::NeedsLogin
+                };
+                ProviderLoginEntry {
+                    method_id: m.id().0.to_string(),
+                    name: m.name().to_string(),
+                    status,
+                }
+            })
+            .collect()
+    }
+
     fn decorate_config_menu(&self, mut menu: ConfigMenu) -> ConfigMenu {
         let settings = load_or_create_settings();
         let theme_files = list_theme_files();
@@ -206,8 +225,9 @@ impl ConfigManager {
         let server_summary = server_status_summary(&self.server_statuses);
         menu.add_mcp_servers_entry(&server_summary);
         if !self.auth_methods.is_empty() {
-            let summary = format!("{} needs login", self.auth_methods.len());
-            menu.add_provider_logins_entry(&summary);
+            let login_entries = self.build_login_entries();
+            let login_summary = provider_login_summary(&login_entries);
+            menu.add_provider_logins_entry(&login_summary);
         }
         menu
     }
@@ -248,7 +268,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn on_authenticate_complete_removes_method() {
+    fn on_authenticate_complete_sets_logged_in_on_overlay() {
         let mut cm = ConfigManager::new(
             &[],
             vec![acp::AuthMethod::Agent(acp::AuthMethodAgent::new(
@@ -256,7 +276,9 @@ pub(crate) mod tests {
                 "Anthropic",
             ))],
         );
+        cm.open_overlay();
         cm.on_authenticate_complete("anthropic");
-        assert!(cm.auth_methods.is_empty());
+        // Auth methods should still be present (not removed)
+        assert_eq!(cm.auth_methods.len(), 1);
     }
 }
