@@ -83,11 +83,16 @@ impl McpServerConnection {
             ServerConfig::Stdio { command, args, .. } => {
                 let mut cmd = Command::new(&command);
                 cmd.args(&args);
-                match params
-                    .mcp_client
-                    .serve(TokioChildProcess::new(cmd).unwrap())
-                    .await
-                {
+                let child = match TokioChildProcess::new(cmd) {
+                    Ok(child) => child,
+                    Err(e) => {
+                        return ConnectResult::Failed(McpError::SpawnFailed {
+                            command,
+                            reason: e.to_string(),
+                        });
+                    }
+                };
+                match params.mcp_client.serve(child).await {
                     Ok(client) => ConnectResult::Connected(Self::from_parts(client, None)),
                     Err(e) => ConnectResult::Failed(McpError::from(e)),
                 }

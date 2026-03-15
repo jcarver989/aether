@@ -33,6 +33,9 @@ pub enum McpError {
     /// Prompt retrieval failed
     #[error("Prompt retrieval failed: {0}")]
     PromptGetFailed(String),
+    /// Failed to spawn a stdio server process
+    #[error("Failed to spawn '{command}': {reason}")]
+    SpawnFailed { command: String, reason: String },
     /// Server connection failed
     #[error("Connection failed: {0}")]
     ConnectionFailed(String),
