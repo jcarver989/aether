@@ -5,6 +5,17 @@ use super::frame::Cursor;
 use super::line::Line;
 use super::soft_wrap::soft_wrap_lines_with_map;
 
+/// Result of diffing two VisualFrames' visible lines.
+#[derive(Debug)]
+pub struct LineDiff<'a> {
+    /// Row index to start rewriting from.
+    pub rewrite_from: usize,
+    /// Lines to write starting at `rewrite_from`.
+    pub lines: &'a [Line],
+    /// Number of visible rows in the previous frame.
+    pub previous_row_count: usize,
+}
+
 /// Terminal-ready visual frame prepared for the terminal.
 ///
 /// This is the pure mapping step from logical output (`Frame`) to terminal-ready
@@ -87,17 +98,46 @@ impl VisualFrame {
         self.cursor
     }
 
-    pub fn into_parts(self) -> (Vec<Line>, Vec<Line>, Cursor, usize) {
-        (
-            self.scrollback_lines,
-            self.visible_lines,
-            self.cursor,
-            self.overflow,
-        )
-    }
-
     pub fn overflow(&self) -> usize {
         self.overflow
+    }
+
+    /// Create an empty VisualFrame with no lines and no overflow.
+    pub fn empty() -> Self {
+        Self {
+            scrollback_lines: Vec::new(),
+            visible_lines: Vec::new(),
+            cursor: Cursor::hidden(),
+            overflow: 0,
+        }
+    }
+
+    /// Diff this frame's visible lines against `new`, returning the minimal rewrite needed.
+    /// Returns `None` if visible lines are identical.
+    pub fn diff<'a>(&self, new: &'a VisualFrame) -> Option<LineDiff<'a>> {
+        let prev = &self.visible_lines;
+        let next = &new.visible_lines;
+        if next == prev {
+            return None;
+        }
+
+        let first_diff = prev
+            .iter()
+            .zip(next.iter())
+            .position(|(old, new)| old != new)
+            .unwrap_or(prev.len().min(next.len()));
+
+        let rewrite_from = if next.is_empty() {
+            0
+        } else {
+            first_diff.min(next.len() - 1)
+        };
+
+        Some(LineDiff {
+            rewrite_from,
+            lines: &next[rewrite_from..],
+            previous_row_count: prev.len(),
+        })
     }
 }
 
@@ -130,23 +170,6 @@ mod tests {
         assert_eq!(visual.cursor().row, 1);
         assert_eq!(visual.cursor().col, 2);
         assert_eq!(visual.overflow(), 0);
-    }
-
-    #[test]
-    fn visual_frame_into_parts_returns_visible_lines() {
-        let frame = Frame::new(vec![Line::new("abcdef")]).with_cursor(Cursor {
-            row: 0,
-            col: 5,
-            is_visible: true,
-        });
-
-        let visual = VisualFrame::from_frame(&frame, Size::from((3, 5)), 0);
-        let (scrollback_lines, visible_lines, cursor, overflow) = visual.into_parts();
-        assert!(scrollback_lines.is_empty());
-        assert_eq!(visible_lines, vec![Line::new("abc"), Line::new("def")]);
-        assert_eq!(cursor.row, 1);
-        assert_eq!(cursor.col, 2);
-        assert_eq!(overflow, 0);
     }
 
     #[test]
@@ -250,5 +273,51 @@ mod tests {
 
         let scrollback_lines = prepare_lines_for_scrollback(&lines, 3);
         assert_eq!(visual_frame_lines, scrollback_lines);
+    }
+
+    fn visual(lines: &[&str]) -> VisualFrame {
+        let frame = Frame::new(lines.iter().map(|l| Line::new(*l)).collect()).with_cursor(Cursor {
+            row: lines.len().saturating_sub(1),
+            col: 0,
+            is_visible: true,
+        });
+        VisualFrame::from_frame(&frame, Size::from((80, 24)), 0)
+    }
+
+    #[test]
+    fn diff_identical_frames_returns_none() {
+        let a = visual(&["hello", "world"]);
+        let b = visual(&["hello", "world"]);
+        assert!(a.diff(&b).is_none());
+    }
+
+    #[test]
+    fn diff_empty_to_nonempty_returns_full_rewrite() {
+        let empty = VisualFrame::empty();
+        let b = visual(&["hello", "world"]);
+        let diff = empty.diff(&b).unwrap();
+        assert_eq!(diff.rewrite_from, 0);
+        assert_eq!(diff.lines.len(), 2);
+        assert_eq!(diff.previous_row_count, 0);
+    }
+
+    #[test]
+    fn diff_changed_middle_line() {
+        let a = visual(&["aaa", "bbb", "ccc"]);
+        let b = visual(&["aaa", "BBB", "ccc"]);
+        let diff = a.diff(&b).unwrap();
+        assert_eq!(diff.rewrite_from, 1);
+        assert_eq!(diff.lines.len(), 2);
+        assert_eq!(diff.previous_row_count, 3);
+    }
+
+    #[test]
+    fn diff_appended_line() {
+        let a = visual(&["aaa", "bbb"]);
+        let b = visual(&["aaa", "bbb", "ccc"]);
+        let diff = a.diff(&b).unwrap();
+        assert_eq!(diff.rewrite_from, 2);
+        assert_eq!(diff.lines.len(), 1);
+        assert_eq!(diff.previous_row_count, 2);
     }
 }
