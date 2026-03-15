@@ -7,7 +7,6 @@ members = [
     "packages/crucible",
     "packages/aether-cli",
     "packages/acp-utils",
-    "packages/planning-agent",
     "packages/aether-lspd",
     "packages/llm",
     "packages/llm-codegen",
