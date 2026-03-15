@@ -370,6 +370,50 @@ mod tests {
     }
 
     #[test]
+    fn focused_preview_with_truncation_shows_changes() {
+        // Simulates a DiffPreview produced by compute_diff_preview after trimming:
+        // 3 context lines, then changes, then 22 more context lines (total 27 > MAX_DIFF_LINES).
+        let mut diff_lines: Vec<DiffLine> = (0..3)
+            .map(|_| DiffLine {
+                tag: DiffTag::Context,
+                content: "before".to_string(),
+            })
+            .collect();
+
+        diff_lines.push(DiffLine {
+            tag: DiffTag::Removed,
+            content: "old".to_string(),
+        });
+
+        diff_lines.push(DiffLine {
+            tag: DiffTag::Added,
+            content: "new".to_string(),
+        });
+
+        diff_lines.extend((0..22).map(|_| DiffLine {
+            tag: DiffTag::Context,
+            content: "after".to_string(),
+        }));
+
+        let preview = DiffPreview {
+            lines: diff_lines,
+            lang_hint: String::new(),
+            start_line: Some(42),
+        };
+
+        let lines = highlight_diff(&preview, &test_context());
+        let has_change = lines.iter().any(|l| {
+            let text = l.plain_text();
+            text.contains("- old") || text.contains("+ new")
+        });
+
+        assert!(
+            has_change,
+            "focused preview should show changes within the truncation budget"
+        );
+    }
+
+    #[test]
     fn no_line_numbers_when_start_line_none() {
         let preview = make_preview(vec![DiffLine {
             tag: DiffTag::Removed,
