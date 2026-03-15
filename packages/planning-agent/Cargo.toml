@@ -11,6 +11,7 @@ mcp_utils = { path = "../mcp-utils" }
 mcp-servers = { path = "../mcp-servers", features = ["coding"] }
 crucible = { path = "../crucible" }
 aether-core = { path = "../aether-core" }
+utils = { path = "../utils" }
 llm = { path = "../llm" }
 
 rmcp = { workspace = true }
