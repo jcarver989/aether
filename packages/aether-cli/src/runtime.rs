@@ -6,8 +6,8 @@ use aether_core::mcp::McpBuilder;
 use aether_core::mcp::McpSpawnResult;
 use aether_core::mcp::mcp;
 use aether_core::mcp::run_mcp_task::McpCommand;
-use aether_project::{ResolvedRuntimeSpec, load_agent_catalog};
-use llm::{ChatMessage, ToolDefinition};
+use aether_project::load_agent_catalog;
+use llm::{ChatMessage, LlmModel, ToolDefinition};
 use mcp_servers::McpBuilderExt;
 use mcp_utils::client::{ElicitationRequest, McpServerConfig};
 use mcp_utils::status::McpServerStatusEntry;
@@ -18,7 +18,7 @@ use tracing::debug;
 
 pub struct RuntimeBuilder {
     cwd: PathBuf,
-    runtime: ResolvedRuntimeSpec,
+    spec: AgentSpec,
     mcp_config: Option<PathBuf>,
     extra_mcp_servers: Vec<McpServerConfig>,
     oauth_applicator: Option<Box<dyn FnOnce(McpBuilder) -> McpBuilder + Send>>,
@@ -42,23 +42,25 @@ pub struct PromptInfo {
 impl RuntimeBuilder {
     pub fn new(cwd: &Path, model: &str) -> Result<Self, CliError> {
         let cwd = cwd.canonicalize().map_err(CliError::IoError)?;
-        let catalog = load_agent_catalog(&cwd).map_err(|e| CliError::AgentError(e.to_string()))?;
-        let parsed_model = model.parse().map_err(|e: String| CliError::ModelError(e))?;
-        let runtime = catalog.runtime_inputs_for_default(&parsed_model, None, &cwd);
+        let parsed_model: LlmModel =
+            model.parse().map_err(|e: String| CliError::ModelError(e))?;
+        let catalog =
+            load_agent_catalog(&cwd).map_err(|e| CliError::AgentError(e.to_string()))?;
+        let spec = catalog.resolve_default(&parsed_model, None, &cwd);
 
         Ok(Self {
             cwd,
-            runtime,
+            spec,
             mcp_config: None,
             extra_mcp_servers: Vec::new(),
             oauth_applicator: None,
         })
     }
 
-    pub fn from_resolved(cwd: PathBuf, runtime: ResolvedRuntimeSpec) -> Self {
+    pub fn from_spec(cwd: PathBuf, spec: AgentSpec) -> Self {
         Self {
             cwd,
-            runtime,
+            spec,
             mcp_config: None,
             extra_mcp_servers: Vec::new(),
             oauth_applicator: None,
@@ -146,7 +148,7 @@ impl RuntimeBuilder {
 
         let mcp_config_path = self
             .mcp_config
-            .or(self.runtime.effective_mcp_config_path.clone());
+            .or(self.spec.mcp_config_path.clone());
 
         if let Some(ref config_path) = mcp_config_path {
             debug!("Loading MCP config from: {}", config_path.display());
@@ -172,7 +174,7 @@ impl RuntimeBuilder {
             .await
             .map_err(|e| CliError::McpError(e.to_string()))?;
 
-        let mut spec = self.runtime.spec;
+        let mut spec = self.spec;
         spec.prompts.push(Prompt::system_env().with_cwd(self.cwd));
         spec.prompts.push(Prompt::mcp_instructions(instructions));
 

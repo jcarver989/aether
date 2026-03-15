@@ -1,8 +1,8 @@
 use super::mappers::map_mcp_prompt_to_available_command;
+use aether_core::agent_spec::AgentSpec;
 use aether_core::core::AgentHandle;
 use aether_core::events::{AgentMessage, UserMessage};
 use aether_core::mcp::run_mcp_task::McpCommand;
-use aether_project::ResolvedRuntimeSpec;
 use llm::ChatMessage;
 use mcp_utils::client::oauth::BrowserOAuthHandler;
 use mcp_utils::client::{ElicitationRequest, McpServerConfig};
@@ -33,15 +33,15 @@ impl Session {
     ///
     /// Pass `restored_messages` to pre-populate conversation history (e.g. session resume).
     pub async fn new(
-        runtime: ResolvedRuntimeSpec,
+        spec: AgentSpec,
         cwd: PathBuf,
         extra_mcp_servers: Vec<McpServerConfig>,
         restored_messages: Option<Vec<ChatMessage>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        debug!("MCP config: {:?}", runtime.effective_mcp_config_path);
+        debug!("MCP config: {:?}", spec.mcp_config_path);
         debug!("Using project root: {:?}", cwd);
 
-        let mut rb = RuntimeBuilder::from_resolved(cwd, runtime)
+        let mut rb = RuntimeBuilder::from_spec(cwd, spec)
             .extra_servers(extra_mcp_servers);
 
         match BrowserOAuthHandler::new() {

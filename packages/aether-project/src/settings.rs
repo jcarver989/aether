@@ -101,12 +101,12 @@ fn resolve_settings(
         )?);
     }
 
-    Ok(super::catalog::AgentCatalog {
-        project_root: project_root.to_path_buf(),
+    Ok(super::catalog::AgentCatalog::new(
+        project_root.to_path_buf(),
         inherited_prompts,
         inherited_mcp_config_path,
         specs,
-    })
+    ))
 }
 
 fn resolve_agent_entry(
@@ -154,7 +154,7 @@ fn resolve_agent_entry(
         });
     }
 
-    let agent_mcp_config_path =
+    let mcp_config_path =
         resolve_mcp_config_path(project_root, entry.mcp_servers.as_deref())?;
 
     let mut prompts = Vec::with_capacity(inherited_prompts.len() + entry.prompts.len());
@@ -172,7 +172,7 @@ fn resolve_agent_entry(
         model,
         reasoning_effort,
         prompts,
-        agent_mcp_config_path,
+        mcp_config_path,
         exposure: AgentSpecExposure {
             user_invocable: entry.user_invocable,
             agent_invocable: entry.agent_invocable,
@@ -894,7 +894,8 @@ mod tests {
         );
 
         let catalog = load_agent_catalog(dir.path()).unwrap();
-        assert!(catalog.inherited_mcp_config_path().is_some());
+        let spec = catalog.resolve("planner", dir.path()).unwrap();
+        assert!(spec.mcp_config_path.is_some());
     }
 
     #[test]

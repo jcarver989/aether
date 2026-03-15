@@ -259,11 +259,11 @@ async fn execute_single_agent(
     let agent_name = task.agent_name.clone();
 
     let result: Result<String, String> = async {
-        let runtime = catalog
-            .runtime_inputs_for(&task.agent_name, catalog.project_root())
+        let mut spec = catalog
+            .resolve(&task.agent_name, catalog.project_root())
             .map_err(|e| e.to_string())?;
 
-        if !runtime.spec.exposure.agent_invocable {
+        if !spec.exposure.agent_invocable {
             return Err(format!(
                 "Agent '{}' is not agent-invocable",
                 task.agent_name
@@ -278,13 +278,11 @@ async fn execute_single_agent(
             elicitation_rx: _,
             handle: _,
         } = spawn_mcps(
-            runtime.effective_mcp_config_path.as_deref(),
+            spec.mcp_config_path.as_deref(),
             roots,
             catalog.project_root(),
         )
         .await?;
-
-        let mut spec = runtime.spec;
         spec.prompts
             .push(Prompt::system_env().with_cwd(catalog.project_root().to_path_buf()));
         spec.prompts.push(Prompt::mcp_instructions(instructions));
