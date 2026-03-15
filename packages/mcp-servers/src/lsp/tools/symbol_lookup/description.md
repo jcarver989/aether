@@ -1,4 +1,4 @@
-**YOUR FIRST CHOICE for code navigation.** Faster and more precise than grep/find.
+Code navigation powered by a LSP server. **Prefer this over `grep` and `find`**.
 
 ## Operations
 
@@ -30,13 +30,11 @@ Optional: `line` (1-indexed, skips auto-resolution — faster)
 
 ## Tips
 
-**Cross-crate navigation:** Use `definition` on an import to jump directly into dependency source — no need to manually navigate `~/.cargo/registry/...`.
-
-**`outgoing_calls` noise:** Returns ALL calls including stdlib/dep calls (`map_err`, `collect`, etc.). Use `limit` and filter by `file_path` for project-local calls.
-
-**Workspace-wide search:** If you don't know which file a symbol is in, use `lsp_workspace_search` instead.
+- **Cross-crate navigation:** Use `definition` on an import to jump directly into dependency source — no need to manually navigate `~/.cargo/registry/...`.
+- **`outgoing_calls` noise:** Returns ALL calls including stdlib/dep calls (`map_err`, `collect`, etc.). Use `limit` and filter by `file_path` for project-local calls.
+- **Workspace-wide search:** If you don't know which file a symbol is in, use `lsp_workspace_search` instead.
 
 ## Anti-patterns
 
-❌ `grep "fn process_request"` → ✅ `lsp_symbol(operation: "definition")`
-❌ `grep "HashMap"` (matches comments/strings) → ✅ `lsp_symbol(operation: "references")`
+- `grep "fn process_request"` → `lsp_symbol(operation: "definition")`
+- `grep "HashMap"` (matches comments/strings) → `lsp_symbol(operation: "references")`

@@ -1,5 +1,4 @@
 use clap::Parser;
-use utils::substitution::substitute_parameters;
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
     handler::server::{
@@ -20,12 +19,13 @@ use std::sync::Arc;
 use std::{collections::HashMap, fmt::Display};
 use std::{fs, path::Path};
 use tokio::sync::RwLock;
+use utils::substitution::substitute_parameters;
 
 use super::tools::{
-    LoadSkillsInput, LoadSkillsOutput, RateSkillInput, RateSkillOutput, SaveSkillInput,
-    SaveSkillOutput, SkillFile, SkillRequest, rate_skill, save_skill,
+    LoadSkillsInput, LoadSkillsOutput, SaveNoteInput, SaveNoteOutput, SearchNotesInput,
+    SearchNotesOutput, SkillFile, SkillRequest, save_note,
 };
-use crate::skills::tools::rate_skill::RateSkillStatus;
+use crate::skills::tools::search_notes::search_notes;
 use aether_project::{PromptCatalog, SKILL_FILENAME};
 
 /// CLI arguments for `SkillsMcp` server
@@ -50,6 +50,7 @@ impl SkillsMcpArgs {
 #[derive(Clone)]
 pub struct SkillsMcp {
     skills_dir: PathBuf,
+    notes_dir: PathBuf,
     catalog: Arc<RwLock<PromptCatalog>>,
     tool_router: ToolRouter<Self>,
     roots: Arc<RwLock<Vec<PathBuf>>>,
@@ -91,6 +92,7 @@ impl From<io::Error> for SkillFileError {
 impl SkillsMcp {
     pub fn new(base_dir: PathBuf) -> Self {
         let skills_dir = base_dir.join("skills");
+        let notes_dir = base_dir.join("notes");
         let catalog = PromptCatalog::from_dir(&skills_dir).unwrap_or_else(|e| {
             tracing::warn!(
                 "Failed to load skill catalog from {}: {e}",
@@ -101,6 +103,7 @@ impl SkillsMcp {
 
         Self {
             skills_dir,
+            notes_dir,
             catalog: Arc::new(RwLock::new(catalog)),
             tool_router: Self::tool_router(),
             roots: Arc::new(RwLock::new(vec![base_dir])),
@@ -120,13 +123,11 @@ impl SkillsMcp {
 
     fn build_instructions(catalog: &PromptCatalog) -> String {
         let mut instructions = include_str!("./instructions.md").to_string();
-
-        let agent_skills: Vec<_> = catalog.skills().collect();
+        let agent_skills: Vec<_> = catalog.skills().filter(|s| !s.agent_authored).collect();
 
         if !agent_skills.is_empty() {
             instructions.push_str("\n\n## Complete List of Available Skills\n");
             instructions.push_str("You have access to the following Skills:\n\n");
-
             for skill in agent_skills {
                 use std::fmt::Write as _;
                 if skill.tags.is_empty() {
@@ -143,13 +144,6 @@ impl SkillsMcp {
         }
 
         instructions
-    }
-
-    async fn reload_catalog(&self) {
-        match PromptCatalog::from_dir(&self.skills_dir) {
-            Ok(catalog) => *self.catalog.write().await = catalog,
-            Err(e) => tracing::warn!("Failed to reload skill catalog: {e}"),
-        }
     }
 
     fn resolve_skill_file(
@@ -365,35 +359,32 @@ impl SkillsMcp {
         Ok(Json(LoadSkillsOutput { files }))
     }
 
-    #[doc = include_str!("tools/save_skill/description.md")]
+    #[doc = include_str!("tools/save_note/description.md")]
     #[tool]
-    pub async fn save_skill(
+    pub async fn save_note(
         &self,
-        request: Parameters<SaveSkillInput>,
-    ) -> Result<Json<SaveSkillOutput>, String> {
+        request: Parameters<SaveNoteInput>,
+    ) -> Result<Json<SaveNoteOutput>, String> {
         let Parameters(input) = request;
-        let result = save_skill(&input, &self.skills_dir).map_err(|e| e.to_string())?;
-
-        self.reload_catalog().await;
-
+        let today = today_string();
+        let result = save_note(&input, &self.notes_dir, &today).map_err(|e| e.to_string())?;
         Ok(Json(result))
     }
 
-    #[doc = include_str!("tools/rate_skill/description.md")]
+    #[doc = include_str!("tools/search_notes/description.md")]
     #[tool]
-    pub async fn rate_skill(
+    pub async fn search_notes(
         &self,
-        request: Parameters<RateSkillInput>,
-    ) -> Result<Json<RateSkillOutput>, String> {
+        request: Parameters<SearchNotesInput>,
+    ) -> Result<Json<SearchNotesOutput>, String> {
         let Parameters(input) = request;
-        let result = rate_skill(&input, &self.skills_dir).map_err(|e| e.to_string())?;
-
-        if matches!(result.status, RateSkillStatus::Pruned) {
-            self.reload_catalog().await;
-        }
-
+        let result = search_notes(&input, &self.notes_dir).map_err(|e| e.to_string())?;
         Ok(Json(result))
     }
+}
+
+fn today_string() -> String {
+    chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
 #[cfg(test)]
