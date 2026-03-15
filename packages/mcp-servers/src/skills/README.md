@@ -26,8 +26,8 @@ Slash commands and reusable skill prompts. Skills teach the agent domain-specifi
 | Tool | Description |
 |------|-------------|
 | `get_skills` | Load files from skill directories. Omit `path` for `SKILL.md`, or provide `path` for auxiliary files. |
-| `save_skill` | Create or update a skill's `SKILL.md` file. |
-| `rate_skill` | Rate a skill as helpful or harmful. Low-confidence skills are pruned. |
+| `save_note` | Append a learning to a topic-based note file. Notes consolidate learnings by topic. |
+| `search_notes` | Search notes by topic name (substring) or tag (exact match). |
 
 Commands are exposed as **MCP Prompts** (via `list_prompts` / `get_prompt`) rather than tools. This is what powers `/slash-commands` in the TUI.
 

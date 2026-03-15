@@ -183,12 +183,12 @@ async fn skills_server_lists_tools_over_stdio() {
         "expected get_skills, got: {names:?}"
     );
     assert!(
-        names.contains(&"save_skill"),
-        "expected save_skill, got: {names:?}"
+        names.contains(&"save_note"),
+        "expected save_note, got: {names:?}"
     );
     assert!(
-        names.contains(&"rate_skill"),
-        "expected rate_skill, got: {names:?}"
+        names.contains(&"search_notes"),
+        "expected search_notes, got: {names:?}"
     );
 }
 
