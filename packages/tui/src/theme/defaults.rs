@@ -99,6 +99,7 @@ impl Theme {
             .diff_added_bg(darken_color(GREEN))
             .diff_removed_bg(darken_color(RED))
             .build()
+            .expect("built-in catppuccin_mocha theme has all fields")
     }
 
     /// A minimal light theme.
@@ -189,6 +190,7 @@ impl Theme {
             .diff_added_bg(lighten_color(GREEN))
             .diff_removed_bg(lighten_color(RED))
             .build()
+            .expect("built-in light theme has all fields")
     }
 }
 

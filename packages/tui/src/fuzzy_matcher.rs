@@ -1,8 +1,11 @@
-use crate::combobox::Searchable;
 use nucleo::pattern::{CaseMatching, Normalization};
 use nucleo::{Config, Nucleo};
 use std::cmp::Ordering;
 use std::sync::Arc;
+
+pub trait Searchable: Clone {
+    fn search_text(&self) -> String;
+}
 
 const MAX_MATCHES: u32 = 200;
 const MATCH_TIMEOUT_MS: u64 = 10;

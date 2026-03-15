@@ -1,6 +1,6 @@
 use crate::components::ViewContext;
 use crate::components::component::PickerMessage;
-use crate::fuzzy_matcher::FuzzyMatcher;
+use crate::fuzzy_matcher::{FuzzyMatcher, Searchable};
 use crate::line::Line;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::cmp::Ordering;
@@ -19,10 +19,6 @@ pub enum PickerKey {
     BackspaceOnEmpty,
     ControlChar,
     Other,
-}
-
-pub trait Searchable: Clone {
-    fn search_text(&self) -> String;
 }
 
 pub struct Combobox<T: Searchable + Send + Sync + 'static> {

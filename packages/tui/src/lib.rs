@@ -59,7 +59,7 @@ pub use focus::{FocusOutcome, FocusRing};
 pub use rendering::frame::Frame;
 pub use rendering::line::Line;
 pub use rendering::style::Style;
-pub use theme::Theme;
+pub use theme::{Theme, ThemeBuildError};
 
 /// Advanced APIs for low-level terminal control.
 #[cfg(feature = "runtime")]
@@ -95,7 +95,9 @@ pub use diffs::diff::highlight_diff;
 pub use syntax_highlighting::SyntaxHighlighter;
 
 #[cfg(feature = "picker")]
-pub use combobox::{Combobox, PickerKey, Searchable, classify_key};
+pub use combobox::{Combobox, PickerKey, classify_key};
+#[cfg(feature = "picker")]
+pub use fuzzy_matcher::Searchable;
 
 #[cfg(feature = "picker")]
 pub use fuzzy_matcher::FuzzyMatcher;
