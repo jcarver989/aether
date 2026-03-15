@@ -4,7 +4,7 @@ use tokio::runtime::Runtime;
 
 use aether_cli::acp::{AcpArgs, run_acp};
 use aether_cli::headless::{HeadlessArgs, run_headless};
-use aether_cli::prompt_cmd::{PromptArgs, run_prompt};
+use aether_cli::show_prompt::{PromptArgs, run_prompt};
 
 #[derive(Parser)]
 #[command(name = "aether")]
@@ -25,7 +25,7 @@ enum Command {
     /// Start the ACP server
     Acp(AcpArgs),
     /// Print the fully assembled system prompt (for debugging)
-    Prompt(PromptArgs),
+    ShowPrompt(PromptArgs),
 }
 
 fn main() -> ExitCode {
@@ -44,7 +44,7 @@ fn main() -> ExitCode {
             .map(|()| ExitCode::SUCCESS)
             .map_err(|e| e.to_string()),
 
-        Command::Prompt(args) => rt
+        Command::ShowPrompt(args) => rt
             .block_on(run_prompt(args))
             .map(|()| ExitCode::SUCCESS)
             .map_err(|e| e.to_string()),

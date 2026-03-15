@@ -198,7 +198,7 @@ fn format_mcp_instructions(instructions: &[ServerInstructions]) -> String {
 
     for instr in instructions {
         parts.push(format!(
-            "<mcp-server-instructions name=\"{}\">\n{}\n</mcp-server-instructions>\n",
+            "<mcp-server name=\"{}\">\n{}\n</mcp-server>\n",
             instr.server_name, instr.instructions
         ));
     }
