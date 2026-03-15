@@ -87,8 +87,8 @@ async fn test_format_mcp_instructions_xml_structure() {
         .unwrap();
 
     // Check for XML tags with server names
-    assert!(formatted.contains("<mcp-server-instructions name=\"coding\">"));
-    assert!(formatted.contains("</mcp-server-instructions>\n"));
+    assert!(formatted.contains("<mcp-server name=\"coding\">"));
+    assert!(formatted.contains("</mcp-server>\n"));
     assert!(formatted.contains("Use absolute paths."));
     assert!(formatted.contains("# MCP Server Instructions"));
 }
@@ -112,8 +112,8 @@ async fn test_format_mcp_instructions_multiple_servers() {
         .unwrap();
 
     // Check for XML tags with both server names
-    assert!(formatted.contains("<mcp-server-instructions name=\"coding\">"));
-    assert!(formatted.contains("<mcp-server-instructions name=\"plugins\">"));
+    assert!(formatted.contains("<mcp-server name=\"coding\">"));
+    assert!(formatted.contains("<mcp-server name=\"plugins\">"));
     assert!(formatted.contains("Use absolute paths."));
     assert!(formatted.contains("Always confirm before spawning."));
 }
@@ -169,7 +169,7 @@ async fn test_agent_builder_includes_mcp_instructions_in_system_prompt() {
     // The system message should contain our MCP instructions
     if let Some(first_msg) = contexts[0].messages().first() {
         if let llm::ChatMessage::System { content, .. } = first_msg {
-            assert!(content.contains("<mcp-server-instructions name=\"test-server\">"));
+            assert!(content.contains("<mcp-server name=\"test-server\">"));
             assert!(content.contains("Test instructions"));
         } else {
             panic!("Expected system message, got: {first_msg:?}");
