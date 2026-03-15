@@ -20,6 +20,7 @@ use crate::tui::advanced::{
 use crate::tui::{Component, Event};
 use clap::Parser;
 use std::fs::create_dir_all;
+use std::future::pending;
 use std::io;
 use std::process::ExitCode;
 use std::time::Duration;
@@ -100,7 +101,7 @@ async fn run_app(
     loop {
         let tick_fut = async {
             if !app.wants_tick() {
-                std::future::pending::<()>().await;
+                pending::<()>().await;
             }
             tick_interval.tick().await;
         };

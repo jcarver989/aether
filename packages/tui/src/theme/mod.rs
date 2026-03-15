@@ -1,9 +1,26 @@
 #[cfg(feature = "syntax")]
 use std::sync::Arc;
 
+use std::fmt;
+
 use crate::style::Style;
 use crossterm::style::Color;
 mod defaults;
+
+#[derive(Debug, Clone)]
+pub enum ThemeBuildError {
+    MissingField(&'static str),
+}
+
+impl fmt::Display for ThemeBuildError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingField(name) => write!(f, "ThemeBuilder requires {name}"),
+        }
+    }
+}
+
+impl std::error::Error for ThemeBuildError {}
 
 #[cfg(feature = "syntax")]
 mod syntax;
@@ -175,7 +192,7 @@ impl ThemeBuilder {
         self
     }
 
-    pub fn build(self) -> Theme {
+    pub fn build(self) -> Result<Theme, ThemeBuildError> {
         Theme::from_builder(self)
     }
 }
@@ -186,41 +203,57 @@ impl Theme {
         ThemeBuilder::default()
     }
 
-    fn from_builder(b: ThemeBuilder) -> Self {
-        Self {
-            fg: b.fg.expect("ThemeBuilder requires fg"),
-            bg: b.bg.expect("ThemeBuilder requires bg"),
-            accent: b.accent.expect("ThemeBuilder requires accent"),
-            highlight_bg: b.highlight_bg.expect("ThemeBuilder requires highlight_bg"),
+    fn from_builder(b: ThemeBuilder) -> Result<Self, ThemeBuildError> {
+        Ok(Self {
+            fg: b.fg.ok_or(ThemeBuildError::MissingField("fg"))?,
+            bg: b.bg.ok_or(ThemeBuildError::MissingField("bg"))?,
+            accent: b.accent.ok_or(ThemeBuildError::MissingField("accent"))?,
+            highlight_bg: b
+                .highlight_bg
+                .ok_or(ThemeBuildError::MissingField("highlight_bg"))?,
             text_secondary: b
                 .text_secondary
-                .expect("ThemeBuilder requires text_secondary"),
-            code_fg: b.code_fg.expect("ThemeBuilder requires code_fg"),
-            code_bg: b.code_bg.expect("ThemeBuilder requires code_bg"),
-            heading: b.heading.expect("ThemeBuilder requires heading"),
-            link: b.link.expect("ThemeBuilder requires link"),
-            blockquote: b.blockquote.expect("ThemeBuilder requires blockquote"),
-            muted: b.muted.expect("ThemeBuilder requires muted"),
-            success: b.success.expect("ThemeBuilder requires success"),
-            warning: b.warning.expect("ThemeBuilder requires warning"),
-            error: b.error.expect("ThemeBuilder requires error"),
-            info: b.info.expect("ThemeBuilder requires info"),
-            secondary: b.secondary.expect("ThemeBuilder requires secondary"),
+                .ok_or(ThemeBuildError::MissingField("text_secondary"))?,
+            code_fg: b
+                .code_fg
+                .ok_or(ThemeBuildError::MissingField("code_fg"))?,
+            code_bg: b
+                .code_bg
+                .ok_or(ThemeBuildError::MissingField("code_bg"))?,
+            heading: b
+                .heading
+                .ok_or(ThemeBuildError::MissingField("heading"))?,
+            link: b.link.ok_or(ThemeBuildError::MissingField("link"))?,
+            blockquote: b
+                .blockquote
+                .ok_or(ThemeBuildError::MissingField("blockquote"))?,
+            muted: b.muted.ok_or(ThemeBuildError::MissingField("muted"))?,
+            success: b
+                .success
+                .ok_or(ThemeBuildError::MissingField("success"))?,
+            warning: b
+                .warning
+                .ok_or(ThemeBuildError::MissingField("warning"))?,
+            error: b.error.ok_or(ThemeBuildError::MissingField("error"))?,
+            info: b.info.ok_or(ThemeBuildError::MissingField("info"))?,
+            secondary: b
+                .secondary
+                .ok_or(ThemeBuildError::MissingField("secondary"))?,
             diff_added_fg: b
                 .diff_added_fg
-                .expect("ThemeBuilder requires diff_added_fg"),
+                .ok_or(ThemeBuildError::MissingField("diff_added_fg"))?,
             diff_removed_fg: b
                 .diff_removed_fg
-                .expect("ThemeBuilder requires diff_removed_fg"),
+                .ok_or(ThemeBuildError::MissingField("diff_removed_fg"))?,
             diff_added_bg: b
                 .diff_added_bg
-                .expect("ThemeBuilder requires diff_added_bg"),
+                .ok_or(ThemeBuildError::MissingField("diff_added_bg"))?,
             diff_removed_bg: b
                 .diff_removed_bg
-                .expect("ThemeBuilder requires diff_removed_bg"),
+                .ok_or(ThemeBuildError::MissingField("diff_removed_bg"))?,
             #[cfg(feature = "syntax")]
             syntect_theme: Arc::new(syntax::parse_default_syntect_theme()),
-        }
+        })
     }
 
     pub fn primary(&self) -> Color {
@@ -418,9 +451,21 @@ mod tests {
             .diff_removed_fg(Color::Rgb { r: 255, g: 0, b: 0 })
             .diff_added_bg(Color::Rgb { r: 0, g: 20, b: 0 })
             .diff_removed_bg(Color::Rgb { r: 20, g: 0, b: 0 })
-            .build();
+            .build()
+            .unwrap();
         assert_eq!(theme.primary(), Color::Black);
         assert_eq!(theme.background(), Color::White);
         assert_eq!(theme.accent(), Color::Red);
+    }
+
+    #[test]
+    fn build_without_required_field_returns_error() {
+        let result = Theme::builder().fg(Color::Black).build();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, ThemeBuildError::MissingField(_)),
+            "expected MissingField, got: {err}"
+        );
     }
 }
