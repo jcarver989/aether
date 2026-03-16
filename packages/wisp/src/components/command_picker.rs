@@ -118,8 +118,8 @@ mod tests {
     fn sample_commands() -> Vec<CommandEntry> {
         vec![
             CommandEntry {
-                name: "config".into(),
-                description: "Open configuration settings".into(),
+                name: "settings".into(),
+                description: "Open settings".into(),
                 has_input: false,
                 hint: None,
                 builtin: true,

@@ -5,30 +5,30 @@ use acp_utils::config_meta::{ConfigOptionMeta, SelectOptionMeta};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use agent_client_protocol::{SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions};
 
-pub struct ConfigMenu {
-    list: SelectList<ConfigMenuEntry>,
+pub struct SettingsMenu {
+    list: SelectList<SettingsMenuEntry>,
 }
 
-pub struct ConfigMenuEntry {
+pub struct SettingsMenuEntry {
     pub config_id: String,
     pub title: String,
-    pub values: Vec<ConfigMenuValue>,
+    pub values: Vec<SettingsMenuValue>,
     pub current_value_index: usize,
     pub current_raw_value: String,
-    pub entry_kind: ConfigMenuEntryKind,
+    pub entry_kind: SettingsMenuEntryKind,
     pub multi_select: bool,
     pub display_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConfigMenuEntryKind {
+pub enum SettingsMenuEntryKind {
     Select,
     McpServers,
     ProviderLogins,
 }
 
 #[derive(Debug, Clone)]
-pub struct ConfigMenuValue {
+pub struct SettingsMenuValue {
     pub value: String,
     pub name: String,
     pub description: Option<String>,
@@ -37,12 +37,12 @@ pub struct ConfigMenuValue {
 }
 
 #[derive(Debug)]
-pub struct ConfigChange {
+pub struct SettingsChange {
     pub config_id: String,
     pub new_value: String,
 }
 
-pub enum ConfigMenuMessage {
+pub enum SettingMenuMessage {
     CloseAll,
     OpenSelectedPicker,
     OpenMcpServers,
@@ -50,7 +50,7 @@ pub enum ConfigMenuMessage {
     OpenModelSelector,
 }
 
-impl SelectItem for ConfigMenuEntry {
+impl SelectItem for SettingsMenuEntry {
     fn render_item(&self, selected: bool, ctx: &ViewContext) -> Line {
         let prefix = if selected { "▶ " } else { "  " };
         let current_name = self
@@ -78,23 +78,23 @@ impl SelectItem for ConfigMenuEntry {
     }
 }
 
-impl Component for ConfigMenu {
-    type Message = ConfigMenuMessage;
+impl Component for SettingsMenu {
+    type Message = SettingMenuMessage;
 
     async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         let outcome = self.list.on_event(event).await;
         match outcome.as_deref() {
-            Some([SelectListMessage::Close]) => Some(vec![ConfigMenuMessage::CloseAll]),
+            Some([SelectListMessage::Close]) => Some(vec![SettingMenuMessage::CloseAll]),
             Some([SelectListMessage::Select(_)]) => {
                 let msg = match self.list.selected_item() {
-                    Some(e) if e.entry_kind == ConfigMenuEntryKind::McpServers => {
-                        ConfigMenuMessage::OpenMcpServers
+                    Some(e) if e.entry_kind == SettingsMenuEntryKind::McpServers => {
+                        SettingMenuMessage::OpenMcpServers
                     }
-                    Some(e) if e.entry_kind == ConfigMenuEntryKind::ProviderLogins => {
-                        ConfigMenuMessage::OpenProviderLogins
+                    Some(e) if e.entry_kind == SettingsMenuEntryKind::ProviderLogins => {
+                        SettingMenuMessage::OpenProviderLogins
                     }
-                    Some(e) if e.multi_select => ConfigMenuMessage::OpenModelSelector,
-                    _ => ConfigMenuMessage::OpenSelectedPicker,
+                    Some(e) if e.multi_select => SettingMenuMessage::OpenModelSelector,
+                    _ => SettingMenuMessage::OpenSelectedPicker,
                 };
                 Some(vec![msg])
             }
@@ -107,9 +107,9 @@ impl Component for ConfigMenu {
     }
 }
 
-impl ConfigMenu {
+impl SettingsMenu {
     pub fn from_config_options(options: &[SessionConfigOption]) -> Self {
-        let entries: Vec<ConfigMenuEntry> = options
+        let entries: Vec<SettingsMenuEntry> = options
             .iter()
             .filter(|opt| opt.id.0.as_ref() != ConfigOptionId::ReasoningEffort.as_str())
             .filter_map(|opt| {
@@ -134,9 +134,9 @@ impl ConfigMenu {
                     .position(|o| o.value == select.current_value)
                     .unwrap_or(0);
 
-                let values: Vec<ConfigMenuValue> = flat_options
+                let values: Vec<SettingsMenuValue> = flat_options
                     .into_iter()
-                    .map(|o| ConfigMenuValue {
+                    .map(|o| SettingsMenuValue {
                         value: o.value.0.to_string(),
                         name: o.name,
                         is_disabled: o
@@ -173,13 +173,13 @@ impl ConfigMenu {
                     None
                 };
 
-                Some(ConfigMenuEntry {
+                Some(SettingsMenuEntry {
                     config_id: opt.id.0.to_string(),
                     title: opt.name.clone(),
                     values,
                     current_value_index,
                     current_raw_value: select.current_value.0.to_string(),
-                    entry_kind: ConfigMenuEntryKind::Select,
+                    entry_kind: SettingsMenuEntryKind::Select,
                     multi_select,
                     display_name,
                 })
@@ -187,19 +187,19 @@ impl ConfigMenu {
             .collect();
 
         Self {
-            list: SelectList::new(entries, "no config options"),
+            list: SelectList::new(entries, "no settings options"),
         }
     }
 
     #[allow(dead_code)] // Used by integration tests
-    pub fn from_entries(entries: Vec<ConfigMenuEntry>) -> Self {
+    pub fn from_entries(entries: Vec<SettingsMenuEntry>) -> Self {
         Self {
-            list: SelectList::new(entries, "no config options"),
+            list: SelectList::new(entries, "no settings options"),
         }
     }
 
     #[cfg(test)]
-    pub fn options(&self) -> &[ConfigMenuEntry] {
+    pub fn options(&self) -> &[SettingsMenuEntry] {
         self.list.items()
     }
 
@@ -210,7 +210,7 @@ impl ConfigMenu {
 
     pub fn add_theme_entry(&mut self, current_theme_file: Option<&str>, theme_files: &[String]) {
         let mut values = Vec::with_capacity(theme_files.len() + 1);
-        values.push(ConfigMenuValue {
+        values.push(SettingsMenuValue {
             value: String::new(),
             name: "Default".to_string(),
             description: None,
@@ -218,7 +218,7 @@ impl ConfigMenu {
             meta: SelectOptionMeta::default(),
         });
 
-        values.extend(theme_files.iter().map(|file| ConfigMenuValue {
+        values.extend(theme_files.iter().map(|file| SettingsMenuValue {
             value: file.clone(),
             name: file.clone(),
             description: None,
@@ -234,23 +234,23 @@ impl ConfigMenu {
             .map(|v| v.value.clone())
             .unwrap_or_default();
 
-        self.list.push(ConfigMenuEntry {
+        self.list.push(SettingsMenuEntry {
             config_id: THEME_CONFIG_ID.to_string(),
             title: "Theme".to_string(),
             values,
             current_value_index,
             current_raw_value,
-            entry_kind: ConfigMenuEntryKind::Select,
+            entry_kind: SettingsMenuEntryKind::Select,
             multi_select: false,
             display_name: None,
         });
     }
 
     pub fn add_mcp_servers_entry(&mut self, summary: &str) {
-        self.list.push(ConfigMenuEntry {
+        self.list.push(SettingsMenuEntry {
             config_id: "__mcp_servers".to_string(),
             title: "MCP Servers".to_string(),
-            values: vec![ConfigMenuValue {
+            values: vec![SettingsMenuValue {
                 value: String::new(),
                 name: summary.to_string(),
                 description: None,
@@ -259,17 +259,17 @@ impl ConfigMenu {
             }],
             current_value_index: 0,
             current_raw_value: String::new(),
-            entry_kind: ConfigMenuEntryKind::McpServers,
+            entry_kind: SettingsMenuEntryKind::McpServers,
             multi_select: false,
             display_name: None,
         });
     }
 
     pub fn add_provider_logins_entry(&mut self, summary: &str) {
-        self.list.push(ConfigMenuEntry {
+        self.list.push(SettingsMenuEntry {
             config_id: "__provider_logins".to_string(),
             title: "Provider Logins".to_string(),
-            values: vec![ConfigMenuValue {
+            values: vec![SettingsMenuValue {
                 value: String::new(),
                 name: summary.to_string(),
                 description: None,
@@ -278,7 +278,7 @@ impl ConfigMenu {
             }],
             current_value_index: 0,
             current_raw_value: String::new(),
-            entry_kind: ConfigMenuEntryKind::ProviderLogins,
+            entry_kind: SettingsMenuEntryKind::ProviderLogins,
             multi_select: false,
             display_name: None,
         });
@@ -291,11 +291,11 @@ impl ConfigMenu {
         self.list.set_selected(prev_index.min(max));
     }
 
-    pub fn selected_entry(&self) -> Option<&ConfigMenuEntry> {
+    pub fn selected_entry(&self) -> Option<&SettingsMenuEntry> {
         self.list.selected_item()
     }
 
-    pub fn apply_change(&mut self, change: &ConfigChange) {
+    pub fn apply_change(&mut self, change: &SettingsChange) {
         let Some(entry) = self
             .list
             .items_mut()
@@ -358,7 +358,7 @@ mod tests {
                 &[("code", "Code"), ("chat", "Chat")],
             ),
         ];
-        let menu = ConfigMenu::from_config_options(&opts);
+        let menu = SettingsMenu::from_config_options(&opts);
         assert_eq!(menu.options().len(), 2);
         assert_eq!(menu.options()[0].config_id, "model");
         assert_eq!(menu.options()[0].current_value_index, 0);
@@ -377,7 +377,7 @@ mod tests {
                 ("llama", "Llama"),
             ],
         )];
-        let menu = ConfigMenu::from_config_options(&opts);
+        let menu = SettingsMenu::from_config_options(&opts);
         assert_eq!(menu.options()[0].current_value_index, 1);
     }
 
@@ -388,7 +388,7 @@ mod tests {
             make_select_option("b", "B", "v1", &[("v1", "V1")]),
             make_select_option("c", "C", "v1", &[("v1", "V1")]),
         ];
-        let mut menu = ConfigMenu::from_config_options(&opts);
+        let mut menu = SettingsMenu::from_config_options(&opts);
         assert_eq!(menu.selected_index(), 0);
 
         menu.on_event(&Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)))
@@ -427,7 +427,7 @@ mod tests {
             make_select_option("b", "B", "v1", &[("v1", "V1")]),
             make_select_option("c", "C", "v1", &[("v1", "V1")]),
         ];
-        let mut menu = ConfigMenu::from_config_options(&opts);
+        let mut menu = SettingsMenu::from_config_options(&opts);
         menu.list.set_selected(2);
 
         let fewer = vec![make_select_option("a", "A", "v1", &[("v1", "V1")])];
@@ -441,7 +441,7 @@ mod tests {
             make_select_option("provider", "Provider", "a", &[("a", "A"), ("b", "B")]),
             make_select_option("model", "Model", "m1", &[("m1", "M1"), ("m2", "M2")]),
         ];
-        let mut menu = ConfigMenu::from_config_options(&opts);
+        let mut menu = SettingsMenu::from_config_options(&opts);
         menu.list.set_selected(1);
 
         let new_opts = vec![
@@ -460,7 +460,7 @@ mod tests {
             empty,
             make_select_option("model", "Model", "a", &[("a", "A")]),
         ];
-        let menu = ConfigMenu::from_config_options(&opts);
+        let menu = SettingsMenu::from_config_options(&opts);
         assert_eq!(menu.options().len(), 1);
         assert_eq!(menu.options()[0].config_id, "model");
     }
@@ -469,7 +469,7 @@ mod tests {
     fn from_config_options_with_category() {
         let opt = make_select_option("model", "Model", "gpt-4o", &[("gpt-4o", "GPT-4o")])
             .category(SessionConfigOptionCategory::Model);
-        let menu = ConfigMenu::from_config_options(&[opt]);
+        let menu = SettingsMenu::from_config_options(&[opt]);
         assert_eq!(menu.options().len(), 1);
         assert_eq!(menu.options()[0].title, "Model");
     }
@@ -477,7 +477,7 @@ mod tests {
     #[tokio::test]
     async fn handle_key_enter_requests_open_picker() {
         let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
-        let mut menu = ConfigMenu::from_config_options(&opts);
+        let mut menu = SettingsMenu::from_config_options(&opts);
 
         let outcome = menu
             .on_event(&Event::Key(KeyEvent::new(
@@ -491,14 +491,14 @@ mod tests {
         let messages = outcome.unwrap();
         assert!(matches!(
             messages.as_slice(),
-            [ConfigMenuMessage::OpenSelectedPicker]
+            [SettingMenuMessage::OpenSelectedPicker]
         ));
     }
 
     #[tokio::test]
     async fn handle_key_escape_requests_close() {
         let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
-        let mut menu = ConfigMenu::from_config_options(&opts);
+        let mut menu = SettingsMenu::from_config_options(&opts);
 
         let outcome = menu
             .on_event(&Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)))
@@ -507,7 +507,10 @@ mod tests {
         assert!(outcome.is_some());
 
         let messages = outcome.unwrap();
-        assert!(matches!(messages.as_slice(), [ConfigMenuMessage::CloseAll]));
+        assert!(matches!(
+            messages.as_slice(),
+            [SettingMenuMessage::CloseAll]
+        ));
     }
 
     #[test]
@@ -515,14 +518,14 @@ mod tests {
         let meta = ConfigOptionMeta { multi_select: true };
         let opt = make_select_option("model", "Model", "a", &[("a", "A"), ("b", "B")])
             .meta(meta.into_meta());
-        let menu = ConfigMenu::from_config_options(&[opt]);
+        let menu = SettingsMenu::from_config_options(&[opt]);
         assert!(menu.options()[0].multi_select);
     }
 
     #[test]
     fn multi_select_false_when_no_meta() {
         let opt = make_select_option("model", "Model", "a", &[("a", "A")]);
-        let menu = ConfigMenu::from_config_options(&[opt]);
+        let menu = SettingsMenu::from_config_options(&[opt]);
         assert!(!menu.options()[0].multi_select);
     }
 
@@ -531,7 +534,7 @@ mod tests {
         let meta = ConfigOptionMeta { multi_select: true };
         let opt = make_select_option("model", "Model", "a", &[("a", "A"), ("b", "B")])
             .meta(meta.into_meta());
-        let mut menu = ConfigMenu::from_config_options(&[opt]);
+        let mut menu = SettingsMenu::from_config_options(&[opt]);
 
         let outcome = menu
             .on_event(&Event::Key(KeyEvent::new(
@@ -542,7 +545,7 @@ mod tests {
         let messages = outcome.unwrap();
         assert!(matches!(
             messages.as_slice(),
-            [ConfigMenuMessage::OpenModelSelector]
+            [SettingMenuMessage::OpenModelSelector]
         ));
     }
 
@@ -551,7 +554,7 @@ mod tests {
         let meta = ConfigOptionMeta { multi_select: true };
         let opt = make_select_option("model", "Model", "a,b", &[("a", "Alpha"), ("b", "Beta")])
             .meta(meta.into_meta());
-        let menu = ConfigMenu::from_config_options(&[opt]);
+        let menu = SettingsMenu::from_config_options(&[opt]);
         let display = menu.options()[0].display_name.as_deref().unwrap();
         assert!(display.contains("Alpha"), "display: {display}");
         assert!(display.contains("Beta"), "display: {display}");
@@ -559,11 +562,11 @@ mod tests {
 
     #[test]
     fn apply_change_updates_matching_entry_value_and_index() {
-        let mut menu = ConfigMenu::from_config_options(&[]);
+        let mut menu = SettingsMenu::from_config_options(&[]);
         let files = vec!["catppuccin.tmTheme".to_string(), "nord.tmTheme".to_string()];
         menu.add_theme_entry(None, &files);
 
-        menu.apply_change(&ConfigChange {
+        menu.apply_change(&SettingsChange {
             config_id: THEME_CONFIG_ID.to_string(),
             new_value: "nord.tmTheme".to_string(),
         });
@@ -575,7 +578,7 @@ mod tests {
 
     #[test]
     fn add_theme_entry_inserts_theme_row() {
-        let mut menu = ConfigMenu::from_config_options(&[]);
+        let mut menu = SettingsMenu::from_config_options(&[]);
         let files = vec!["catppuccin.tmTheme".to_string(), "nord.tmTheme".to_string()];
 
         menu.add_theme_entry(None, &files);
@@ -584,7 +587,7 @@ mod tests {
         let theme = &menu.options()[0];
         assert_eq!(theme.config_id, THEME_CONFIG_ID);
         assert_eq!(theme.title, "Theme");
-        assert_eq!(theme.entry_kind, ConfigMenuEntryKind::Select);
+        assert_eq!(theme.entry_kind, SettingsMenuEntryKind::Select);
         assert!(!theme.multi_select);
         assert_eq!(theme.values.len(), 3);
         assert_eq!(theme.values[0].name, "Default");
@@ -595,7 +598,7 @@ mod tests {
 
     #[test]
     fn add_theme_entry_selects_default_when_current_none() {
-        let mut menu = ConfigMenu::from_config_options(&[]);
+        let mut menu = SettingsMenu::from_config_options(&[]);
         let files = vec!["catppuccin.tmTheme".to_string()];
 
         menu.add_theme_entry(None, &files);
@@ -607,7 +610,7 @@ mod tests {
 
     #[test]
     fn add_theme_entry_selects_matching_theme_file() {
-        let mut menu = ConfigMenu::from_config_options(&[]);
+        let mut menu = SettingsMenu::from_config_options(&[]);
         let files = vec!["catppuccin.tmTheme".to_string(), "nord.tmTheme".to_string()];
 
         menu.add_theme_entry(Some("nord.tmTheme"), &files);
@@ -619,7 +622,7 @@ mod tests {
 
     #[test]
     fn add_theme_entry_falls_back_to_default_when_current_missing() {
-        let mut menu = ConfigMenu::from_config_options(&[]);
+        let mut menu = SettingsMenu::from_config_options(&[]);
         let files = vec!["catppuccin.tmTheme".to_string()];
 
         menu.add_theme_entry(Some("missing.tmTheme"), &files);
@@ -632,7 +635,7 @@ mod tests {
     #[test]
     fn non_multi_select_has_no_display_name() {
         let opt = make_select_option("model", "Model", "a", &[("a", "A")]);
-        let menu = ConfigMenu::from_config_options(&[opt]);
+        let menu = SettingsMenu::from_config_options(&[opt]);
         assert!(menu.options()[0].display_name.is_none());
     }
 
@@ -657,7 +660,7 @@ mod tests {
                 ],
             ),
         ];
-        let menu = ConfigMenu::from_config_options(&opts);
+        let menu = SettingsMenu::from_config_options(&opts);
 
         assert!(
             menu.options().iter().any(|e| e.config_id == "model"),

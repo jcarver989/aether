@@ -9,94 +9,94 @@ use tui::testing::TestTerminal;
 use super::common::*;
 
 #[tokio::test]
-async fn test_config_command_opens_menu_for_single_option() {
-    let config_options = make_config_options();
+async fn test_settings_command_opens_menu() {
+    let config_options = make_settings_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config").await;
+    type_string(&mut renderer, "/settings").await;
     press_enter(&mut renderer).await;
 
-    // Config menu should open; picker requires explicit Enter
+    // Settings menu should open; picker requires explicit Enter
     assert!(
-        has_config_menu(renderer.writer()),
-        "Config menu should be visible"
+        has_settings_menu(renderer.writer()),
+        "Settings menu should be visible"
     );
     assert!(
-        !has_config_picker(renderer.writer()),
-        "Config picker should not be visible"
+        !has_settings_picker(renderer.writer()),
+        "Settings picker should not be visible"
     );
 }
 
 #[tokio::test]
-async fn test_config_menu_esc_closes() {
-    let config_options = make_config_options();
+async fn test_settings_menu_esc_closes() {
+    let config_options = make_settings_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config").await;
+    type_string(&mut renderer, "/settings").await;
     press_enter(&mut renderer).await;
     assert!(
-        has_config_menu(renderer.writer()),
-        "Config menu should be visible"
+        has_settings_menu(renderer.writer()),
+        "Settings menu should be visible"
     );
     assert!(
-        !has_config_picker(renderer.writer()),
-        "Config picker should not be visible"
+        !has_settings_picker(renderer.writer()),
+        "Settings picker should not be visible"
     );
 
     // Open the picker by pressing Enter on the selected menu entry
     press_enter(&mut renderer).await;
     assert!(
-        has_config_menu(renderer.writer()),
-        "Config menu should be visible"
+        has_settings_menu(renderer.writer()),
+        "Settings menu should be visible"
     );
     assert!(
-        has_config_picker(renderer.writer()),
-        "Config picker should be visible"
+        has_settings_picker(renderer.writer()),
+        "Settings picker should be visible"
     );
 
     // First ESC closes the picker
     send_key(&mut renderer, KeyCode::Esc, KeyModifiers::empty()).await;
     assert!(
-        has_config_menu(renderer.writer()),
-        "Config menu should be visible"
+        has_settings_menu(renderer.writer()),
+        "Settings menu should be visible"
     );
     assert!(
-        !has_config_picker(renderer.writer()),
-        "Config picker should not be visible"
+        !has_settings_picker(renderer.writer()),
+        "Settings picker should not be visible"
     );
 
     // Second ESC closes the menu
     send_key(&mut renderer, KeyCode::Esc, KeyModifiers::empty()).await;
     assert!(
-        !has_config_menu(renderer.writer()),
-        "Config menu should not be visible"
+        !has_settings_menu(renderer.writer()),
+        "Settings menu should not be visible"
     );
 }
 
 #[tokio::test]
-async fn test_config_menu_arrow_navigation_single_entry() {
-    let config_options = make_config_options();
+async fn test_settings_menu_arrow_navigation_single_entry() {
+    let config_options = make_settings_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config").await;
+    type_string(&mut renderer, "/settings").await;
     press_enter(&mut renderer).await;
 
-    // With single config option + Theme + MCP servers, menu has 3 entries: Model, Theme, MCP Servers
+    // With single settings option + Theme + MCP servers, menu has 3 entries: Model, Theme, MCP Servers
     assert!(
-        has_config_menu(renderer.writer()),
-        "Config menu should be visible"
+        has_settings_menu(renderer.writer()),
+        "Settings menu should be visible"
     );
     assert!(
-        !has_config_picker(renderer.writer()),
-        "Config picker should not be visible"
+        !has_settings_picker(renderer.writer()),
+        "Settings picker should not be visible"
     );
-    let label = config_menu_selected_label(renderer.writer());
+    let label = settings_menu_selected_label(renderer.writer());
     assert!(
         label.as_deref().is_some_and(|l| l.contains("Model")),
         "Initial selection should be Model, got: {label:?}"
@@ -104,7 +104,7 @@ async fn test_config_menu_arrow_navigation_single_entry() {
 
     // Down goes to Theme (index 1)
     send_key(&mut renderer, KeyCode::Down, KeyModifiers::empty()).await;
-    let label = config_menu_selected_label(renderer.writer());
+    let label = settings_menu_selected_label(renderer.writer());
     assert!(
         label.as_deref().is_some_and(|l| l.contains("Theme")),
         "Second selection should be Theme, got: {label:?}"
@@ -112,7 +112,7 @@ async fn test_config_menu_arrow_navigation_single_entry() {
 
     // Down again goes to MCP Servers (index 2)
     send_key(&mut renderer, KeyCode::Down, KeyModifiers::empty()).await;
-    let label = config_menu_selected_label(renderer.writer());
+    let label = settings_menu_selected_label(renderer.writer());
     assert!(
         label.as_deref().is_some_and(|l| l.contains("MCP Servers")),
         "Third selection should be MCP Servers, got: {label:?}"
@@ -120,7 +120,7 @@ async fn test_config_menu_arrow_navigation_single_entry() {
 
     // Down again wraps back to Model (index 0)
     send_key(&mut renderer, KeyCode::Down, KeyModifiers::empty()).await;
-    let label = config_menu_selected_label(renderer.writer());
+    let label = settings_menu_selected_label(renderer.writer());
     assert!(
         label.as_deref().is_some_and(|l| l.contains("Model")),
         "Wrapped selection should be Model, got: {label:?}"
@@ -128,25 +128,25 @@ async fn test_config_menu_arrow_navigation_single_entry() {
 }
 
 #[tokio::test]
-async fn test_config_single_option_shows_model_picker() {
-    let config_options = make_config_options();
+async fn test_settings_single_option_shows_model_picker() {
+    let config_options = make_settings_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config").await;
+    type_string(&mut renderer, "/settings").await;
     press_enter(&mut renderer).await;
 
     // Menu opens; press Enter to open the model picker
     assert!(
-        has_config_menu(renderer.writer()),
-        "Config menu should be visible"
+        has_settings_menu(renderer.writer()),
+        "Settings menu should be visible"
     );
     press_enter(&mut renderer).await;
 
     assert!(
-        has_config_picker(renderer.writer()),
-        "Config picker should be visible"
+        has_settings_picker(renderer.writer()),
+        "Settings picker should be visible"
     );
     let lines = renderer.writer().get_lines();
     assert!(
@@ -157,13 +157,13 @@ async fn test_config_single_option_shows_model_picker() {
 }
 
 #[tokio::test]
-async fn test_config_picker_focuses_cursor_on_overlay_query() {
-    let config_options = make_config_options();
+async fn test_settings_picker_focuses_cursor_on_overlay_query() {
+    let config_options = make_settings_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config").await;
+    type_string(&mut renderer, "/settings").await;
     press_enter(&mut renderer).await;
     // Open the picker from the menu
     press_enter(&mut renderer).await;
@@ -187,13 +187,13 @@ async fn test_config_picker_focuses_cursor_on_overlay_query() {
 }
 
 #[tokio::test]
-async fn test_config_picker_filters_model_options() {
-    let config_options = make_config_options();
+async fn test_settings_picker_filters_model_options() {
+    let config_options = make_settings_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config").await;
+    type_string(&mut renderer, "/settings").await;
     press_enter(&mut renderer).await;
     // Open the picker from the menu
     press_enter(&mut renderer).await;
@@ -209,7 +209,7 @@ async fn test_config_picker_filters_model_options() {
 }
 
 #[tokio::test]
-async fn test_config_menu_swallows_other_keys() {
+async fn test_settings_menu_swallows_other_keys() {
     let config_options = vec![
         acp::SessionConfigOption::select(
             "model",
@@ -229,45 +229,45 @@ async fn test_config_menu_swallows_other_keys() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config").await;
+    type_string(&mut renderer, "/settings").await;
     press_enter(&mut renderer).await;
     assert!(
-        has_config_menu(renderer.writer()),
-        "Config menu should be visible"
+        has_settings_menu(renderer.writer()),
+        "Settings menu should be visible"
     );
 
     // Typing a character should not modify input buffer
     send_key(&mut renderer, KeyCode::Char('x'), KeyModifiers::empty()).await;
 
-    // Menu should still be open
+    // Settings menu should still be open
     assert!(
-        has_config_menu(renderer.writer()),
-        "Config menu should be visible"
+        has_settings_menu(renderer.writer()),
+        "Settings menu should be visible"
     );
     // Input prompt is not rendered while overlay is open, so 'x' shouldn't appear anywhere
     let lines = renderer.writer().get_lines();
     assert!(
         !lines.iter().any(|l| l.contains('x')),
-        "Typed char should be swallowed while config overlay is open.\nBuffer:\n{}",
+        "Typed char should be swallowed while settings overlay is open.\nBuffer:\n{}",
         lines.join("\n")
     );
 }
 
 #[tokio::test]
-async fn test_config_menu_ctrl_c_exits() {
-    let config_options = make_config_options();
+async fn test_settings_menu_ctrl_c_exits() {
+    let config_options = make_settings_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config").await;
+    type_string(&mut renderer, "/settings").await;
     press_enter(&mut renderer).await;
     assert!(
-        has_config_menu(renderer.writer()),
-        "Config menu should be visible"
+        has_settings_menu(renderer.writer()),
+        "Settings menu should be visible"
     );
 
-    // Ctrl+C should still exit even with menu open
+    // Ctrl+C should still exit even with settings menu open
     let action = renderer
         .on_key_event(KeyEvent {
             code: KeyCode::Char('c'),
@@ -282,20 +282,20 @@ async fn test_config_menu_ctrl_c_exits() {
 }
 
 #[tokio::test]
-async fn test_config_menu_updates_on_config_option_event() {
-    let config_options = make_config_options();
+async fn test_settings_menu_updates_on_config_option_event() {
+    let config_options = make_settings_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config").await;
+    type_string(&mut renderer, "/settings").await;
     press_enter(&mut renderer).await;
     assert!(
-        has_config_menu(renderer.writer()),
-        "Config menu should be visible"
+        has_settings_menu(renderer.writer()),
+        "Settings menu should be visible"
     );
 
-    // Simulate the agent responding with updated config
+    // Simulate the agent responding with updated settings
     let new_config = vec![
         acp::SessionConfigOption::select(
             "model".to_string(),
@@ -324,56 +324,56 @@ async fn test_config_menu_updates_on_config_option_event() {
     let lines = renderer.writer().get_lines();
     assert!(
         lines.iter().any(|l| l.contains("Claude Sonnet")),
-        "Menu should reflect updated config.\nBuffer:\n{}",
+        "Menu should reflect updated settings.\nBuffer:\n{}",
         lines.join("\n")
     );
 }
 
 #[tokio::test]
-async fn test_config_clears_input_buffer() {
-    let config_options = make_config_options();
+async fn test_settings_clears_input_buffer() {
+    let config_options = make_settings_options();
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config").await;
+    type_string(&mut renderer, "/settings").await;
     press_enter(&mut renderer).await;
 
     // Input buffer should be cleared
     let lines = renderer.writer().get_lines();
-    // The prompt line should not contain "/config"
+    // The prompt line should not contain "/settings"
     assert!(
-        !lines.iter().any(|l| l.contains("/config")),
-        "Input buffer should be cleared after /config.\nBuffer:\n{}",
+        !lines.iter().any(|l| l.contains("/settings")),
+        "Input buffer should be cleared after /settings.\nBuffer:\n{}",
         lines.join("\n")
     );
 }
 
 #[tokio::test]
-async fn test_config_with_no_options_shows_placeholder() {
+async fn test_settings_with_no_options_shows_placeholder() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config").await;
+    type_string(&mut renderer, "/settings").await;
     press_enter(&mut renderer).await;
 
     assert!(
-        has_config_menu(renderer.writer()),
-        "Config menu should be visible"
+        has_settings_menu(renderer.writer()),
+        "Settings menu should be visible"
     );
     let lines = renderer.writer().get_lines();
-    // Even with no config options, the MCP Servers entry is always present
+    // Even with no settings options, the MCP Servers entry is always present
     assert!(
         lines.iter().any(|l| l.contains("MCP Servers")),
-        "Should show MCP Servers entry even when no config options.\nBuffer:\n{}",
+        "Should show MCP Servers entry even when no settings options.\nBuffer:\n{}",
         lines.join("\n")
     );
 }
 
 #[tokio::test]
-async fn test_config_overlay_renders_after_large_overflow_scrollback() {
-    let config_options = make_config_options();
+async fn test_settings_overlay_renders_after_large_overflow_scrollback() {
+    let config_options = make_settings_options();
     // Small viewport to force overflow quickly
     let terminal = TestTerminal::new(40, 8);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (40, 8));
@@ -390,17 +390,17 @@ async fn test_config_overlay_renders_after_large_overflow_scrollback() {
             .unwrap();
     }
 
-    // Now open config overlay WHILE still in the streaming context
+    // Now open settings overlay WHILE still in the streaming context
     // This is where the bug manifests - flushed_visual_count is high
     // but the overlay produces fewer lines
 
-    type_string(&mut renderer, "/config").await;
+    type_string(&mut renderer, "/settings").await;
     press_enter(&mut renderer).await;
 
     // Assert overlay state is correct
     assert!(
-        has_config_menu(renderer.writer()),
-        "Config menu should be open"
+        has_settings_menu(renderer.writer()),
+        "Settings menu should be open"
     );
 
     // Assert overlay content is actually visible
@@ -412,14 +412,14 @@ async fn test_config_overlay_renders_after_large_overflow_scrollback() {
     );
     assert!(
         lines.iter().any(|l| l.contains("Model")),
-        "Model config option should be visible in overlay.\nBuffer:\n{}",
+        "Model option should be visible in overlay.\nBuffer:\n{}",
         lines.join("\n")
     );
 }
 
 #[tokio::test]
-async fn test_config_overlay_open_close_after_overflow_keeps_prompt_and_layout_valid() {
-    let config_options = make_config_options();
+async fn test_settings_overlay_open_close_after_overflow_keeps_prompt_and_layout_valid() {
+    let config_options = make_settings_options();
     let terminal = TestTerminal::new(40, 8);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (40, 8));
     renderer.initial_render().unwrap();
@@ -434,14 +434,14 @@ async fn test_config_overlay_open_close_after_overflow_keeps_prompt_and_layout_v
             .unwrap();
     }
 
-    // Open config overlay while flushed_visual_count is high
-    type_string(&mut renderer, "/config").await;
+    // Open settings overlay while flushed_visual_count is high
+    type_string(&mut renderer, "/settings").await;
     press_enter(&mut renderer).await;
 
     // Verify overlay rendered correctly
     assert!(
-        has_config_menu(renderer.writer()),
-        "Config menu should be visible"
+        has_settings_menu(renderer.writer()),
+        "Settings menu should be visible"
     );
     let lines_before = renderer.writer().get_lines();
     assert!(
@@ -455,8 +455,8 @@ async fn test_config_overlay_open_close_after_overflow_keeps_prompt_and_layout_v
 
     // Verify normal prompt rendering resumes
     assert!(
-        !has_config_menu(renderer.writer()),
-        "Config menu should not be visible"
+        !has_settings_menu(renderer.writer()),
+        "Settings menu should not be visible"
     );
     let lines_after = renderer.writer().get_lines();
 
@@ -479,7 +479,7 @@ async fn test_config_overlay_open_close_after_overflow_keeps_prompt_and_layout_v
 }
 
 #[tokio::test]
-async fn test_config_option_update_refreshes_mode_display() {
+async fn test_settings_option_update_refreshes_mode_display() {
     let initial = vec![
         acp::SessionConfigOption::select(
             "mode",
@@ -530,11 +530,11 @@ async fn test_server_status_notification_updates_overlay_state() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
-    type_string(&mut renderer, "/config").await;
+    type_string(&mut renderer, "/settings").await;
     press_enter(&mut renderer).await;
     assert!(
-        has_config_menu(renderer.writer()),
-        "Config overlay should be visible"
+        has_settings_menu(renderer.writer()),
+        "Settings overlay should be visible"
     );
 
     let notification =
@@ -548,7 +548,7 @@ async fn test_server_status_notification_updates_overlay_state() {
     renderer.on_ext_notification(notification).unwrap();
 
     assert!(
-        has_config_menu(renderer.writer()),
-        "Config overlay should still be visible after server status update"
+        has_settings_menu(renderer.writer()),
+        "Settings overlay should still be visible after server status update"
     );
 }

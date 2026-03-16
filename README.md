@@ -1,13 +1,15 @@
 # Aether
 
-A modular Rust toolkit for building AI agents (LLM + prompt + tools + loop). Use components a la carte, or snap them together into a batteries-included coding agent. Aether has optional tools, sub-agent support, LSP integration and runs in your terminal (via a TUI), IDE/editor (via ACP), or headlessly as an async agent.
+A modular toolkit for building AI agents (LLM + prompt + tools + loop), written in Rust. 
+
+Use Aether as a library and select components a la carte, or use it to run a fully batteries-included agent that has filesystem tools, LSP server integration, sub-agents, skills and more.
 
 ## Why Aether?
 
-1. **Your context** — Aether agents start with no system prompt or tools; you control _every_ token in the context window.
-2. **Your model** — Works with Anthropic, OpenAI, OpenRouter, Google, DeepSeek, Moonshot, Zai, Llama.cpp, or Ollama out of the box. Or, bring your own via the `StreamableModelProvider` trait.
+1. **Your context** — Agents default to an empty system prompt with no tools, so _you_ control _every_ token in the agent's context window.
+2. **Your model** — Use any LLM you want -- OpenAI, OpenRouter, Google, DeepSeek, Moonshot, Zai, Llama.cpp, and Ollama providers are supported out of the box. And you can implement your own provider via the `StreamableModelProvider` trait.
 3. **Your tools** — Aether agents get tools exclusively via [MCP](https://modelcontextprotocol.io/) servers. Thus you can extend them using _any_ language, configure them using standard `mcp.json` files, and swap toolsets without touching agent code.
-4. **Your interface** — Aether agents come out of the box ready to run wherever you need them to -- headlessly, in the terminal (via a TUI), in an editor (via ACP integration), or use as a Rust library.
+4. **Your interface** — Aether agents come out of the box ready to run wherever you need them to -- headlessly, in the terminal (via a TUI), in an editor (via ACP integration), or as a Rust library.
 
 ## Quick Start
 Create a custom agent in ~10 minutes, no Rust code required.

@@ -1,5 +1,5 @@
-use crate::components::config_menu::{ConfigChange, ConfigMenuEntry};
 use crate::components::reasoning_bar::reasoning_bar;
+use crate::components::settings_menu::{SettingsChange, SettingsMenuEntry};
 use crate::tui::{
     Combobox, Component, Event, Frame, Line, PickerKey, Searchable, ViewContext, classify_key,
 };
@@ -75,12 +75,12 @@ pub struct ModelSelector {
 
 #[derive(Debug)]
 pub enum ModelSelectorMessage {
-    Done(Vec<ConfigChange>),
+    Done(Vec<SettingsChange>),
 }
 
 impl ModelSelector {
     pub fn from_model_entry(
-        entry: &ConfigMenuEntry,
+        entry: &SettingsMenuEntry,
         current_selection: Option<&str>,
         current_reasoning_effort: Option<&str>,
     ) -> Self {
@@ -141,7 +141,7 @@ impl ModelSelector {
         }
     }
 
-    fn confirm(&self) -> Vec<ConfigChange> {
+    fn confirm(&self) -> Vec<SettingsChange> {
         let mut changes = Vec::new();
         if !self.selected_models.is_empty() && self.selected_models != self.original_models {
             let joined = self
@@ -150,13 +150,13 @@ impl ModelSelector {
                 .cloned()
                 .collect::<Vec<_>>()
                 .join(",");
-            changes.push(ConfigChange {
+            changes.push(SettingsChange {
                 config_id: self.config_id.clone(),
                 new_value: joined,
             });
         }
         if self.reasoning_effort != self.original_reasoning_effort {
-            changes.push(ConfigChange {
+            changes.push(SettingsChange {
                 config_id: ConfigOptionId::ReasoningEffort.as_str().to_string(),
                 new_value: reasoning_config_value(self.reasoning_effort).to_string(),
             });
@@ -340,30 +340,30 @@ fn reasoning_config_value(effort: Option<ReasoningEffort>) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::config_menu::{ConfigMenuEntryKind, ConfigMenuValue};
+    use crate::components::settings_menu::{SettingsMenuEntryKind, SettingsMenuValue};
     use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
     use acp_utils::config_meta::SelectOptionMeta;
 
-    fn model_entry() -> ConfigMenuEntry {
-        ConfigMenuEntry {
+    fn model_entry() -> SettingsMenuEntry {
+        SettingsMenuEntry {
             config_id: "model".to_string(),
             title: "Model".to_string(),
             values: vec![
-                ConfigMenuValue {
+                SettingsMenuValue {
                     value: "anthropic:claude-sonnet-4-5".to_string(),
                     name: "Anthropic / Claude Sonnet 4.5".to_string(),
                     description: None,
                     is_disabled: false,
                     meta: SelectOptionMeta::default(),
                 },
-                ConfigMenuValue {
+                SettingsMenuValue {
                     value: "deepseek:deepseek-chat".to_string(),
                     name: "DeepSeek / DeepSeek Chat".to_string(),
                     description: None,
                     is_disabled: false,
                     meta: SelectOptionMeta::default(),
                 },
-                ConfigMenuValue {
+                SettingsMenuValue {
                     value: "gemini:gemini-2.5-pro".to_string(),
                     name: "Google / Gemini 2.5 Pro".to_string(),
                     description: None,
@@ -373,7 +373,7 @@ mod tests {
             ],
             current_value_index: 0,
             current_raw_value: "anthropic:claude-sonnet-4-5".to_string(),
-            entry_kind: ConfigMenuEntryKind::Select,
+            entry_kind: SettingsMenuEntryKind::Select,
             multi_select: true,
             display_name: None,
         }
@@ -533,19 +533,19 @@ mod tests {
         }
     }
 
-    fn model_entry_with_reasoning() -> ConfigMenuEntry {
-        ConfigMenuEntry {
+    fn model_entry_with_reasoning() -> SettingsMenuEntry {
+        SettingsMenuEntry {
             config_id: "model".to_string(),
             title: "Model".to_string(),
             values: vec![
-                ConfigMenuValue {
+                SettingsMenuValue {
                     value: "anthropic:claude-opus-4-6".to_string(),
                     name: "Anthropic / Claude Opus 4.6".to_string(),
                     description: None,
                     is_disabled: false,
                     meta: reasoning_meta(),
                 },
-                ConfigMenuValue {
+                SettingsMenuValue {
                     value: "deepseek:deepseek-chat".to_string(),
                     name: "DeepSeek / DeepSeek Chat".to_string(),
                     description: None,
@@ -555,7 +555,7 @@ mod tests {
             ],
             current_value_index: 0,
             current_raw_value: "anthropic:claude-opus-4-6".to_string(),
-            entry_kind: ConfigMenuEntryKind::Select,
+            entry_kind: SettingsMenuEntryKind::Select,
             multi_select: true,
             display_name: None,
         }

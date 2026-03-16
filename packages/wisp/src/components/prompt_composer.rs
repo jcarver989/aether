@@ -15,7 +15,7 @@ pub enum PromptComposerMessage {
         user_input: String,
         attachments: Vec<PromptAttachment>,
     },
-    OpenConfig,
+    OpenSettings,
     OpenSessionPicker,
     ClearScreen,
 }
@@ -192,10 +192,10 @@ impl PromptComposer {
             self.text_input.clear();
             self.close_all();
             vec![PromptComposerMessage::ClearScreen]
-        } else if cmd.builtin && cmd.name == "config" {
+        } else if cmd.builtin && cmd.name == "settings" {
             self.text_input.clear();
             self.close_all();
-            vec![PromptComposerMessage::OpenConfig]
+            vec![PromptComposerMessage::OpenSettings]
         } else if cmd.builtin && cmd.name == "resume" {
             self.text_input.clear();
             self.close_all();
@@ -317,8 +317,8 @@ fn builtin_commands() -> Vec<CommandEntry> {
             builtin: true,
         },
         CommandEntry {
-            name: "config".into(),
-            description: "Open configuration settings".into(),
+            name: "settings".into(),
+            description: "Open settings".into(),
             has_input: false,
             hint: None,
             builtin: true,
@@ -344,20 +344,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn builtin_config_command_emits_open_config() {
+    async fn builtin_settings_command_emits_open_settings() {
         let mut composer = PromptComposer::default();
 
         composer.on_event(&key(KeyCode::Char('/'))).await;
 
         assert!(composer.has_command_picker());
 
-        // Navigate past "clear" to "config"
+        // Navigate past "clear" to "settings"
         composer.on_event(&key(KeyCode::Down)).await;
 
         let outcome = composer.on_event(&key(KeyCode::Enter)).await;
         assert!(matches!(
             outcome.unwrap().as_slice(),
-            [PromptComposerMessage::OpenConfig]
+            [PromptComposerMessage::OpenSettings]
         ));
         assert_eq!(composer.buffer(), "");
         assert!(!composer.has_active_picker());
@@ -456,8 +456,8 @@ mod tests {
     fn command_picker_cursor_stays_in_prompt_row() {
         let mut composer = PromptComposer::default();
         composer.open_command_picker_with_entries(vec![CommandEntry {
-            name: "config".into(),
-            description: "Open config".into(),
+            name: "settings".into(),
+            description: "Open settings".into(),
             has_input: false,
             hint: None,
             builtin: true,

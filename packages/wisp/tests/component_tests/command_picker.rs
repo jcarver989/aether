@@ -24,8 +24,8 @@ async fn type_query(picker: &mut CommandPicker, text: &str) {
 fn sample_commands() -> Vec<CommandEntry> {
     vec![
         CommandEntry {
-            name: "config".into(),
-            description: "Open configuration settings".into(),
+            name: "settings".into(),
+            description: "Open settings".into(),
             has_input: false,
             hint: None,
             builtin: true,
@@ -64,7 +64,7 @@ fn init_shows_all_commands() {
     let mut picker = CommandPicker::new(sample_commands());
     let lines = rendered_lines(&mut picker, DEFAULT_SIZE.0, DEFAULT_SIZE.1);
     assert_eq!(lines.len(), 3);
-    assert!(lines.iter().any(|l| l.contains("/config")));
+    assert!(lines.iter().any(|l| l.contains("/settings")));
     assert!(lines.iter().any(|l| l.contains("/search")));
     assert!(lines.iter().any(|l| l.contains("/web")));
 }
@@ -72,10 +72,10 @@ fn init_shows_all_commands() {
 #[tokio::test]
 async fn query_filters_by_name() {
     let mut picker = CommandPicker::new(sample_commands());
-    type_query(&mut picker, "conf").await;
+    type_query(&mut picker, "settin").await;
     let lines = rendered_lines(&mut picker, DEFAULT_SIZE.0, DEFAULT_SIZE.1);
     assert_eq!(lines.len(), 1);
-    assert!(lines[0].contains("/config"));
+    assert!(lines[0].contains("/settings"));
 }
 
 #[tokio::test]
@@ -132,8 +132,8 @@ fn render_omits_hint_brackets_for_commands_without_hint() {
 
     let config_line = lines
         .iter()
-        .find(|l| l.contains("/config"))
-        .expect("config command should be rendered");
+        .find(|l| l.contains("/settings"))
+        .expect("settings command should be rendered");
     assert!(
         !config_line.contains("  ["),
         "Config command should not have hint brackets. Got: {config_line}",
@@ -208,7 +208,7 @@ fn non_selected_items_have_multi_span_styling() {
         .expect("should have a non-selected command line");
 
     // Check that the command name and description have different styles
-    // The non-selected line starting with "  /" will be /search or /web (not /config which is selected)
+    // The non-selected line starting with "  /" will be /search or /web (not /settings which is selected)
     let name_style = term
         .style_of_text(row, "/search")
         .or_else(|| term.style_of_text(row, "/web"))

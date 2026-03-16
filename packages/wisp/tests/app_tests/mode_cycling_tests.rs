@@ -72,12 +72,12 @@ async fn test_shift_tab_ignored_when_overlay_consumes_input() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &options, (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
-    // Open config overlay
-    type_string(&mut renderer, "/config").await;
+    // Open settings overlay
+    type_string(&mut renderer, "/settings").await;
     press_enter(&mut renderer).await;
     assert!(
-        has_config_menu(renderer.writer()),
-        "Config overlay should be visible"
+        has_settings_menu(renderer.writer()),
+        "Settings overlay should be visible"
     );
 
     // Send shift+tab — should be swallowed by the overlay
@@ -88,8 +88,8 @@ async fn test_shift_tab_ignored_when_overlay_consumes_input() {
 
     // Overlay should still be visible
     assert!(
-        has_config_menu(renderer.writer()),
-        "Config overlay should still be visible after shift+tab"
+        has_settings_menu(renderer.writer()),
+        "Settings overlay should still be visible after shift+tab"
     );
 }
 

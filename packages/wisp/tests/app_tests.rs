@@ -1,7 +1,6 @@
 mod app_tests {
     mod command_picker_tests;
     mod common;
-    mod config_menu_tests;
     mod file_picker_tests;
     mod input_prompt_tests;
     mod lifecycle_tests;
@@ -10,6 +9,7 @@ mod app_tests {
     mod notifications_tests;
     mod progress_indicator_tests;
     mod session_tests;
+    mod settings_menu_tests;
     mod small_terminal_tests;
     mod status_line_tests;
     mod tool_calls_tests;

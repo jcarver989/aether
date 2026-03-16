@@ -1,27 +1,27 @@
-use crate::components::config_menu::{ConfigChange, ConfigMenuEntry, ConfigMenuValue};
+use crate::components::settings_menu::{SettingsChange, SettingsMenuEntry, SettingsMenuValue};
 use crate::tui::{
     Combobox, Component, Event, Frame, Line, PickerKey, Searchable, ViewContext, classify_key,
 };
-impl Searchable for ConfigMenuValue {
+impl Searchable for SettingsMenuValue {
     fn search_text(&self) -> String {
         format!("{} {}", self.name, self.value)
     }
 }
 
-pub struct ConfigPicker {
+pub struct SettingsPicker {
     pub config_id: String,
     pub title: String,
-    combobox: Combobox<ConfigMenuValue>,
+    combobox: Combobox<SettingsMenuValue>,
     current_value: String,
 }
 
-pub enum ConfigPickerMessage {
+pub enum SettingsPickerMessage {
     Close,
-    ApplySelection(Option<ConfigChange>),
+    ApplySelection(Option<SettingsChange>),
 }
 
-impl ConfigPicker {
-    pub fn from_entry(entry: &ConfigMenuEntry) -> Option<Self> {
+impl SettingsPicker {
+    pub fn from_entry(entry: &SettingsMenuEntry) -> Option<Self> {
         let current_value = entry.values.get(entry.current_value_index)?.value.clone();
         let mut picker = Self {
             config_id: entry.config_id.clone(),
@@ -44,13 +44,13 @@ impl ConfigPicker {
         self.combobox.query()
     }
 
-    pub fn confirm_selection(&self) -> Option<ConfigChange> {
+    pub fn confirm_selection(&self) -> Option<SettingsChange> {
         let selected = self.combobox.selected()?;
         if selected.is_disabled || selected.value == self.current_value {
             return None;
         }
 
-        Some(ConfigChange {
+        Some(SettingsChange {
             config_id: self.config_id.clone(),
             new_value: selected.value.clone(),
         })
@@ -85,22 +85,22 @@ impl ConfigPicker {
     }
 }
 
-impl ConfigPicker {
+impl SettingsPicker {
     pub(crate) fn update_viewport(&mut self, max_height: usize) {
         self.combobox
             .set_max_visible(max_height.saturating_sub(1).max(1));
     }
 }
 
-impl Component for ConfigPicker {
-    type Message = ConfigPickerMessage;
+impl Component for SettingsPicker {
+    type Message = SettingsPickerMessage;
 
     async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         let Event::Key(key) = event else {
             return None;
         };
         match classify_key(*key, self.combobox.query().is_empty()) {
-            PickerKey::Escape => Some(vec![ConfigPickerMessage::Close]),
+            PickerKey::Escape => Some(vec![SettingsPickerMessage::Close]),
             PickerKey::MoveUp => {
                 self.move_selection_up();
                 Some(vec![])
@@ -111,7 +111,7 @@ impl Component for ConfigPicker {
             }
             PickerKey::Confirm => {
                 let change = self.confirm_selection();
-                Some(vec![ConfigPickerMessage::ApplySelection(change)])
+                Some(vec![SettingsPickerMessage::ApplySelection(change)])
             }
             PickerKey::Char(c) => {
                 self.push_query_char(c);
@@ -181,32 +181,32 @@ mod tests {
     use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
     use acp_utils::config_meta::SelectOptionMeta;
 
-    fn rendered_lines(picker: &mut ConfigPicker) -> Vec<String> {
+    fn rendered_lines(picker: &mut SettingsPicker) -> Vec<String> {
         rendered_lines_from(&picker.render(&ViewContext::new((120, 40))))
     }
 
-    fn entry() -> ConfigMenuEntry {
-        ConfigMenuEntry {
+    fn entry() -> SettingsMenuEntry {
+        SettingsMenuEntry {
             config_id: "model".to_string(),
             title: "Model".to_string(),
             multi_select: false,
             display_name: None,
             values: vec![
-                ConfigMenuValue {
+                SettingsMenuValue {
                     value: "openrouter:openai/gpt-4o".to_string(),
                     name: "GPT-4o".to_string(),
                     description: None,
                     is_disabled: false,
                     meta: SelectOptionMeta::default(),
                 },
-                ConfigMenuValue {
+                SettingsMenuValue {
                     value: "openrouter:anthropic/claude-3.5-sonnet".to_string(),
                     name: "Claude Sonnet".to_string(),
                     description: None,
                     is_disabled: false,
                     meta: SelectOptionMeta::default(),
                 },
-                ConfigMenuValue {
+                SettingsMenuValue {
                     value: "openrouter:google/gemini-2.5-pro".to_string(),
                     name: "Gemini 2.5 Pro".to_string(),
                     description: None,
@@ -216,13 +216,13 @@ mod tests {
             ],
             current_value_index: 0,
             current_raw_value: "openrouter:openai/gpt-4o".to_string(),
-            entry_kind: crate::components::config_menu::ConfigMenuEntryKind::Select,
+            entry_kind: crate::components::settings_menu::SettingsMenuEntryKind::Select,
         }
     }
 
     #[test]
     fn initializes_with_current_value_selected() {
-        let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
+        let mut picker = SettingsPicker::from_entry(&entry()).expect("picker");
         let lines = rendered_lines(&mut picker);
         let selected = lines.iter().find(|l| l.starts_with("▶")).unwrap();
         assert!(selected.contains("GPT-4o"));
@@ -230,7 +230,7 @@ mod tests {
 
     #[tokio::test]
     async fn query_filters_by_name() {
-        let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
+        let mut picker = SettingsPicker::from_entry(&entry()).expect("picker");
         type_query(&mut picker, "gemini").await;
         let lines = rendered_lines(&mut picker);
         // header + 1 match
@@ -240,7 +240,7 @@ mod tests {
 
     #[tokio::test]
     async fn query_filters_by_value() {
-        let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
+        let mut picker = SettingsPicker::from_entry(&entry()).expect("picker");
         type_query(&mut picker, "anthropic/claude").await;
         let lines = rendered_lines(&mut picker);
         // header + 1 match
@@ -250,20 +250,20 @@ mod tests {
 
     #[test]
     fn confirm_selection_omits_unchanged_value() {
-        let picker = ConfigPicker::from_entry(&entry()).expect("picker");
+        let picker = SettingsPicker::from_entry(&entry()).expect("picker");
         assert!(picker.confirm_selection().is_none());
     }
 
     #[tokio::test]
     async fn confirm_selection_returns_change_for_new_value() {
-        let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
+        let mut picker = SettingsPicker::from_entry(&entry()).expect("picker");
         picker
             .on_event(&Event::Key(KeyEvent::new(
                 KeyCode::Down,
                 KeyModifiers::NONE,
             )))
             .await;
-        let change = picker.confirm_selection().expect("config change");
+        let change = picker.confirm_selection().expect("settings change");
         assert_eq!(change.config_id, "model");
         assert_eq!(
             change.new_value,
@@ -278,14 +278,14 @@ mod tests {
         entry.values[1].description = Some("Unavailable: set ANTHROPIC_API_KEY".to_string());
         entry.values[1].name = "Disabled Claude".to_string();
 
-        let mut picker = ConfigPicker::from_entry(&entry).expect("picker");
+        let mut picker = SettingsPicker::from_entry(&entry).expect("picker");
         type_query(&mut picker, "disabled").await;
         assert!(picker.confirm_selection().is_none());
     }
 
     #[tokio::test]
     async fn handle_key_enter_returns_apply_selection_message() {
-        let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
+        let mut picker = SettingsPicker::from_entry(&entry()).expect("picker");
         picker
             .on_event(&Event::Key(KeyEvent::new(
                 KeyCode::Down,
@@ -304,7 +304,7 @@ mod tests {
 
         let messages = outcome.unwrap();
         match messages.as_slice() {
-            [ConfigPickerMessage::ApplySelection(Some(change))] => {
+            [SettingsPickerMessage::ApplySelection(Some(change))] => {
                 assert_eq!(change.config_id, "model");
             }
             _ => panic!("expected apply selection message"),
@@ -313,7 +313,7 @@ mod tests {
 
     #[tokio::test]
     async fn handle_key_escape_returns_close_message() {
-        let mut picker = ConfigPicker::from_entry(&entry()).expect("picker");
+        let mut picker = SettingsPicker::from_entry(&entry()).expect("picker");
 
         let outcome = picker
             .on_event(&Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)))
@@ -322,6 +322,9 @@ mod tests {
         assert!(outcome.is_some());
 
         let messages = outcome.unwrap();
-        assert!(matches!(messages.as_slice(), [ConfigPickerMessage::Close]));
+        assert!(matches!(
+            messages.as_slice(),
+            [SettingsPickerMessage::Close]
+        ));
     }
 }

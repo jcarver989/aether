@@ -1,9 +1,9 @@
-use crate::components::config_menu::ConfigMenu;
-use crate::components::config_overlay::{ConfigOverlay, ConfigOverlayMessage};
 use crate::components::provider_login::{
     ProviderLoginEntry, ProviderLoginStatus, provider_login_summary,
 };
 use crate::components::server_status::server_status_summary;
+use crate::components::settings_menu::SettingsMenu;
+use crate::components::settings_overlay::{SettingsOverlay, SettingsOverlayMessage};
 use crate::components::status_line::{extract_reasoning_effort, is_cycleable_mode_option};
 use crate::settings::{list_theme_files, load_or_create_settings};
 use crate::tui::{Component, Cursor, Event, Frame, Layout, Theme, ViewContext};
@@ -14,21 +14,21 @@ use agent_client_protocol::{
 };
 use utils::ReasoningEffort;
 
-pub enum ConfigManagerMessage {
+pub enum SettingsManagerMessage {
     SetConfigOption { config_id: String, value: String },
     SetTheme(Theme),
     AuthenticateServer(String),
     AuthenticateProvider(String),
 }
 
-pub struct ConfigManager {
+pub struct SettingsManager {
     config_options: Vec<SessionConfigOption>,
-    config_overlay: Option<ConfigOverlay>,
+    config_overlay: Option<SettingsOverlay>,
     server_statuses: Vec<McpServerStatusEntry>,
     auth_methods: Vec<acp::AuthMethod>,
 }
 
-impl ConfigManager {
+impl SettingsManager {
     pub fn new(config_options: &[SessionConfigOption], auth_methods: Vec<acp::AuthMethod>) -> Self {
         Self {
             config_options: config_options.to_vec(),
@@ -53,7 +53,7 @@ impl ConfigManager {
         self.config_overlay.is_some()
     }
 
-    pub async fn on_overlay_event(&mut self, event: &Event) -> Option<Vec<ConfigManagerMessage>> {
+    pub async fn on_overlay_event(&mut self, event: &Event) -> Option<Vec<SettingsManagerMessage>> {
         let overlay = self.config_overlay.as_mut()?;
         let outcome = overlay.on_event(event).await;
         let overlay_messages = outcome.unwrap_or_default();
@@ -61,22 +61,22 @@ impl ConfigManager {
         let mut messages = Vec::new();
         for msg in overlay_messages {
             match msg {
-                ConfigOverlayMessage::Close => {
+                SettingsOverlayMessage::Close => {
                     self.config_overlay = None;
                     return Some(messages);
                 }
-                ConfigOverlayMessage::SetConfigOption { config_id, value } => {
-                    messages.push(ConfigManagerMessage::SetConfigOption { config_id, value });
+                SettingsOverlayMessage::SetConfigOption { config_id, value } => {
+                    messages.push(SettingsManagerMessage::SetConfigOption { config_id, value });
                 }
-                ConfigOverlayMessage::SetTheme(theme) => {
-                    messages.push(ConfigManagerMessage::SetTheme(theme));
+                SettingsOverlayMessage::SetTheme(theme) => {
+                    messages.push(SettingsManagerMessage::SetTheme(theme));
                 }
-                ConfigOverlayMessage::AuthenticateServer(name) => {
-                    messages.push(ConfigManagerMessage::AuthenticateServer(name));
+                SettingsOverlayMessage::AuthenticateServer(name) => {
+                    messages.push(SettingsManagerMessage::AuthenticateServer(name));
                 }
-                ConfigOverlayMessage::AuthenticateProvider(method_id) => {
+                SettingsOverlayMessage::AuthenticateProvider(method_id) => {
                     self.on_authenticate_started(&method_id);
-                    messages.push(ConfigManagerMessage::AuthenticateProvider(method_id));
+                    messages.push(SettingsManagerMessage::AuthenticateProvider(method_id));
                 }
             }
         }
@@ -84,10 +84,10 @@ impl ConfigManager {
     }
 
     pub fn open_overlay(&mut self) {
-        let menu = ConfigMenu::from_config_options(&self.config_options);
+        let menu = SettingsMenu::from_config_options(&self.config_options);
         let menu = self.decorate_config_menu(menu);
         self.config_overlay = Some(
-            ConfigOverlay::new(
+            SettingsOverlay::new(
                 menu,
                 self.server_statuses.clone(),
                 self.auth_methods.clone(),
@@ -217,7 +217,7 @@ impl ConfigManager {
             .collect()
     }
 
-    fn decorate_config_menu(&self, mut menu: ConfigMenu) -> ConfigMenu {
+    fn decorate_config_menu(&self, mut menu: SettingsMenu) -> SettingsMenu {
         let settings = load_or_create_settings();
         let theme_files = list_theme_files();
         menu.add_theme_entry(settings.theme.file.as_deref(), &theme_files);
@@ -239,7 +239,7 @@ pub(crate) mod tests {
 
     #[test]
     fn new_initializes_defaults() {
-        let cm = ConfigManager::new(&[], vec![]);
+        let cm = SettingsManager::new(&[], vec![]);
         assert!(!cm.is_overlay_open());
         assert!(cm.config_options().is_empty());
         assert_eq!(cm.unhealthy_server_count(), 0);
@@ -247,7 +247,7 @@ pub(crate) mod tests {
 
     #[test]
     fn open_and_close_overlay() {
-        let mut cm = ConfigManager::new(&[], vec![]);
+        let mut cm = SettingsManager::new(&[], vec![]);
         cm.open_overlay();
         assert!(cm.is_overlay_open());
         cm.close_overlay();
@@ -256,7 +256,7 @@ pub(crate) mod tests {
 
     #[test]
     fn update_config_options_stores_options() {
-        let mut cm = ConfigManager::new(&[], vec![]);
+        let mut cm = SettingsManager::new(&[], vec![]);
         let options = vec![acp::SessionConfigOption::select(
             "model",
             "Model",
@@ -269,7 +269,7 @@ pub(crate) mod tests {
 
     #[test]
     fn on_authenticate_complete_sets_logged_in_on_overlay() {
-        let mut cm = ConfigManager::new(
+        let mut cm = SettingsManager::new(
             &[],
             vec![acp::AuthMethod::Agent(acp::AuthMethodAgent::new(
                 "anthropic",
