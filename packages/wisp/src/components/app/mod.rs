@@ -9,7 +9,6 @@ use screen_router::ScreenRouterMessage;
 
 use crate::components::conversation_screen::ConversationScreen;
 use crate::components::conversation_screen::ConversationScreenMessage;
-use crate::components::conversation_window::{SegmentContent, render_segments_to_lines};
 use crate::keybindings::Keybindings;
 use crate::settings;
 use crate::settings::overlay::{SettingsMessage, SettingsOverlay};
@@ -20,7 +19,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 use tokio::sync::oneshot;
 use tui::RendererCommand;
-use tui::{Component, Event, Frame, KeyEvent, Line, ViewContext};
+use tui::{Component, Event, Frame, KeyEvent, ViewContext};
 
 #[derive(Debug, Clone)]
 pub struct PromptAttachment {
@@ -42,8 +41,6 @@ pub struct App {
     session_id: SessionId,
     prompt_handle: AcpPromptHandle,
     working_dir: PathBuf,
-    pending_scrollback_lines: Vec<Line>,
-    pending_scrollback_segments: Vec<(Vec<SegmentContent>, Vec<String>)>,
 }
 
 impl App {
@@ -70,8 +67,6 @@ impl App {
             session_id,
             prompt_handle,
             working_dir,
-            pending_scrollback_lines: Vec::new(),
-            pending_scrollback_segments: Vec::new(),
         }
     }
 
@@ -85,20 +80,6 @@ impl App {
 
     pub fn wants_tick(&self) -> bool {
         self.conversation_screen.wants_tick()
-    }
-
-    pub fn drain_scrollback(&mut self, ctx: &ViewContext) -> Vec<Line> {
-        let pending_segments = std::mem::take(&mut self.pending_scrollback_segments);
-        for (segments, tool_ids) in pending_segments {
-            let lines = render_segments_to_lines(
-                &segments,
-                &self.conversation_screen.tool_call_statuses,
-                ctx,
-            );
-            self.pending_scrollback_lines.extend(lines);
-            self.conversation_screen.remove_tools(&tool_ids);
-        }
-        std::mem::take(&mut self.pending_scrollback_lines)
     }
 
     fn git_diff_mode_mut(&mut self) -> &mut GitDiffMode {
@@ -208,14 +189,17 @@ impl App {
                     user_input,
                     attachments,
                 } => {
-                    self.pending_scrollback_lines.push(Line::new(String::new()));
-                    self.pending_scrollback_lines
-                        .push(Line::new(user_input.clone()));
+                    self.conversation_screen.conversation.push_user_message("");
+
+                    self.conversation_screen
+                        .conversation
+                        .push_user_message(&user_input);
 
                     let outcome = build_attachment_blocks(&attachments).await;
                     for w in outcome.warnings {
-                        self.pending_scrollback_lines
-                            .push(Line::new(format!("[wisp] {w}")));
+                        self.conversation_screen
+                            .conversation
+                            .push_user_message(&format!("[wisp] {w}"));
                     }
 
                     let _ = self.prompt_handle.prompt(
@@ -240,13 +224,6 @@ impl App {
                 }
                 ConversationScreenMessage::OpenSessionPicker => {
                     let _ = self.prompt_handle.list_sessions();
-                }
-                ConversationScreenMessage::PushToScrollback {
-                    content,
-                    completed_tool_ids,
-                } => {
-                    self.pending_scrollback_segments
-                        .push((content, completed_tool_ids));
                 }
                 ConversationScreenMessage::LoadSession { session_id, cwd } => {
                     if let Err(e) = self.prompt_handle.load_session(&session_id, &cwd) {
@@ -373,9 +350,10 @@ impl App {
                 self.git_diff_mode_mut().complete_load().await;
             }
             ScreenRouterMessage::SendPrompt { user_input } => {
-                self.pending_scrollback_lines.push(Line::new(String::new()));
-                self.pending_scrollback_lines
-                    .push(Line::new(user_input.clone()));
+                self.conversation_screen.conversation.push_user_message("");
+                self.conversation_screen
+                    .conversation
+                    .push_user_message(&user_input);
                 let _ = self
                     .prompt_handle
                     .prompt(&self.session_id, &user_input, None);
@@ -393,14 +371,7 @@ impl App {
     }
 
     fn on_prompt_done(&mut self) {
-        if let Some(ConversationScreenMessage::PushToScrollback {
-            content,
-            completed_tool_ids,
-        }) = self.conversation_screen.on_prompt_done()
-        {
-            self.pending_scrollback_segments
-                .push((content, completed_tool_ids));
-        }
+        self.conversation_screen.on_prompt_done();
     }
 
     fn on_elicitation_request(
@@ -951,6 +922,8 @@ mod tests {
 
     #[tokio::test]
     async fn prompt_composer_submit_pushes_echo_lines() {
+        use crate::components::conversation_window::SegmentContent;
+
         let mut app = make_app();
         let outcome = Some(vec![ConversationScreenMessage::SendPrompt {
             user_input: "hello".to_string(),
@@ -961,11 +934,14 @@ mod tests {
         app.handle_conversation_messages(&mut commands, outcome)
             .await;
 
-        let ctx = ViewContext::new((80, 24));
-        let scrollback = app.drain_scrollback(&ctx);
+        let has_hello = app
+            .conversation_screen
+            .conversation
+            .segments()
+            .any(|seg| matches!(seg, SegmentContent::UserMessage(text) if text == "hello"));
         assert!(
-            scrollback.iter().any(|l| l.plain_text() == "hello"),
-            "echo lines should contain the user input"
+            has_hello,
+            "conversation buffer should contain the user input"
         );
     }
 

@@ -71,6 +71,7 @@ async fn test_multiple_messages_sequence() {
     let expected = expected_with_prompt(
         &[
             "Processing your request",
+            "",
             r#"✓ search {"query":"test"}"#,
             "",
             "Found results",
@@ -173,9 +174,9 @@ async fn test_text_complete_preserves_running_tool_calls() {
     let expected = expected_with_prompt(
         &[
             r#"✓ Read {"file":"a.rs"}"#,
+            "⠒ Write",
             "",
             "Done reading",
-            "⠒ Write",
             "⠒ (esc to interrupt)",
         ],
         TEST_WIDTH,
@@ -199,9 +200,9 @@ async fn test_late_result_after_prompt_done() {
     let expected = expected_with_prompt(
         &[
             r#"✓ Read {"file":"a.rs"}"#,
+            r#"✓ Write {"file":"b.rs"}"#,
             "",
             "Done reading",
-            r#"✓ Write {"file":"b.rs"}"#,
         ],
         TEST_WIDTH,
         "",

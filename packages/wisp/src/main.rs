@@ -71,11 +71,6 @@ async fn main() -> ExitCode {
 }
 
 fn render(renderer: &mut Renderer<impl io::Write>, app: &mut App) -> Result<(), AppError> {
-    let context = renderer.context();
-    let scrollback = app.drain_scrollback(&context);
-    if !scrollback.is_empty() {
-        renderer.push_to_scrollback(&scrollback)?;
-    }
     renderer.render_frame(|ctx| app.render(ctx))?;
     Ok(())
 }

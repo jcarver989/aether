@@ -73,6 +73,7 @@ impl<W: Write> Renderer<W> {
     pub fn on_resize(&mut self, size: impl Into<Size>) {
         self.size = size.into();
         self.terminal.reset_cursor_offset();
+        self.prev_frame = None;
         self.resized = true;
     }
 
@@ -128,8 +129,10 @@ impl<W: Write> Renderer<W> {
         };
 
         // When resized, the previous frame layout is invalid — start fresh.
+        // ClearAll purges both viewport and scrollback so that the full
+        // conversation can be re-rendered at the new width.
         let (mut commands, mut prev_frame) = if self.resized {
-            (vec![TerminalCommand::ClearViewport], None)
+            (vec![TerminalCommand::ClearAll], None)
         } else {
             (
                 vec![TerminalCommand::RestoreCursorPosition],
@@ -490,9 +493,30 @@ mod tests {
         renderer.render_frame_internal(&narrow).unwrap();
 
         let output = String::from_utf8_lossy(&renderer.terminal.writer.bytes);
-        assert!(output.contains("\x1b[2J") || output.contains("\x1b[H"));
+        assert!(
+            output.contains("\x1b[2J"),
+            "resize should emit ClearAll (ClearType::All)"
+        );
+        assert!(
+            output.contains("\x1b[3J"),
+            "resize should emit ClearAll (ClearType::Purge)"
+        );
         assert!(output.contains("abcde"));
         assert!(output.contains("fghij"));
+    }
+
+    #[test]
+    fn on_resize_resets_prev_frame() {
+        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
+        let f = frame(&["hello"]);
+        renderer.render_frame_internal(&f).unwrap();
+
+        assert!(renderer.prev_frame.is_some());
+        renderer.on_resize((40, 12));
+        assert!(
+            renderer.prev_frame.is_none(),
+            "on_resize should reset prev_frame"
+        );
     }
 
     #[test]

@@ -1,8 +1,6 @@
 use crate::components::app::PromptAttachment;
 use crate::components::command_picker::CommandEntry;
-use crate::components::conversation_window::{
-    ConversationBuffer, ConversationWindow, SegmentContent,
-};
+use crate::components::conversation_window::{ConversationBuffer, ConversationWindow};
 use crate::components::elicitation_form::{ElicitationForm, ElicitationMessage};
 use crate::components::plan_tracker::PlanTracker;
 use crate::components::plan_view::PlanView;
@@ -27,10 +25,6 @@ pub enum ConversationScreenMessage {
     NewSession,
     OpenSettings,
     OpenSessionPicker,
-    PushToScrollback {
-        content: Vec<SegmentContent>,
-        completed_tool_ids: Vec<String>,
-    },
     LoadSession {
         session_id: SessionId,
         cwd: PathBuf,
@@ -93,16 +87,6 @@ impl ConversationScreen {
             self.waiting_for_response,
         );
         self.plan_tracker.cached_visible_entries();
-    }
-
-    pub fn drain_completed(&mut self) -> (Vec<SegmentContent>, Vec<String>) {
-        self.conversation.drain_completed(&self.tool_call_statuses)
-    }
-
-    pub fn remove_tools(&mut self, tool_ids: &[String]) {
-        for id in tool_ids {
-            self.tool_call_statuses.remove_tool(id);
-        }
     }
 
     pub fn reset_after_context_cleared(&mut self) {
@@ -176,18 +160,9 @@ impl ConversationScreen {
         }
     }
 
-    pub fn on_prompt_done(&mut self) -> Option<ConversationScreenMessage> {
+    pub fn on_prompt_done(&mut self) {
         self.waiting_for_response = false;
         self.conversation.close_thought_block();
-        let (content, completed_tool_ids) = self.drain_completed();
-        if content.is_empty() {
-            None
-        } else {
-            Some(ConversationScreenMessage::PushToScrollback {
-                content,
-                completed_tool_ids,
-            })
-        }
     }
 
     pub fn on_prompt_error(&mut self, error: &acp::Error) {

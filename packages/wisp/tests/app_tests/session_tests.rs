@@ -142,3 +142,109 @@ async fn test_in_progress_tool_call_renders_correctly_after_resize() {
     let expected = expected_with_prompt(&["⠒ Read", "⠒ (esc to interrupt)"], 100, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
+
+/// Bug repro: completed conversation content must re-render at the new width
+/// after a terminal resize. Previously, completed turns were drained to
+/// fixed-width terminal scrollback and could not be re-rendered.
+#[tokio::test]
+async fn test_completed_content_re_renders_at_new_width_after_resize() {
+    let initial_width: u16 = 40;
+    let terminal = TestTerminal::new(initial_width, 20);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (initial_width, 20));
+    renderer.initial_render().unwrap();
+
+    // Complete a full turn: text + tool call + prompt_done
+    renderer
+        .on_session_update(acp::SessionUpdate::AgentMessageChunk(
+            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(
+                "First answer",
+            ))),
+        ))
+        .unwrap();
+    renderer.on_prompt_done().unwrap();
+
+    // Verify content is visible at original width
+    let lines_before = renderer.writer().get_lines();
+    assert!(
+        lines_before.iter().any(|l| l.contains("First answer")),
+        "Content should be visible before resize.\nBuffer:\n{}",
+        lines_before.join("\n")
+    );
+
+    // Widen the terminal — resize both the renderer and the TestTerminal buffer
+    let new_width: u16 = 100;
+    renderer.test_writer_mut().resize(new_width, 20);
+    renderer.on_resize_event(new_width, 20).await.unwrap();
+
+    // Content from the completed turn must still be visible and the prompt
+    // must be rendered at the new width
+    let lines_after = renderer.writer().get_lines();
+    assert!(
+        lines_after.iter().any(|l| l.contains("First answer")),
+        "Completed content should survive resize and re-render at new width.\nBuffer:\n{}",
+        lines_after.join("\n")
+    );
+
+    let expected = expected_with_prompt(&["First answer"], new_width, "", TEST_AGENT);
+    assert_buffer_eq(renderer.writer(), &expected);
+}
+
+/// Bug repro: the prompt box must not garble after resizing when there is
+/// completed conversation content above it. Previously, stale overflow
+/// counts caused the VisualFrame visible/scrollback split to break,
+/// producing duplicated or corrupted prompt lines.
+#[tokio::test]
+async fn test_prompt_not_garbled_after_resize_with_completed_content() {
+    let terminal = TestTerminal::new(80, 12);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 12));
+    renderer.initial_render().unwrap();
+
+    // Build up several completed turns so there's content above the prompt
+    renderer
+        .on_session_update(acp::SessionUpdate::AgentMessageChunk(
+            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("Turn one"))),
+        ))
+        .unwrap();
+    renderer.on_prompt_done().unwrap();
+
+    renderer
+        .on_session_update(acp::SessionUpdate::AgentMessageChunk(
+            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("Turn two"))),
+        ))
+        .unwrap();
+    renderer.on_prompt_done().unwrap();
+
+    // Resize the terminal
+    renderer.test_writer_mut().resize(60, 10);
+    renderer.on_resize_event(60, 10).await.unwrap();
+
+    let lines = renderer.writer().get_lines();
+
+    // The prompt border characters should each appear exactly once
+    let top_borders = lines.iter().filter(|l| l.starts_with('╭')).count();
+    let bottom_borders = lines.iter().filter(|l| l.starts_with('╰')).count();
+    assert_eq!(
+        top_borders,
+        1,
+        "Prompt top border should appear exactly once after resize.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+    assert_eq!(
+        bottom_borders,
+        1,
+        "Prompt bottom border should appear exactly once after resize.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+
+    // Both turns' content should still be present
+    assert!(
+        lines.iter().any(|l| l.contains("Turn one")),
+        "First turn content should survive resize.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+    assert!(
+        lines.iter().any(|l| l.contains("Turn two")),
+        "Second turn content should survive resize.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
