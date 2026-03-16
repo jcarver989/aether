@@ -1,5 +1,5 @@
-use tui::testing::render_lines;
 use tui::ViewContext;
+use tui::testing::render_lines;
 use wisp::components::conversation_window::{ConversationBuffer, ConversationWindow};
 use wisp::components::tool_call_statuses::ToolCallStatuses;
 

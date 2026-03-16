@@ -66,8 +66,17 @@ mod tests {
     fn color_tiers() {
         let theme = Theme::default();
         assert_eq!(reasoning_color(None, &theme), theme.text_secondary());
-        assert_eq!(reasoning_color(Some(ReasoningEffort::Low), &theme), theme.text_secondary());
-        assert_eq!(reasoning_color(Some(ReasoningEffort::Medium), &theme), theme.info());
-        assert_eq!(reasoning_color(Some(ReasoningEffort::High), &theme), theme.success());
+        assert_eq!(
+            reasoning_color(Some(ReasoningEffort::Low), &theme),
+            theme.text_secondary()
+        );
+        assert_eq!(
+            reasoning_color(Some(ReasoningEffort::Medium), &theme),
+            theme.info()
+        );
+        assert_eq!(
+            reasoning_color(Some(ReasoningEffort::High), &theme),
+            theme.success()
+        );
     }
 }
