@@ -256,9 +256,7 @@ mod tests {
     #[test]
     fn execute_wraps_commands_in_synchronized_update() {
         let mut screen = TerminalScreen::new(FakeWriter::new());
-        screen
-            .execute_batch(&[TerminalCommand::ClearAll])
-            .unwrap();
+        screen.execute_batch(&[TerminalCommand::ClearAll]).unwrap();
         let output = screen.writer.output();
         let begin = output
             .find("\x1b[?2026h")
