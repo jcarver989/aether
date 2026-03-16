@@ -115,7 +115,7 @@ async fn test_in_progress_tool_call_visible_after_initial_render() {
         .unwrap();
 
     let expected = expected_with_prompt(
-        &["⠒ Read", "⠒ Working... (0/1 tools complete)"],
+        &["⠒ Read", "⠒ (esc to interrupt)"],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -140,7 +140,7 @@ async fn test_in_progress_tool_call_renders_correctly_after_resize() {
     renderer.on_resize_event(100, 30).await.unwrap();
 
     let expected = expected_with_prompt(
-        &["⠒ Read", "⠒ Working... (0/1 tools complete)"],
+        &["⠒ Read", "⠒ (esc to interrupt)"],
         100,
         "",
         TEST_AGENT,

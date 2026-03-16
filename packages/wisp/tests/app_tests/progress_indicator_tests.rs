@@ -3,7 +3,7 @@ use tui::testing::{TestTerminal, assert_buffer_eq};
 use super::common::*;
 
 #[tokio::test]
-async fn test_grid_loader_visible_after_prompt_submit() {
+async fn test_spinner_visible_after_prompt_submit() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
 
@@ -13,16 +13,16 @@ async fn test_grid_loader_visible_after_prompt_submit() {
     press_enter(&mut renderer).await;
 
     let lines = renderer.writer().get_lines();
-    let has_spinner = lines.iter().any(|l| l.contains('⠒'));
+    let has_interrupt = lines.iter().any(|l| l.contains("esc to interrupt"));
     assert!(
-        has_spinner,
-        "Spinner should be visible after prompt submit.\nBuffer:\n{}",
+        has_interrupt,
+        "Progress indicator should be visible after prompt submit.\nBuffer:\n{}",
         lines.join("\n")
     );
 }
 
 #[tokio::test]
-async fn test_grid_loader_disappears_on_session_update() {
+async fn test_spinner_persists_on_session_update() {
     use agent_client_protocol as acp;
 
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
@@ -33,7 +33,6 @@ async fn test_grid_loader_disappears_on_session_update() {
     type_string(&mut renderer, "Hello").await;
     press_enter(&mut renderer).await;
 
-    // First session update should hide the loader
     renderer
         .on_session_update(acp::SessionUpdate::AgentMessageChunk(
             acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("Hi"))),
@@ -41,18 +40,16 @@ async fn test_grid_loader_disappears_on_session_update() {
         .unwrap();
 
     let lines = renderer.writer().get_lines();
-    let has_braille = lines
-        .iter()
-        .any(|l| "⠒⠮⠷⢷⡾⣯⣽⣿⣭⢯".chars().any(|c| l.contains(c)));
+    let has_interrupt = lines.iter().any(|l| l.contains("esc to interrupt"));
     assert!(
-        !has_braille,
-        "Spinner should disappear after session update.\nBuffer:\n{}",
+        has_interrupt,
+        "Progress indicator should persist while waiting for response.\nBuffer:\n{}",
         lines.join("\n")
     );
 }
 
 #[tokio::test]
-async fn test_grid_loader_disappears_on_prompt_done() {
+async fn test_spinner_disappears_on_prompt_done() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
 
@@ -75,7 +72,7 @@ async fn test_grid_loader_disappears_on_prompt_done() {
 }
 
 #[tokio::test]
-async fn test_grid_loader_not_visible_on_initial_render() {
+async fn test_spinner_not_visible_on_initial_render() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
 
@@ -101,7 +98,6 @@ async fn test_on_tick_advances_animation() {
 
     let lines_after: Vec<String> = renderer.writer().get_lines();
 
-    // The frames should differ because the animation advanced
     assert_ne!(
         lines_before, lines_after,
         "on_tick should advance the animation and produce a different frame"

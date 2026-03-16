@@ -133,6 +133,9 @@ impl App {
                     .collect();
                 self.conversation_screen.open_session_picker(filtered);
             }
+            // SessionLoaded intentionally does NOT restore previous config selections:
+            // when the user loads an existing session, the server's stored config for
+            // that session is authoritative.
             AcpEvent::SessionLoaded {
                 session_id,
                 config_options,
@@ -144,9 +147,11 @@ impl App {
                 session_id,
                 config_options,
             } => {
+                let previous_selections = current_config_selections(&self.config_options);
                 self.session_id = session_id;
                 self.update_config_options(&config_options);
                 self.context_usage_pct = None;
+                self.restore_config_selections(&previous_selections);
             }
             AcpEvent::ConnectionClosed => {
                 self.exit_requested = true;
@@ -333,6 +338,28 @@ impl App {
         }
     }
 
+    fn restore_config_selections(&self, previous: &[(String, String)]) {
+        let new_selections = current_config_selections(&self.config_options);
+        for (id, old_value) in previous {
+            let still_exists = new_selections.iter().any(|(new_id, _)| new_id == id);
+            if !still_exists {
+                tracing::debug!(config_id = id, "config option no longer present in new session");
+                continue;
+            }
+            let server_reset = new_selections
+                .iter()
+                .any(|(new_id, new_val)| new_id == id && new_val != old_value);
+            if server_reset {
+                if let Err(e) =
+                    self.prompt_handle
+                        .set_config_option(&self.session_id, id, old_value)
+                {
+                    tracing::warn!(config_id = id, error = %e, "failed to restore config option");
+                }
+            }
+        }
+    }
+
     async fn handle_screen_router_message(
         &mut self,
         commands: &mut Vec<RendererCommand>,
@@ -483,6 +510,18 @@ impl Component for App {
     }
 }
 
+fn current_config_selections(options: &[acp::SessionConfigOption]) -> Vec<(String, String)> {
+    options
+        .iter()
+        .filter_map(|opt| {
+            let acp::SessionConfigKind::Select(ref select) = opt.kind else {
+                return None;
+            };
+            Some((opt.id.0.to_string(), select.current_value.0.to_string()))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use super::*;
@@ -518,6 +557,21 @@ pub(crate) mod test_helpers {
             PathBuf::from("."),
             AcpPromptHandle::noop(),
         )
+    }
+
+    pub fn make_app_with_config_recording(
+        config_options: &[acp::SessionConfigOption],
+    ) -> (App, tokio::sync::mpsc::UnboundedReceiver<acp_utils::client::PromptCommand>) {
+        let (handle, rx) = AcpPromptHandle::recording();
+        let app = App::new(
+            SessionId::new("test"),
+            "test-agent".to_string(),
+            config_options,
+            vec![],
+            PathBuf::from("."),
+            handle,
+        );
+        (app, rx)
     }
 
     pub fn make_app_with_session_id(session_id: &str) -> App {
@@ -942,8 +996,6 @@ mod tests {
         app.conversation_screen
             .tool_call_statuses
             .on_tool_call(&tool_call);
-        app.conversation_screen.grid_loader.visible = false;
-
         let ctx = ViewContext::new((80, 24));
         let lines_before = app
             .conversation_screen
@@ -971,7 +1023,7 @@ mod tests {
             .tool_call_statuses
             .on_tool_call(&tool_call);
 
-        app.conversation_screen.progress_indicator.update(0, 1);
+        app.conversation_screen.progress_indicator.update(0, 1, true);
         let ctx = ViewContext::new((80, 24));
         let output_before = app.conversation_screen.progress_indicator.render(&ctx);
         app.on_event(&Event::Tick).await;
@@ -988,13 +1040,11 @@ mod tests {
     fn on_prompt_error_clears_waiting_state() {
         let mut app = make_app();
         app.conversation_screen.waiting_for_response = true;
-        app.conversation_screen.grid_loader.visible = true;
 
         let error = acp::Error::internal_error();
         app.conversation_screen.on_prompt_error(&error);
 
         assert!(!app.conversation_screen.waiting_for_response);
-        assert!(!app.conversation_screen.grid_loader.visible);
         assert!(!app.exit_requested());
     }
 
@@ -1057,5 +1107,107 @@ mod tests {
         let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
         app.on_event(&Event::Key(key)).await;
         assert!(!app.exit_requested());
+    }
+
+    #[test]
+    fn new_session_restores_changed_config_selections() {
+        use acp_utils::client::PromptCommand;
+
+        let initial_options = vec![
+            acp::SessionConfigOption::select(
+                "mode",
+                "Mode",
+                "Planner",
+                vec![
+                    acp::SessionConfigSelectOption::new("Planner", "Planner"),
+                    acp::SessionConfigSelectOption::new("Coder", "Coder"),
+                ],
+            )
+            .category(acp::SessionConfigOptionCategory::Mode),
+            acp::SessionConfigOption::select(
+                "model",
+                "Model",
+                "gpt-4o",
+                vec![
+                    acp::SessionConfigSelectOption::new("gpt-4o", "GPT-4o"),
+                    acp::SessionConfigSelectOption::new("claude", "Claude"),
+                ],
+            )
+            .category(acp::SessionConfigOptionCategory::Model),
+        ];
+        let (mut app, mut rx) = make_app_with_config_recording(&initial_options);
+
+        // Simulate user changing mode to "Coder"
+        let updated_options = vec![
+            acp::SessionConfigOption::select(
+                "mode",
+                "Mode",
+                "Coder",
+                vec![
+                    acp::SessionConfigSelectOption::new("Planner", "Planner"),
+                    acp::SessionConfigSelectOption::new("Coder", "Coder"),
+                ],
+            )
+            .category(acp::SessionConfigOptionCategory::Mode),
+            acp::SessionConfigOption::select(
+                "model",
+                "Model",
+                "gpt-4o",
+                vec![
+                    acp::SessionConfigSelectOption::new("gpt-4o", "GPT-4o"),
+                    acp::SessionConfigSelectOption::new("claude", "Claude"),
+                ],
+            )
+            .category(acp::SessionConfigOptionCategory::Model),
+        ];
+        app.update_config_options(&updated_options);
+
+        // Server returns defaults for the new session (mode reset to "Planner")
+        let server_defaults = vec![
+            acp::SessionConfigOption::select(
+                "mode",
+                "Mode",
+                "Planner",
+                vec![
+                    acp::SessionConfigSelectOption::new("Planner", "Planner"),
+                    acp::SessionConfigSelectOption::new("Coder", "Coder"),
+                ],
+            )
+            .category(acp::SessionConfigOptionCategory::Mode),
+            acp::SessionConfigOption::select(
+                "model",
+                "Model",
+                "gpt-4o",
+                vec![
+                    acp::SessionConfigSelectOption::new("gpt-4o", "GPT-4o"),
+                    acp::SessionConfigSelectOption::new("claude", "Claude"),
+                ],
+            )
+            .category(acp::SessionConfigOptionCategory::Model),
+        ];
+
+        app.on_acp_event(AcpEvent::NewSessionCreated {
+            session_id: SessionId::new("new-session"),
+            config_options: server_defaults,
+        });
+
+        assert_eq!(app.session_id, SessionId::new("new-session"));
+        assert!(app.context_usage_pct.is_none());
+
+        // Only "mode" was changed — verify exactly one SetConfigOption was sent
+        let cmd = rx.try_recv().expect("expected a SetConfigOption command");
+        match cmd {
+            PromptCommand::SetConfigOption {
+                config_id, value, ..
+            } => {
+                assert_eq!(config_id, "mode");
+                assert_eq!(value, "Coder");
+            }
+            other => panic!("expected SetConfigOption, got {other:?}"),
+        }
+        assert!(
+            rx.try_recv().is_err(),
+            "model was unchanged, no extra command expected"
+        );
     }
 }
