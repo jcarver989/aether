@@ -1,4 +1,4 @@
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, MouseEventKind};
 
 use crate::components::{Component, Event, ViewContext, wrap_selection};
 use crate::line::Line;
@@ -82,6 +82,19 @@ impl<T: SelectItem> Component for SelectList<T> {
     type Message = SelectListMessage;
 
     async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+        if let Event::Mouse(mouse) = event {
+            return match mouse.kind {
+                MouseEventKind::ScrollUp => {
+                    wrap_selection(&mut self.selected_index, self.items.len(), -1);
+                    Some(vec![])
+                }
+                MouseEventKind::ScrollDown => {
+                    wrap_selection(&mut self.selected_index, self.items.len(), 1);
+                    Some(vec![])
+                }
+                _ => Some(vec![]),
+            };
+        }
         let Event::Key(key) = event else {
             return None;
         };
@@ -239,10 +252,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mouse_events_are_ignored() {
+    async fn tick_events_are_ignored() {
         let mut list = SelectList::new(items(&["a"]), "empty");
         let outcome = list.on_event(&Event::Tick).await;
         assert!(outcome.is_none());
+    }
+
+    #[tokio::test]
+    async fn mouse_scroll_moves_selection() {
+        use crossterm::event::{MouseEvent, MouseEventKind};
+        let mut list = SelectList::new(items(&["a", "b", "c"]), "empty");
+        assert_eq!(list.selected_index(), 0);
+
+        let scroll_down = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        });
+        list.on_event(&scroll_down).await;
+        assert_eq!(list.selected_index(), 1);
+
+        let scroll_up = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::ScrollUp,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        });
+        list.on_event(&scroll_up).await;
+        assert_eq!(list.selected_index(), 0);
     }
 
     #[tokio::test]

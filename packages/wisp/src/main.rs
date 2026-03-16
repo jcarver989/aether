@@ -12,10 +12,6 @@ use crate::cli::Cli;
 use crate::components::app::App;
 use crate::error::AppError;
 use crate::runtime_state::RuntimeState;
-use tui::{
-    Component, CrosstermEvent, Event, MouseCapture, Renderer, TerminalSession,
-    spawn_terminal_event_task, terminal_size,
-};
 use clap::Parser;
 use std::fs::create_dir_all;
 use std::future::pending;
@@ -27,6 +23,10 @@ use tokio::time::interval;
 use tokio::{select, time};
 use tracing_appender::rolling::daily;
 use tracing_subscriber::EnvFilter;
+use tui::{
+    Component, CrosstermEvent, Event, MouseCapture, Renderer, RendererCommand, TerminalSession,
+    spawn_terminal_event_task, terminal_size,
+};
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -137,6 +137,10 @@ async fn run_app(
                 render(&mut renderer, &mut app)?;
             }
         }
+
+        renderer.apply_commands(vec![RendererCommand::SetMouseCapture(
+            app.settings_overlay.is_some(),
+        )])?;
     }
 }
 

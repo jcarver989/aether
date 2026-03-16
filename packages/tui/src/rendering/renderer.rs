@@ -14,6 +14,7 @@ use crate::syntax_highlighting::SyntaxHighlighter;
 pub enum RendererCommand {
     ClearScreen,
     SetTheme(Theme),
+    SetMouseCapture(bool),
 }
 
 /// Pure TUI renderer with frame diffing and terminal state management.
@@ -59,7 +60,7 @@ impl<W: Write> Renderer<W> {
 
     pub fn clear_screen(&mut self) -> io::Result<()> {
         let commands = vec![TerminalCommand::ClearAll];
-        self.terminal.execute(&commands)?;
+        self.terminal.execute_batch(&commands)?;
         self.prev_frame = None;
         self.resized = false;
         Ok(())
@@ -93,6 +94,11 @@ impl<W: Write> Renderer<W> {
             match cmd {
                 RendererCommand::ClearScreen => self.clear_screen()?,
                 RendererCommand::SetTheme(theme) => self.set_theme(theme),
+                RendererCommand::SetMouseCapture(enable) => {
+                    self.terminal
+                        .execute(&TerminalCommand::SetMouseCapture(enable))?;
+                    self.terminal.writer.flush()?;
+                }
             }
         }
         Ok(())
@@ -145,7 +151,7 @@ impl<W: Write> Renderer<W> {
         }
 
         commands.extend(Self::cursor_commands(&next_frame));
-        self.terminal.execute(&commands)?;
+        self.terminal.execute_batch(&commands)?;
         self.prev_frame = Some(next_frame);
         self.resized = false;
         Ok(())
@@ -197,7 +203,7 @@ impl<W: Write> Renderer<W> {
 
         if remaining.is_empty() {
             self.prev_frame = None;
-            self.terminal.execute(&commands)?;
+            self.terminal.execute_batch(&commands)?;
             return Ok(());
         }
 
@@ -210,7 +216,7 @@ impl<W: Write> Renderer<W> {
             lines: remaining,
         });
 
-        self.terminal.execute(&commands)?;
+        self.terminal.execute_batch(&commands)?;
         self.prev_frame = None;
         Ok(())
     }

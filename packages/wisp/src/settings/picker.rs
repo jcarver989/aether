@@ -1,6 +1,7 @@
 use super::types::{SettingsChange, SettingsMenuEntry, SettingsMenuValue};
 use tui::{
-    Combobox, Component, Event, Frame, Line, PickerKey, Searchable, ViewContext, classify_key,
+    Combobox, Component, Event, Frame, Line, MouseEventKind, PickerKey, Searchable, ViewContext,
+    classify_key,
 };
 impl Searchable for SettingsMenuValue {
     fn search_text(&self) -> String {
@@ -96,6 +97,19 @@ impl Component for SettingsPicker {
     type Message = SettingsPickerMessage;
 
     async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+        if let Event::Mouse(mouse) = event {
+            return match mouse.kind {
+                MouseEventKind::ScrollUp => {
+                    self.move_selection_up();
+                    Some(vec![])
+                }
+                MouseEventKind::ScrollDown => {
+                    self.move_selection_down();
+                    Some(vec![])
+                }
+                _ => Some(vec![]),
+            };
+        }
         let Event::Key(key) = event else {
             return None;
         };
@@ -177,9 +191,9 @@ impl Component for SettingsPicker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use acp_utils::config_meta::SelectOptionMeta;
     use tui::test_picker::{rendered_lines_from, type_query};
     use tui::{KeyCode, KeyEvent, KeyModifiers};
-    use acp_utils::config_meta::SelectOptionMeta;
 
     fn rendered_lines(picker: &mut SettingsPicker) -> Vec<String> {
         rendered_lines_from(&picker.render(&ViewContext::new((120, 40))))
