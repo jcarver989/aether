@@ -160,11 +160,6 @@ struct PromptContext<'a> {
     session_store: &'a Arc<SessionStore>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CancelPolicy {
-    ForwardToAgent,
-    Ignore,
-}
 
 async fn handle_prompt(
     ctx: &mut PromptContext<'_>,
@@ -188,15 +183,6 @@ async fn handle_prompt(
         .await
         .map_err(|e| RelayError::SendPromptFailed(format!("{e}")))?;
 
-    if is_clear_command(&text) {
-        log_event(
-            ctx.session_store,
-            &ctx.acp_session_id.0,
-            &SessionEvent::User(UserEvent::ClearContext),
-        );
-        return handle_clear_context(ctx).await;
-    }
-
     let text = expand_slash_command_if_needed(ctx.mcp_tx, text).await;
 
     log_event(
@@ -217,7 +203,6 @@ async fn handle_prompt(
     let mut early_stop_reason: Option<acp::StopReason> = None;
     run_turn_loop(
         ctx,
-        CancelPolicy::ForwardToAgent,
         "Agent channel closed unexpectedly",
         |msg| match msg {
             AgentMessage::Cancelled { .. } => {
@@ -236,24 +221,8 @@ async fn handle_prompt(
     .await
 }
 
-async fn handle_clear_context(ctx: &mut PromptContext<'_>) -> Result<acp::StopReason, RelayError> {
-    ctx.agent_tx
-        .send(UserMessage::ClearContext)
-        .await
-        .map_err(|e| RelayError::SendPromptFailed(format!("{e}")))?;
-
-    run_turn_loop(
-        ctx,
-        CancelPolicy::Ignore,
-        "Agent channel closed unexpectedly while clearing context",
-        handle_clear_context_message,
-    )
-    .await
-}
-
 async fn run_turn_loop<F>(
     ctx: &mut PromptContext<'_>,
-    cancel_policy: CancelPolicy,
     channel_closed_log: &'static str,
     mut on_agent_message: F,
 ) -> Result<acp::StopReason, RelayError>
@@ -290,37 +259,21 @@ where
                 }
             }
             Some(cmd) = ctx.cmd_rx.recv() => {
-                handle_in_flight_command(ctx.agent_tx, cmd, cancel_policy).await;
+                handle_in_flight_command(ctx.agent_tx, cmd).await;
             }
         }
-    }
-}
-
-fn handle_clear_context_message(msg: &AgentMessage) -> Option<acp::StopReason> {
-    match msg {
-        AgentMessage::ContextCleared => Some(acp::StopReason::EndTurn),
-        AgentMessage::Error { .. } | AgentMessage::Done => {
-            Some(map_agent_message_to_stop_reason(msg))
-        }
-        _ => None,
     }
 }
 
 async fn handle_in_flight_command(
     agent_tx: &mpsc::Sender<UserMessage>,
     cmd: SessionCommand,
-    cancel_policy: CancelPolicy,
 ) {
     match cmd {
-        SessionCommand::Cancel => match cancel_policy {
-            CancelPolicy::ForwardToAgent => {
-                info!("Cancel received during prompt processing");
-                let _ = agent_tx.send(UserMessage::Cancel).await;
-            }
-            CancelPolicy::Ignore => {
-                info!("Cancel received while context clear is in progress");
-            }
-        },
+        SessionCommand::Cancel => {
+            info!("Cancel received during prompt processing");
+            let _ = agent_tx.send(UserMessage::Cancel).await;
+        }
         SessionCommand::Prompt { result_tx, .. } => {
             // Can't process a new prompt while one is in-flight
             let _ = result_tx.send(Err(RelayError::SendPromptFailed(
@@ -334,10 +287,6 @@ fn log_event(store: &SessionStore, session_id: &str, event: &SessionEvent) {
     if let Err(e) = store.append_event(session_id, event) {
         warn!("Failed to append session log entry: {e}");
     }
-}
-
-fn is_clear_command(text: &str) -> bool {
-    text.trim() == "/clear"
 }
 
 async fn handle_elicitation_request(
@@ -618,52 +567,16 @@ mod tests {
         assert!(parse_slash_command_arguments("").is_none());
     }
 
-    #[test]
-    fn clear_command_matches_exactly() {
-        assert!(is_clear_command("/clear"));
-        assert!(is_clear_command("  /clear  "));
-        assert!(is_clear_command("\n/clear\t"));
-    }
-
-    #[test]
-    fn clear_command_rejects_extra_tokens() {
-        assert!(!is_clear_command("/clear now"));
-        assert!(!is_clear_command("/clear/now"));
-        assert!(!is_clear_command("/clear-now"));
-    }
-
-    #[test]
-    fn clear_context_message_completes_turn() {
-        let reason = handle_clear_context_message(&AgentMessage::ContextCleared);
-        assert_eq!(reason, Some(acp::StopReason::EndTurn));
-    }
-
     #[tokio::test]
-    async fn in_flight_cancel_is_forwarded_for_prompt_turns() {
+    async fn in_flight_cancel_is_forwarded() {
         let (agent_tx, mut agent_rx) = mpsc::channel(1);
-        handle_in_flight_command(
-            &agent_tx,
-            SessionCommand::Cancel,
-            CancelPolicy::ForwardToAgent,
-        )
-        .await;
+        handle_in_flight_command(&agent_tx, SessionCommand::Cancel).await;
 
         let msg = tokio::time::timeout(std::time::Duration::from_millis(200), agent_rx.recv())
             .await
             .expect("cancel should be forwarded")
             .expect("agent channel should stay open");
         assert!(matches!(msg, UserMessage::Cancel));
-    }
-
-    #[tokio::test]
-    async fn in_flight_cancel_is_ignored_for_clear_turns() {
-        let (agent_tx, mut agent_rx) = mpsc::channel(1);
-        handle_in_flight_command(&agent_tx, SessionCommand::Cancel, CancelPolicy::Ignore).await;
-
-        assert!(matches!(
-            agent_rx.try_recv(),
-            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
-        ));
     }
 
     #[tokio::test]
@@ -679,7 +592,6 @@ mod tests {
                 reasoning_effort: None,
                 result_tx,
             },
-            CancelPolicy::Ignore,
         )
         .await;
 

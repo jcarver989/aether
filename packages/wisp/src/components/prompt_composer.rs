@@ -17,7 +17,7 @@ pub enum PromptComposerMessage {
     },
     OpenSettings,
     OpenSessionPicker,
-    ClearScreen,
+    NewSession,
 }
 
 pub struct PromptComposer {
@@ -191,7 +191,7 @@ impl PromptComposer {
         if cmd.builtin && cmd.name == "clear" {
             self.text_input.clear();
             self.close_all();
-            vec![PromptComposerMessage::ClearScreen]
+            vec![PromptComposerMessage::NewSession]
         } else if cmd.builtin && cmd.name == "settings" {
             self.text_input.clear();
             self.close_all();
@@ -311,7 +311,7 @@ fn builtin_commands() -> Vec<CommandEntry> {
     vec![
         CommandEntry {
             name: "clear".into(),
-            description: "Clear the screen".into(),
+            description: "Clear screen and start a new session".into(),
             has_input: false,
             hint: None,
             builtin: true,

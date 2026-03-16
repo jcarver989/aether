@@ -103,10 +103,7 @@ fn merge_builtin_commands(commands: Vec<acp::AvailableCommand>) -> Vec<acp::Avai
 }
 
 fn builtin_commands() -> Vec<acp::AvailableCommand> {
-    vec![acp::AvailableCommand::new(
-        "clear",
-        "Clear agent context and reset to a blank slate",
-    )]
+    vec![]
 }
 
 #[cfg(test)]
@@ -114,20 +111,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn merge_builtin_commands_includes_clear() {
+    fn merge_builtin_commands_returns_empty_when_no_prompts() {
         let commands = merge_builtin_commands(vec![]);
-        assert!(commands.iter().any(|c| c.name == "clear"));
+        assert!(commands.is_empty());
     }
 
     #[test]
     fn merge_builtin_commands_deduplicates_by_name() {
         let merged = merge_builtin_commands(vec![
-            acp::AvailableCommand::new("clear", "MCP clear command"),
             acp::AvailableCommand::new("search", "Search"),
+            acp::AvailableCommand::new("search", "Search duplicate"),
         ]);
 
-        let clear_count = merged.iter().filter(|c| c.name == "clear").count();
-        assert_eq!(clear_count, 1);
-        assert!(merged.iter().any(|c| c.name == "search"));
+        let search_count = merged.iter().filter(|c| c.name == "search").count();
+        assert_eq!(search_count, 1);
     }
 }

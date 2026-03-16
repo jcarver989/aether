@@ -33,6 +33,9 @@ pub(crate) enum PromptCommand {
         session_id: acp::SessionId,
         cwd: std::path::PathBuf,
     },
+    NewSession {
+        cwd: std::path::PathBuf,
+    },
 }
 
 /// Send-safe handle for issuing prompt commands to the !Send ACP connection.
@@ -115,6 +118,12 @@ impl AcpPromptHandle {
     ) -> Result<(), AcpClientError> {
         self.send(PromptCommand::LoadSession {
             session_id: session_id.clone(),
+            cwd: cwd.to_path_buf(),
+        })
+    }
+
+    pub fn new_session(&self, cwd: &Path) -> Result<(), AcpClientError> {
+        self.send(PromptCommand::NewSession {
             cwd: cwd.to_path_buf(),
         })
     }
@@ -249,6 +258,23 @@ mod tests {
                 assert_eq!(cwd, std::path::PathBuf::from("/tmp/project"));
             }
             _ => panic!("Expected LoadSession command"),
+        }
+    }
+
+    #[test]
+    fn test_new_session_sends_command() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let handle = AcpPromptHandle { cmd_tx: tx };
+        let cwd = std::path::Path::new("/tmp/project");
+
+        handle.new_session(cwd).unwrap();
+
+        let cmd = rx.try_recv().unwrap();
+        match cmd {
+            PromptCommand::NewSession { cwd } => {
+                assert_eq!(cwd, std::path::PathBuf::from("/tmp/project"));
+            }
+            _ => panic!("Expected NewSession command"),
         }
     }
 }

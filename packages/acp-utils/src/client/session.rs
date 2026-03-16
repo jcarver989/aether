@@ -339,6 +339,21 @@ where
                     }
                 }
             }
+            PromptCommand::NewSession { cwd } => {
+                let req = acp::NewSessionRequest::new(cwd);
+                match conn.new_session(req).await {
+                    Ok(resp) => {
+                        let config_options = resp.config_options.unwrap_or_default();
+                        let _ = event_tx.send(AcpEvent::NewSessionCreated {
+                            session_id: resp.session_id,
+                            config_options,
+                        });
+                    }
+                    Err(e) => {
+                        let _ = event_tx.send(AcpEvent::PromptError(e));
+                    }
+                }
+            }
             cmd => handle_side_command(&conn, &event_tx, cmd).await,
         }
     }
@@ -381,6 +396,9 @@ async fn handle_side_command(
         }
         PromptCommand::LoadSession { .. } => {
             tracing::warn!("ignoring LoadSession while prompt is in-flight");
+        }
+        PromptCommand::NewSession { .. } => {
+            tracing::warn!("ignoring NewSession while prompt is in-flight");
         }
         PromptCommand::AuthenticateMcpServer {
             session_id,
