@@ -1,9 +1,9 @@
 use crate::components::git_diff_view::{GitDiffView, GitDiffViewMessage, build_patch_lines};
 use crate::git_diff::{FileDiff, GitDiffDocument, PatchLineKind};
+use std::path::PathBuf;
 #[cfg(test)]
 use tui::MouseEvent;
 use tui::{Component, Event, Line, MouseEventKind, ViewContext};
-use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScreenMode {

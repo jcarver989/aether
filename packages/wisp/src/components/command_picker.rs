@@ -91,11 +91,7 @@ impl Component for CommandPicker {
     }
 }
 
-fn build_styled_command_line(
-    truncated: &str,
-    name_byte_len: usize,
-    muted: tui::Color,
-) -> Line {
+fn build_styled_command_line(truncated: &str, name_byte_len: usize, muted: tui::Color) -> Line {
     if truncated.len() <= name_byte_len {
         Line::new(truncated)
     } else {

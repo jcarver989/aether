@@ -1,10 +1,10 @@
+use agent_client_protocol as acp;
+use chrono::{DateTime, Utc};
+use std::path::PathBuf;
 use tui::{
     Combobox, Component, Event, Frame, Line, PickerMessage, Searchable, Style, ViewContext,
     display_width_text, pad_text_to_width, truncate_text,
 };
-use agent_client_protocol as acp;
-use chrono::{DateTime, Utc};
-use std::path::PathBuf;
 
 #[derive(Clone)]
 pub struct SessionEntry(pub acp::SessionInfo);
@@ -146,9 +146,9 @@ pub fn format_relative_time(iso: &str, now: DateTime<Utc>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
     use tui::testing::{assert_buffer_eq, render_component};
     use tui::{KeyCode, KeyEvent, KeyModifiers};
-    use std::path::PathBuf;
 
     const W: u16 = 60;
     const H: u16 = 10;

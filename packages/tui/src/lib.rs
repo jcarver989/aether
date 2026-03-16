@@ -34,7 +34,6 @@ pub(crate) mod combobox;
 #[cfg(feature = "picker")]
 pub(crate) mod fuzzy_matcher;
 
-#[cfg(feature = "runtime")]
 pub(crate) mod runtime;
 
 #[cfg(feature = "testing")]
@@ -64,13 +63,10 @@ pub use theme::{Theme, ThemeBuildError};
 // Rendering (always available - no runtime dependency)
 pub use rendering::renderer::{Renderer, RendererCommand};
 
-// Runtime (feature-gated)
-#[cfg(feature = "runtime")]
-pub use runtime::{MouseCapture, TerminalSession, spawn_terminal_event_task};
-#[cfg(feature = "runtime")]
-pub use runtime::terminal::terminal_size;
-#[cfg(feature = "runtime")]
+// Runtime
 pub use crossterm::event::Event as CrosstermEvent;
+pub use runtime::terminal::terminal_size;
+pub use runtime::{MouseCapture, TerminalSession, spawn_terminal_event_task};
 
 // &str text utilities
 pub use rendering::soft_wrap::{display_width_text, pad_text_to_width, truncate_text};

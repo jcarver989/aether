@@ -11,12 +11,12 @@ use crate::components::prompt_composer::{PromptComposer, PromptComposerMessage};
 use crate::components::session_picker::{SessionEntry, SessionPicker, SessionPickerMessage};
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::keybindings::Keybindings;
-use tui::{Component, Event, Frame, Layout, Spinner, ViewContext};
 use acp_utils::notifications::ElicitationResponse;
 use agent_client_protocol::{self as acp, SessionId};
 use std::path::PathBuf;
 use std::time::Instant;
 use tokio::sync::oneshot;
+use tui::{Component, Event, Frame, Layout, Spinner, ViewContext};
 
 pub enum ConversationScreenMessage {
     SendPrompt {

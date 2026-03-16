@@ -1,10 +1,10 @@
 use crate::components::reasoning_bar::reasoning_bar;
-use tui::{Line, ViewContext, display_width_text};
 use acp_utils::config_option_id::ConfigOptionId;
 use agent_client_protocol::{
     self as acp, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
     SessionConfigSelectOptions,
 };
+use tui::{Line, ViewContext, display_width_text};
 use utils::ReasoningEffort;
 
 pub struct StatusLine<'a> {

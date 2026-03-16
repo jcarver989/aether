@@ -1,10 +1,10 @@
-pub use super::types::{SettingsChange, SettingsMenuEntry, SettingsMenuEntryKind, SettingsMenuValue};
-use tui::{
-    Component, Event, Frame, Line, SelectItem, SelectList, SelectListMessage, ViewContext,
+pub use super::types::{
+    SettingsChange, SettingsMenuEntry, SettingsMenuEntryKind, SettingsMenuValue,
 };
 use acp_utils::config_meta::{ConfigOptionMeta, SelectOptionMeta};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use agent_client_protocol::{SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions};
+use tui::{Component, Event, Frame, Line, SelectItem, SelectList, SelectListMessage, ViewContext};
 
 pub struct SettingsMenu {
     list: SelectList<SettingsMenuEntry>,
@@ -287,10 +287,10 @@ impl SettingsMenu {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tui::{KeyCode, KeyEvent, KeyModifiers};
     use agent_client_protocol::{
         SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
     };
+    use tui::{KeyCode, KeyEvent, KeyModifiers};
 
     fn make_select_option(
         id: &str,

@@ -1,10 +1,10 @@
 use acp_utils::config_meta::SelectOptionMeta;
 use agent_client_protocol::SessionConfigSelectOption;
+use tui::Component;
 use tui::ViewContext;
 use tui::testing::render_component;
 use wisp::settings::menu::SettingsMenu;
 use wisp::settings::types::{SettingsMenuEntry, SettingsMenuEntryKind, SettingsMenuValue};
-use tui::Component;
 
 fn make_select_option(
     id: &str,

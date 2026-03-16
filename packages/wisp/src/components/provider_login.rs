@@ -1,6 +1,4 @@
-use tui::{
-    Component, Event, Frame, Line, SelectItem, SelectList, SelectListMessage, ViewContext,
-};
+use tui::{Component, Event, Frame, Line, SelectItem, SelectList, SelectListMessage, ViewContext};
 
 pub struct ProviderLoginOverlay {
     list: SelectList<ProviderLoginEntry>,
