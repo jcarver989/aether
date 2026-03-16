@@ -1,4 +1,4 @@
-use crate::tui::{
+use tui::{
     Combobox, Component, Event, Frame, Line, PickerMessage, Searchable, Style, ViewContext,
     display_width_text, pad_text_to_width, truncate_text,
 };
@@ -94,7 +94,7 @@ impl Component for CommandPicker {
 fn build_styled_command_line(
     truncated: &str,
     name_byte_len: usize,
-    muted: crate::tui::Color,
+    muted: tui::Color,
 ) -> Line {
     if truncated.len() <= name_byte_len {
         Line::new(truncated)
@@ -108,8 +108,8 @@ fn build_styled_command_line(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::test_picker::type_query;
-    use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
+    use tui::test_picker::type_query;
+    use tui::{KeyCode, KeyEvent, KeyModifiers};
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)

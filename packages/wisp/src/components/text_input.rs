@@ -1,5 +1,5 @@
 use crate::keybindings::Keybindings;
-use crate::tui::{Component, Event, Frame, KeyEvent, Line, TextField, ViewContext};
+use tui::{Component, Event, Frame, KeyEvent, Line, TextField, ViewContext};
 use std::path::PathBuf;
 
 pub struct TextInput {
@@ -173,8 +173,8 @@ fn mention_start(input: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::KeyCode;
-    use crate::tui::KeyModifiers;
+    use tui::KeyCode;
+    use tui::KeyModifiers;
 
     fn key(code: KeyCode) -> Event {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))

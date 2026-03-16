@@ -1,5 +1,5 @@
 pub use super::types::{SettingsChange, SettingsMenuEntry, SettingsMenuEntryKind, SettingsMenuValue};
-use crate::tui::{
+use tui::{
     Component, Event, Frame, Line, SelectItem, SelectList, SelectListMessage, ViewContext,
 };
 use acp_utils::config_meta::{ConfigOptionMeta, SelectOptionMeta};
@@ -287,7 +287,7 @@ impl SettingsMenu {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
+    use tui::{KeyCode, KeyEvent, KeyModifiers};
     use agent_client_protocol::{
         SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
     };

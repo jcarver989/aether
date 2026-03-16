@@ -1,5 +1,5 @@
-use crate::tui::BRAILLE_FRAMES as FRAMES;
-use crate::tui::{Line, ViewContext};
+use tui::BRAILLE_FRAMES as FRAMES;
+use tui::{Line, ViewContext};
 
 /// Renders a single progress line when tools are actively running.
 /// Shows: `⠋ Working... (N/M tools complete)`

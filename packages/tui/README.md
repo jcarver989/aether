@@ -13,11 +13,11 @@ A lightweight, composable terminal UI library for building full-screen CLI apps.
 
 ## Quick Start
 
-The library provides composable building blocks — your app owns its event loop and state machine. Use `tui::advanced` for terminal setup and rendering.
+The library provides composable building blocks — your app owns its event loop and state machine.
 
 ```rust
-use tui::{Component, Cursor, Event, Frame, KeyCode, Layout, Line, ViewContext};
-use tui::advanced::{Renderer, TerminalSession, spawn_terminal_event_task};
+use tui::{Component, Cursor, Event, Frame, KeyCode, Layout, Line, Renderer, TerminalSession, ViewContext};
+use tui::spawn_terminal_event_task;
 
 // Define your app state and use Component for child widgets
 struct MyWidget { count: i32 }

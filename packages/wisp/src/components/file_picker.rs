@@ -1,4 +1,4 @@
-use crate::tui::{Combobox, Component, Event, Frame, Line, PickerMessage, Searchable, ViewContext};
+use tui::{Combobox, Component, Event, Frame, Line, PickerMessage, Searchable, ViewContext};
 use ignore::WalkBuilder;
 use std::env::current_dir;
 use std::path::{Path, PathBuf};
@@ -123,11 +123,11 @@ impl Component for FilePicker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::ViewContext;
-    use crate::tui::test_picker::{
+    use tui::ViewContext;
+    use tui::test_picker::{
         rendered_lines_from, rendered_raw_lines_with_context, type_query,
     };
-    use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
+    use tui::{KeyCode, KeyEvent, KeyModifiers};
 
     const DEFAULT_SIZE: (u16, u16) = (120, 40);
 

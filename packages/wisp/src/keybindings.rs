@@ -1,4 +1,4 @@
-use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
+use tui::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Clone, Debug)]
 pub struct KeyBinding {

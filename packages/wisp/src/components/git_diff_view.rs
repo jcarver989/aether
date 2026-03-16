@@ -3,7 +3,7 @@ use crate::components::app::{GitDiffLoadState, GitDiffViewState, PatchFocus};
 use crate::components::file_list_renderer::render_file_list_cell;
 pub use crate::components::patch_renderer::build_patch_lines;
 use crate::git_diff::{FileDiff, FileStatus, PatchLineKind};
-use crate::tui::{Component, Event, Frame, KeyCode, Line, Style, ViewContext, truncate_text};
+use tui::{Component, Event, Frame, KeyCode, Line, Style, ViewContext, truncate_text};
 
 pub enum GitDiffViewMessage {
     Close,
@@ -331,7 +331,7 @@ fn render_patch_cell(
     cursor_line: usize,
     focus: PatchFocus,
     right_width: usize,
-    theme: &crate::tui::Theme,
+    theme: &tui::Theme,
 ) {
     if row == 0 {
         let header_text = match selected_file.status {
@@ -371,7 +371,7 @@ fn render_patch_cell(
     }
 }
 
-fn append_with_cursor_highlight(dest: &mut Line, source: &Line, theme: &crate::tui::Theme) {
+fn append_with_cursor_highlight(dest: &mut Line, source: &Line, theme: &tui::Theme) {
     let highlight_bg = theme.highlight_bg();
     for span in source.spans() {
         let mut style = span.style();
@@ -387,7 +387,7 @@ fn render_message_layout(
     message: &str,
     left_width: usize,
     available_height: usize,
-    theme: &crate::tui::Theme,
+    theme: &tui::Theme,
 ) -> Vec<Line> {
     let mut rows = Vec::with_capacity(available_height);
     for i in 0..available_height {
@@ -464,7 +464,7 @@ fn build_queued_comment(state: &GitDiffViewState) -> Option<QueuedComment> {
 mod tests {
     use super::*;
     use crate::git_diff::{FileDiff, FileStatus, GitDiffDocument, Hunk, PatchLine, PatchLineKind};
-    use crate::tui::{KeyEvent, KeyModifiers};
+    use tui::{KeyEvent, KeyModifiers};
     use std::path::PathBuf;
 
     fn key(code: KeyCode) -> KeyEvent {

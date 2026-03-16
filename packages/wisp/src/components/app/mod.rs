@@ -13,8 +13,8 @@ use crate::components::conversation_window::{SegmentContent, render_segments_to_
 use crate::settings;
 use crate::settings::overlay::{SettingsMessage, SettingsOverlay};
 use crate::keybindings::Keybindings;
-use crate::tui::advanced::RendererCommand;
-use crate::tui::{Component, Event, Frame, KeyEvent, Line, ViewContext};
+use tui::RendererCommand;
+use tui::{Component, Event, Frame, KeyEvent, Line, ViewContext};
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
 use agent_client_protocol::{self as acp, SessionId};
 use attachments::build_attachment_blocks;
@@ -519,9 +519,9 @@ mod tests {
     use crate::components::elicitation_form::ElicitationForm;
     use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings, save_settings};
     use crate::test_helpers::with_wisp_home;
-    use crate::tui::advanced::Renderer;
-    use crate::tui::testing::render_component;
-    use crate::tui::{Frame, Theme, ViewContext};
+    use tui::Renderer;
+    use tui::testing::render_component;
+    use tui::{Frame, Theme, ViewContext};
     use std::fs;
     use std::time::Duration;
     use tempfile::TempDir;
@@ -770,7 +770,7 @@ mod tests {
     #[tokio::test]
     async fn custom_exit_keybinding_triggers_exit() {
         use crate::keybindings::KeyBinding;
-        use crate::tui::{KeyCode, KeyModifiers};
+        use tui::{KeyCode, KeyModifiers};
 
         let mut app = make_app();
         app.keybindings.exit = KeyBinding::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
@@ -789,7 +789,7 @@ mod tests {
 
     #[tokio::test]
     async fn ctrl_g_opens_git_diff_viewer() {
-        use crate::tui::{KeyCode, KeyModifiers};
+        use tui::{KeyCode, KeyModifiers};
 
         let mut app = make_app();
         let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
@@ -800,7 +800,7 @@ mod tests {
 
     #[tokio::test]
     async fn ctrl_g_closes_git_diff_viewer() {
-        use crate::tui::{KeyCode, KeyModifiers};
+        use tui::{KeyCode, KeyModifiers};
 
         let mut app = make_app();
         app.screen_router.enter_git_diff_for_test();
@@ -813,7 +813,7 @@ mod tests {
 
     #[tokio::test]
     async fn ctrl_g_blocked_during_elicitation() {
-        use crate::tui::{KeyCode, KeyModifiers};
+        use tui::{KeyCode, KeyModifiers};
 
         let mut app = make_app();
         app.conversation_screen.active_modal =
@@ -838,7 +838,7 @@ mod tests {
 
     #[tokio::test]
     async fn esc_in_diff_mode_does_not_cancel() {
-        use crate::tui::{KeyCode, KeyModifiers};
+        use tui::{KeyCode, KeyModifiers};
 
         let mut app = make_app();
         app.conversation_screen.waiting_for_response = true;
@@ -856,7 +856,7 @@ mod tests {
 
     #[tokio::test]
     async fn mouse_scroll_ignored_in_conversation_mode() {
-        use crate::tui::{KeyModifiers, MouseEvent, MouseEventKind};
+        use tui::{KeyModifiers, MouseEvent, MouseEventKind};
 
         let mut app = make_app();
         let mouse = MouseEvent {
@@ -1031,7 +1031,7 @@ mod tests {
 
     #[tokio::test]
     async fn cancel_sends_directly_via_prompt_handle() {
-        use crate::tui::{KeyCode, KeyModifiers};
+        use tui::{KeyCode, KeyModifiers};
 
         let mut app = make_app();
         app.conversation_screen.waiting_for_response = true;

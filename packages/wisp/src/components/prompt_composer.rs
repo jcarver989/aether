@@ -3,8 +3,8 @@ use crate::components::file_picker::{FilePicker, FilePickerMessage};
 use crate::components::input_prompt::{InputPrompt, prompt_content_width};
 use crate::components::text_input::{SelectedFileMention, TextInput, TextInputMessage};
 use crate::keybindings::Keybindings;
-use crate::tui::KeyCode;
-use crate::tui::{Component, Cursor, Event, Frame, PickerMessage, ViewContext};
+use tui::KeyCode;
+use tui::{Component, Cursor, Event, Frame, PickerMessage, ViewContext};
 use std::collections::HashSet;
 
 use super::app::PromptAttachment;
@@ -336,7 +336,7 @@ fn builtin_commands() -> Vec<CommandEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::{KeyEvent, KeyModifiers};
+    use tui::{KeyEvent, KeyModifiers};
     use std::path::PathBuf;
 
     fn key(code: KeyCode) -> Event {

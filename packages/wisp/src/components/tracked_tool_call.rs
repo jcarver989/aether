@@ -3,7 +3,7 @@ use agent_client_protocol as acp;
 use std::collections::HashMap;
 
 use crate::components::tool_call_status_view::ToolCallStatus;
-use crate::tui::DiffPreview;
+use tui::DiffPreview;
 
 #[derive(Clone)]
 pub(crate) struct TrackedToolCall {

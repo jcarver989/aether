@@ -360,7 +360,7 @@ mod tests {
     #[test]
     fn process_theme_change_persists_and_produces_set_theme() {
         use crate::test_helpers::{CUSTOM_TMTHEME, with_wisp_home};
-        use crate::tui::Color;
+        use tui::Color;
         use acp_utils::config_option_id::THEME_CONFIG_ID;
 
         let temp_dir = TempDir::new().unwrap();

@@ -1,8 +1,8 @@
 use crate::components::git_diff_view::{GitDiffView, GitDiffViewMessage, build_patch_lines};
 use crate::git_diff::{FileDiff, GitDiffDocument, PatchLineKind};
 #[cfg(test)]
-use crate::tui::MouseEvent;
-use crate::tui::{Component, Event, Line, MouseEventKind, ViewContext};
+use tui::MouseEvent;
+use tui::{Component, Event, Line, MouseEventKind, ViewContext};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -532,7 +532,7 @@ mod tests {
             kind: MouseEventKind::ScrollDown,
             column: 0,
             row: 0,
-            modifiers: crate::tui::KeyModifiers::NONE,
+            modifiers: tui::KeyModifiers::NONE,
         }));
         assert_eq!(mode.state.patch_scroll, 2);
     }

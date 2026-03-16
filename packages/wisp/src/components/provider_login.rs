@@ -1,4 +1,4 @@
-use crate::tui::{
+use tui::{
     Component, Event, Frame, Line, SelectItem, SelectList, SelectListMessage, ViewContext,
 };
 
@@ -169,7 +169,7 @@ impl ProviderLoginOverlay {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
+    use tui::{KeyCode, KeyEvent, KeyModifiers};
 
     fn sample_entries() -> Vec<ProviderLoginEntry> {
         vec![ProviderLoginEntry {

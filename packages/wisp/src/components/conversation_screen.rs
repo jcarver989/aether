@@ -11,7 +11,7 @@ use crate::components::prompt_composer::{PromptComposer, PromptComposerMessage};
 use crate::components::session_picker::{SessionEntry, SessionPicker, SessionPickerMessage};
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::keybindings::Keybindings;
-use crate::tui::{Component, Event, Frame, Layout, Spinner, ViewContext};
+use tui::{Component, Event, Frame, Layout, Spinner, ViewContext};
 use acp_utils::notifications::ElicitationResponse;
 use agent_client_protocol::{self as acp, SessionId};
 use std::path::PathBuf;

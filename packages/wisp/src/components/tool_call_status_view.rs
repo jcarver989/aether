@@ -7,8 +7,8 @@ use crate::components::sub_agent_tracker::{
     SUB_AGENT_VISIBLE_TOOL_LIMIT, SubAgentState, SubAgentTracker,
 };
 use crate::components::tracked_tool_call::TrackedToolCall;
-use crate::tui::BRAILLE_FRAMES as FRAMES;
-use crate::tui::{DiffLine, DiffPreview, DiffTag, Line, ViewContext, highlight_diff};
+use tui::BRAILLE_FRAMES as FRAMES;
+use tui::{DiffLine, DiffPreview, DiffTag, Line, ViewContext, highlight_diff};
 
 pub const MAX_TOOL_ARG_LENGTH: usize = 200;
 

@@ -1,6 +1,6 @@
 use agent_client_protocol::{PlanEntry, PlanEntryStatus};
 
-use crate::tui::{Line, Style, ViewContext};
+use tui::{Line, Style, ViewContext};
 
 const CHECKBOX_EMPTY: &str = "\u{2610}"; // Ballot Box
 const CHECKBOX_FILLED: &str = "\u{2611}"; // Ballot Box with Check

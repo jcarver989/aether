@@ -1,6 +1,6 @@
 use super::git_diff_mode::{GitDiffMode, ScreenMode};
 use crate::components::git_diff_view::GitDiffViewMessage;
-use crate::tui::{Component, Cursor, Event, Frame, ViewContext};
+use tui::{Component, Cursor, Event, Frame, ViewContext};
 
 const STATUS_LINE_HEIGHT: u16 = 1;
 
