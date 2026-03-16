@@ -250,8 +250,8 @@ async fn test_read_background_bash_running_status() {
 
     match result {
         BashResult::Background(handle) => {
-            // Check immediately - should still be running
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            // Give the echo output time to propagate through the async pipe
+            tokio::time::sleep(Duration::from_millis(500)).await;
 
             let (result, _) = read_background_bash(handle, None).await.unwrap();
 

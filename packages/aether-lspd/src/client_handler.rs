@@ -1,13 +1,25 @@
 use crate::lsp_config::get_config_for_language;
 use crate::lsp_manager::{EnsureDocumentOpenOutcome, LspHandle, LspKey, LspManager};
 use crate::protocol::{
-    DaemonRequest, DaemonResponse, ProtocolError, extract_document_uri, read_frame, write_frame,
+    DaemonRequest, DaemonResponse, LspErrorResponse, ProtocolError, extract_document_uri,
+    read_frame, write_frame,
 };
 use std::sync::Arc;
 use tokio::io::{ReadHalf, WriteHalf, split};
 use tokio::net::UnixStream;
 use tokio::spawn;
 use tokio::sync::mpsc;
+
+/// LSP error code for "content modified" — a transient error returned by
+/// language servers (e.g. rust-analyzer) when a request arrives while the
+/// server is still reprocessing after a content change.
+const LSP_CONTENT_MODIFIED: i32 = -32801;
+
+/// Maximum number of retries for transient LSP errors.
+const TRANSIENT_RETRY_LIMIT: u32 = 3;
+
+/// Delay between retries for transient LSP errors.
+const TRANSIENT_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// Handle a client connection
 #[tracing::instrument(skip(stream, lsp_manager), fields(%client_id))]
@@ -97,7 +109,8 @@ async fn run_reader(
                     None
                 };
 
-                let result = handle.request_raw(&method, params).await;
+                let result =
+                    request_with_retry(handle, &method, params, TRANSIENT_RETRY_LIMIT).await;
 
                 // Release the document so the file watcher resumes control.
                 if let Some(uri) = opened_uri {
@@ -286,4 +299,32 @@ async fn try_initialize(
         .get_or_spawn(key, &config.command, &config.args)
         .await
         .map_err(|e| ProtocolError::new(e.to_string()))
+}
+
+/// Retry an LSP request when the server returns a transient "content modified"
+/// error, giving the language server time to finish reprocessing.
+async fn request_with_retry(
+    handle: &LspHandle,
+    method: &str,
+    params: serde_json::Value,
+    max_retries: u32,
+) -> Result<serde_json::Value, LspErrorResponse> {
+    let mut last_err = None;
+    for attempt in 0..=max_retries {
+        match handle.request_raw(method, params.clone()).await {
+            Ok(value) => return Ok(value),
+            Err(err) if err.code == LSP_CONTENT_MODIFIED && attempt < max_retries => {
+                tracing::debug!(
+                    %method,
+                    attempt = attempt + 1,
+                    max_retries,
+                    "Retrying after transient 'content modified' error"
+                );
+                last_err = Some(err);
+                tokio::time::sleep(TRANSIENT_RETRY_DELAY).await;
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    Err(last_err.unwrap())
 }
