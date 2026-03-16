@@ -1,17 +1,15 @@
 use crate::components::model_selector::{ModelSelector, ModelSelectorMessage};
 use crate::components::provider_login::{
-    ProviderLoginEntry, ProviderLoginMessage, ProviderLoginOverlay, ProviderLoginStatus,
-    provider_login_summary,
+    ProviderLoginMessage, ProviderLoginOverlay,
 };
 use crate::components::server_status::{
-    ServerStatusMessage, ServerStatusOverlay, server_status_summary,
+    ServerStatusMessage, ServerStatusOverlay,
 };
-use crate::components::settings_menu::{SettingMenuMessage, SettingsChange, SettingsMenu};
-use crate::components::settings_picker::{SettingsPicker, SettingsPickerMessage};
-use crate::settings::{list_theme_files, load_or_create_settings, save_settings};
+use super::menu::{SettingMenuMessage, SettingsMenu};
+use super::picker::{SettingsPicker, SettingsPickerMessage};
 use crate::tui::Panel;
-use crate::tui::{Component, Event, Frame, Line, ViewContext};
-use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
+use crate::tui::{Component, Cursor, Event, Frame, Layout, Line, ViewContext};
+use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::McpServerStatusEntry;
 use agent_client_protocol::{self as acp, SessionConfigKind, SessionConfigOption};
 use unicode_width::UnicodeWidthStr;
@@ -42,7 +40,7 @@ pub struct SettingsOverlay {
 }
 
 #[derive(Debug)]
-pub enum SettingsOverlayMessage {
+pub enum SettingsMessage {
     Close,
     SetConfigOption { config_id: String, value: String },
     SetTheme(crate::tui::Theme),
@@ -83,6 +81,17 @@ impl SettingsOverlay {
             })
     }
 
+    pub fn build_frame(&mut self, ctx: &ViewContext) -> Frame {
+        let cursor = if self.has_picker() {
+            Cursor::visible(self.cursor_row_offset(), self.cursor_col())
+        } else {
+            Cursor::hidden()
+        };
+        let mut layout = Layout::new();
+        layout.section(self.render(ctx).into_lines());
+        layout.into_frame().with_cursor(cursor)
+    }
+
     pub fn update_child_viewport(&mut self, max_height: usize) {
         match &mut self.active_pane {
             SettingsPane::ModelSelector(ms) => ms.update_viewport(max_height),
@@ -93,21 +102,8 @@ impl SettingsOverlay {
 
     pub fn update_config_options(&mut self, options: &[SessionConfigOption]) {
         self.current_reasoning_effort = Self::extract_reasoning_effort(options);
-
         self.menu.update_options(options);
-
-        let settings = load_or_create_settings();
-        let theme_files = list_theme_files();
-        self.menu
-            .add_theme_entry(settings.theme.file.as_deref(), &theme_files);
-
-        let summary = server_status_summary(&self.server_statuses);
-        self.menu.add_mcp_servers_entry(&summary);
-        if !self.auth_methods.is_empty() {
-            let login_entries = self.build_login_entries();
-            let login_summary = provider_login_summary(&login_entries);
-            self.menu.add_provider_logins_entry(&login_summary);
-        }
+        super::decorate_menu(&mut self.menu, &self.server_statuses, &self.auth_methods);
     }
 
     pub fn update_server_statuses(&mut self, statuses: Vec<McpServerStatusEntry>) {
@@ -127,24 +123,6 @@ impl SettingsOverlay {
         if let SettingsPane::ProviderLogin(ref mut overlay) = self.active_pane {
             overlay.set_logged_in(method_id);
         }
-    }
-
-    fn build_login_entries(&self) -> Vec<ProviderLoginEntry> {
-        self.auth_methods
-            .iter()
-            .map(|m| {
-                let status = if m.description() == Some("authenticated") {
-                    ProviderLoginStatus::LoggedIn
-                } else {
-                    ProviderLoginStatus::NeedsLogin
-                };
-                ProviderLoginEntry {
-                    method_id: m.id().0.to_string(),
-                    name: m.name().to_string(),
-                    status,
-                }
-            })
-            .collect()
     }
 
     pub fn on_authenticate_failed(&mut self, method_id: &str) {
@@ -184,28 +162,6 @@ impl SettingsOverlay {
         matches!(self.active_pane, SettingsPane::Picker(_))
     }
 
-    fn process_config_changes(changes: Vec<SettingsChange>) -> Vec<SettingsOverlayMessage> {
-        let mut messages = Vec::new();
-        for change in changes {
-            if change.config_id == THEME_CONFIG_ID {
-                let file = theme_file_from_picker_value(&change.new_value);
-                let mut settings = load_or_create_settings();
-                settings.theme.file = file;
-                if let Err(err) = save_settings(&settings) {
-                    tracing::warn!("Failed to persist theme setting: {err}");
-                }
-                let theme = crate::settings::load_theme(&settings);
-                messages.push(SettingsOverlayMessage::SetTheme(theme));
-            } else {
-                messages.push(SettingsOverlayMessage::SetConfigOption {
-                    config_id: change.config_id,
-                    value: change.new_value,
-                });
-            }
-        }
-        messages
-    }
-
     fn footer_text(&self) -> &'static str {
         match &self.active_pane {
             SettingsPane::ModelSelector(_) => {
@@ -221,7 +177,7 @@ impl SettingsOverlay {
 }
 
 impl Component for SettingsOverlay {
-    type Message = SettingsOverlayMessage;
+    type Message = SettingsMessage;
 
     #[allow(clippy::too_many_lines)]
     async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
@@ -238,7 +194,7 @@ impl Component for SettingsOverlay {
                         Some(vec![])
                     }
                     Some(ServerStatusMessage::Authenticate(name)) => {
-                        Some(vec![SettingsOverlayMessage::AuthenticateServer(name)])
+                        Some(vec![SettingsMessage::AuthenticateServer(name)])
                     }
                     None => Some(vec![]),
                 }
@@ -251,7 +207,7 @@ impl Component for SettingsOverlay {
                         Some(vec![])
                     }
                     Some(ProviderLoginMessage::Authenticate(method_id)) => {
-                        Some(vec![SettingsOverlayMessage::AuthenticateProvider(
+                        Some(vec![SettingsMessage::AuthenticateProvider(
                             method_id,
                         )])
                     }
@@ -266,7 +222,7 @@ impl Component for SettingsOverlay {
                         if changes.is_empty() {
                             Some(vec![])
                         } else {
-                            Some(Self::process_config_changes(changes))
+                            Some(super::process_config_changes(changes))
                         }
                     }
                     None => Some(vec![]),
@@ -283,7 +239,7 @@ impl Component for SettingsOverlay {
                         if let Some(change) = change {
                             self.menu.apply_change(&change);
                             self.active_pane = SettingsPane::Menu;
-                            Some(Self::process_config_changes(vec![change]))
+                            Some(super::process_config_changes(vec![change]))
                         } else {
                             self.active_pane = SettingsPane::Menu;
                             Some(vec![])
@@ -296,7 +252,7 @@ impl Component for SettingsOverlay {
                 let outcome = self.menu.on_event(event).await;
                 let messages = outcome.unwrap_or_default();
                 match messages.as_slice() {
-                    [SettingMenuMessage::CloseAll] => Some(vec![SettingsOverlayMessage::Close]),
+                    [SettingMenuMessage::CloseAll] => Some(vec![SettingsMessage::Close]),
                     [SettingMenuMessage::OpenSelectedPicker] => {
                         if let Some(picker) = self
                             .menu
@@ -327,7 +283,7 @@ impl Component for SettingsOverlay {
                         Some(vec![])
                     }
                     [SettingMenuMessage::OpenProviderLogins] => {
-                        let entries = self.build_login_entries();
+                        let entries = super::build_login_entries(&self.auth_methods);
                         self.active_pane =
                             SettingsPane::ProviderLogin(ProviderLoginOverlay::new(entries));
                         Some(vec![])
@@ -369,18 +325,10 @@ impl Component for SettingsOverlay {
     }
 }
 
-fn theme_file_from_picker_value(value: &str) -> Option<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::components::provider_login::ProviderLoginStatus;
     use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
     use acp_utils::config_option_id::THEME_CONFIG_ID;
     use acp_utils::notifications::McpServerStatus;
@@ -478,7 +426,7 @@ mod tests {
         let messages = outcome.unwrap();
         assert!(matches!(
             messages.as_slice(),
-            [SettingsOverlayMessage::Close]
+            [SettingsMessage::Close]
         ));
     }
 
@@ -512,7 +460,7 @@ mod tests {
 
         let messages = outcome.unwrap();
         match messages.as_slice() {
-            [SettingsOverlayMessage::SetConfigOption { config_id, value }] => {
+            [SettingsMessage::SetConfigOption { config_id, value }] => {
                 assert_eq!(config_id, "provider");
                 assert_eq!(value, "ollama");
             }
@@ -647,7 +595,7 @@ mod tests {
 
     #[tokio::test]
     async fn model_selector_uses_overlay_reasoning_prefill_after_menu_removal() {
-        use crate::components::settings_menu::{
+        use crate::settings::types::{
             SettingsMenuEntry, SettingsMenuEntryKind, SettingsMenuValue,
         };
         use acp_utils::config_meta::SelectOptionMeta;
@@ -717,14 +665,14 @@ mod tests {
 
         let messages = outcome.unwrap();
         let reasoning_msg = messages.iter().find(|m| {
-            matches!(m, SettingsOverlayMessage::SetConfigOption { config_id, .. } if config_id == "reasoning_effort")
+            matches!(m, SettingsMessage::SetConfigOption { config_id, .. } if config_id == "reasoning_effort")
         });
         assert!(
             reasoning_msg.is_some(),
             "should have reasoning_effort SetConfigOption; got: {messages:?}"
         );
         match reasoning_msg.unwrap() {
-            SettingsOverlayMessage::SetConfigOption { value, .. } => {
+            SettingsMessage::SetConfigOption { value, .. } => {
                 assert_eq!(
                     value, "high",
                     "reasoning should be high after one right from medium"
@@ -736,7 +684,7 @@ mod tests {
 
     #[test]
     fn update_settings_options_preserves_mcp_servers_entry() {
-        use crate::components::settings_menu::SettingsMenuEntryKind;
+        use crate::settings::types::SettingsMenuEntryKind;
         use crate::test_helpers::with_wisp_home;
 
         let temp_dir = tempfile::TempDir::new().unwrap();
@@ -831,100 +779,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn theme_default_value_maps_to_none() {
-        assert_eq!(theme_file_from_picker_value("   "), None);
-    }
-
-    #[test]
-    fn theme_value_maps_to_some() {
-        assert_eq!(
-            theme_file_from_picker_value("catppuccin.tmTheme"),
-            Some("catppuccin.tmTheme".to_string())
-        );
-    }
-
-    #[test]
-    fn process_theme_change_persists_and_produces_set_theme() {
-        use crate::test_helpers::{CUSTOM_TMTHEME, with_wisp_home};
-        use crate::tui::Color;
-        use std::fs;
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        let themes_dir = temp_dir.path().join("themes");
-        fs::create_dir_all(&themes_dir).unwrap();
-        fs::write(themes_dir.join("custom.tmTheme"), CUSTOM_TMTHEME).unwrap();
-
-        with_wisp_home(temp_dir.path(), || {
-            let _overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
-            let messages = SettingsOverlay::process_config_changes(vec![SettingsChange {
-                config_id: THEME_CONFIG_ID.to_string(),
-                new_value: "custom.tmTheme".to_string(),
-            }]);
-
-            let theme_msg = messages.iter().find_map(|m| {
-                if let SettingsOverlayMessage::SetTheme(theme) = m {
-                    Some(theme)
-                } else {
-                    None
-                }
-            });
-            assert!(theme_msg.is_some(), "should produce SetTheme message");
-            assert_eq!(
-                theme_msg.unwrap().text_primary(),
-                Color::Rgb {
-                    r: 0x11,
-                    g: 0x22,
-                    b: 0x33
-                }
-            );
-
-            let loaded = crate::settings::load_or_create_settings();
-            assert_eq!(loaded.theme.file.as_deref(), Some("custom.tmTheme"));
-        });
-    }
-
-    #[test]
-    fn process_theme_change_persists_default_as_none() {
-        use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings};
-        use crate::test_helpers::with_wisp_home;
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        with_wisp_home(temp_dir.path(), || {
-            save_settings(&WispSettings {
-                theme: WispThemeSettings {
-                    file: Some("old.tmTheme".to_string()),
-                },
-            })
-            .unwrap();
-
-            let _overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
-            let _messages = SettingsOverlay::process_config_changes(vec![SettingsChange {
-                config_id: THEME_CONFIG_ID.to_string(),
-                new_value: "   ".to_string(),
-            }]);
-
-            let loaded = crate::settings::load_or_create_settings();
-            assert_eq!(loaded.theme.file, None);
-        });
-    }
-
-    #[test]
-    fn process_non_theme_change_produces_set_setting_option() {
-        let _overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
-        let messages = SettingsOverlay::process_config_changes(vec![SettingsChange {
-            config_id: "provider".to_string(),
-            new_value: "ollama".to_string(),
-        }]);
-
-        match messages.as_slice() {
-            [SettingsOverlayMessage::SetConfigOption { config_id, value }] => {
-                assert_eq!(config_id, "provider");
-                assert_eq!(value, "ollama");
-            }
-            other => panic!("expected SetConfigOption, got: {other:?}"),
-        }
-    }
 }

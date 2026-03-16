@@ -2,8 +2,8 @@ use acp_utils::notifications::{McpServerStatus, McpServerStatusEntry};
 use agent_client_protocol::{self as acp, SessionConfigSelectOption};
 use tui::testing::render_component;
 use tui::{Component, Event, KeyCode, KeyEvent, KeyModifiers, ViewContext};
-use wisp::components::settings_menu::SettingsMenu;
-use wisp::components::settings_overlay::SettingsOverlay;
+use wisp::settings::menu::SettingsMenu;
+use wisp::settings::overlay::SettingsOverlay;
 
 fn make_menu() -> SettingsMenu {
     let options = vec![

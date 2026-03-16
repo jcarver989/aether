@@ -1,4 +1,4 @@
-use crate::components::settings_menu::{SettingsChange, SettingsMenuEntry, SettingsMenuValue};
+use super::types::{SettingsChange, SettingsMenuEntry, SettingsMenuValue};
 use crate::tui::{
     Combobox, Component, Event, Frame, Line, PickerKey, Searchable, ViewContext, classify_key,
 };
@@ -216,7 +216,7 @@ mod tests {
             ],
             current_value_index: 0,
             current_raw_value: "openrouter:openai/gpt-4o".to_string(),
-            entry_kind: crate::components::settings_menu::SettingsMenuEntryKind::Select,
+            entry_kind: crate::settings::types::SettingsMenuEntryKind::Select,
         }
     }
 

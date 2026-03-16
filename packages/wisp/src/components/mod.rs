@@ -1,11 +1,6 @@
 pub mod app;
 pub mod command_picker;
 pub(crate) mod conversation_screen;
-pub(crate) mod settings_manager;
-pub mod settings_menu;
-pub mod settings_overlay;
-pub mod settings_picker;
-
 pub mod conversation_window;
 pub mod elicitation_form;
 pub(crate) mod file_list_renderer;

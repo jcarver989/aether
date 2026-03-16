@@ -1,5 +1,5 @@
 use crate::components::reasoning_bar::reasoning_bar;
-use crate::components::settings_menu::{SettingsChange, SettingsMenuEntry};
+use crate::settings::types::{SettingsChange, SettingsMenuEntry};
 use crate::tui::{
     Combobox, Component, Event, Frame, Line, PickerKey, Searchable, ViewContext, classify_key,
 };
@@ -340,7 +340,7 @@ fn reasoning_config_value(effort: Option<ReasoningEffort>) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::settings_menu::{SettingsMenuEntryKind, SettingsMenuValue};
+    use crate::settings::types::{SettingsMenuEntryKind, SettingsMenuValue};
     use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
     use acp_utils::config_meta::SelectOptionMeta;
 
