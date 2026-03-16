@@ -5,8 +5,8 @@
 //!
 //! - **[`Component`]** — Trait for reusable UI widgets with event handling
 //! - **[`Frame`]** — A rendered frame of lines with cursor position
-//! - **[`Renderer`](advanced::Renderer)** — Efficient diff-based terminal renderer
-//! - **[`TerminalSession`](advanced::TerminalSession)** — Terminal lifecycle management
+//! - **[`Renderer`]** — Efficient diff-based terminal renderer
+//! - **[`TerminalSession`]** — Terminal lifecycle management
 
 // Core modules - always available
 pub(crate) mod components;
@@ -25,7 +25,7 @@ mod syntax_highlighting;
 #[cfg(feature = "syntax")]
 pub(crate) mod markdown;
 
-#[cfg(feature = "picker")]
+#[cfg(all(feature = "picker", feature = "testing"))]
 pub mod test_picker;
 
 #[cfg(feature = "picker")]
@@ -35,7 +35,7 @@ pub(crate) mod combobox;
 pub(crate) mod fuzzy_matcher;
 
 #[cfg(feature = "runtime")]
-pub mod runtime;
+pub(crate) mod runtime;
 
 #[cfg(feature = "testing")]
 pub mod testing;
@@ -61,21 +61,16 @@ pub use rendering::line::Line;
 pub use rendering::style::Style;
 pub use theme::{Theme, ThemeBuildError};
 
-/// Advanced APIs for low-level terminal control.
+// Rendering (always available - no runtime dependency)
+pub use rendering::renderer::{Renderer, RendererCommand};
+
+// Runtime (feature-gated)
 #[cfg(feature = "runtime")]
-pub mod advanced {
-    /// Low-level renderer for manual frame control.
-    pub use crate::rendering::renderer::{Renderer, RendererCommand};
-
-    /// Terminal session management for manual runtime control.
-    pub use crate::runtime::{MouseCapture, TerminalSession, spawn_terminal_event_task};
-
-    /// Direct terminal size query helper.
-    pub use crate::runtime::terminal::terminal_size;
-
-    /// Raw crossterm event type returned by [`spawn_terminal_event_task`].
-    pub use crossterm::event::Event as CrosstermEvent;
-}
+pub use runtime::{MouseCapture, TerminalSession, spawn_terminal_event_task};
+#[cfg(feature = "runtime")]
+pub use runtime::terminal::terminal_size;
+#[cfg(feature = "runtime")]
+pub use crossterm::event::Event as CrosstermEvent;
 
 // &str text utilities
 pub use rendering::soft_wrap::{display_width_text, pad_text_to_width, truncate_text};

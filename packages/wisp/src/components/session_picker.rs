@@ -1,4 +1,4 @@
-use crate::tui::{
+use tui::{
     Combobox, Component, Event, Frame, Line, PickerMessage, Searchable, Style, ViewContext,
     display_width_text, pad_text_to_width, truncate_text,
 };
@@ -146,8 +146,8 @@ pub fn format_relative_time(iso: &str, now: DateTime<Utc>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::testing::{assert_buffer_eq, render_component};
-    use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
+    use tui::testing::{assert_buffer_eq, render_component};
+    use tui::{KeyCode, KeyEvent, KeyModifiers};
     use std::path::PathBuf;
 
     const W: u16 = 60;

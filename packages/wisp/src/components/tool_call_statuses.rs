@@ -10,7 +10,7 @@ use crate::components::tool_call_status_view::{
 use crate::components::tracked_tool_call::{
     TrackedToolCall, raw_input_fragment, upsert_tracked_tool_call,
 };
-use crate::tui::{Line, ViewContext};
+use tui::{Line, ViewContext};
 
 /// Tracks active tool calls and produces status lines for the frame.
 #[derive(Clone)]
@@ -173,7 +173,7 @@ impl Default for ToolCallStatuses {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::{DiffLine, DiffPreview, DiffTag};
+    use tui::{DiffLine, DiffPreview, DiffTag};
     use acp_utils::notifications::{SubAgentEvent, SubAgentProgressParams};
 
     fn ctx() -> ViewContext {

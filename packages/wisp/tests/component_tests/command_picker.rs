@@ -1,8 +1,8 @@
 use tui::testing::render_component;
 use tui::{KeyCode, KeyEvent, KeyModifiers, ViewContext, display_width_text};
 use wisp::components::command_picker::{CommandEntry, CommandPicker};
-use wisp::tui::Component;
-use wisp::tui::Event;
+use tui::Component;
+use tui::Event;
 
 const DEFAULT_SIZE: (u16, u16) = (120, 40);
 

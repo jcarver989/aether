@@ -7,17 +7,15 @@ mod runtime_state;
 mod settings;
 #[cfg(test)]
 mod test_helpers;
-mod tui;
 
 use crate::cli::Cli;
 use crate::components::app::App;
 use crate::error::AppError;
 use crate::runtime_state::RuntimeState;
-use crate::tui::advanced::{
-    CrosstermEvent, MouseCapture, Renderer, TerminalSession, spawn_terminal_event_task,
-    terminal_size,
+use tui::{
+    Component, CrosstermEvent, Event, MouseCapture, Renderer, TerminalSession,
+    spawn_terminal_event_task, terminal_size,
 };
-use crate::tui::{Component, Event};
 use clap::Parser;
 use std::fs::create_dir_all;
 use std::future::pending;

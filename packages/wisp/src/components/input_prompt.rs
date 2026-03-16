@@ -1,4 +1,4 @@
-use crate::tui::{Line, ViewContext};
+use tui::{Line, ViewContext};
 use unicode_width::UnicodeWidthChar;
 
 pub fn prompt_content_width(terminal_width: usize) -> usize {

@@ -1,7 +1,7 @@
 use super::App;
 use crate::components::status_line::StatusLine;
 use crate::settings;
-use crate::tui::{Component, Frame, Layout, ViewContext};
+use tui::{Component, Frame, Layout, ViewContext};
 
 pub fn build_frame(app: &mut App, context: &ViewContext) -> Frame {
     if let Some(ref mut overlay) = app.settings_overlay {

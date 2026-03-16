@@ -1,5 +1,5 @@
 use crate::git_diff::{FileDiff, FileStatus};
-use crate::tui::{Line, Style, truncate_text};
+use tui::{Line, Style, truncate_text};
 
 pub(crate) fn render_file_list_cell(
     line: &mut Line,
@@ -7,7 +7,7 @@ pub(crate) fn render_file_list_cell(
     row: usize,
     selected: usize,
     left_width: usize,
-    theme: &crate::tui::Theme,
+    theme: &tui::Theme,
 ) {
     if row >= files.len() {
         line.push_text(" ".repeat(left_width));

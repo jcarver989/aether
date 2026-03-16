@@ -7,8 +7,8 @@ use crate::components::server_status::{
 };
 use super::menu::{SettingMenuMessage, SettingsMenu};
 use super::picker::{SettingsPicker, SettingsPickerMessage};
-use crate::tui::Panel;
-use crate::tui::{Component, Cursor, Event, Frame, Layout, Line, ViewContext};
+use tui::Panel;
+use tui::{Component, Cursor, Event, Frame, Layout, Line, ViewContext};
 use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::McpServerStatusEntry;
 use agent_client_protocol::{self as acp, SessionConfigKind, SessionConfigOption};
@@ -43,7 +43,7 @@ pub struct SettingsOverlay {
 pub enum SettingsMessage {
     Close,
     SetConfigOption { config_id: String, value: String },
-    SetTheme(crate::tui::Theme),
+    SetTheme(tui::Theme),
     AuthenticateServer(String),
     AuthenticateProvider(String),
 }
@@ -329,7 +329,7 @@ impl Component for SettingsOverlay {
 mod tests {
     use super::*;
     use crate::components::provider_login::ProviderLoginStatus;
-    use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
+    use tui::{KeyCode, KeyEvent, KeyModifiers};
     use acp_utils::config_option_id::THEME_CONFIG_ID;
     use acp_utils::notifications::McpServerStatus;
     use agent_client_protocol::SessionConfigSelectOption;

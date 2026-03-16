@@ -1,5 +1,5 @@
 use super::types::{SettingsChange, SettingsMenuEntry, SettingsMenuValue};
-use crate::tui::{
+use tui::{
     Combobox, Component, Event, Frame, Line, PickerKey, Searchable, ViewContext, classify_key,
 };
 impl Searchable for SettingsMenuValue {
@@ -177,8 +177,8 @@ impl Component for SettingsPicker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::test_picker::{rendered_lines_from, type_query};
-    use crate::tui::{KeyCode, KeyEvent, KeyModifiers};
+    use tui::test_picker::{rendered_lines_from, type_query};
+    use tui::{KeyCode, KeyEvent, KeyModifiers};
     use acp_utils::config_meta::SelectOptionMeta;
 
     fn rendered_lines(picker: &mut SettingsPicker) -> Vec<String> {

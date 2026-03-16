@@ -4,7 +4,7 @@ use tui::ViewContext;
 use tui::testing::render_component;
 use wisp::settings::menu::SettingsMenu;
 use wisp::settings::types::{SettingsMenuEntry, SettingsMenuEntryKind, SettingsMenuValue};
-use wisp::tui::Component;
+use tui::Component;
 
 fn make_select_option(
     id: &str,

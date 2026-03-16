@@ -1,4 +1,4 @@
-use tui::advanced::Renderer;
+use tui::Renderer;
 use tui::testing::TestTerminal;
 use tui::{Cursor, Frame, Line, Theme};
 

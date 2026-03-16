@@ -1,5 +1,5 @@
 use super::*;
-use tui::advanced::Renderer;
+use tui::Renderer;
 use tui::{BRAILLE_FRAMES, Spinner};
 
 #[test]

@@ -1,6 +1,6 @@
 use crate::components::app::git_diff_mode::PatchLineRef;
 use crate::git_diff::{FileDiff, PatchLineKind};
-use crate::tui::{Color, Line, Span, Style, ViewContext};
+use tui::{Color, Line, Span, Style, ViewContext};
 
 pub fn build_patch_lines(
     file: &FileDiff,
