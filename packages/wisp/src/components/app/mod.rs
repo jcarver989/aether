@@ -29,15 +29,15 @@ pub struct PromptAttachment {
 }
 
 pub struct App {
-    pub(crate) agent_name: String,
-    pub(crate) context_usage_pct: Option<u8>,
-    pub exit_requested: bool,
-    pub(crate) conversation_screen: ConversationScreen,
-    pub(crate) config_options: Vec<acp::SessionConfigOption>,
-    pub(crate) server_statuses: Vec<acp_utils::notifications::McpServerStatusEntry>,
-    pub(crate) auth_methods: Vec<acp::AuthMethod>,
-    pub(crate) settings_overlay: Option<SettingsOverlay>,
-    pub(crate) screen_router: ScreenRouter,
+    agent_name: String,
+    context_usage_pct: Option<u8>,
+    exit_requested: bool,
+    conversation_screen: ConversationScreen,
+    config_options: Vec<acp::SessionConfigOption>,
+    server_statuses: Vec<acp_utils::notifications::McpServerStatusEntry>,
+    auth_methods: Vec<acp::AuthMethod>,
+    settings_overlay: Option<SettingsOverlay>,
+    screen_router: ScreenRouter,
     keybindings: Keybindings,
     session_id: SessionId,
     prompt_handle: AcpPromptHandle,
@@ -75,6 +75,10 @@ impl App {
 
     pub fn exit_requested(&self) -> bool {
         self.exit_requested
+    }
+
+    pub fn has_settings_overlay(&self) -> bool {
+        self.settings_overlay.is_some()
     }
 
     pub fn wants_tick(&self) -> bool {

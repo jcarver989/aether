@@ -139,7 +139,7 @@ async fn run_app(
         }
 
         renderer.apply_commands(vec![RendererCommand::SetMouseCapture(
-            app.settings_overlay.is_some(),
+            app.has_settings_overlay(),
         )])?;
     }
 }

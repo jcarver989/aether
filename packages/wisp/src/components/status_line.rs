@@ -48,11 +48,13 @@ impl StatusLine<'_> {
             ));
         }
 
-        let pct = self.context_pct_left.unwrap_or(100);
-        if !right_parts.is_empty() {
-            right_parts.push((" · ".to_string(), sep));
+        if model_display.is_some() || self.context_pct_left.is_some() {
+            let pct = self.context_pct_left.unwrap_or(100);
+            if !right_parts.is_empty() {
+                right_parts.push((" · ".to_string(), sep));
+            }
+            right_parts.push((context_bar(pct), context_color(pct, &context.theme)));
         }
-        right_parts.push((context_bar(pct), context_color(pct, &context.theme)));
 
         if !self.waiting_for_response && self.unhealthy_server_count > 0 {
             let count = self.unhealthy_server_count;
@@ -61,12 +63,16 @@ impl StatusLine<'_> {
             } else {
                 format!("{count} servers unhealthy")
             };
-            right_parts.push((" · ".to_string(), sep));
+            if !right_parts.is_empty() {
+                right_parts.push((" · ".to_string(), sep));
+            }
             right_parts.push((msg, context.theme.warning()));
         }
 
         if self.waiting_for_response {
-            right_parts.push((" · ".to_string(), sep));
+            if !right_parts.is_empty() {
+                right_parts.push((" · ".to_string(), sep));
+            }
             right_parts.push(("esc to interrupt".to_string(), context.theme.warning()));
         }
 
