@@ -2,9 +2,7 @@ use acp_utils::config_meta::SelectOptionMeta;
 use tui::testing::render_component;
 use tui::{Component, Event, KeyCode, KeyEvent, KeyModifiers};
 use wisp::components::model_selector::ModelSelector;
-use wisp::components::settings_menu::{
-    SettingsMenuEntry, SettingsMenuEntryKind, SettingsMenuValue,
-};
+use wisp::settings::types::{SettingsMenuEntry, SettingsMenuEntryKind, SettingsMenuValue};
 
 async fn type_query(picker: &mut ModelSelector, text: &str) {
     for c in text.chars() {

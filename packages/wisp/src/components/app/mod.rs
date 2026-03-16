@@ -10,8 +10,8 @@ use screen_router::ScreenRouterMessage;
 use crate::components::conversation_screen::ConversationScreen;
 use crate::components::conversation_screen::ConversationScreenMessage;
 use crate::components::conversation_window::{SegmentContent, render_segments_to_lines};
-use crate::components::settings_manager::SettingsManager;
-use crate::components::settings_manager::SettingsManagerMessage;
+use crate::settings;
+use crate::settings::overlay::{SettingsMessage, SettingsOverlay};
 use crate::keybindings::Keybindings;
 use crate::tui::advanced::RendererCommand;
 use crate::tui::{Component, Event, Frame, KeyEvent, Line, ViewContext};
@@ -33,7 +33,10 @@ pub struct App {
     pub(crate) context_usage_pct: Option<u8>,
     pub exit_requested: bool,
     pub(crate) conversation_screen: ConversationScreen,
-    pub(crate) config_manager: SettingsManager,
+    pub(crate) config_options: Vec<acp::SessionConfigOption>,
+    pub(crate) server_statuses: Vec<acp_utils::notifications::McpServerStatusEntry>,
+    pub(crate) auth_methods: Vec<acp::AuthMethod>,
+    pub(crate) settings_overlay: Option<SettingsOverlay>,
     pub(crate) screen_router: ScreenRouter,
     keybindings: Keybindings,
     session_id: SessionId,
@@ -57,7 +60,10 @@ impl App {
             context_usage_pct: None,
             exit_requested: false,
             conversation_screen: ConversationScreen::new(keybindings.clone()),
-            config_manager: SettingsManager::new(config_options, auth_methods),
+            config_options: config_options.to_vec(),
+            server_statuses: Vec::new(),
+            auth_methods,
+            settings_overlay: None,
             screen_router: ScreenRouter::new(GitDiffMode::new(working_dir)),
             keybindings,
             session_id,
@@ -126,7 +132,7 @@ impl App {
                 config_options,
             } => {
                 self.session_id = session_id;
-                self.config_manager.update_config_options(&config_options);
+                self.update_config_options(&config_options);
             }
             AcpEvent::ConnectionClosed => {
                 self.exit_requested = true;
@@ -160,9 +166,8 @@ impl App {
             {
                 self.handle_screen_router_message(commands, msg).await;
             }
-        } else if self.config_manager.is_overlay_open() {
-            let outcome = self.config_manager.on_overlay_event(&event).await;
-            self.handle_config_manager_messages(commands, outcome);
+        } else if self.settings_overlay.is_some() {
+            self.handle_settings_overlay_event(commands, &event).await;
         } else {
             let outcome = self.conversation_screen.on_event(&event).await;
             let consumed = outcome.is_some();
@@ -209,7 +214,7 @@ impl App {
                     let _ = self.prompt_handle.prompt(&self.session_id, "/clear", None);
                 }
                 ConversationScreenMessage::OpenSettings => {
-                    self.config_manager.open_overlay();
+                    self.open_settings_overlay();
                 }
                 ConversationScreenMessage::OpenSessionPicker => {
                     let _ = self.prompt_handle.list_sessions();
@@ -232,7 +237,7 @@ impl App {
 
     fn handle_fallthrough_keybindings(&self, key_event: KeyEvent) {
         if self.keybindings.cycle_reasoning.matches(key_event) {
-            if let Some((id, val)) = self.config_manager.cycle_reasoning_option() {
+            if let Some((id, val)) = settings::cycle_reasoning_option(&self.config_options) {
                 let _ = self
                     .prompt_handle
                     .set_config_option(&self.session_id, &id, &val);
@@ -241,7 +246,7 @@ impl App {
         }
 
         if self.keybindings.cycle_mode.matches(key_event) {
-            if let Some((id, val)) = self.config_manager.cycle_quick_option() {
+            if let Some((id, val)) = settings::cycle_quick_option(&self.config_options) {
                 let _ = self
                     .prompt_handle
                     .set_config_option(&self.session_id, &id, &val);
@@ -257,32 +262,59 @@ impl App {
         }
     }
 
-    fn handle_config_manager_messages(
+    async fn handle_settings_overlay_event(
         &mut self,
         commands: &mut Vec<RendererCommand>,
-        outcome: Option<Vec<SettingsManagerMessage>>,
+        event: &Event,
     ) {
-        for msg in outcome.unwrap_or_default() {
+        let Some(ref mut overlay) = self.settings_overlay else {
+            return;
+        };
+        let messages = overlay.on_event(event).await.unwrap_or_default();
+
+        for msg in messages {
             match msg {
-                SettingsManagerMessage::SetConfigOption { config_id, value } => {
+                SettingsMessage::Close => {
+                    self.settings_overlay = None;
+                    return;
+                }
+                SettingsMessage::SetConfigOption { config_id, value } => {
                     let _ =
                         self.prompt_handle
                             .set_config_option(&self.session_id, &config_id, &value);
                 }
-                SettingsManagerMessage::SetTheme(theme) => {
+                SettingsMessage::SetTheme(theme) => {
                     commands.push(RendererCommand::SetTheme(theme));
                 }
-                SettingsManagerMessage::AuthenticateServer(name) => {
+                SettingsMessage::AuthenticateServer(name) => {
                     let _ = self
                         .prompt_handle
                         .authenticate_mcp_server(&self.session_id, &name);
                 }
-                SettingsManagerMessage::AuthenticateProvider(method_id) => {
+                SettingsMessage::AuthenticateProvider(ref method_id) => {
+                    if let Some(ref mut overlay) = self.settings_overlay {
+                        overlay.on_authenticate_started(method_id);
+                    }
                     let _ = self
                         .prompt_handle
-                        .authenticate(&self.session_id, &method_id);
+                        .authenticate(&self.session_id, method_id);
                 }
             }
+        }
+    }
+
+    fn open_settings_overlay(&mut self) {
+        self.settings_overlay = Some(settings::create_overlay(
+            &self.config_options,
+            &self.server_statuses,
+            &self.auth_methods,
+        ));
+    }
+
+    fn update_config_options(&mut self, config_options: &[acp::SessionConfigOption]) {
+        self.config_options = config_options.to_vec();
+        if let Some(ref mut overlay) = self.settings_overlay {
+            overlay.update_config_options(config_options);
         }
     }
 
@@ -311,8 +343,7 @@ impl App {
         self.conversation_screen.on_session_update(update);
 
         if let acp::SessionUpdate::ConfigOptionUpdate(config_update) = update {
-            self.config_manager
-                .update_config_options(&config_update.config_options);
+            self.update_config_options(&config_update.config_options);
         }
     }
 
@@ -332,7 +363,7 @@ impl App {
         params: acp_utils::notifications::ElicitationParams,
         response_tx: oneshot::Sender<acp_utils::notifications::ElicitationResponse>,
     ) {
-        self.config_manager.close_overlay();
+        self.settings_overlay = None;
         self.conversation_screen
             .on_elicitation_request(params, response_tx);
     }
@@ -371,19 +402,26 @@ impl App {
                 if let Ok(McpNotification::ServerStatus { servers }) =
                     McpNotification::try_from(notification)
                 {
-                    self.config_manager.update_server_statuses(servers);
+                    if let Some(ref mut overlay) = self.settings_overlay {
+                        overlay.update_server_statuses(servers.clone());
+                    }
+                    self.server_statuses = servers;
                 }
             }
         }
     }
 
     fn on_authenticate_complete(&mut self, method_id: &str) {
-        self.config_manager.on_authenticate_complete(method_id);
+        if let Some(ref mut overlay) = self.settings_overlay {
+            overlay.on_authenticate_complete(method_id);
+        }
     }
 
     fn on_authenticate_failed(&mut self, method_id: &str, error: &str) {
         tracing::warn!("Provider auth failed for {method_id}: {error}");
-        self.config_manager.on_authenticate_failed(method_id);
+        if let Some(ref mut overlay) = self.settings_overlay {
+            overlay.on_authenticate_failed(method_id);
+        }
     }
 }
 
@@ -395,7 +433,7 @@ impl Component for App {
         match event {
             Event::Key(key_event) => self.handle_key(&mut commands, *key_event).await,
             Event::Paste(_) => {
-                self.config_manager.close_overlay();
+                self.settings_overlay = None;
                 let outcome = self.conversation_screen.on_event(event).await;
                 self.handle_conversation_messages(&mut commands, outcome)
                     .await;
@@ -414,7 +452,11 @@ impl Component for App {
         self.screen_router.refresh_caches(ctx);
 
         let height = (ctx.size.height.saturating_sub(1)) as usize;
-        self.config_manager.update_overlay_viewport(height);
+        if let Some(ref mut overlay) = self.settings_overlay
+            && height >= 3
+        {
+            overlay.update_child_viewport(height.saturating_sub(4));
+        }
 
         view::build_frame(self, ctx)
     }
@@ -501,9 +543,9 @@ mod tests {
         fs::write(themes_dir.join("catppuccin.tmTheme"), "x").unwrap();
 
         with_wisp_home(temp_dir.path(), || {
-            let mut cm = crate::components::settings_manager::SettingsManager::new(&[], vec![]);
-            cm.open_overlay();
-            assert!(cm.is_overlay_open());
+            let mut app = make_app();
+            app.open_settings_overlay();
+            assert!(app.settings_overlay.is_some());
         });
     }
 
@@ -523,9 +565,9 @@ mod tests {
             };
             save_settings(&settings).unwrap();
 
-            let mut cm = crate::components::settings_manager::SettingsManager::new(&[], vec![]);
-            cm.open_overlay();
-            assert!(cm.is_overlay_open());
+            let mut app = make_app();
+            app.open_settings_overlay();
+            assert!(app.settings_overlay.is_some());
         });
     }
 
@@ -563,7 +605,7 @@ mod tests {
         )];
         let mut app = make_app_with_config(&options);
         let mut renderer = make_renderer();
-        app.config_manager.open_overlay();
+        app.open_settings_overlay();
 
         let context = ViewContext::new((120, 40));
         let output = render_app(&mut renderer, &mut app, &context);
@@ -574,7 +616,7 @@ mod tests {
                 .any(|line| line.plain_text().contains("Configuration"))
         );
 
-        app.config_manager.close_overlay();
+        app.settings_overlay = None;
         let output = render_app(&mut renderer, &mut app, &context);
         assert!(
             !output
@@ -856,7 +898,7 @@ mod tests {
         rt.block_on(app.handle_conversation_messages(&mut commands, outcome));
 
         assert!(
-            app.config_manager.is_overlay_open(),
+            app.settings_overlay.is_some(),
             "settings overlay should be opened"
         );
     }
@@ -864,12 +906,12 @@ mod tests {
     #[test]
     fn settings_overlay_close_clears_overlay() {
         let mut app = make_app();
-        app.config_manager.open_overlay();
+        app.open_settings_overlay();
 
-        app.config_manager.close_overlay();
+        app.settings_overlay = None;
 
         assert!(
-            !app.config_manager.is_overlay_open(),
+            app.settings_overlay.is_none(),
             "close should clear overlay"
         );
     }

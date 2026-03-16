@@ -1,9 +1,12 @@
 use super::App;
 use crate::components::status_line::StatusLine;
+use crate::settings;
 use crate::tui::{Component, Frame, Layout, ViewContext};
 
 pub fn build_frame(app: &mut App, context: &ViewContext) -> Frame {
-    if let Some(overlay_frame) = app.config_manager.build_overlay_frame(context) {
+    if let Some(ref mut overlay) = app.settings_overlay {
+        let overlay_frame = overlay.build_frame(context);
+
         let status_line = make_status_line(app);
         let mut layout = Layout::new();
         layout.section_with_cursor(overlay_frame.lines().to_vec(), overlay_frame.cursor());
@@ -33,9 +36,9 @@ pub fn build_frame(app: &mut App, context: &ViewContext) -> Frame {
 fn make_status_line(app: &App) -> StatusLine<'_> {
     StatusLine {
         agent_name: &app.agent_name,
-        config_options: app.config_manager.config_options(),
+        config_options: &app.config_options,
         context_pct_left: app.context_usage_pct,
         waiting_for_response: app.conversation_screen.is_waiting(),
-        unhealthy_server_count: app.config_manager.unhealthy_server_count(),
+        unhealthy_server_count: settings::unhealthy_server_count(&app.server_statuses),
     }
 }
