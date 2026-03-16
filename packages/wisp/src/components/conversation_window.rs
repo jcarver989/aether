@@ -1,4 +1,4 @@
-use std::mem::{Discriminant, discriminant, take};
+use std::mem::{Discriminant, discriminant};
 
 use crate::components::thought_message::ThoughtMessage;
 use crate::components::tool_call_statuses::ToolCallStatuses;
@@ -6,6 +6,7 @@ use tui::{Line, ViewContext, render_markdown};
 
 #[derive(Debug, Clone)]
 pub enum SegmentContent {
+    UserMessage(String),
     Text(String),
     Thought(String),
     ToolCall(String),
@@ -38,6 +39,13 @@ impl ConversationBuffer {
     #[cfg(test)]
     pub(crate) fn segments(&self) -> impl ExactSizeIterator<Item = &SegmentContent> {
         self.segments.iter().map(|s| &s.content)
+    }
+
+    pub fn push_user_message(&mut self, text: &str) {
+        self.close_thought_block();
+        self.segments.push(Segment {
+            content: SegmentContent::UserMessage(text.to_string()),
+        });
     }
 
     pub fn append_text_chunk(&mut self, chunk: &str) {
@@ -99,16 +107,18 @@ impl ConversationBuffer {
         }
     }
 
+    #[cfg(test)]
     fn drain_segments_except(
         &mut self,
         mut keep: impl FnMut(&SegmentContent) -> bool,
     ) -> Vec<Segment> {
-        let old = take(&mut self.segments);
+        let old = std::mem::take(&mut self.segments);
         let (kept, removed) = old.into_iter().partition(|s| keep(&s.content));
         self.segments = kept;
         removed
     }
 
+    #[cfg(test)]
     pub(crate) fn drain_completed(
         &mut self,
         tool_call_statuses: &ToolCallStatuses,
@@ -158,12 +168,14 @@ fn render_stream_segment(
     context: &ViewContext,
 ) -> Vec<Line> {
     match segment {
+        SegmentContent::UserMessage(text) => vec![Line::new(text.clone())],
         SegmentContent::Thought(text) => ThoughtMessage { text }.render(context),
         SegmentContent::Text(text) => render_markdown(text, context),
         SegmentContent::ToolCall(id) => tool_call_statuses.render_tool(id, context),
     }
 }
 
+#[cfg(test)]
 pub fn render_segments_to_lines(
     segments: &[SegmentContent],
     tool_call_statuses: &ToolCallStatuses,

@@ -112,6 +112,7 @@ impl ToolCallStatuses {
         self.tool_calls.contains_key(id)
     }
 
+    #[cfg(test)]
     pub fn is_tool_running(&self, id: &str) -> bool {
         self.tool_calls
             .get(id)
@@ -123,6 +124,7 @@ impl ToolCallStatuses {
         self.sub_agents.on_progress(notification);
     }
 
+    #[cfg(test)]
     pub fn remove_tool(&mut self, id: &str) {
         self.tool_calls.remove(id);
         self.tool_order.retain(|tool_id| tool_id != id);

@@ -53,11 +53,6 @@ impl Renderer {
     }
 
     pub(super) fn render(&mut self) -> std::io::Result<()> {
-        let context = self.frame_renderer.context();
-        let scrollback = self.app.drain_scrollback(&context);
-        if !scrollback.is_empty() {
-            self.frame_renderer.push_to_scrollback(&scrollback)?;
-        }
         self.frame_renderer.render_frame(|ctx| self.app.render(ctx))
     }
 

@@ -117,6 +117,7 @@ impl SubAgentTracker {
             .any(|agents| agents.iter().any(SubAgentState::is_active_for_render))
     }
 
+    #[cfg(test)]
     pub(crate) fn remove(&mut self, id: &str) {
         self.agents.remove(id);
     }
