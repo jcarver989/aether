@@ -24,7 +24,7 @@ pub enum ConversationScreenMessage {
         attachments: Vec<PromptAttachment>,
     },
     ClearScreen,
-    OpenConfig,
+    OpenSettings,
     OpenSessionPicker,
     PushToScrollback {
         content: Vec<SegmentContent>,
@@ -268,8 +268,8 @@ impl ConversationScreen {
                     self.reset_after_context_cleared();
                     out.push(ConversationScreenMessage::ClearScreen);
                 }
-                PromptComposerMessage::OpenConfig => {
-                    out.push(ConversationScreenMessage::OpenConfig);
+                PromptComposerMessage::OpenSettings => {
+                    out.push(ConversationScreenMessage::OpenSettings);
                 }
                 PromptComposerMessage::OpenSessionPicker => {
                     out.push(ConversationScreenMessage::OpenSessionPicker);

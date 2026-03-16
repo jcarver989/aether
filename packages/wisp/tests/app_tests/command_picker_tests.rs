@@ -158,8 +158,8 @@ async fn test_command_picker_shows_mcp_commands() {
 
     let names = command_picker_visible_names(renderer.writer());
     assert!(
-        names.iter().any(|n| n == "config"),
-        "Picker should include built-in config command. Got: {names:?}",
+        names.iter().any(|n| n == "settings"),
+        "Picker should include built-in settings command. Got: {names:?}",
     );
     assert!(
         names.iter().any(|n| n == "search"),

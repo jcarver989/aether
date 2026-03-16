@@ -2,10 +2,10 @@ use acp_utils::notifications::{McpServerStatus, McpServerStatusEntry};
 use agent_client_protocol::{self as acp, SessionConfigSelectOption};
 use tui::testing::render_component;
 use tui::{Component, Event, KeyCode, KeyEvent, KeyModifiers, ViewContext};
-use wisp::components::config_menu::ConfigMenu;
-use wisp::components::config_overlay::ConfigOverlay;
+use wisp::components::settings_menu::SettingsMenu;
+use wisp::components::settings_overlay::SettingsOverlay;
 
-fn make_menu() -> ConfigMenu {
+fn make_menu() -> SettingsMenu {
     let options = vec![
         agent_client_protocol::SessionConfigOption::select(
             "provider",
@@ -26,10 +26,10 @@ fn make_menu() -> ConfigMenu {
             ],
         ),
     ];
-    ConfigMenu::from_config_options(&options)
+    SettingsMenu::from_config_options(&options)
 }
 
-fn make_multi_select_menu() -> ConfigMenu {
+fn make_multi_select_menu() -> SettingsMenu {
     let mut meta = serde_json::Map::new();
     meta.insert("multi_select".to_string(), serde_json::Value::Bool(true));
     let options = vec![
@@ -53,7 +53,7 @@ fn make_multi_select_menu() -> ConfigMenu {
         )
         .meta(meta),
     ];
-    ConfigMenu::from_config_options(&options)
+    SettingsMenu::from_config_options(&options)
 }
 
 fn make_server_statuses() -> Vec<McpServerStatusEntry> {
@@ -73,7 +73,7 @@ fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
 
-fn render_footer(overlay: &mut ConfigOverlay) -> String {
+fn render_footer(overlay: &mut SettingsOverlay) -> String {
     let height = 23_usize; // 24 - 1
     overlay.update_child_viewport(height.saturating_sub(4));
     let term = render_component(|ctx| overlay.render(ctx), 80, 24);
@@ -82,7 +82,7 @@ fn render_footer(overlay: &mut ConfigOverlay) -> String {
     output[21].clone()
 }
 
-fn render_plain_text(overlay: &mut ConfigOverlay) -> Vec<String> {
+fn render_plain_text(overlay: &mut SettingsOverlay) -> Vec<String> {
     let height = 23_usize;
     overlay.update_child_viewport(height.saturating_sub(4));
     let term = render_component(|ctx| overlay.render(ctx), 80, 24);
@@ -99,11 +99,11 @@ fn make_auth_methods() -> Vec<acp::AuthMethod> {
 /// Helper to create a ConfigOverlay with the server status overlay open.
 /// Replaces the old `with_server_overlay()` test-only method.
 async fn open_server_overlay(
-    mut menu: ConfigMenu,
+    mut menu: SettingsMenu,
     statuses: Vec<McpServerStatusEntry>,
-) -> ConfigOverlay {
+) -> SettingsOverlay {
     menu.add_mcp_servers_entry("1 connected, 1 needs auth");
-    let mut overlay = ConfigOverlay::new(menu, statuses, vec![]);
+    let mut overlay = SettingsOverlay::new(menu, statuses, vec![]);
     // Navigate past provider (0) and model (1) to MCP servers (2)
     overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
     overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
@@ -113,7 +113,7 @@ async fn open_server_overlay(
 
 #[test]
 fn bordered_box_fills_terminal_height_minus_one() {
-    let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+    let mut overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
     let term = render_component(|ctx| overlay.render(ctx), 80, 24);
     let output = term.get_lines();
     // Frame fills 23 lines, leaving the last row (index 23) empty
@@ -123,7 +123,7 @@ fn bordered_box_fills_terminal_height_minus_one() {
 
 #[test]
 fn title_contains_configuration() {
-    let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+    let mut overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
     let term = render_component(|ctx| overlay.render(ctx), 80, 24);
     let output = term.get_lines();
     assert!(output[0].contains("Configuration"));
@@ -131,7 +131,7 @@ fn title_contains_configuration() {
 
 #[test]
 fn footer_shows_select_and_close_for_menu() {
-    let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+    let mut overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
     let term = render_component(|ctx| overlay.render(ctx), 80, 24);
     let output = term.get_lines();
     let footer = &output[21]; // second to last content line (last is bottom border at 22)
@@ -141,7 +141,7 @@ fn footer_shows_select_and_close_for_menu() {
 
 #[tokio::test]
 async fn footer_shows_confirm_and_back_for_picker() {
-    let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+    let mut overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
     // Open picker
     overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
     let term = render_component(|ctx| overlay.render(ctx), 80, 24);
@@ -163,7 +163,7 @@ async fn footer_shows_authenticate_and_back_for_servers() {
 
 #[test]
 fn selected_entry_has_bg_color() {
-    let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+    let mut overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
     let ctx = ViewContext::new((80, 24));
     let term = render_component(|c| overlay.render(c), 80, 24);
     let output = term.get_lines();
@@ -181,7 +181,7 @@ fn selected_entry_has_bg_color() {
 
 #[test]
 fn render_root_menu_shows_top_level_rows() {
-    let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+    let mut overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
 
     let lines = render_plain_text(&mut overlay);
     let text = lines.join("\n");
@@ -194,7 +194,7 @@ fn render_root_menu_shows_top_level_rows() {
 
 #[tokio::test]
 async fn render_picker_hides_top_level_rows() {
-    let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+    let mut overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
     overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
 
     let lines = render_plain_text(&mut overlay);
@@ -209,7 +209,7 @@ async fn render_picker_hides_top_level_rows() {
 
 #[tokio::test]
 async fn render_model_selector_hides_top_level_rows() {
-    let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
+    let mut overlay = SettingsOverlay::new(make_multi_select_menu(), vec![], vec![]);
     overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
     overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
 
@@ -251,7 +251,7 @@ async fn render_server_overlay_hides_top_level_rows() {
 async fn render_provider_login_overlay_hides_top_level_rows() {
     let mut menu = make_menu();
     menu.add_provider_logins_entry("2 needs login");
-    let mut overlay = ConfigOverlay::new(menu, vec![], make_auth_methods());
+    let mut overlay = SettingsOverlay::new(menu, vec![], make_auth_methods());
     overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
     overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
     let outcome = overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
@@ -276,7 +276,7 @@ async fn render_provider_login_overlay_hides_top_level_rows() {
 
 #[test]
 fn narrow_terminal_does_not_panic() {
-    let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+    let mut overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
     let term = render_component(|ctx| overlay.render(ctx), 4, 3);
     let output = term.get_lines();
     assert!(!output.is_empty());
@@ -284,7 +284,7 @@ fn narrow_terminal_does_not_panic() {
 
 #[test]
 fn very_small_terminal_shows_fallback() {
-    let mut overlay = ConfigOverlay::new(make_menu(), vec![], vec![]);
+    let mut overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
     // Width must be >= text length to avoid truncation, but small enough to trigger fallback
     // MIN_WIDTH=6, MIN_HEIGHT=3, height = rows-1, so rows=3 gives height=2 < 3
     let term = render_component(|ctx| overlay.render(ctx), 30, 3);
@@ -293,7 +293,7 @@ fn very_small_terminal_shows_fallback() {
 }
 
 #[test]
-fn update_config_options_never_renders_reasoning_row() {
+fn update_settings_options_never_renders_reasoning_row() {
     // Initial options include model + reasoning_effort
     let initial_options = vec![
         agent_client_protocol::SessionConfigOption::select(
@@ -317,8 +317,8 @@ fn update_config_options_never_renders_reasoning_row() {
             ],
         ),
     ];
-    let menu = ConfigMenu::from_config_options(&initial_options);
-    let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
+    let menu = SettingsMenu::from_config_options(&initial_options);
+    let mut overlay = SettingsOverlay::new(menu, vec![], vec![]);
 
     // Rendered lines do not contain Reasoning Effort
     let term = render_component(|ctx| overlay.render(ctx), 80, 24);
@@ -352,7 +352,7 @@ fn update_config_options_never_renders_reasoning_row() {
 
 #[tokio::test]
 async fn footer_shows_toggle_when_model_selector_open() {
-    let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
+    let mut overlay = SettingsOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
     overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
     overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
@@ -376,8 +376,8 @@ async fn tall_terminal_shows_more_picker_items() {
         "model-0",
         many_models,
     )];
-    let menu = ConfigMenu::from_config_options(&options);
-    let mut overlay = ConfigOverlay::new(menu, vec![], vec![]);
+    let menu = SettingsMenu::from_config_options(&options);
+    let mut overlay = SettingsOverlay::new(menu, vec![], vec![]);
     overlay.on_event(&Event::Key(key(KeyCode::Enter))).await; // open picker
 
     // Render at a tall terminal (60 rows)
@@ -401,7 +401,7 @@ async fn tall_terminal_shows_more_picker_items() {
 }
 
 #[tokio::test]
-async fn server_overlay_esc_closes_server_not_config_overlay() {
+async fn server_overlay_esc_closes_server_not_settings_overlay() {
     let menu = make_menu();
     let statuses = make_server_statuses();
     let mut overlay = open_server_overlay(menu, statuses).await;
@@ -415,7 +415,7 @@ async fn server_overlay_esc_closes_server_not_config_overlay() {
 
 #[tokio::test]
 async fn multi_select_entry_opens_model_selector() {
-    let mut overlay = ConfigOverlay::new(make_multi_select_menu(), vec![], vec![]);
+    let mut overlay = SettingsOverlay::new(make_multi_select_menu(), vec![], vec![]);
 
     // Navigate to the model entry (index 1: provider=0, model=1)
     overlay.on_event(&Event::Key(key(KeyCode::Down))).await;

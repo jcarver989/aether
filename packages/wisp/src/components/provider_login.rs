@@ -304,7 +304,10 @@ mod tests {
                 status: ProviderLoginStatus::LoggedIn,
             },
         ];
-        assert_eq!(provider_login_summary(&entries), "1 needs login, 1 logged in");
+        assert_eq!(
+            provider_login_summary(&entries),
+            "1 needs login, 1 logged in"
+        );
     }
 
     #[test]

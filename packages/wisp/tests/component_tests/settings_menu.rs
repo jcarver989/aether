@@ -2,8 +2,8 @@ use acp_utils::config_meta::SelectOptionMeta;
 use agent_client_protocol::SessionConfigSelectOption;
 use tui::ViewContext;
 use tui::testing::render_component;
-use wisp::components::config_menu::{
-    ConfigMenu, ConfigMenuEntry, ConfigMenuEntryKind, ConfigMenuValue,
+use wisp::components::settings_menu::{
+    SettingsMenu, SettingsMenuEntry, SettingsMenuEntryKind, SettingsMenuValue,
 };
 use wisp::tui::Component;
 
@@ -41,7 +41,7 @@ fn component_renders_selected_row() {
             &[("code", "Code"), ("chat", "Chat")],
         ),
     ];
-    let mut menu = ConfigMenu::from_config_options(&opts);
+    let mut menu = SettingsMenu::from_config_options(&opts);
 
     let term = render_component(|ctx| menu.render(ctx), 80, 24);
     let output = term.get_lines();
@@ -76,13 +76,13 @@ fn component_renders_selected_row() {
 
 #[test]
 fn empty_options_renders_placeholder() {
-    let mut menu = ConfigMenu::from_config_options(&[]);
+    let mut menu = SettingsMenu::from_config_options(&[]);
 
     let term = render_component(|ctx| menu.render(ctx), 80, 24);
     let output = term.get_lines();
 
     assert!(
-        output[0].contains("no config options"),
+        output[0].contains("no settings options"),
         "should show placeholder text"
     );
     // Second row should be empty
@@ -91,18 +91,18 @@ fn empty_options_renders_placeholder() {
 
 #[test]
 fn multi_select_with_display_name_not_dimmed_when_first_value_disabled() {
-    let mut menu = ConfigMenu::from_entries(vec![ConfigMenuEntry {
+    let mut menu = SettingsMenu::from_entries(vec![SettingsMenuEntry {
         config_id: "model".to_string(),
         title: "Model".to_string(),
         values: vec![
-            ConfigMenuValue {
+            SettingsMenuValue {
                 value: "a".to_string(),
                 name: "Alpha".to_string(),
                 description: Some("Unavailable: no key".to_string()),
                 is_disabled: true,
                 meta: SelectOptionMeta::default(),
             },
-            ConfigMenuValue {
+            SettingsMenuValue {
                 value: "b".to_string(),
                 name: "Beta".to_string(),
                 description: None,
@@ -112,7 +112,7 @@ fn multi_select_with_display_name_not_dimmed_when_first_value_disabled() {
         ],
         current_value_index: 0,
         current_raw_value: "b,a".to_string(),
-        entry_kind: ConfigMenuEntryKind::Select,
+        entry_kind: SettingsMenuEntryKind::Select,
         multi_select: true,
         display_name: Some("Beta, Alpha".to_string()),
     }]);

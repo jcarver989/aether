@@ -196,20 +196,20 @@ pub(super) fn has_command_picker(terminal: &TestTerminal) -> bool {
     let lines = terminal.get_lines();
     lines
         .iter()
-        .any(|l| l.contains("Open configuration settings"))
+        .any(|l| l.contains("Open settings"))
 }
 
-pub(super) fn has_config_menu(terminal: &TestTerminal) -> bool {
+pub(super) fn has_settings_menu(terminal: &TestTerminal) -> bool {
     let lines = terminal.get_lines();
     lines.iter().any(|l| l.contains("Configuration"))
 }
 
-pub(super) fn has_config_picker(terminal: &TestTerminal) -> bool {
+pub(super) fn has_settings_picker(terminal: &TestTerminal) -> bool {
     let lines = terminal.get_lines();
     lines.iter().any(|l| l.contains("search:"))
 }
 
-pub(super) fn config_menu_selected_label(terminal: &TestTerminal) -> Option<String> {
+pub(super) fn settings_menu_selected_label(terminal: &TestTerminal) -> Option<String> {
     let lines = terminal.get_lines();
     for line in &lines {
         if let Some(pos) = line.find("▶ ") {
@@ -378,7 +378,7 @@ pub(super) async fn send_key(renderer: &mut Renderer, code: KeyCode, modifiers: 
         .unwrap();
 }
 
-pub(super) fn make_config_options() -> Vec<acp::SessionConfigOption> {
+pub(super) fn make_settings_options() -> Vec<acp::SessionConfigOption> {
     vec![
         acp::SessionConfigOption::select(
             "model".to_string(),

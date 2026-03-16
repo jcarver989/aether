@@ -1,8 +1,10 @@
 use acp_utils::config_meta::SelectOptionMeta;
 use tui::testing::render_component;
 use tui::{Component, Event, KeyCode, KeyEvent, KeyModifiers};
-use wisp::components::config_menu::{ConfigMenuEntry, ConfigMenuEntryKind, ConfigMenuValue};
 use wisp::components::model_selector::ModelSelector;
+use wisp::components::settings_menu::{
+    SettingsMenuEntry, SettingsMenuEntryKind, SettingsMenuValue,
+};
 
 async fn type_query(picker: &mut ModelSelector, text: &str) {
     for c in text.chars() {
@@ -25,26 +27,26 @@ fn rendered_lines(selector: &mut ModelSelector) -> Vec<String> {
     lines[..last_non_empty].to_vec()
 }
 
-fn model_entry() -> ConfigMenuEntry {
-    ConfigMenuEntry {
+fn model_entry() -> SettingsMenuEntry {
+    SettingsMenuEntry {
         config_id: "model".to_string(),
         title: "Model".to_string(),
         values: vec![
-            ConfigMenuValue {
+            SettingsMenuValue {
                 value: "anthropic:claude-sonnet-4-5".to_string(),
                 name: "Anthropic / Claude Sonnet 4.5".to_string(),
                 description: None,
                 is_disabled: false,
                 meta: SelectOptionMeta::default(),
             },
-            ConfigMenuValue {
+            SettingsMenuValue {
                 value: "deepseek:deepseek-chat".to_string(),
                 name: "DeepSeek / DeepSeek Chat".to_string(),
                 description: None,
                 is_disabled: false,
                 meta: SelectOptionMeta::default(),
             },
-            ConfigMenuValue {
+            SettingsMenuValue {
                 value: "gemini:gemini-2.5-pro".to_string(),
                 name: "Google / Gemini 2.5 Pro".to_string(),
                 description: None,
@@ -54,39 +56,39 @@ fn model_entry() -> ConfigMenuEntry {
         ],
         current_value_index: 0,
         current_raw_value: "anthropic:claude-sonnet-4-5".to_string(),
-        entry_kind: ConfigMenuEntryKind::Select,
+        entry_kind: SettingsMenuEntryKind::Select,
         multi_select: true,
         display_name: None,
     }
 }
 
-fn model_entry_with_groups() -> ConfigMenuEntry {
-    ConfigMenuEntry {
+fn model_entry_with_groups() -> SettingsMenuEntry {
+    SettingsMenuEntry {
         config_id: "model".to_string(),
         title: "Model".to_string(),
         values: vec![
-            ConfigMenuValue {
+            SettingsMenuValue {
                 value: "openrouter:anthropic/claude-sonnet-4-5".to_string(),
                 name: "OpenRouter / Claude Sonnet 4.5".to_string(),
                 description: None,
                 is_disabled: false,
                 meta: SelectOptionMeta::default(),
             },
-            ConfigMenuValue {
+            SettingsMenuValue {
                 value: "openrouter:google/gemini-2.5-pro".to_string(),
                 name: "OpenRouter / Gemini 2.5 Pro".to_string(),
                 description: None,
                 is_disabled: false,
                 meta: SelectOptionMeta::default(),
             },
-            ConfigMenuValue {
+            SettingsMenuValue {
                 value: "anthropic:claude-sonnet-4-5".to_string(),
                 name: "Anthropic / Claude Sonnet 4.5".to_string(),
                 description: None,
                 is_disabled: false,
                 meta: SelectOptionMeta::default(),
             },
-            ConfigMenuValue {
+            SettingsMenuValue {
                 value: "gemini:gemini-2.5-pro".to_string(),
                 name: "Google / Gemini 2.5 Pro".to_string(),
                 description: None,
@@ -96,7 +98,7 @@ fn model_entry_with_groups() -> ConfigMenuEntry {
         ],
         current_value_index: 0,
         current_raw_value: "openrouter:anthropic/claude-sonnet-4-5".to_string(),
-        entry_kind: ConfigMenuEntryKind::Select,
+        entry_kind: SettingsMenuEntryKind::Select,
         multi_select: true,
         display_name: None,
     }
@@ -135,19 +137,19 @@ fn reasoning_meta() -> SelectOptionMeta {
     }
 }
 
-fn model_entry_with_reasoning() -> ConfigMenuEntry {
-    ConfigMenuEntry {
+fn model_entry_with_reasoning() -> SettingsMenuEntry {
+    SettingsMenuEntry {
         config_id: "model".to_string(),
         title: "Model".to_string(),
         values: vec![
-            ConfigMenuValue {
+            SettingsMenuValue {
                 value: "anthropic:claude-opus-4-6".to_string(),
                 name: "Anthropic / Claude Opus 4.6".to_string(),
                 description: None,
                 is_disabled: false,
                 meta: reasoning_meta(),
             },
-            ConfigMenuValue {
+            SettingsMenuValue {
                 value: "deepseek:deepseek-chat".to_string(),
                 name: "DeepSeek / DeepSeek Chat".to_string(),
                 description: None,
@@ -157,7 +159,7 @@ fn model_entry_with_reasoning() -> ConfigMenuEntry {
         ],
         current_value_index: 0,
         current_raw_value: "anthropic:claude-opus-4-6".to_string(),
-        entry_kind: ConfigMenuEntryKind::Select,
+        entry_kind: SettingsMenuEntryKind::Select,
         multi_select: true,
         display_name: None,
     }
@@ -208,32 +210,32 @@ async fn search_filters_and_keeps_provider_headers() {
 
 #[tokio::test]
 async fn search_does_not_duplicate_provider_headers() {
-    let entry = ConfigMenuEntry {
+    let entry = SettingsMenuEntry {
         config_id: "model".to_string(),
         title: "Model".to_string(),
         values: vec![
-            ConfigMenuValue {
+            SettingsMenuValue {
                 value: "codex:gpt-5".to_string(),
                 name: "Codex / GPT-5".to_string(),
                 description: None,
                 is_disabled: false,
                 meta: SelectOptionMeta::default(),
             },
-            ConfigMenuValue {
+            SettingsMenuValue {
                 value: "openrouter:gpt-5".to_string(),
                 name: "OpenRouter / GPT-5".to_string(),
                 description: None,
                 is_disabled: false,
                 meta: SelectOptionMeta::default(),
             },
-            ConfigMenuValue {
+            SettingsMenuValue {
                 value: "codex:gpt-5-mini".to_string(),
                 name: "Codex / GPT-5 Mini".to_string(),
                 description: None,
                 is_disabled: false,
                 meta: SelectOptionMeta::default(),
             },
-            ConfigMenuValue {
+            SettingsMenuValue {
                 value: "openrouter:gpt-5-mini".to_string(),
                 name: "OpenRouter / GPT-5 Mini".to_string(),
                 description: None,
@@ -243,7 +245,7 @@ async fn search_does_not_duplicate_provider_headers() {
         ],
         current_value_index: 0,
         current_raw_value: "codex:gpt-5".to_string(),
-        entry_kind: ConfigMenuEntryKind::Select,
+        entry_kind: SettingsMenuEntryKind::Select,
         multi_select: true,
         display_name: None,
     };

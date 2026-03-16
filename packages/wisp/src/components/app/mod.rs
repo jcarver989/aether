@@ -7,11 +7,11 @@ pub use git_diff_mode::{GitDiffLoadState, GitDiffMode, GitDiffViewState, PatchFo
 use screen_router::ScreenRouter;
 use screen_router::ScreenRouterMessage;
 
-use crate::components::config_manager::ConfigManager;
-use crate::components::config_manager::ConfigManagerMessage;
 use crate::components::conversation_screen::ConversationScreen;
 use crate::components::conversation_screen::ConversationScreenMessage;
 use crate::components::conversation_window::{SegmentContent, render_segments_to_lines};
+use crate::components::settings_manager::SettingsManager;
+use crate::components::settings_manager::SettingsManagerMessage;
 use crate::keybindings::Keybindings;
 use crate::tui::advanced::RendererCommand;
 use crate::tui::{Component, Event, Frame, KeyEvent, Line, ViewContext};
@@ -33,7 +33,7 @@ pub struct App {
     pub(crate) context_usage_pct: Option<u8>,
     pub exit_requested: bool,
     pub(crate) conversation_screen: ConversationScreen,
-    pub(crate) config_manager: ConfigManager,
+    pub(crate) config_manager: SettingsManager,
     pub(crate) screen_router: ScreenRouter,
     keybindings: Keybindings,
     session_id: SessionId,
@@ -57,7 +57,7 @@ impl App {
             context_usage_pct: None,
             exit_requested: false,
             conversation_screen: ConversationScreen::new(keybindings.clone()),
-            config_manager: ConfigManager::new(config_options, auth_methods),
+            config_manager: SettingsManager::new(config_options, auth_methods),
             screen_router: ScreenRouter::new(GitDiffMode::new(working_dir)),
             keybindings,
             session_id,
@@ -208,7 +208,7 @@ impl App {
                     commands.push(RendererCommand::ClearScreen);
                     let _ = self.prompt_handle.prompt(&self.session_id, "/clear", None);
                 }
-                ConversationScreenMessage::OpenConfig => {
+                ConversationScreenMessage::OpenSettings => {
                     self.config_manager.open_overlay();
                 }
                 ConversationScreenMessage::OpenSessionPicker => {
@@ -260,24 +260,24 @@ impl App {
     fn handle_config_manager_messages(
         &mut self,
         commands: &mut Vec<RendererCommand>,
-        outcome: Option<Vec<ConfigManagerMessage>>,
+        outcome: Option<Vec<SettingsManagerMessage>>,
     ) {
         for msg in outcome.unwrap_or_default() {
             match msg {
-                ConfigManagerMessage::SetConfigOption { config_id, value } => {
+                SettingsManagerMessage::SetConfigOption { config_id, value } => {
                     let _ =
                         self.prompt_handle
                             .set_config_option(&self.session_id, &config_id, &value);
                 }
-                ConfigManagerMessage::SetTheme(theme) => {
+                SettingsManagerMessage::SetTheme(theme) => {
                     commands.push(RendererCommand::SetTheme(theme));
                 }
-                ConfigManagerMessage::AuthenticateServer(name) => {
+                SettingsManagerMessage::AuthenticateServer(name) => {
                     let _ = self
                         .prompt_handle
                         .authenticate_mcp_server(&self.session_id, &name);
                 }
-                ConfigManagerMessage::AuthenticateProvider(method_id) => {
+                SettingsManagerMessage::AuthenticateProvider(method_id) => {
                     let _ = self
                         .prompt_handle
                         .authenticate(&self.session_id, &method_id);
@@ -494,14 +494,14 @@ mod tests {
     }
 
     #[test]
-    fn decorate_config_menu_adds_theme_entry() {
+    fn decorate_settings_menu_adds_theme_entry() {
         let temp_dir = TempDir::new().unwrap();
         let themes_dir = temp_dir.path().join("themes");
         fs::create_dir_all(&themes_dir).unwrap();
         fs::write(themes_dir.join("catppuccin.tmTheme"), "x").unwrap();
 
         with_wisp_home(temp_dir.path(), || {
-            let mut cm = crate::components::config_manager::ConfigManager::new(&[], vec![]);
+            let mut cm = crate::components::settings_manager::SettingsManager::new(&[], vec![]);
             cm.open_overlay();
             assert!(cm.is_overlay_open());
         });
@@ -523,7 +523,7 @@ mod tests {
             };
             save_settings(&settings).unwrap();
 
-            let mut cm = crate::components::config_manager::ConfigManager::new(&[], vec![]);
+            let mut cm = crate::components::settings_manager::SettingsManager::new(&[], vec![]);
             cm.open_overlay();
             assert!(cm.is_overlay_open());
         });
@@ -536,8 +536,8 @@ mod tests {
         app.conversation_screen
             .prompt_composer
             .open_command_picker_with_entries(vec![CommandEntry {
-                name: "config".to_string(),
-                description: "Open config".to_string(),
+                name: "settings".to_string(),
+                description: "Open settings".to_string(),
                 has_input: false,
                 hint: None,
                 builtin: true,
@@ -554,7 +554,7 @@ mod tests {
     }
 
     #[test]
-    fn config_overlay_replaces_conversation_window() {
+    fn settings_overlay_replaces_conversation_window() {
         let options = vec![acp::SessionConfigOption::select(
             "model",
             "Model",
@@ -847,9 +847,9 @@ mod tests {
     }
 
     #[test]
-    fn prompt_composer_open_config() {
+    fn prompt_composer_open_settings() {
         let mut app = make_app();
-        let outcome = Some(vec![ConversationScreenMessage::OpenConfig]);
+        let outcome = Some(vec![ConversationScreenMessage::OpenSettings]);
 
         let mut commands = Vec::new();
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -857,12 +857,12 @@ mod tests {
 
         assert!(
             app.config_manager.is_overlay_open(),
-            "config overlay should be opened"
+            "settings overlay should be opened"
         );
     }
 
     #[test]
-    fn config_overlay_close_clears_overlay() {
+    fn settings_overlay_close_clears_overlay() {
         let mut app = make_app();
         app.config_manager.open_overlay();
 
