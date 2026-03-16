@@ -2,8 +2,8 @@ use agent_client_protocol as acp;
 use chrono::{DateTime, Utc};
 use std::path::PathBuf;
 use tui::{
-    Combobox, Component, Event, Frame, Line, PickerMessage, Searchable, Style, ViewContext,
-    display_width_text, pad_text_to_width, truncate_text,
+    Combobox, Component, Cursor, Event, Frame, Line, MouseEventKind, PickerMessage, Searchable,
+    Style, ViewContext, display_width_text, pad_text_to_width, truncate_text,
 };
 
 #[derive(Clone)]
@@ -36,12 +36,29 @@ impl SessionPicker {
             combobox: Combobox::new(sessions),
         }
     }
+
+    pub fn query(&self) -> &str {
+        self.combobox.query()
+    }
 }
 
 impl Component for SessionPicker {
     type Message = SessionPickerMessage;
 
     async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+        if let Event::Mouse(mouse) = event {
+            return match mouse.kind {
+                MouseEventKind::ScrollUp => {
+                    self.combobox.move_up();
+                    Some(vec![])
+                }
+                MouseEventKind::ScrollDown => {
+                    self.combobox.move_down();
+                    Some(vec![])
+                }
+                _ => Some(vec![]),
+            };
+        }
         let msgs = self.combobox.handle_picker_event(event)?;
         let mapped = msgs
             .into_iter()
@@ -70,7 +87,8 @@ impl Component for SessionPicker {
         let now = Utc::now();
 
         let mut lines = vec![Line::new(String::new())];
-        lines.push(Line::new("  Resume a previous session:"));
+        let header = format!("  Resume a previous session: {}", self.combobox.query());
+        lines.push(Line::new(&header));
         lines.push(Line::new(String::new()));
 
         let max_title_width = self
@@ -119,7 +137,8 @@ impl Component for SessionPicker {
                     }
                 });
         lines.extend(item_lines);
-        Frame::new(lines)
+        let cursor = Cursor::visible(1, display_width_text(&header));
+        Frame::new(lines).with_cursor(cursor)
     }
 }
 
@@ -148,7 +167,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
     use tui::testing::{assert_buffer_eq, render_component};
-    use tui::{KeyCode, KeyEvent, KeyModifiers};
+    use tui::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
     const W: u16 = 60;
     const H: u16 = 10;
@@ -217,6 +236,47 @@ mod tests {
                 &format!("  Fix the login page redirect bug   {d1}"),
                 &format!("▶ Add unit tests for session store  {d2}"),
             ],
+        );
+    }
+
+    #[tokio::test]
+    async fn mouse_scroll_moves_selection() {
+        let mut picker = SessionPicker::new(sample_sessions());
+        assert_eq!(picker.combobox.selected_index(), 0);
+
+        let scroll_down = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        });
+        let outcome = picker.on_event(&scroll_down).await;
+        assert!(outcome.is_some(), "mouse scroll should be consumed");
+        assert_eq!(picker.combobox.selected_index(), 1);
+
+        let scroll_up = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::ScrollUp,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        });
+        picker.on_event(&scroll_up).await;
+        assert_eq!(picker.combobox.selected_index(), 0);
+    }
+
+    #[tokio::test]
+    async fn query_displayed_in_header() {
+        let mut picker = SessionPicker::new(sample_sessions());
+        picker.on_event(&key(KeyCode::Char('f'))).await;
+        picker.on_event(&key(KeyCode::Char('i'))).await;
+        picker.on_event(&key(KeyCode::Char('x'))).await;
+
+        let term = render_component(|ctx| picker.render(ctx), W, H);
+        let lines = term.get_lines();
+        let header = &lines[1];
+        assert!(
+            header.contains("fix"),
+            "header should contain query text, got: {header}"
         );
     }
 

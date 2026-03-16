@@ -325,7 +325,8 @@ impl Component for ConversationScreen {
         layout.section_with_cursor(prompt_frame.lines().to_vec(), prompt_frame.cursor());
         match &mut self.active_modal {
             Some(Modal::SessionPicker(picker)) => {
-                layout.section(picker.render(ctx).into_lines());
+                let frame = picker.render(ctx);
+                layout.section_with_cursor(frame.lines().to_vec(), frame.cursor());
             }
             Some(Modal::Elicitation(form)) => {
                 layout.section(form.render(ctx).into_lines());

@@ -233,23 +233,13 @@ impl Component for ModelSelector {
                 self.combobox.move_down_where(|e| !e.is_disabled);
                 Some(vec![])
             }
-            PickerKey::MoveLeft => {
+            PickerKey::Tab => {
                 if self
                     .combobox
                     .selected()
                     .is_some_and(|e| e.supports_reasoning)
                 {
-                    self.reasoning_effort = cycle_reasoning_left(self.reasoning_effort);
-                }
-                Some(vec![])
-            }
-            PickerKey::MoveRight => {
-                if self
-                    .combobox
-                    .selected()
-                    .is_some_and(|e| e.supports_reasoning)
-                {
-                    self.reasoning_effort = cycle_reasoning_right(self.reasoning_effort);
+                    self.reasoning_effort = cycle_reasoning(self.reasoning_effort);
                 }
                 Some(vec![])
             }
@@ -265,7 +255,12 @@ impl Component for ModelSelector {
                 self.combobox.pop_query_char();
                 Some(vec![])
             }
-            PickerKey::BackspaceOnEmpty | PickerKey::ControlChar | PickerKey::Other => Some(vec![]),
+            PickerKey::MoveLeft
+            | PickerKey::MoveRight
+            | PickerKey::BackTab
+            | PickerKey::BackspaceOnEmpty
+            | PickerKey::ControlChar
+            | PickerKey::Other => Some(vec![]),
         }
     }
 
@@ -327,12 +322,6 @@ impl Component for ModelSelector {
                             format!("    {bar}"),
                             context
                                 .theme
-                                .selected_row_style_with_fg(context.theme.success()),
-                        );
-                        line.push_with_style(
-                            " reasoning",
-                            context
-                                .theme
                                 .selected_row_style_with_fg(context.theme.text_secondary()),
                         );
                     }
@@ -365,20 +354,12 @@ fn count_provider_groups(items: &[(&ModelEntry, bool)]) -> usize {
     count
 }
 
-#[allow(clippy::unnecessary_wraps)]
-fn cycle_reasoning_right(effort: Option<ReasoningEffort>) -> Option<ReasoningEffort> {
+fn cycle_reasoning(effort: Option<ReasoningEffort>) -> Option<ReasoningEffort> {
     match effort {
         None => Some(ReasoningEffort::Low),
         Some(ReasoningEffort::Low) => Some(ReasoningEffort::Medium),
-        Some(ReasoningEffort::Medium | ReasoningEffort::High) => Some(ReasoningEffort::High),
-    }
-}
-
-fn cycle_reasoning_left(effort: Option<ReasoningEffort>) -> Option<ReasoningEffort> {
-    match effort {
-        None | Some(ReasoningEffort::Low) => None,
-        Some(ReasoningEffort::Medium) => Some(ReasoningEffort::Low),
-        Some(ReasoningEffort::High) => Some(ReasoningEffort::Medium),
+        Some(ReasoningEffort::Medium) => Some(ReasoningEffort::High),
+        Some(ReasoningEffort::High) => None,
     }
 }
 
@@ -611,45 +592,42 @@ mod tests {
     }
 
     #[test]
-    fn reasoning_cycle_right_clamps_at_high() {
+    fn reasoning_cycle_wraps() {
         use ReasoningEffort::*;
-        assert_eq!(cycle_reasoning_right(None), Some(Low));
-        assert_eq!(cycle_reasoning_right(Some(Low)), Some(Medium));
-        assert_eq!(cycle_reasoning_right(Some(Medium)), Some(High));
-        assert_eq!(cycle_reasoning_right(Some(High)), Some(High));
-    }
-
-    #[test]
-    fn reasoning_cycle_left_clamps_at_none() {
-        use ReasoningEffort::*;
-        assert_eq!(cycle_reasoning_left(Some(High)), Some(Medium));
-        assert_eq!(cycle_reasoning_left(Some(Medium)), Some(Low));
-        assert_eq!(cycle_reasoning_left(Some(Low)), None);
-        assert_eq!(cycle_reasoning_left(None), None);
+        assert_eq!(cycle_reasoning(None), Some(Low));
+        assert_eq!(cycle_reasoning(Some(Low)), Some(Medium));
+        assert_eq!(cycle_reasoning(Some(Medium)), Some(High));
+        assert_eq!(cycle_reasoning(Some(High)), None);
     }
 
     #[tokio::test]
-    async fn right_on_reasoning_model_cycles_level() {
+    async fn tab_on_reasoning_model_cycles_level() {
         let mut selector =
             ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, None);
         assert_eq!(selector.reasoning_effort, None);
 
-        selector.on_event(&Event::Key(key(KeyCode::Right))).await;
+        selector.on_event(&Event::Key(key(KeyCode::Tab))).await;
         assert_eq!(selector.reasoning_effort, Some(ReasoningEffort::Low));
 
-        selector.on_event(&Event::Key(key(KeyCode::Right))).await;
+        selector.on_event(&Event::Key(key(KeyCode::Tab))).await;
         assert_eq!(selector.reasoning_effort, Some(ReasoningEffort::Medium));
+
+        selector.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        assert_eq!(selector.reasoning_effort, Some(ReasoningEffort::High));
+
+        selector.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        assert_eq!(selector.reasoning_effort, None);
     }
 
     #[tokio::test]
-    async fn left_right_on_non_reasoning_model_is_noop() {
+    async fn tab_on_non_reasoning_model_is_noop() {
         let mut selector =
             ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, None);
         // Move to non-reasoning model (DeepSeek)
         selector.on_event(&Event::Key(key(KeyCode::Down))).await;
         assert!(!selector.combobox.selected().unwrap().supports_reasoning);
 
-        selector.on_event(&Event::Key(key(KeyCode::Right))).await;
+        selector.on_event(&Event::Key(key(KeyCode::Tab))).await;
         assert_eq!(selector.reasoning_effort, None);
     }
 
@@ -660,7 +638,7 @@ mod tests {
         // Toggle a model on
         selector.on_event(&Event::Key(space())).await;
         // Change reasoning
-        selector.on_event(&Event::Key(key(KeyCode::Right))).await;
+        selector.on_event(&Event::Key(key(KeyCode::Tab))).await;
 
         let changes = selector.confirm();
         assert_eq!(changes.len(), 2, "expected model + reasoning changes");
@@ -680,8 +658,8 @@ mod tests {
             None,
         );
         // Don't change models, just reasoning
-        selector.on_event(&Event::Key(key(KeyCode::Right))).await;
-        selector.on_event(&Event::Key(key(KeyCode::Right))).await;
+        selector.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        selector.on_event(&Event::Key(key(KeyCode::Tab))).await;
 
         let changes = selector.confirm();
         assert_eq!(changes.len(), 1);

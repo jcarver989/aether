@@ -367,7 +367,7 @@ fn render_shows_bar_on_focused_reasoning_row() {
         .find(|l| l.contains("▶"))
         .expect("should have focused line");
     assert!(
-        focused_line.contains("[■■·]"),
+        focused_line.contains("reasoning [■■·]"),
         "expected reasoning bar, got: {focused_line}"
     );
 }

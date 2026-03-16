@@ -1,5 +1,6 @@
 pub mod app;
 pub mod command_picker;
+pub(crate) mod context_bar;
 pub(crate) mod conversation_screen;
 pub mod conversation_window;
 pub mod elicitation_form;
