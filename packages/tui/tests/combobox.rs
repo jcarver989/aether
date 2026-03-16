@@ -321,10 +321,7 @@ fn classify_key_tab() {
 #[test]
 fn classify_key_other() {
     assert!(matches!(
-        classify_key(
-            KeyEvent::new(KeyCode::Home, KeyModifiers::NONE),
-            true
-        ),
+        classify_key(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE), true),
         PickerKey::Other
     ));
 }
