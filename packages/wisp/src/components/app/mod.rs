@@ -10,17 +10,17 @@ use screen_router::ScreenRouterMessage;
 use crate::components::conversation_screen::ConversationScreen;
 use crate::components::conversation_screen::ConversationScreenMessage;
 use crate::components::conversation_window::{SegmentContent, render_segments_to_lines};
+use crate::keybindings::Keybindings;
 use crate::settings;
 use crate::settings::overlay::{SettingsMessage, SettingsOverlay};
-use crate::keybindings::Keybindings;
-use tui::RendererCommand;
-use tui::{Component, Event, Frame, KeyEvent, Line, ViewContext};
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
 use agent_client_protocol::{self as acp, SessionId};
 use attachments::build_attachment_blocks;
 use std::path::PathBuf;
 use std::time::Instant;
 use tokio::sync::oneshot;
+use tui::RendererCommand;
+use tui::{Component, Event, Frame, KeyEvent, Line, ViewContext};
 
 #[derive(Debug, Clone)]
 pub struct PromptAttachment {
@@ -295,9 +295,7 @@ impl App {
                     if let Some(ref mut overlay) = self.settings_overlay {
                         overlay.on_authenticate_started(method_id);
                     }
-                    let _ = self
-                        .prompt_handle
-                        .authenticate(&self.session_id, method_id);
+                    let _ = self.prompt_handle.authenticate(&self.session_id, method_id);
                 }
             }
         }
@@ -442,7 +440,13 @@ impl Component for App {
                 let now = Instant::now();
                 self.conversation_screen.on_tick(now);
             }
-            Event::Mouse(_) | Event::Resize(_) => {}
+            Event::Mouse(_) => {
+                if self.settings_overlay.is_some() {
+                    self.handle_settings_overlay_event(&mut commands, event)
+                        .await;
+                }
+            }
+            Event::Resize(_) => {}
         }
         Some(commands)
     }
@@ -519,12 +523,12 @@ mod tests {
     use crate::components::elicitation_form::ElicitationForm;
     use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings, save_settings};
     use crate::test_helpers::with_wisp_home;
-    use tui::Renderer;
-    use tui::testing::render_component;
-    use tui::{Frame, Theme, ViewContext};
     use std::fs;
     use std::time::Duration;
     use tempfile::TempDir;
+    use tui::Renderer;
+    use tui::testing::render_component;
+    use tui::{Frame, Theme, ViewContext};
 
     fn make_renderer() -> Renderer<Vec<u8>> {
         Renderer::new(Vec::new(), Theme::default(), (80, 24))
@@ -910,10 +914,7 @@ mod tests {
 
         app.settings_overlay = None;
 
-        assert!(
-            app.settings_overlay.is_none(),
-            "close should clear overlay"
-        );
+        assert!(app.settings_overlay.is_none(), "close should clear overlay");
     }
 
     #[tokio::test]

@@ -1,5 +1,6 @@
 use crossterm::QueueableCommand;
 use crossterm::cursor::{Hide, MoveDown, MoveRight, MoveTo, MoveUp, Show};
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::terminal::{BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate};
 use std::io::{self, Write};
 
@@ -9,6 +10,7 @@ pub(crate) enum TerminalCommand<'a> {
     ClearAll,
     ClearViewport,
     SetCursorVisible(bool),
+    SetMouseCapture(bool),
     RestoreCursorPosition,
     PlaceCursor {
         rows_up: u16,
@@ -29,6 +31,7 @@ pub(crate) struct TerminalScreen<W: Write> {
     pub(super) writer: W,
     cursor_row_offset: u16,
     cursor_visible: bool,
+    mouse_captured: bool,
 }
 
 impl<W: Write> TerminalScreen<W> {
@@ -37,19 +40,20 @@ impl<W: Write> TerminalScreen<W> {
             writer,
             cursor_row_offset: 0,
             cursor_visible: true,
+            mouse_captured: false,
         }
     }
 
-    pub(crate) fn execute(&mut self, commands: &[TerminalCommand<'_>]) -> io::Result<()> {
+    pub(crate) fn execute_batch(&mut self, commands: &[TerminalCommand<'_>]) -> io::Result<()> {
         self.writer.queue(BeginSynchronizedUpdate)?;
         for command in commands {
-            self.apply_command(command)?;
+            self.execute(command)?;
         }
         self.writer.queue(EndSynchronizedUpdate)?;
         self.writer.flush()
     }
 
-    fn apply_command(&mut self, command: &TerminalCommand<'_>) -> io::Result<()> {
+    pub(crate) fn execute(&mut self, command: &TerminalCommand<'_>) -> io::Result<()> {
         match command {
             TerminalCommand::ClearAll => {
                 self.writer.queue(Clear(ClearType::All))?;
@@ -70,6 +74,16 @@ impl<W: Write> TerminalScreen<W> {
                         self.writer.queue(Hide)?;
                     }
                     self.cursor_visible = *visible;
+                }
+            }
+            TerminalCommand::SetMouseCapture(enable) => {
+                if *enable != self.mouse_captured {
+                    if *enable {
+                        self.writer.queue(EnableMouseCapture)?;
+                    } else {
+                        self.writer.queue(DisableMouseCapture)?;
+                    }
+                    self.mouse_captured = *enable;
                 }
             }
             TerminalCommand::PlaceCursor { rows_up, col } => {
@@ -162,7 +176,7 @@ mod tests {
     #[test]
     fn clear_all_emits_expected_sequences() {
         let mut screen = TerminalScreen::new(FakeWriter::new());
-        screen.execute(&[TerminalCommand::ClearAll]).unwrap();
+        screen.execute_batch(&[TerminalCommand::ClearAll]).unwrap();
         let output = screen.writer.output();
         assert!(output.contains("\x1b[2J"), "missing Clear(All)");
         assert!(output.contains("\x1b[3J"), "missing Clear(Purge)");
@@ -172,7 +186,9 @@ mod tests {
     #[test]
     fn clear_viewport_emits_clear_and_move() {
         let mut screen = TerminalScreen::new(FakeWriter::new());
-        screen.execute(&[TerminalCommand::ClearViewport]).unwrap();
+        screen
+            .execute_batch(&[TerminalCommand::ClearViewport])
+            .unwrap();
         let output = screen.writer.output();
         assert!(output.contains("\x1b[2J"), "missing Clear(All)");
         assert!(output.contains("\x1b[1;1H"), "missing MoveTo(0,0)");
@@ -186,7 +202,7 @@ mod tests {
         // Initially visible, setting visible again should be a no-op
         // But execute() wraps in sync, so we need to check the content between sync markers
         screen
-            .execute(&[TerminalCommand::SetCursorVisible(true)])
+            .execute_batch(&[TerminalCommand::SetCursorVisible(true)])
             .unwrap();
         // Extract content between sync markers
         let output = screen.writer.output();
@@ -196,7 +212,7 @@ mod tests {
         // Hide cursor
         screen.writer.bytes.clear();
         screen
-            .execute(&[TerminalCommand::SetCursorVisible(false)])
+            .execute_batch(&[TerminalCommand::SetCursorVisible(false)])
             .unwrap();
         let output = screen.writer.output();
         let content = extract_content_between_sync(&output);
@@ -205,7 +221,7 @@ mod tests {
         // Hide again should be a no-op
         screen.writer.bytes.clear();
         screen
-            .execute(&[TerminalCommand::SetCursorVisible(false)])
+            .execute_batch(&[TerminalCommand::SetCursorVisible(false)])
             .unwrap();
         let output = screen.writer.output();
         let content = extract_content_between_sync(&output);
@@ -214,7 +230,7 @@ mod tests {
         // Show cursor
         screen.writer.bytes.clear();
         screen
-            .execute(&[TerminalCommand::SetCursorVisible(true)])
+            .execute_batch(&[TerminalCommand::SetCursorVisible(true)])
             .unwrap();
         let output = screen.writer.output();
         let content = extract_content_between_sync(&output);
@@ -226,7 +242,7 @@ mod tests {
         let mut screen = TerminalScreen::new(FakeWriter::new());
 
         screen
-            .execute(&[TerminalCommand::PlaceCursor { rows_up: 3, col: 5 }])
+            .execute_batch(&[TerminalCommand::PlaceCursor { rows_up: 3, col: 5 }])
             .unwrap();
         let output = screen.writer.output();
         let content = extract_content_between_sync(&output);
@@ -236,7 +252,7 @@ mod tests {
 
         screen.writer.bytes.clear();
         screen
-            .execute(&[TerminalCommand::RestoreCursorPosition])
+            .execute_batch(&[TerminalCommand::RestoreCursorPosition])
             .unwrap();
         let output = screen.writer.output();
         let content = extract_content_between_sync(&output);
@@ -245,7 +261,7 @@ mod tests {
         // Restore again should be a no-op (offset is 0)
         screen.writer.bytes.clear();
         screen
-            .execute(&[TerminalCommand::RestoreCursorPosition])
+            .execute_batch(&[TerminalCommand::RestoreCursorPosition])
             .unwrap();
         let output = screen.writer.output();
         let content = extract_content_between_sync(&output);
@@ -258,7 +274,9 @@ mod tests {
     #[test]
     fn execute_wraps_commands_in_synchronized_update() {
         let mut screen = TerminalScreen::new(FakeWriter::new());
-        screen.execute(&[TerminalCommand::ClearViewport]).unwrap();
+        screen
+            .execute_batch(&[TerminalCommand::ClearViewport])
+            .unwrap();
         let output = screen.writer.output();
         let begin = output
             .find("\x1b[?2026h")
@@ -277,7 +295,7 @@ mod tests {
         let lines = vec![Line::new("line1"), Line::new("line2"), Line::new("line3")];
 
         screen
-            .execute(&[TerminalCommand::RewriteVisibleLines {
+            .execute_batch(&[TerminalCommand::RewriteVisibleLines {
                 rows_up: 2,
                 append_after_existing: false,
                 lines: &lines,
@@ -334,7 +352,7 @@ mod tests {
         let lines = vec![Line::new("only")];
 
         screen
-            .execute(&[TerminalCommand::RewriteVisibleLines {
+            .execute_batch(&[TerminalCommand::RewriteVisibleLines {
                 rows_up: 0,
                 append_after_existing: false,
                 lines: &lines,
@@ -361,7 +379,7 @@ mod tests {
         let lines = vec![Line::new("appended")];
 
         screen
-            .execute(&[TerminalCommand::RewriteVisibleLines {
+            .execute_batch(&[TerminalCommand::RewriteVisibleLines {
                 rows_up: 0,
                 append_after_existing: true,
                 lines: &lines,
@@ -383,7 +401,7 @@ mod tests {
         let lines = vec![Line::new("scroll1"), Line::new("scroll2")];
 
         screen
-            .execute(&[TerminalCommand::PushScrollbackLines {
+            .execute_batch(&[TerminalCommand::PushScrollbackLines {
                 previous_visible_rows: 4,
                 lines: &lines,
             }])
@@ -419,7 +437,7 @@ mod tests {
         let lines = vec![Line::new("scroll")];
 
         screen
-            .execute(&[TerminalCommand::PushScrollbackLines {
+            .execute_batch(&[TerminalCommand::PushScrollbackLines {
                 previous_visible_rows: 1,
                 lines: &lines,
             }])
@@ -445,7 +463,7 @@ mod tests {
         let lines = vec![Line::new("scroll")];
 
         screen
-            .execute(&[TerminalCommand::PushScrollbackLines {
+            .execute_batch(&[TerminalCommand::PushScrollbackLines {
                 previous_visible_rows: 0,
                 lines: &lines,
             }])

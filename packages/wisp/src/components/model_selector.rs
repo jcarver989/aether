@@ -1,11 +1,12 @@
 use crate::components::reasoning_bar::reasoning_bar;
 use crate::settings::types::{SettingsChange, SettingsMenuEntry};
-use tui::{
-    Combobox, Component, Event, Frame, Line, PickerKey, Searchable, ViewContext, classify_key,
-};
 use acp_utils::config_option_id::ConfigOptionId;
 use std::cmp::Ordering;
 use std::collections::HashSet;
+use tui::{
+    Combobox, Component, Event, Frame, Line, MouseEventKind, PickerKey, Searchable, ViewContext,
+    classify_key,
+};
 use utils::ReasoningEffort;
 
 #[derive(Debug, Clone)]
@@ -167,13 +168,34 @@ impl ModelSelector {
 
 impl ModelSelector {
     pub fn update_viewport(&mut self, max_height: usize) {
-        let overhead = if self.selected_models.is_empty() {
+        let header_lines = if self.selected_models.is_empty() {
             2
         } else {
             4
         };
-        self.combobox
-            .set_max_visible(max_height.saturating_sub(overhead).max(1));
+        let available = max_height.saturating_sub(header_lines);
+
+        // Start with the maximum possible items, then shrink to account for
+        // provider group headers and blank separators that render() injects.
+        // Each group adds 1 header line, and every group after the first adds
+        // 1 blank separator, so extra lines = groups + (groups - 1) = 2*groups - 1.
+        // We iterate because the group count depends on which items are visible.
+        let mut max_items = available;
+        for _ in 0..3 {
+            self.combobox.set_max_visible(max_items.max(1));
+            let groups = count_provider_groups(self.combobox.visible_matches_with_selection());
+            let interstitial = if groups > 0 {
+                groups + groups.saturating_sub(1)
+            } else {
+                0
+            };
+            let needed = max_items + interstitial;
+            if needed <= available {
+                break;
+            }
+            max_items = available.saturating_sub(interstitial);
+        }
+        self.combobox.set_max_visible(max_items.max(1));
     }
 }
 
@@ -181,6 +203,19 @@ impl Component for ModelSelector {
     type Message = ModelSelectorMessage;
 
     async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+        if let Event::Mouse(mouse) = event {
+            return match mouse.kind {
+                MouseEventKind::ScrollUp => {
+                    self.combobox.move_up_where(|e| !e.is_disabled);
+                    Some(vec![])
+                }
+                MouseEventKind::ScrollDown => {
+                    self.combobox.move_down_where(|e| !e.is_disabled);
+                    Some(vec![])
+                }
+                _ => Some(vec![]),
+            };
+        }
         let Event::Key(key) = event else {
             return None;
         };
@@ -316,6 +351,19 @@ impl Component for ModelSelector {
     }
 }
 
+fn count_provider_groups(items: Vec<(&ModelEntry, bool)>) -> usize {
+    let mut count = 0;
+    let mut last_provider: Option<&str> = None;
+    for (entry, _) in &items {
+        let provider = entry.provider_key();
+        if last_provider != Some(provider) {
+            count += 1;
+            last_provider = Some(provider);
+        }
+    }
+    count
+}
+
 #[allow(clippy::unnecessary_wraps)]
 fn cycle_reasoning_right(effort: Option<ReasoningEffort>) -> Option<ReasoningEffort> {
     match effort {
@@ -341,8 +389,8 @@ fn reasoning_config_value(effort: Option<ReasoningEffort>) -> &'static str {
 mod tests {
     use super::*;
     use crate::settings::types::{SettingsMenuEntryKind, SettingsMenuValue};
-    use tui::{KeyCode, KeyEvent, KeyModifiers};
     use acp_utils::config_meta::SelectOptionMeta;
+    use tui::{KeyCode, KeyEvent, KeyModifiers};
 
     fn model_entry() -> SettingsMenuEntry {
         SettingsMenuEntry {
@@ -648,5 +696,117 @@ mod tests {
             Some("high"),
         );
         assert!(selector.confirm().is_empty());
+    }
+
+    #[tokio::test]
+    async fn mouse_scroll_moves_selection() {
+        use tui::{MouseEvent, MouseEventKind};
+
+        let mut selector = ModelSelector::from_model_entry(&model_entry(), None, None);
+        let first = selector.combobox.selected().unwrap().value.clone();
+
+        let scroll_down = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        });
+        let outcome = selector.on_event(&scroll_down).await;
+        assert!(outcome.is_some(), "mouse scroll should be consumed");
+
+        let second = selector.combobox.selected().unwrap().value.clone();
+        assert_ne!(
+            first, second,
+            "scroll down should move to a different model"
+        );
+
+        let scroll_up = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::ScrollUp,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        });
+        selector.on_event(&scroll_up).await;
+        let back = selector.combobox.selected().unwrap().value.clone();
+        assert_eq!(first, back, "scroll up should return to the original model");
+    }
+
+    /// Build an entry with many providers so group headers consume viewport space.
+    fn many_provider_entry() -> SettingsMenuEntry {
+        SettingsMenuEntry {
+            config_id: "model".to_string(),
+            title: "Model".to_string(),
+            values: vec![
+                SettingsMenuValue {
+                    value: "a:m1".into(),
+                    name: "A / M1".into(),
+                    description: None,
+                    is_disabled: false,
+                    meta: SelectOptionMeta::default(),
+                },
+                SettingsMenuValue {
+                    value: "b:m2".into(),
+                    name: "B / M2".into(),
+                    description: None,
+                    is_disabled: false,
+                    meta: SelectOptionMeta::default(),
+                },
+                SettingsMenuValue {
+                    value: "c:m3".into(),
+                    name: "C / M3".into(),
+                    description: None,
+                    is_disabled: false,
+                    meta: SelectOptionMeta::default(),
+                },
+                SettingsMenuValue {
+                    value: "d:m4".into(),
+                    name: "D / M4".into(),
+                    description: None,
+                    is_disabled: false,
+                    meta: SelectOptionMeta::default(),
+                },
+                SettingsMenuValue {
+                    value: "e:m5".into(),
+                    name: "E / M5".into(),
+                    description: None,
+                    is_disabled: false,
+                    meta: SelectOptionMeta::default(),
+                },
+                SettingsMenuValue {
+                    value: "f:m6".into(),
+                    name: "F / M6".into(),
+                    description: None,
+                    is_disabled: false,
+                    meta: SelectOptionMeta::default(),
+                },
+            ],
+            current_value_index: 0,
+            current_raw_value: String::new(),
+            entry_kind: SettingsMenuEntryKind::Select,
+            multi_select: true,
+            display_name: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn focused_item_always_visible_after_scroll() {
+        let mut selector = ModelSelector::from_model_entry(&many_provider_entry(), None, None);
+        // Tight viewport: 8 lines for items (header=2, so max_height=10).
+        // 6 items from 6 providers = 6 group headers + 5 blank separators + 6 items = 17 lines.
+        // max_visible will be set to 8, but 8 items need ~21 rendered lines with headers.
+        selector.update_viewport(10);
+
+        let ctx = ViewContext::new((80, 10));
+
+        for _ in 0..6 {
+            selector.on_event(&Event::Key(key(KeyCode::Down))).await;
+            let frame = selector.render(&ctx);
+            let lines = frame.lines();
+            assert!(
+                lines.iter().any(|l| l.plain_text().contains("▶")),
+                "focused item (▶) must be visible after scrolling down, got: {:?}",
+                lines.iter().map(|l| l.plain_text()).collect::<Vec<_>>()
+            );
+        }
     }
 }

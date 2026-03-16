@@ -1,17 +1,13 @@
-use crate::components::model_selector::{ModelSelector, ModelSelectorMessage};
-use crate::components::provider_login::{
-    ProviderLoginMessage, ProviderLoginOverlay,
-};
-use crate::components::server_status::{
-    ServerStatusMessage, ServerStatusOverlay,
-};
 use super::menu::{SettingMenuMessage, SettingsMenu};
 use super::picker::{SettingsPicker, SettingsPickerMessage};
-use tui::Panel;
-use tui::{Component, Cursor, Event, Frame, Layout, Line, ViewContext};
+use crate::components::model_selector::{ModelSelector, ModelSelectorMessage};
+use crate::components::provider_login::{ProviderLoginMessage, ProviderLoginOverlay};
+use crate::components::server_status::{ServerStatusMessage, ServerStatusOverlay};
 use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::McpServerStatusEntry;
 use agent_client_protocol::{self as acp, SessionConfigKind, SessionConfigOption};
+use tui::Panel;
+use tui::{Component, Cursor, Event, Frame, Layout, Line, ViewContext};
 use unicode_width::UnicodeWidthStr;
 
 const MIN_HEIGHT: usize = 3;
@@ -181,9 +177,9 @@ impl Component for SettingsOverlay {
 
     #[allow(clippy::too_many_lines)]
     async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
-        let Event::Key(_key) = event else {
+        if !matches!(event, Event::Key(_) | Event::Mouse(_)) {
             return None;
-        };
+        }
 
         match &mut self.active_pane {
             SettingsPane::ServerStatus(overlay) => {
@@ -207,9 +203,7 @@ impl Component for SettingsOverlay {
                         Some(vec![])
                     }
                     Some(ProviderLoginMessage::Authenticate(method_id)) => {
-                        Some(vec![SettingsMessage::AuthenticateProvider(
-                            method_id,
-                        )])
+                        Some(vec![SettingsMessage::AuthenticateProvider(method_id)])
                     }
                     None => Some(vec![]),
                 }
@@ -329,10 +323,10 @@ impl Component for SettingsOverlay {
 mod tests {
     use super::*;
     use crate::components::provider_login::ProviderLoginStatus;
-    use tui::{KeyCode, KeyEvent, KeyModifiers};
     use acp_utils::config_option_id::THEME_CONFIG_ID;
     use acp_utils::notifications::McpServerStatus;
     use agent_client_protocol::SessionConfigSelectOption;
+    use tui::{KeyCode, KeyEvent, KeyModifiers};
 
     fn make_menu() -> SettingsMenu {
         let options = vec![
@@ -424,10 +418,7 @@ mod tests {
         let mut overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
         let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc))).await;
         let messages = outcome.unwrap();
-        assert!(matches!(
-            messages.as_slice(),
-            [SettingsMessage::Close]
-        ));
+        assert!(matches!(messages.as_slice(), [SettingsMessage::Close]));
     }
 
     #[tokio::test]
@@ -595,9 +586,7 @@ mod tests {
 
     #[tokio::test]
     async fn model_selector_uses_overlay_reasoning_prefill_after_menu_removal() {
-        use crate::settings::types::{
-            SettingsMenuEntry, SettingsMenuEntryKind, SettingsMenuValue,
-        };
+        use crate::settings::types::{SettingsMenuEntry, SettingsMenuEntryKind, SettingsMenuValue};
         use acp_utils::config_meta::SelectOptionMeta;
 
         let menu = SettingsMenu::from_entries(vec![SettingsMenuEntry {
@@ -778,5 +767,4 @@ mod tests {
             assert_eq!(entry.status, ProviderLoginStatus::LoggedIn);
         }
     }
-
 }
