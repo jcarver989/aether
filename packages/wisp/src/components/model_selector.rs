@@ -183,7 +183,8 @@ impl ModelSelector {
         let mut max_items = available;
         for _ in 0..3 {
             self.combobox.set_max_visible(max_items.max(1));
-            let groups = count_provider_groups(self.combobox.visible_matches_with_selection());
+            let matches = self.combobox.visible_matches_with_selection();
+            let groups = count_provider_groups(&matches);
             let interstitial = if groups > 0 {
                 groups + groups.saturating_sub(1)
             } else {
@@ -351,10 +352,10 @@ impl Component for ModelSelector {
     }
 }
 
-fn count_provider_groups(items: Vec<(&ModelEntry, bool)>) -> usize {
+fn count_provider_groups(items: &[(&ModelEntry, bool)]) -> usize {
     let mut count = 0;
     let mut last_provider: Option<&str> = None;
-    for (entry, _) in &items {
+    for (entry, _) in items {
         let provider = entry.provider_key();
         if last_provider != Some(provider) {
             count += 1;
