@@ -237,17 +237,17 @@ async fn test_settings_menu_swallows_other_keys() {
     );
 
     // Typing a character should not modify input buffer
-    send_key(&mut renderer, KeyCode::Char('x'), KeyModifiers::empty()).await;
+    send_key(&mut renderer, KeyCode::Char('z'), KeyModifiers::empty()).await;
 
     // Settings menu should still be open
     assert!(
         has_settings_menu(renderer.writer()),
         "Settings menu should be visible"
     );
-    // Input prompt is not rendered while overlay is open, so 'x' shouldn't appear anywhere
+    // Input prompt is not rendered while overlay is open, so 'z' shouldn't appear anywhere
     let lines = renderer.writer().get_lines();
     assert!(
-        !lines.iter().any(|l| l.contains('x')),
+        !lines.iter().any(|l| l.contains('z')),
         "Typed char should be swallowed while settings overlay is open.\nBuffer:\n{}",
         lines.join("\n")
     );
@@ -374,9 +374,9 @@ async fn test_settings_with_no_options_shows_placeholder() {
 #[tokio::test]
 async fn test_settings_overlay_renders_after_large_overflow_scrollback() {
     let config_options = make_settings_options();
-    // Small viewport to force overflow quickly
-    let terminal = TestTerminal::new(40, 8);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (40, 8));
+    // Small viewport height to force overflow quickly (width must fit status line)
+    let terminal = TestTerminal::new(80, 8);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 8));
     renderer.initial_render().unwrap();
 
     // Feed a LOT of content in a single streaming response (no prompt_done)
@@ -420,8 +420,8 @@ async fn test_settings_overlay_renders_after_large_overflow_scrollback() {
 #[tokio::test]
 async fn test_settings_overlay_open_close_after_overflow_keeps_prompt_and_layout_valid() {
     let config_options = make_settings_options();
-    let terminal = TestTerminal::new(40, 8);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (40, 8));
+    let terminal = TestTerminal::new(80, 8);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &config_options, (80, 8));
     renderer.initial_render().unwrap();
 
     // Create overflow history within a single streaming response
