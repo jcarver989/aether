@@ -5,5 +5,5 @@ mod session;
 
 pub use error::AcpClientError;
 pub use event::AcpEvent;
-pub use prompt_handle::AcpPromptHandle;
+pub use prompt_handle::{AcpPromptHandle, PromptCommand};
 pub use session::{AcpSession, AutoApproveClient, spawn_acp_session};

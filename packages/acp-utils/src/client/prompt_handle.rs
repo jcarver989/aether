@@ -5,7 +5,8 @@ use tokio::sync::mpsc;
 use super::error::AcpClientError;
 
 /// Commands sent from the main thread to the ACP `LocalSet` thread.
-pub(crate) enum PromptCommand {
+#[derive(Debug)]
+pub enum PromptCommand {
     Prompt {
         session_id: acp::SessionId,
         text: String,
@@ -51,6 +52,13 @@ impl AcpPromptHandle {
         let (cmd_tx, rx) = mpsc::unbounded_channel();
         std::mem::forget(rx);
         Self { cmd_tx }
+    }
+
+    /// Create a handle paired with a receiver for inspecting sent commands.
+    /// Useful for tests that need to verify which commands were dispatched.
+    pub fn recording() -> (Self, mpsc::UnboundedReceiver<PromptCommand>) {
+        let (cmd_tx, rx) = mpsc::unbounded_channel();
+        (Self { cmd_tx }, rx)
     }
 
     pub fn prompt(

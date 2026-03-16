@@ -182,7 +182,7 @@ async fn test_openrouter_usage_in_separate_final_chunk() {
 #[test]
 fn test_openrouter_request_serialization() {
     use llm::providers::openai_compatible::types::CompatibleChatMessage;
-    use llm::providers::openrouter::{OpenRouterChatRequest, OpenRouterUsage};
+    use llm::providers::openrouter::{CacheControl, OpenRouterChatRequest, OpenRouterUsage};
     use serde_json;
 
     let request = OpenRouterChatRequest {
@@ -203,6 +203,7 @@ fn test_openrouter_request_serialization() {
         stop: None,
         response_format: None,
         reasoning_effort: None,
+        cache_control: Some(CacheControl::ephemeral()),
     };
 
     let json = serde_json::to_value(&request).unwrap();
@@ -217,5 +218,47 @@ fn test_openrouter_request_serialization() {
         json["model"],
         serde_json::Value::String("openai/gpt-3.5-turbo".to_string()),
         "Model should be serialized correctly"
+    );
+}
+
+/// Test that cache_control serializes as `{"type": "ephemeral"}` at the request root
+#[test]
+fn test_openrouter_cache_control_serialization() {
+    use llm::providers::openrouter::CacheControl;
+
+    let cache_control = CacheControl::ephemeral();
+    let json = serde_json::to_value(&cache_control).unwrap();
+
+    assert_eq!(json["type"], "ephemeral");
+}
+
+/// Test that `From<CompatibleChatRequest>` sets cache_control for prompt caching
+#[test]
+fn test_openrouter_from_compatible_request_includes_cache_control() {
+    use llm::providers::openai_compatible::types::CompatibleChatMessage;
+    use llm::providers::openai_compatible::CompatibleChatRequest;
+    use llm::providers::openrouter::OpenRouterChatRequest;
+
+    let compatible = CompatibleChatRequest {
+        model: "zhipu/glm-5".to_string(),
+        messages: vec![
+            CompatibleChatMessage::System {
+                content: "You are helpful.".to_string(),
+            },
+            CompatibleChatMessage::User {
+                content: "Hello".to_string(),
+            },
+        ],
+        stream: Some(true),
+        tools: None,
+        stream_options: None,
+    };
+
+    let openrouter: OpenRouterChatRequest = compatible.into();
+
+    let json = serde_json::to_value(&openrouter).unwrap();
+    assert_eq!(
+        json["cache_control"]["type"], "ephemeral",
+        "From conversion should set cache_control for prompt caching"
     );
 }
