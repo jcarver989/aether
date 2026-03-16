@@ -41,6 +41,7 @@ pub struct App {
     keybindings: Keybindings,
     session_id: SessionId,
     prompt_handle: AcpPromptHandle,
+    working_dir: PathBuf,
     pending_scrollback_lines: Vec<Line>,
     pending_scrollback_segments: Vec<(Vec<SegmentContent>, Vec<String>)>,
 }
@@ -64,10 +65,11 @@ impl App {
             server_statuses: Vec::new(),
             auth_methods,
             settings_overlay: None,
-            screen_router: ScreenRouter::new(GitDiffMode::new(working_dir)),
+            screen_router: ScreenRouter::new(GitDiffMode::new(working_dir.clone())),
             keybindings,
             session_id,
             prompt_handle,
+            working_dir,
             pending_scrollback_lines: Vec::new(),
             pending_scrollback_segments: Vec::new(),
         }
@@ -137,6 +139,14 @@ impl App {
             } => {
                 self.session_id = session_id;
                 self.update_config_options(&config_options);
+            }
+            AcpEvent::NewSessionCreated {
+                session_id,
+                config_options,
+            } => {
+                self.session_id = session_id;
+                self.update_config_options(&config_options);
+                self.context_usage_pct = None;
             }
             AcpEvent::ConnectionClosed => {
                 self.exit_requested = true;
@@ -215,7 +225,10 @@ impl App {
                 }
                 ConversationScreenMessage::ClearScreen => {
                     commands.push(RendererCommand::ClearScreen);
-                    let _ = self.prompt_handle.prompt(&self.session_id, "/clear", None);
+                }
+                ConversationScreenMessage::NewSession => {
+                    commands.push(RendererCommand::ClearScreen);
+                    let _ = self.prompt_handle.new_session(&self.working_dir);
                 }
                 ConversationScreenMessage::OpenSettings => {
                     self.open_settings_overlay();

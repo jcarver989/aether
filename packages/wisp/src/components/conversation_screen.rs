@@ -24,6 +24,7 @@ pub enum ConversationScreenMessage {
         attachments: Vec<PromptAttachment>,
     },
     ClearScreen,
+    NewSession,
     OpenSettings,
     OpenSessionPicker,
     PushToScrollback {
@@ -264,9 +265,9 @@ impl ConversationScreen {
         let mut out = Vec::new();
         for msg in msgs {
             match msg {
-                PromptComposerMessage::ClearScreen => {
+                PromptComposerMessage::NewSession => {
                     self.reset_after_context_cleared();
-                    out.push(ConversationScreenMessage::ClearScreen);
+                    out.push(ConversationScreenMessage::NewSession);
                 }
                 PromptComposerMessage::OpenSettings => {
                     out.push(ConversationScreenMessage::OpenSettings);

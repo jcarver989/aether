@@ -28,5 +28,9 @@ pub enum AcpEvent {
         session_id: acp::SessionId,
         config_options: Vec<acp::SessionConfigOption>,
     },
+    NewSessionCreated {
+        session_id: acp::SessionId,
+        config_options: Vec<acp::SessionConfigOption>,
+    },
     ConnectionClosed,
 }
