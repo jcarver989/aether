@@ -65,6 +65,13 @@ impl Theme {
 impl From<&syntect::highlighting::Theme> for Theme {
     #[allow(clippy::similar_names)]
     fn from(syntect: &syntect::highlighting::Theme) -> Self {
+        let syntect_bg = syntect.settings.background.unwrap_or(syntect::highlighting::Color {
+            r: 0x1E,
+            g: 0x1E,
+            b: 0x2E,
+            a: 0xFF,
+        });
+
         let accent = syntect
             .settings
             .caret
@@ -83,7 +90,12 @@ impl From<&syntect::highlighting::Theme> for Theme {
         let blockquote = resolve_scope_fg(syntect, "markup.quote").unwrap_or(text_secondary);
 
         let muted = resolve_scope_fg(syntect, "markup.list.bullet")
-            .or_else(|| syntect.settings.gutter_foreground.map(color_from_syntect))
+            .or_else(|| {
+                syntect
+                    .settings
+                    .gutter_foreground
+                    .map(|c| composite_over(c, syntect_bg))
+            })
             .unwrap_or(text_secondary);
 
         let fg = syntect
@@ -124,15 +136,18 @@ impl From<&syntect::highlighting::Theme> for Theme {
             .or_else(|| resolve_scope_fg(syntect, "markup.deleted"))
             .unwrap_or(accent);
 
-        let highlight_bg = syntect
-            .settings
-            .selection
-            .map_or(DEFAULT_HIGHLIGHT_BG, color_from_syntect);
-
         let bg = syntect
             .settings
             .background
             .map_or(DEFAULT_BG, color_from_syntect);
+
+        let highlight_bg = syntect
+            .settings
+            .line_highlight
+            .or(syntect.settings.selection)
+            .map_or(DEFAULT_HIGHLIGHT_BG, |c| {
+                composite_over(c, syntect_bg)
+            });
 
         let inline_code_bg = syntect
             .settings
@@ -219,6 +234,24 @@ fn color_from_syntect(color: syntect::highlighting::Color) -> Color {
         r: color.r,
         g: color.g,
         b: color.b,
+    }
+}
+
+/// Alpha-composite `fg` over `bg`, producing an opaque `Color`.
+///
+/// Many `.tmTheme` colors (e.g. `lineHighlight`, `selection`) use alpha to
+/// create subtle overlays. Since terminals can't render alpha, we pre-blend
+/// against the theme background.
+#[allow(clippy::cast_possible_truncation)]
+fn composite_over(fg: syntect::highlighting::Color, bg: syntect::highlighting::Color) -> Color {
+    let a = u16::from(fg.a);
+    let blend = |f: u8, b: u8| -> u8 {
+        ((u16::from(f) * a + u16::from(b) * (255 - a)) / 255) as u8
+    };
+    Color::Rgb {
+        r: blend(fg.r, bg.r),
+        g: blend(fg.g, bg.g),
+        b: blend(fg.b, bg.b),
     }
 }
 
@@ -348,6 +381,116 @@ mod tests {
                 a: 0xFF,
             })
         );
+    }
+
+    #[test]
+    fn highlight_bg_prefers_line_highlight_over_selection() {
+        let mut syntect = bare_syntect_theme();
+        syntect.settings.line_highlight = Some(syntect::highlighting::Color {
+            r: 0x31,
+            g: 0x32,
+            b: 0x44,
+            a: 0xFF,
+        });
+        syntect.settings.selection = Some(syntect::highlighting::Color {
+            r: 0x99,
+            g: 0x99,
+            b: 0x99,
+            a: 0x40,
+        });
+
+        let theme = Theme::from(&syntect);
+
+        assert_eq!(
+            theme.highlight_bg(),
+            Color::Rgb {
+                r: 0x31,
+                g: 0x32,
+                b: 0x44,
+            }
+        );
+    }
+
+    #[test]
+    fn highlight_bg_falls_back_to_selection_without_line_highlight() {
+        let mut syntect = bare_syntect_theme();
+        syntect.settings.line_highlight = None;
+        syntect.settings.selection = Some(syntect::highlighting::Color {
+            r: 0x33,
+            g: 0x44,
+            b: 0x55,
+            a: 0xFF,
+        });
+
+        let theme = Theme::from(&syntect);
+
+        assert_eq!(
+            theme.highlight_bg(),
+            Color::Rgb {
+                r: 0x33,
+                g: 0x44,
+                b: 0x55,
+            }
+        );
+    }
+
+    #[test]
+    fn highlight_bg_composites_alpha_over_background() {
+        // Kiwi-like: lineHighlight=#00000050 over background=#212121
+        let mut syntect = bare_syntect_theme();
+        syntect.settings.background = Some(syntect::highlighting::Color {
+            r: 0x21,
+            g: 0x21,
+            b: 0x21,
+            a: 0xFF,
+        });
+        syntect.settings.line_highlight = Some(syntect::highlighting::Color {
+            r: 0x00,
+            g: 0x00,
+            b: 0x00,
+            a: 0x50,
+        });
+
+        let theme = Theme::from(&syntect);
+
+        // 0x50/0xFF ≈ 31.4% opacity: blend(0x00, 0x21) = (0*80 + 33*175)/255 ≈ 22 = 0x16
+        let expected = Color::Rgb {
+            r: 0x16,
+            g: 0x16,
+            b: 0x16,
+        };
+        assert_eq!(theme.highlight_bg(), expected);
+    }
+
+    #[test]
+    fn muted_composites_gutter_foreground_alpha() {
+        // Aster-like: gutterForeground=#4f4f5e90 over background=#1a1a2e
+        let mut syntect = bare_syntect_theme();
+        syntect.settings.background = Some(syntect::highlighting::Color {
+            r: 0x1A,
+            g: 0x1A,
+            b: 0x2E,
+            a: 0xFF,
+        });
+        syntect.settings.gutter_foreground = Some(syntect::highlighting::Color {
+            r: 0x4F,
+            g: 0x4F,
+            b: 0x5E,
+            a: 0x90,
+        });
+        // No markup.list.bullet scope, so muted falls back to gutter_foreground
+        let theme = Theme::from(&syntect);
+
+        // blend(0x4F, 0x1A) = (0x4F*0x90 + 0x1A*(255-0x90)) / 255
+        let blend = |f: u16, b: u16| -> u8 {
+            ((f * 0x90 + b * (255 - 0x90)) / 255) as u8
+        };
+        let expected = Color::Rgb {
+            r: blend(0x4F, 0x1A),
+            g: blend(0x4F, 0x1A),
+            b: blend(0x5E, 0x2E),
+        };
+        assert_eq!(theme.muted(), expected);
     }
 
     #[test]
