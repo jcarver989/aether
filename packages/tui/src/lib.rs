@@ -53,7 +53,7 @@ pub use components::spinner::{BRAILLE_FRAMES, Spinner};
 pub use components::text_field::TextField;
 
 pub use components::{Component, Cursor, Event, PickerMessage, ViewContext, merge, wrap_selection};
-pub use diffs::diff_types::{DiffLine, DiffPreview, DiffTag};
+pub use diffs::diff_types::{DiffLine, DiffPreview, DiffTag, SplitDiffCell, SplitDiffRow};
 pub use focus::{FocusOutcome, FocusRing};
 pub use rendering::frame::Frame;
 pub use rendering::line::Line;
@@ -69,7 +69,9 @@ pub use runtime::terminal::terminal_size;
 pub use runtime::{MouseCapture, TerminalSession, spawn_terminal_event_task};
 
 // &str text utilities
-pub use rendering::soft_wrap::{display_width_text, pad_text_to_width, truncate_text};
+pub use rendering::soft_wrap::{
+    display_width_text, pad_text_to_width, truncate_line, truncate_text,
+};
 
 // Span type
 pub use rendering::span::Span;
@@ -81,6 +83,9 @@ pub use markdown::render_markdown;
 // Feature-gated re-exports
 #[cfg(feature = "syntax")]
 pub use diffs::diff::highlight_diff;
+
+#[cfg(feature = "syntax")]
+pub use diffs::split_diff::render_diff;
 
 #[cfg(feature = "syntax")]
 pub use syntax_highlighting::SyntaxHighlighter;

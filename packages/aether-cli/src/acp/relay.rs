@@ -160,7 +160,6 @@ struct PromptContext<'a> {
     session_store: &'a Arc<SessionStore>,
 }
 
-
 async fn handle_prompt(
     ctx: &mut PromptContext<'_>,
     text: String,
@@ -201,23 +200,19 @@ async fn handle_prompt(
     // The agent sends Cancelled then Done on cancel. Capture stop reason from Cancelled
     // but keep draining until Done to avoid leaving stale messages in the channel.
     let mut early_stop_reason: Option<acp::StopReason> = None;
-    run_turn_loop(
-        ctx,
-        "Agent channel closed unexpectedly",
-        |msg| match msg {
-            AgentMessage::Cancelled { .. } => {
-                early_stop_reason = Some(map_agent_message_to_stop_reason(msg));
-                None
-            }
-            AgentMessage::Done => Some(
-                early_stop_reason
-                    .take()
-                    .unwrap_or_else(|| map_agent_message_to_stop_reason(msg)),
-            ),
-            AgentMessage::Error { .. } => Some(map_agent_message_to_stop_reason(msg)),
-            _ => None,
-        },
-    )
+    run_turn_loop(ctx, "Agent channel closed unexpectedly", |msg| match msg {
+        AgentMessage::Cancelled { .. } => {
+            early_stop_reason = Some(map_agent_message_to_stop_reason(msg));
+            None
+        }
+        AgentMessage::Done => Some(
+            early_stop_reason
+                .take()
+                .unwrap_or_else(|| map_agent_message_to_stop_reason(msg)),
+        ),
+        AgentMessage::Error { .. } => Some(map_agent_message_to_stop_reason(msg)),
+        _ => None,
+    })
     .await
 }
 
@@ -265,10 +260,7 @@ where
     }
 }
 
-async fn handle_in_flight_command(
-    agent_tx: &mpsc::Sender<UserMessage>,
-    cmd: SessionCommand,
-) {
+async fn handle_in_flight_command(agent_tx: &mpsc::Sender<UserMessage>, cmd: SessionCommand) {
     match cmd {
         SessionCommand::Cancel => {
             info!("Cancel received during prompt processing");

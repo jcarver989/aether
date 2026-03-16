@@ -66,6 +66,47 @@ pub fn display_width_line(line: &Line) -> usize {
         .sum()
 }
 
+/// Truncates a styled line to fit within `max_width` display columns.
+///
+/// Walks spans tracking cumulative display width, slicing at the character
+/// boundary where the budget is exhausted. No ellipsis is appended — callers
+/// can pad with [`Line::extend_bg_to_width`] if needed.
+pub fn truncate_line(line: &Line, max_width: usize) -> Line {
+    if max_width == 0 {
+        return Line::default();
+    }
+
+    let mut result = Line::default();
+    let mut remaining = max_width;
+
+    for span in line.spans() {
+        if remaining == 0 {
+            break;
+        }
+
+        let text = span.text();
+        let style = span.style();
+        let mut byte_end = 0;
+        let mut col = 0;
+
+        for (i, ch) in text.char_indices() {
+            let cw = UnicodeWidthChar::width(ch).unwrap_or(0);
+            if col + cw > remaining {
+                break;
+            }
+            col += cw;
+            byte_end = i + ch.len_utf8();
+        }
+
+        if byte_end > 0 {
+            result.push_with_style(&text[..byte_end], style);
+        }
+        remaining -= col;
+    }
+
+    result
+}
+
 pub fn soft_wrap_line(line: &Line, width: u16) -> Vec<Line> {
     if line.is_empty() {
         return vec![Line::new("")];
@@ -272,5 +313,56 @@ mod tests {
             display_width_text(&result),
         );
         assert_eq!(result, "he");
+    }
+
+    #[test]
+    fn truncate_line_returns_short_lines_unchanged() {
+        let line = Line::new("short");
+        let result = truncate_line(&line, 20);
+        assert_eq!(result.plain_text(), "short");
+    }
+
+    #[test]
+    fn truncate_line_trims_long_styled_lines() {
+        let mut line = Line::default();
+        line.push_styled("hello", Color::Red);
+        line.push_styled(" world", Color::Blue);
+        let result = truncate_line(&line, 7);
+        assert_eq!(result.plain_text(), "hello w");
+        assert_eq!(result.spans().len(), 2);
+        assert_eq!(result.spans()[0].style().fg, Some(Color::Red));
+        assert_eq!(result.spans()[1].style().fg, Some(Color::Blue));
+    }
+
+    #[test]
+    fn truncate_line_handles_mid_span_cut() {
+        let line = Line::styled("abcdefgh", Color::Green);
+        let result = truncate_line(&line, 4);
+        assert_eq!(result.plain_text(), "abcd");
+        assert_eq!(result.spans()[0].style().fg, Some(Color::Green));
+    }
+
+    #[test]
+    fn truncate_line_handles_wide_unicode_at_boundary() {
+        // "中" is 2 display columns, "文" is 2.
+        // Budget of 3: "中"(2) fits, "文"(2) would exceed (2+2=4>3), so stop.
+        let line = Line::new("中文x");
+        let result = truncate_line(&line, 3);
+        assert_eq!(result.plain_text(), "中");
+
+        // Budget of 4: "中"(2) + "文"(2) = 4, fits exactly.
+        let result = truncate_line(&line, 4);
+        assert_eq!(result.plain_text(), "中文");
+
+        // Budget of 5: all fit: 2+2+1=5.
+        let result = truncate_line(&line, 5);
+        assert_eq!(result.plain_text(), "中文x");
+    }
+
+    #[test]
+    fn truncate_line_zero_width_returns_empty() {
+        let line = Line::new("hello");
+        let result = truncate_line(&line, 0);
+        assert!(result.is_empty());
     }
 }

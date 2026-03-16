@@ -65,12 +65,15 @@ impl Theme {
 impl From<&syntect::highlighting::Theme> for Theme {
     #[allow(clippy::similar_names)]
     fn from(syntect: &syntect::highlighting::Theme) -> Self {
-        let syntect_bg = syntect.settings.background.unwrap_or(syntect::highlighting::Color {
-            r: 0x1E,
-            g: 0x1E,
-            b: 0x2E,
-            a: 0xFF,
-        });
+        let syntect_bg = syntect
+            .settings
+            .background
+            .unwrap_or(syntect::highlighting::Color {
+                r: 0x1E,
+                g: 0x1E,
+                b: 0x2E,
+                a: 0xFF,
+            });
 
         let accent = syntect
             .settings
@@ -145,9 +148,7 @@ impl From<&syntect::highlighting::Theme> for Theme {
             .settings
             .line_highlight
             .or(syntect.settings.selection)
-            .map_or(DEFAULT_HIGHLIGHT_BG, |c| {
-                composite_over(c, syntect_bg)
-            });
+            .map_or(DEFAULT_HIGHLIGHT_BG, |c| composite_over(c, syntect_bg));
 
         let inline_code_bg = syntect
             .settings
@@ -245,9 +246,8 @@ fn color_from_syntect(color: syntect::highlighting::Color) -> Color {
 #[allow(clippy::cast_possible_truncation)]
 fn composite_over(fg: syntect::highlighting::Color, bg: syntect::highlighting::Color) -> Color {
     let a = u16::from(fg.a);
-    let blend = |f: u8, b: u8| -> u8 {
-        ((u16::from(f) * a + u16::from(b) * (255 - a)) / 255) as u8
-    };
+    let blend =
+        |f: u8, b: u8| -> u8 { ((u16::from(f) * a + u16::from(b) * (255 - a)) / 255) as u8 };
     Color::Rgb {
         r: blend(fg.r, bg.r),
         g: blend(fg.g, bg.g),
@@ -482,9 +482,7 @@ mod tests {
         let theme = Theme::from(&syntect);
 
         // blend(0x4F, 0x1A) = (0x4F*0x90 + 0x1A*(255-0x90)) / 255
-        let blend = |f: u16, b: u16| -> u8 {
-            ((f * 0x90 + b * (255 - 0x90)) / 255) as u8
-        };
+        let blend = |f: u16, b: u16| -> u8 { ((f * 0x90 + b * (255 - 0x90)) / 255) as u8 };
         let expected = Color::Rgb {
             r: blend(0x4F, 0x1A),
             g: blend(0x4F, 0x1A),

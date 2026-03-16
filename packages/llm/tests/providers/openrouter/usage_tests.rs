@@ -235,8 +235,8 @@ fn test_openrouter_cache_control_serialization() {
 /// Test that `From<CompatibleChatRequest>` sets cache_control for prompt caching
 #[test]
 fn test_openrouter_from_compatible_request_includes_cache_control() {
-    use llm::providers::openai_compatible::types::CompatibleChatMessage;
     use llm::providers::openai_compatible::CompatibleChatRequest;
+    use llm::providers::openai_compatible::types::CompatibleChatMessage;
     use llm::providers::openrouter::OpenRouterChatRequest;
 
     let compatible = CompatibleChatRequest {

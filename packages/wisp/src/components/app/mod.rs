@@ -343,7 +343,10 @@ impl App {
         for (id, old_value) in previous {
             let still_exists = new_selections.iter().any(|(new_id, _)| new_id == id);
             if !still_exists {
-                tracing::debug!(config_id = id, "config option no longer present in new session");
+                tracing::debug!(
+                    config_id = id,
+                    "config option no longer present in new session"
+                );
                 continue;
             }
             let server_reset = new_selections
@@ -561,7 +564,10 @@ pub(crate) mod test_helpers {
 
     pub fn make_app_with_config_recording(
         config_options: &[acp::SessionConfigOption],
-    ) -> (App, tokio::sync::mpsc::UnboundedReceiver<acp_utils::client::PromptCommand>) {
+    ) -> (
+        App,
+        tokio::sync::mpsc::UnboundedReceiver<acp_utils::client::PromptCommand>,
+    ) {
         let (handle, rx) = AcpPromptHandle::recording();
         let app = App::new(
             SessionId::new("test"),
@@ -1023,7 +1029,9 @@ mod tests {
             .tool_call_statuses
             .on_tool_call(&tool_call);
 
-        app.conversation_screen.progress_indicator.update(0, 1, true);
+        app.conversation_screen
+            .progress_indicator
+            .update(0, 1, true);
         let ctx = ViewContext::new((80, 24));
         let output_before = app.conversation_screen.progress_indicator.render(&ctx);
         app.on_event(&Event::Tick).await;

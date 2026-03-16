@@ -119,6 +119,7 @@ mod tests {
     fn make_preview(lines: Vec<DiffLine>) -> DiffPreview {
         DiffPreview {
             lines,
+            rows: vec![],
             lang_hint: String::new(),
             start_line: None,
         }
@@ -263,6 +264,7 @@ mod tests {
                     content: "fn new() {}".to_string(),
                 },
             ],
+            rows: vec![],
             lang_hint: "rs".to_string(),
             start_line: None,
         };
@@ -344,6 +346,7 @@ mod tests {
                     content: "ctx2".to_string(),
                 },
             ],
+            rows: vec![],
             lang_hint: String::new(),
             start_line: Some(10),
         };
@@ -397,6 +400,7 @@ mod tests {
 
         let preview = DiffPreview {
             lines: diff_lines,
+            rows: vec![],
             lang_hint: String::new(),
             start_line: Some(42),
         };
