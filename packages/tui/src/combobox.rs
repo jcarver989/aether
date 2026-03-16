@@ -13,6 +13,8 @@ pub enum PickerKey {
     MoveDown,
     MoveLeft,
     MoveRight,
+    Tab,
+    BackTab,
     Confirm,
     Char(char),
     Backspace,
@@ -212,6 +214,8 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
             }
             PickerKey::MoveLeft
             | PickerKey::MoveRight
+            | PickerKey::Tab
+            | PickerKey::BackTab
             | PickerKey::ControlChar
             | PickerKey::Other => Some(vec![]),
         }
@@ -254,6 +258,8 @@ pub fn classify_key(key: KeyEvent, query_is_empty: bool) -> PickerKey {
         KeyCode::Down => PickerKey::MoveDown,
         KeyCode::Left => PickerKey::MoveLeft,
         KeyCode::Right => PickerKey::MoveRight,
+        KeyCode::Tab => PickerKey::Tab,
+        KeyCode::BackTab => PickerKey::BackTab,
         KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => PickerKey::MoveUp,
         KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => PickerKey::MoveDown,
         KeyCode::Enter => PickerKey::Confirm,

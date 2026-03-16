@@ -307,9 +307,24 @@ fn classify_key_left_right() {
 }
 
 #[test]
-fn classify_key_other() {
+fn classify_key_tab() {
     assert!(matches!(
         classify_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), true),
+        PickerKey::Tab
+    ));
+    assert!(matches!(
+        classify_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE), true),
+        PickerKey::BackTab
+    ));
+}
+
+#[test]
+fn classify_key_other() {
+    assert!(matches!(
+        classify_key(
+            KeyEvent::new(KeyCode::Home, KeyModifiers::NONE),
+            true
+        ),
         PickerKey::Other
     ));
 }

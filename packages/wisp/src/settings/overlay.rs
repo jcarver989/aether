@@ -161,7 +161,7 @@ impl SettingsOverlay {
     fn footer_text(&self) -> &'static str {
         match &self.active_pane {
             SettingsPane::ModelSelector(_) => {
-                "[Space/Enter] Toggle  [\u{2190}/\u{2192}] Reasoning  [Esc] Done"
+                "[Space/Enter] Toggle  [Tab] Reasoning  [Esc] Done"
             }
             SettingsPane::Picker(_) => "[Enter] Confirm  [Esc] Back",
             SettingsPane::ServerStatus(_) | SettingsPane::ProviderLogin(_) => {
@@ -648,7 +648,7 @@ mod tests {
             "model selector should be open"
         );
 
-        overlay.on_event(&Event::Key(key(KeyCode::Right))).await;
+        overlay.on_event(&Event::Key(key(KeyCode::Tab))).await;
 
         let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc))).await;
 

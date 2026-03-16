@@ -128,13 +128,13 @@ fn renders_context_usage_right_aligned() {
     let output = term.get_lines();
     assert!(output[0].contains("aether"), "should contain agent name");
     assert!(
-        output[0].contains("72% context"),
-        "should contain context usage"
+        output[0].contains("ctx") && output[0].contains("72%"),
+        "should contain context gauge"
     );
 }
 
 #[test]
-fn does_not_render_context_when_none() {
+fn renders_context_at_100_when_none() {
     let options = vec![model_option("gpt-4o", "gpt-4o")];
     let status = StatusLine {
         agent_name: "aether",
@@ -147,8 +147,8 @@ fn does_not_render_context_when_none() {
     let term = render_lines(&status.render(&ctx), 80, 24);
     let output = term.get_lines();
     assert!(
-        !output[0].contains("context"),
-        "should not contain context info"
+        output[0].contains("ctx") && output[0].contains("100%"),
+        "should show context at 100% when no value provided"
     );
 }
 
@@ -171,8 +171,8 @@ fn renders_interrupt_message_when_waiting() {
         "should contain interrupt message"
     );
     assert!(
-        output[0].contains("72% context"),
-        "should contain context when waiting"
+        output[0].contains("ctx") && output[0].contains("72%"),
+        "should contain context gauge when waiting"
     );
 }
 
@@ -251,7 +251,7 @@ fn zero_unhealthy_servers_shows_nothing() {
 }
 
 #[test]
-fn context_usage_takes_precedence_over_unhealthy() {
+fn renders_both_context_and_unhealthy() {
     let status = StatusLine {
         agent_name: "aether",
         config_options: &[],
@@ -259,16 +259,16 @@ fn context_usage_takes_precedence_over_unhealthy() {
         waiting_for_response: false,
         unhealthy_server_count: 2,
     };
-    let ctx = ViewContext::new((80, 24));
-    let term = render_lines(&status.render(&ctx), 80, 24);
+    let ctx = ViewContext::new((120, 24));
+    let term = render_lines(&status.render(&ctx), 120, 24);
     let output = term.get_lines();
     assert!(
-        output[0].contains("50% context"),
-        "context should take precedence"
+        output[0].contains("ctx") && output[0].contains("50%"),
+        "should show context gauge"
     );
     assert!(
-        !output[0].contains("unhealthy"),
-        "should not show unhealthy when context is shown"
+        output[0].contains("2 servers unhealthy"),
+        "should show unhealthy alongside context"
     );
 }
 
@@ -423,12 +423,12 @@ fn renders_reasoning_bar_next_to_model_when_reasoning_set() {
     let output = term.get_lines();
     assert!(output[0].contains("gpt-4o"), "should contain model name");
     assert!(
-        output[0].contains("[■■·]"),
+        output[0].contains("reasoning [■■·]"),
         "should contain reasoning bar for medium effort"
     );
     // Verify order: model should appear before bar
     let model_index = output[0].find("gpt-4o").expect("model position");
-    let bar_index = output[0].find("[■■·]").expect("bar position");
+    let bar_index = output[0].find("reasoning [■■·]").expect("bar position");
     assert!(
         model_index < bar_index,
         "model should come before reasoning bar"
@@ -449,12 +449,8 @@ fn does_not_render_reasoning_bar_when_model_absent() {
     let term = render_lines(&status.render(&ctx), 80, 24);
     let output = term.get_lines();
     assert!(
-        !output[0].contains('■'),
-        "should not contain filled bar chars"
-    );
-    assert!(
-        !output[0].contains('·'),
-        "should not contain empty bar chars"
+        !output[0].contains("reasoning"),
+        "should not contain reasoning bar when model absent"
     );
 }
 
@@ -472,14 +468,14 @@ fn renders_empty_reasoning_bar_for_none_effort() {
     let term = render_lines(&status.render(&ctx), 80, 24);
     let output = term.get_lines();
     assert!(
-        output[0].contains("[···]"),
+        output[0].contains("reasoning [···]"),
         "should contain empty reasoning bar"
     );
 }
 
 #[test]
-fn renders_reasoning_bar_with_model_semantic_color() {
-    let options = vec![model_option("gpt-4o", "gpt-4o"), reasoning_option("low")];
+fn renders_reasoning_bar_high_with_success_color() {
+    let options = vec![model_option("gpt-4o", "gpt-4o"), reasoning_option("high")];
     let status = StatusLine {
         agent_name: "wisp",
         config_options: &options,
@@ -495,6 +491,6 @@ fn renders_reasoning_bar_with_model_semantic_color() {
     assert_eq!(
         style.fg,
         Some(ctx.theme.success()),
-        "reasoning bar should use success color (same as model)"
+        "reasoning bar at high should use success color"
     );
 }

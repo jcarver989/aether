@@ -137,6 +137,8 @@ impl Component for SettingsPicker {
             }
             PickerKey::MoveLeft
             | PickerKey::MoveRight
+            | PickerKey::Tab
+            | PickerKey::BackTab
             | PickerKey::BackspaceOnEmpty
             | PickerKey::ControlChar
             | PickerKey::Other => Some(vec![]),

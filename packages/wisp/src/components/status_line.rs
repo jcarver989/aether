@@ -1,10 +1,11 @@
-use crate::components::reasoning_bar::reasoning_bar;
+use crate::components::context_bar::{context_bar, context_color};
+use crate::components::reasoning_bar::{reasoning_bar, reasoning_color};
 use acp_utils::config_option_id::ConfigOptionId;
 use agent_client_protocol::{
     self as acp, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
     SessionConfigSelectOptions,
 };
-use tui::{Line, ViewContext, display_width_text};
+use tui::{Color, Line, ViewContext, display_width_text};
 use utils::ReasoningEffort;
 
 pub struct StatusLine<'a> {
@@ -36,42 +37,48 @@ impl StatusLine<'_> {
         if let Some(ref model) = model_display {
             left_line.push_styled(" · ", sep);
             left_line.push_styled(model.as_str(), context.theme.success());
-            left_line.push_text(" ");
-            left_line.push_styled(reasoning_bar(reasoning_effort), context.theme.success());
         }
 
-        let (right, color) = if self.waiting_for_response {
-            let mut parts = vec!["esc to interrupt".to_string()];
-            if let Some(pct) = self.context_pct_left {
-                parts.push(format!("{pct}% context"));
-            }
-            (parts.join(" · "), context.theme.warning())
-        } else if let Some(pct) = self.context_pct_left {
-            let c = if pct <= 15 {
-                context.theme.warning()
-            } else {
-                context.theme.muted()
-            };
-            (format!("{pct}% context"), c)
-        } else if self.unhealthy_server_count > 0 {
+        let mut right_parts: Vec<(String, Color)> = Vec::new();
+
+        if model_display.is_some() {
+            right_parts.push((
+                reasoning_bar(reasoning_effort),
+                reasoning_color(reasoning_effort, &context.theme),
+            ));
+        }
+
+        let pct = self.context_pct_left.unwrap_or(100);
+        if !right_parts.is_empty() {
+            right_parts.push((" · ".to_string(), sep));
+        }
+        right_parts.push((context_bar(pct), context_color(pct, &context.theme)));
+
+        if !self.waiting_for_response && self.unhealthy_server_count > 0 {
             let count = self.unhealthy_server_count;
             let msg = if count == 1 {
                 "1 server needs auth".to_string()
             } else {
                 format!("{count} servers unhealthy")
             };
-            (msg, context.theme.warning())
-        } else {
-            return vec![left_line];
-        };
+            right_parts.push((" · ".to_string(), sep));
+            right_parts.push((msg, context.theme.warning()));
+        }
+
+        if self.waiting_for_response {
+            right_parts.push((" · ".to_string(), sep));
+            right_parts.push(("esc to interrupt".to_string(), context.theme.warning()));
+        }
 
         let width = context.size.width as usize;
-        let right_len = display_width_text(&right);
+        let right_len: usize = right_parts.iter().map(|(s, _)| display_width_text(s)).sum();
         let left_len = left_line.display_width();
 
         let padding = width.saturating_sub(left_len + right_len);
         left_line.push_text(" ".repeat(padding));
-        left_line.push_styled(right, color);
+        for (text, color) in right_parts {
+            left_line.push_styled(text, color);
+        }
         vec![left_line]
     }
 }
