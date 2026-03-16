@@ -14,6 +14,23 @@ pub struct OpenRouterUsage {
     pub include: bool,
 }
 
+/// Cache control marker for `OpenRouter` prompt caching.
+/// Enables automatic prefix caching and sticky routing.
+/// See: <https://openrouter.ai/docs/guides/best-practices/prompt-caching>
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheControl {
+    #[serde(rename = "type")]
+    pub cache_type: String,
+}
+
+impl CacheControl {
+    pub fn ephemeral() -> Self {
+        Self {
+            cache_type: "ephemeral".to_string(),
+        }
+    }
+}
+
 /// Custom request type for `OpenRouter` that includes the usage parameter
 ///
 /// `OpenRouter` requires a specific `usage` parameter in the request body to enable
@@ -48,6 +65,8 @@ pub struct OpenRouterChatRequest {
     pub response_format: Option<ResponseFormat>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<crate::ReasoningEffort>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_control: Option<CacheControl>,
 }
 
 impl From<CompatibleChatRequest> for OpenRouterChatRequest {
@@ -71,6 +90,7 @@ impl From<CompatibleChatRequest> for OpenRouterChatRequest {
             stop: None,
             response_format: None,
             reasoning_effort: None,
+            cache_control: Some(CacheControl::ephemeral()),
         }
     }
 }
