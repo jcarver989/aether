@@ -42,7 +42,10 @@ impl ProgressIndicator {
         let frame = FRAMES[self.tick as usize % FRAMES.len()];
         let mut line = Line::default();
         line.push_styled(frame.to_string(), context.theme.info());
-        line.push_styled(" (esc to interrupt)".to_string(), context.theme.text_secondary());
+        line.push_styled(
+            " (esc to interrupt)".to_string(),
+            context.theme.text_secondary(),
+        );
         vec![line]
     }
 }

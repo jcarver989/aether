@@ -160,9 +160,7 @@ impl SettingsOverlay {
 
     fn footer_text(&self) -> &'static str {
         match &self.active_pane {
-            SettingsPane::ModelSelector(_) => {
-                "[Space/Enter] Toggle  [Tab] Reasoning  [Esc] Done"
-            }
+            SettingsPane::ModelSelector(_) => "[Space/Enter] Toggle  [Tab] Reasoning  [Esc] Done",
             SettingsPane::Picker(_) => "[Enter] Confirm  [Esc] Back",
             SettingsPane::ServerStatus(_) | SettingsPane::ProviderLogin(_) => {
                 "[Enter] Authenticate  [Esc] Back"
