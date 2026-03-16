@@ -236,15 +236,19 @@ async fn test_prompt_not_garbled_after_resize_with_completed_content() {
         lines.join("\n")
     );
 
-    // Both turns' content should still be present
-    assert!(
-        lines.iter().any(|l| l.contains("Turn one")),
-        "First turn content should survive resize.\nBuffer:\n{}",
+    // Both turns' content should appear exactly once — no duplication from
+    // stale overflow counts causing content to appear in both scrollback and
+    // the visible frame.
+    let turn_one_count = lines.iter().filter(|l| l.contains("Turn one")).count();
+    let turn_two_count = lines.iter().filter(|l| l.contains("Turn two")).count();
+    assert_eq!(
+        turn_one_count, 1,
+        "Turn one should appear exactly once after resize.\nBuffer:\n{}",
         lines.join("\n")
     );
-    assert!(
-        lines.iter().any(|l| l.contains("Turn two")),
-        "Second turn content should survive resize.\nBuffer:\n{}",
+    assert_eq!(
+        turn_two_count, 1,
+        "Turn two should appear exactly once after resize.\nBuffer:\n{}",
         lines.join("\n")
     );
 }
