@@ -36,10 +36,6 @@ impl SessionPicker {
             combobox: Combobox::new(sessions),
         }
     }
-
-    pub fn query(&self) -> &str {
-        self.combobox.query()
-    }
 }
 
 impl Component for SessionPicker {

@@ -69,13 +69,6 @@ impl StatusLine<'_> {
             right_parts.push((msg, context.theme.warning()));
         }
 
-        if self.waiting_for_response {
-            if !right_parts.is_empty() {
-                right_parts.push((" · ".to_string(), sep));
-            }
-            right_parts.push(("esc to interrupt".to_string(), context.theme.warning()));
-        }
-
         let width = context.size.width as usize;
         let right_len: usize = right_parts.iter().map(|(s, _)| display_width_text(s)).sum();
         let left_len = left_line.display_width();

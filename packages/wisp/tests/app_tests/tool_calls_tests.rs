@@ -17,7 +17,7 @@ async fn test_tool_calls_interleave_with_thought_and_text_in_arrival_order() {
             "⠒ search",
             "",
             "Done",
-            "⠒ Working... (0/1 tools complete)",
+            "⠒ (esc to interrupt)",
         ],
         TEST_WIDTH,
         "",
@@ -31,7 +31,7 @@ async fn test_agent_message_tool_call() {
     let renderer = render(vec![tool_call("test_tool", r#"{"arg1": "value1"}"#)]);
 
     let expected = expected_with_prompt(
-        &["⠒ test_tool", "⠒ Working... (0/1 tools complete)"],
+        &["⠒ test_tool", "⠒ (esc to interrupt)"],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -107,7 +107,7 @@ async fn test_in_progress_tool_call_updates_from_duplicate_requests() {
     ]);
 
     let expected = expected_with_prompt(
-        &["⠒ Read", "⠒ Working... (0/1 tools complete)"],
+        &["⠒ Read", "⠒ (esc to interrupt)"],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -124,7 +124,7 @@ async fn test_tool_progress_renders_running_tool() {
     )]);
 
     let expected = expected_with_prompt(
-        &["⠒ Read", "⠒ Working... (0/1 tools complete)"],
+        &["⠒ Read", "⠒ (esc to interrupt)"],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -176,7 +176,7 @@ async fn test_text_complete_preserves_running_tool_calls() {
             "",
             "Done reading",
             "⠒ Write",
-            "⠒ Working... (0/1 tools complete)",
+            "⠒ (esc to interrupt)",
         ],
         TEST_WIDTH,
         "",

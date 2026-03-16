@@ -2,7 +2,7 @@ use std::mem::{Discriminant, discriminant, take};
 
 use crate::components::thought_message::ThoughtMessage;
 use crate::components::tool_call_statuses::ToolCallStatuses;
-use tui::{Component, Line, Spinner, ViewContext, render_markdown};
+use tui::{Line, ViewContext, render_markdown};
 
 #[derive(Debug, Clone)]
 pub enum SegmentContent {
@@ -132,14 +132,13 @@ impl ConversationBuffer {
 }
 
 pub struct ConversationWindow<'a> {
-    pub loader: &'a mut Spinner,
     pub conversation: &'a ConversationBuffer,
     pub tool_call_statuses: &'a ToolCallStatuses,
 }
 
 impl ConversationWindow<'_> {
-    pub fn render(&mut self, context: &ViewContext) -> Vec<Line> {
-        let mut lines = self.loader.render(context).into_lines();
+    pub fn render(&self, context: &ViewContext) -> Vec<Line> {
+        let mut lines = Vec::new();
         let mut last_segment_kind = None;
 
         for segment in &self.conversation.segments {

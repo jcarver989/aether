@@ -153,7 +153,7 @@ fn renders_context_at_100_when_none() {
 }
 
 #[test]
-fn renders_interrupt_message_when_waiting() {
+fn renders_context_when_waiting() {
     let options = vec![model_option("gpt-4o", "gpt-4o")];
     let status = StatusLine {
         agent_name: "aether",
@@ -167,17 +167,13 @@ fn renders_interrupt_message_when_waiting() {
     let output = term.get_lines();
     assert!(output[0].contains("aether"), "should contain agent name");
     assert!(
-        output[0].contains("esc to interrupt"),
-        "should contain interrupt message"
-    );
-    assert!(
         output[0].contains("ctx") && output[0].contains("72%"),
         "should contain context gauge when waiting"
     );
 }
 
 #[test]
-fn renders_interrupt_message_without_model_when_waiting() {
+fn renders_agent_name_when_waiting_without_model() {
     let status = StatusLine {
         agent_name: "aether",
         config_options: &[],
@@ -189,10 +185,6 @@ fn renders_interrupt_message_without_model_when_waiting() {
     let term = render_lines(&status.render(&ctx), 80, 24);
     let output = term.get_lines();
     assert!(output[0].contains("aether"), "should contain agent name");
-    assert!(
-        output[0].contains("esc to interrupt"),
-        "should contain interrupt message"
-    );
 }
 
 #[test]

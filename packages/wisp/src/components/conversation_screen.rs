@@ -16,7 +16,7 @@ use agent_client_protocol::{self as acp, SessionId};
 use std::path::PathBuf;
 use std::time::Instant;
 use tokio::sync::oneshot;
-use tui::{Component, Event, Frame, Layout, Spinner, ViewContext};
+use tui::{Component, Event, Frame, Layout, ViewContext};
 
 pub enum ConversationScreenMessage {
     SendPrompt {
@@ -48,7 +48,6 @@ pub struct ConversationScreen {
     pub(crate) prompt_composer: PromptComposer,
     pub(crate) plan_tracker: PlanTracker,
     pub(crate) progress_indicator: ProgressIndicator,
-    pub(crate) grid_loader: Spinner,
     pub(crate) waiting_for_response: bool,
     pub(crate) active_modal: Option<Modal>,
 }
@@ -61,7 +60,6 @@ impl ConversationScreen {
             prompt_composer: PromptComposer::new(keybindings),
             plan_tracker: PlanTracker::default(),
             progress_indicator: ProgressIndicator::default(),
-            grid_loader: Spinner::default(),
             waiting_for_response: false,
             active_modal: None,
         }
@@ -76,13 +74,12 @@ impl ConversationScreen {
     }
 
     pub fn wants_tick(&self) -> bool {
-        self.grid_loader.visible
+        self.waiting_for_response
             || self.tool_call_statuses.progress().running_any
             || self.plan_tracker_has_tick_driven_visibility()
     }
 
     pub fn on_tick(&mut self, now: Instant) {
-        self.grid_loader.on_tick();
         self.tool_call_statuses.on_tick(now);
         self.plan_tracker.on_tick(now);
         self.progress_indicator.on_tick();
@@ -90,8 +87,11 @@ impl ConversationScreen {
 
     pub fn refresh_caches(&mut self, _context: &ViewContext) {
         let progress = self.tool_call_statuses.progress();
-        self.progress_indicator
-            .update(progress.completed_top_level, progress.total_top_level);
+        self.progress_indicator.update(
+            progress.completed_top_level,
+            progress.total_top_level,
+            self.waiting_for_response,
+        );
         self.plan_tracker.cached_visible_entries();
     }
 
@@ -108,7 +108,6 @@ impl ConversationScreen {
     pub fn reset_after_context_cleared(&mut self) {
         self.conversation.clear();
         self.tool_call_statuses.clear();
-        self.grid_loader.visible = false;
         self.waiting_for_response = false;
         self.plan_tracker.clear();
         self.progress_indicator = ProgressIndicator::default();
@@ -120,8 +119,6 @@ impl ConversationScreen {
     }
 
     pub fn on_session_update(&mut self, update: &acp::SessionUpdate) {
-        self.grid_loader.visible = false;
-
         match update {
             acp::SessionUpdate::AgentMessageChunk(chunk) => {
                 if let acp::ContentBlock::Text(text_content) = &chunk.content {
@@ -181,7 +178,6 @@ impl ConversationScreen {
 
     pub fn on_prompt_done(&mut self) -> Option<ConversationScreenMessage> {
         self.waiting_for_response = false;
-        self.grid_loader.visible = false;
         self.conversation.close_thought_block();
         let (content, completed_tool_ids) = self.drain_completed();
         if content.is_empty() {
@@ -197,7 +193,6 @@ impl ConversationScreen {
     pub fn on_prompt_error(&mut self, error: &acp::Error) {
         tracing::error!("Prompt error: {error}");
         self.waiting_for_response = false;
-        self.grid_loader.visible = false;
     }
 
     pub fn on_elicitation_request(
@@ -280,7 +275,6 @@ impl ConversationScreen {
                     attachments,
                 } => {
                     self.waiting_for_response = true;
-                    self.grid_loader.reset();
                     out.push(ConversationScreenMessage::SendPrompt {
                         user_input,
                         attachments,
@@ -309,8 +303,7 @@ impl Component for ConversationScreen {
     }
 
     fn render(&mut self, ctx: &ViewContext) -> Frame {
-        let mut conversation_window = ConversationWindow {
-            loader: &mut self.grid_loader,
+        let conversation_window = ConversationWindow {
             conversation: &self.conversation,
             tool_call_statuses: &self.tool_call_statuses,
         };
