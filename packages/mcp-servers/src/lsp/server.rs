@@ -71,7 +71,11 @@ impl LspMcp {
     /// Create from parsed CLI arguments.
     pub fn from_args(args: Vec<String>) -> Result<Self, String> {
         let parsed = LspMcpArgs::from_args(args)?;
-        let root_dir = parsed.root_dir.unwrap_or_else(|| PathBuf::from("."));
+        let root_dir = parsed
+            .root_dir
+            .unwrap_or_else(|| PathBuf::from("."))
+            .canonicalize()
+            .unwrap_or_else(|_| PathBuf::from("."));
         Ok(Self::new(root_dir))
     }
 

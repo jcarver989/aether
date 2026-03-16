@@ -1146,6 +1146,41 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_lsp_key_dot_canonicalizes_to_absolute_cwd() {
+        let dot = PathBuf::from(".")
+            .canonicalize()
+            .expect("CWD must be resolvable");
+        let cwd = std::env::current_dir().expect("CWD must exist");
+
+        let key_dot = LspKey {
+            workspace_root: dot,
+            language: LanguageId::Rust,
+        };
+        let key_cwd = LspKey {
+            workspace_root: cwd,
+            language: LanguageId::Rust,
+        };
+        assert_eq!(key_dot, key_cwd, "canonicalized '.' must equal CWD");
+    }
+
+    #[test]
+    fn test_lsp_key_same_path_different_language_is_distinct() {
+        let root = PathBuf::from("/tmp/some_project");
+        let key_rust = LspKey {
+            workspace_root: root.clone(),
+            language: LanguageId::Rust,
+        };
+        let key_python = LspKey {
+            workspace_root: root,
+            language: LanguageId::Python,
+        };
+        assert_ne!(
+            key_rust, key_python,
+            "same path with different language must produce distinct keys"
+        );
+    }
+
     #[tokio::test]
     async fn test_forget_known_uris_prunes_known_and_diagnostics_cache() {
         let uri_a = test_uri("/tmp/project/a.rs");

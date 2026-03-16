@@ -272,8 +272,13 @@ async fn try_initialize(
         ))
     })?;
 
+    let workspace_root = init
+        .workspace_root
+        .canonicalize()
+        .unwrap_or(init.workspace_root);
+
     let key = LspKey {
-        workspace_root: init.workspace_root.clone(),
+        workspace_root,
         language: init.language,
     };
 
