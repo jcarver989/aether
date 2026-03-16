@@ -1,9 +1,9 @@
 use acp_utils::client::AcpEvent;
 use acp_utils::client::AcpPromptHandle;
 use agent_client_protocol as acp;
-use tui::Theme;
 use tui::Renderer as FrameRenderer;
 use tui::RendererCommand;
+use tui::Theme;
 use tui::testing::TestTerminal;
 use tui::{Component, Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use wisp::components::app::App;
@@ -194,9 +194,7 @@ pub(super) fn has_file_picker(terminal: &TestTerminal) -> bool {
 
 pub(super) fn has_command_picker(terminal: &TestTerminal) -> bool {
     let lines = terminal.get_lines();
-    lines
-        .iter()
-        .any(|l| l.contains("Open settings"))
+    lines.iter().any(|l| l.contains("Open settings"))
 }
 
 pub(super) fn has_settings_menu(terminal: &TestTerminal) -> bool {

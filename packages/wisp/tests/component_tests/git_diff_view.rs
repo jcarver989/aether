@@ -1,10 +1,10 @@
 use std::path::PathBuf;
+use tui::Component;
 use tui::ViewContext;
 use tui::testing::{render_component, render_lines};
 use wisp::components::app::{GitDiffLoadState, GitDiffViewState};
 use wisp::components::git_diff_view::{GitDiffView, build_patch_lines};
 use wisp::git_diff::{FileDiff, FileStatus, GitDiffDocument, Hunk, PatchLine, PatchLineKind};
-use tui::Component;
 
 fn make_test_doc() -> GitDiffDocument {
     GitDiffDocument {

@@ -234,8 +234,8 @@ pub(crate) fn cycle_quick_option(
 pub(crate) fn cycle_reasoning_option(
     config_options: &[agent_client_protocol::SessionConfigOption],
 ) -> Option<(String, String)> {
-    use acp_utils::config_option_id::ConfigOptionId;
     use crate::components::status_line::extract_reasoning_effort;
+    use acp_utils::config_option_id::ConfigOptionId;
     use utils::ReasoningEffort;
 
     let has_reasoning = config_options
@@ -360,8 +360,8 @@ mod tests {
     #[test]
     fn process_theme_change_persists_and_produces_set_theme() {
         use crate::test_helpers::{CUSTOM_TMTHEME, with_wisp_home};
-        use tui::Color;
         use acp_utils::config_option_id::THEME_CONFIG_ID;
+        use tui::Color;
 
         let temp_dir = TempDir::new().unwrap();
         let themes_dir = temp_dir.path().join("themes");
@@ -435,5 +435,4 @@ mod tests {
             other => panic!("expected SetConfigOption, got: {other:?}"),
         }
     }
-
 }

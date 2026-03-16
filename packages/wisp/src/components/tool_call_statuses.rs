@@ -173,8 +173,8 @@ impl Default for ToolCallStatuses {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tui::{DiffLine, DiffPreview, DiffTag};
     use acp_utils::notifications::{SubAgentEvent, SubAgentProgressParams};
+    use tui::{DiffLine, DiffPreview, DiffTag};
 
     fn ctx() -> ViewContext {
         ViewContext::new((80, 24))

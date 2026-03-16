@@ -1,13 +1,13 @@
 use crate::cli::Cli;
 use crate::error::AppError;
 use crate::settings::load_or_create_settings;
-use tui::Theme;
 use acp_utils::client::{AcpEvent, AcpPromptHandle, AutoApproveClient, spawn_acp_session};
 use agent_client_protocol::{
     self as acp, Implementation, InitializeRequest, NewSessionRequest, ProtocolVersion,
 };
 use std::env::current_dir;
 use tokio::sync::mpsc;
+use tui::Theme;
 
 pub struct RuntimeState {
     pub session_id: acp::SessionId,

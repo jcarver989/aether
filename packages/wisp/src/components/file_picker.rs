@@ -1,7 +1,7 @@
-use tui::{Combobox, Component, Event, Frame, Line, PickerMessage, Searchable, ViewContext};
 use ignore::WalkBuilder;
 use std::env::current_dir;
 use std::path::{Path, PathBuf};
+use tui::{Combobox, Component, Event, Frame, Line, PickerMessage, Searchable, ViewContext};
 
 const MAX_INDEXED_FILES: usize = 50_000;
 
@@ -124,9 +124,7 @@ impl Component for FilePicker {
 mod tests {
     use super::*;
     use tui::ViewContext;
-    use tui::test_picker::{
-        rendered_lines_from, rendered_raw_lines_with_context, type_query,
-    };
+    use tui::test_picker::{rendered_lines_from, rendered_raw_lines_with_context, type_query};
     use tui::{KeyCode, KeyEvent, KeyModifiers};
 
     const DEFAULT_SIZE: (u16, u16) = (120, 40);

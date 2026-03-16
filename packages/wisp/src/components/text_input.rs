@@ -1,6 +1,6 @@
 use crate::keybindings::Keybindings;
-use tui::{Component, Event, Frame, KeyEvent, Line, TextField, ViewContext};
 use std::path::PathBuf;
+use tui::{Component, Event, Frame, KeyEvent, Line, TextField, ViewContext};
 
 pub struct TextInput {
     field: TextField,

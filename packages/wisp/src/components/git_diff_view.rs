@@ -464,8 +464,8 @@ fn build_queued_comment(state: &GitDiffViewState) -> Option<QueuedComment> {
 mod tests {
     use super::*;
     use crate::git_diff::{FileDiff, FileStatus, GitDiffDocument, Hunk, PatchLine, PatchLineKind};
-    use tui::{KeyEvent, KeyModifiers};
     use std::path::PathBuf;
+    use tui::{KeyEvent, KeyModifiers};
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)

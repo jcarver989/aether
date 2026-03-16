@@ -57,7 +57,6 @@ Convert crossterm events with `Event::try_from(crossterm_event)` — it filters 
 | Feature | Description | Default |
 |---|---|---|
 | `syntax` | Syntax highlighting via syntect | yes |
-| `runtime` | Terminal renderer, session management, event task | yes |
 | `picker` | Fuzzy combobox picker | yes |
 | `testing` | Test utilities (`TestTerminal`, `render_component`) | no |
 

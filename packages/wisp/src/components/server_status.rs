@@ -1,7 +1,5 @@
-use tui::{
-    Component, Event, Frame, Line, SelectItem, SelectList, SelectListMessage, ViewContext,
-};
 use acp_utils::notifications::{McpServerStatus, McpServerStatusEntry};
+use tui::{Component, Event, Frame, Line, SelectItem, SelectList, SelectListMessage, ViewContext};
 
 struct ServerItem(McpServerStatusEntry);
 
