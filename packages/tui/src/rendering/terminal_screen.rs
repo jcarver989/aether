@@ -8,7 +8,6 @@ use super::line::Line;
 
 pub(crate) enum TerminalCommand<'a> {
     ClearAll,
-    ClearViewport,
     SetCursorVisible(bool),
     SetMouseCapture(bool),
     RestoreCursorPosition,
@@ -58,11 +57,6 @@ impl<W: Write> TerminalScreen<W> {
             TerminalCommand::ClearAll => {
                 self.writer.queue(Clear(ClearType::All))?;
                 self.writer.queue(Clear(ClearType::Purge))?;
-                self.writer.queue(MoveTo(0, 0))?;
-                self.cursor_row_offset = 0;
-            }
-            TerminalCommand::ClearViewport => {
-                self.writer.queue(Clear(ClearType::All))?;
                 self.writer.queue(MoveTo(0, 0))?;
                 self.cursor_row_offset = 0;
             }
@@ -184,18 +178,6 @@ mod tests {
     }
 
     #[test]
-    fn clear_viewport_emits_clear_and_move() {
-        let mut screen = TerminalScreen::new(FakeWriter::new());
-        screen
-            .execute_batch(&[TerminalCommand::ClearViewport])
-            .unwrap();
-        let output = screen.writer.output();
-        assert!(output.contains("\x1b[2J"), "missing Clear(All)");
-        assert!(output.contains("\x1b[1;1H"), "missing MoveTo(0,0)");
-        assert!(!output.contains("\x1b[3J"), "should not have Purge");
-    }
-
-    #[test]
     fn set_cursor_visible_only_writes_on_state_change() {
         let mut screen = TerminalScreen::new(FakeWriter::new());
 
@@ -275,7 +257,7 @@ mod tests {
     fn execute_wraps_commands_in_synchronized_update() {
         let mut screen = TerminalScreen::new(FakeWriter::new());
         screen
-            .execute_batch(&[TerminalCommand::ClearViewport])
+            .execute_batch(&[TerminalCommand::ClearAll])
             .unwrap();
         let output = screen.writer.output();
         let begin = output

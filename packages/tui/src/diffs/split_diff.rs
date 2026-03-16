@@ -1,7 +1,7 @@
 use crate::diffs::diff::highlight_diff;
 use crate::line::Line;
 use crate::rendering::render_context::ViewContext;
-use crate::rendering::soft_wrap::truncate_line;
+use crate::rendering::soft_wrap::soft_wrap_line;
 use crate::span::Span;
 use crate::style::Style;
 use crate::{DiffPreview, DiffTag, SplitDiffCell};
@@ -9,8 +9,8 @@ use crate::{DiffPreview, DiffTag, SplitDiffCell};
 const MAX_DIFF_LINES: usize = 20;
 const MIN_SPLIT_WIDTH: u16 = 80;
 const GUTTER_WIDTH: usize = 5;
-const SEPARATOR: &str = " \u{2502} ";
-const SEPARATOR_WIDTH: usize = 3;
+const SEPARATOR: &str = "";
+const SEPARATOR_WIDTH: usize = 0;
 const FIXED_OVERHEAD: usize = GUTTER_WIDTH * 2 + SEPARATOR_WIDTH;
 
 /// Renders a diff preview, choosing split or unified based on terminal width.
@@ -24,43 +24,59 @@ pub fn render_diff(preview: &DiffPreview, context: &ViewContext) -> Vec<Line> {
 
 fn highlight_split_diff(preview: &DiffPreview, context: &ViewContext) -> Vec<Line> {
     let theme = &context.theme;
-    let total = preview.rows.len();
-    let truncated = total > MAX_DIFF_LINES;
-    let budget = if truncated { MAX_DIFF_LINES } else { total };
-
     let terminal_width = context.size.width as usize;
     let usable = terminal_width.saturating_sub(FIXED_OVERHEAD);
     let left_content = usable / 2;
     let right_content = usable - left_content;
+    let left_panel = GUTTER_WIDTH + left_content;
+    let right_panel = GUTTER_WIDTH + right_content;
 
-    let mut lines = Vec::with_capacity(budget + usize::from(truncated));
+    let mut lines = Vec::new();
+    let mut visual_lines = 0usize;
+    let mut rows_consumed = 0usize;
 
-    for row in preview.rows.iter().take(budget) {
-        let mut line = Line::default();
-
-        render_cell(
-            &mut line,
+    for row in &preview.rows {
+        let left_lines = render_cell(
             row.left.as_ref(),
             left_content,
             &preview.lang_hint,
             context,
         );
-
-        line.push_styled(SEPARATOR, theme.muted());
-
-        render_cell(
-            &mut line,
+        let right_lines = render_cell(
             row.right.as_ref(),
             right_content,
             &preview.lang_hint,
             context,
         );
 
-        lines.push(line);
+        let height = left_lines.len().max(right_lines.len());
+
+        if visual_lines + height > MAX_DIFF_LINES && visual_lines > 0 {
+            break;
+        }
+
+        for i in 0..height {
+            let left = left_lines
+                .get(i)
+                .cloned()
+                .unwrap_or_else(|| blank_panel(left_panel));
+            let right = right_lines
+                .get(i)
+                .cloned()
+                .unwrap_or_else(|| blank_panel(right_panel));
+
+            let mut line = left;
+            line.push_styled(SEPARATOR, theme.muted());
+            line.append_line(&right);
+            lines.push(line);
+        }
+
+        visual_lines += height;
+        rows_consumed += 1;
     }
 
-    if truncated {
-        let remaining = total - budget;
+    if rows_consumed < preview.rows.len() {
+        let remaining = preview.rows.len() - rows_consumed;
         let mut overflow = Line::default();
         overflow.push_styled(format!("    ... {remaining} more lines"), theme.muted());
         lines.push(overflow);
@@ -69,19 +85,23 @@ fn highlight_split_diff(preview: &DiffPreview, context: &ViewContext) -> Vec<Lin
     lines
 }
 
+fn blank_panel(width: usize) -> Line {
+    let mut line = Line::default();
+    line.push_text(" ".repeat(width));
+    line
+}
+
 fn render_cell(
-    line: &mut Line,
     cell: Option<&SplitDiffCell>,
     content_width: usize,
     lang_hint: &str,
     context: &ViewContext,
-) {
+) -> Vec<Line> {
     let theme = &context.theme;
     let panel_width = GUTTER_WIDTH + content_width;
 
     let Some(cell) = cell else {
-        line.push_text(" ".repeat(panel_width));
-        return;
+        return vec![blank_panel(panel_width)];
     };
 
     let bg = match cell.tag {
@@ -89,13 +109,6 @@ fn render_cell(
         DiffTag::Added => Some(theme.diff_added_bg()),
         DiffTag::Context => None,
     };
-
-    // Gutter (5 cols)
-    if let Some(num) = cell.line_number {
-        line.push_styled(format!("{num:>4} "), theme.muted());
-    } else {
-        line.push_styled("     ", theme.muted());
-    }
 
     // Syntax-highlighted content
     let highlighted = context
@@ -125,9 +138,29 @@ fn render_cell(
         Line::with_style(&cell.content, style)
     };
 
-    let mut truncated_content = truncate_line(&content_line, content_width);
-    truncated_content.extend_bg_to_width(content_width);
-    line.append_line(&truncated_content);
+    // content_width is derived from terminal width (u16), so it always fits in u16
+    #[allow(clippy::cast_possible_truncation)]
+    let wrapped = soft_wrap_line(&content_line, content_width as u16);
+
+    wrapped
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut wrapped_line)| {
+            wrapped_line.extend_bg_to_width(content_width);
+            let mut line = Line::default();
+            if i == 0 {
+                if let Some(num) = cell.line_number {
+                    line.push_styled(format!("{num:>4} "), theme.muted());
+                } else {
+                    line.push_styled("     ", theme.muted());
+                }
+            } else {
+                line.push_text(" ".repeat(GUTTER_WIDTH));
+            }
+            line.append_line(&wrapped_line);
+            line
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -145,14 +178,6 @@ mod tests {
             rows,
             lang_hint: String::new(),
             start_line: None,
-        }
-    }
-
-    fn context_cell(content: &str, line_num: usize) -> SplitDiffCell {
-        SplitDiffCell {
-            tag: DiffTag::Context,
-            content: content.to_string(),
-            line_number: Some(line_num),
         }
     }
 
@@ -187,30 +212,7 @@ mod tests {
     }
 
     #[test]
-    fn separator_present_in_each_line() {
-        let preview = make_split_preview(vec![
-            SplitDiffRow {
-                left: Some(context_cell("aaa", 1)),
-                right: Some(context_cell("aaa", 1)),
-            },
-            SplitDiffRow {
-                left: Some(removed_cell("bbb", 2)),
-                right: Some(added_cell("BBB", 2)),
-            },
-        ]);
-        let ctx = test_context_with_width(100);
-        let lines = highlight_split_diff(&preview, &ctx);
-        for line in &lines {
-            let text = line.plain_text();
-            assert!(
-                text.contains('\u{2502}'),
-                "separator missing in line: {text}"
-            );
-        }
-    }
-
-    #[test]
-    fn long_lines_truncated_within_terminal_width() {
+    fn long_lines_wrapped_within_terminal_width() {
         let long = "x".repeat(200);
         let preview = make_split_preview(vec![SplitDiffRow {
             left: Some(removed_cell(&long, 1)),
@@ -218,12 +220,23 @@ mod tests {
         }]);
         let ctx = test_context_with_width(100);
         let lines = highlight_split_diff(&preview, &ctx);
-        assert_eq!(lines.len(), 1);
-        let width = lines[0].display_width();
         assert!(
-            width <= 100,
-            "line width {width} should not exceed terminal width 100"
+            lines.len() > 1,
+            "long line should wrap into multiple visual lines, got {}",
+            lines.len()
         );
+        for line in &lines {
+            let width = line.display_width();
+            assert!(
+                width <= 100,
+                "line width {width} should not exceed terminal width 100"
+            );
+        }
+        // Full content should be present across all wrapped lines
+        let all_text: String = lines.iter().map(|l| l.plain_text()).collect();
+        let x_count = all_text.chars().filter(|&c| c == 'x').count();
+        // Both left and right panels contain 200 x's each
+        assert_eq!(x_count, 400, "all content should be present across wrapped lines");
     }
 
     #[test]
@@ -237,7 +250,7 @@ mod tests {
         let preview = make_split_preview(rows);
         let ctx = test_context_with_width(100);
         let lines = highlight_split_diff(&preview, &ctx);
-        // 20 content rows + 1 overflow
+        // Short lines don't wrap, so 20 visual lines + 1 overflow
         assert_eq!(lines.len(), MAX_DIFF_LINES + 1);
         let last = lines.last().unwrap().plain_text();
         assert!(last.contains("more lines"), "overflow text missing: {last}");
@@ -292,8 +305,9 @@ mod tests {
         let ctx = test_context_with_width(80);
         let lines = render_diff(&preview, &ctx);
         let text = lines[0].plain_text();
+        // Split renderer shows line number gutter, not unified "- " prefix
         assert!(
-            text.contains('\u{2502}'),
+            !text.contains("- old"),
             "should use split renderer at 80: {text}"
         );
     }
@@ -316,6 +330,31 @@ mod tests {
         let lines = highlight_split_diff(&preview, &ctx);
         let text = lines[0].plain_text();
         assert!(text.contains("42"), "line number should be shown: {text}");
+    }
+
+    #[test]
+    fn wrapped_row_pads_shorter_side_to_match_height() {
+        // Left side has a long line that wraps, right side is short
+        let long = "a".repeat(200);
+        let preview = make_split_preview(vec![SplitDiffRow {
+            left: Some(removed_cell(&long, 1)),
+            right: Some(added_cell("short", 1)),
+        }]);
+        let ctx = test_context_with_width(100);
+        let lines = highlight_split_diff(&preview, &ctx);
+        assert!(
+            lines.len() > 1,
+            "long left side should produce multiple visual lines"
+        );
+        // All lines should have consistent width
+        let first_width = lines[0].display_width();
+        for (i, line) in lines.iter().enumerate() {
+            assert_eq!(
+                line.display_width(),
+                first_width,
+                "line {i} width mismatch"
+            );
+        }
     }
 
     #[test]
