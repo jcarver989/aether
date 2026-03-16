@@ -10,6 +10,9 @@ use wisp::components::app::App;
 
 pub(super) const TEST_AGENT: &str = "test-agent";
 pub(super) const TEST_WIDTH: u16 = 200;
+/// Expected progress-indicator line for the first inactive→active transition.
+pub(super) const PROGRESS_LINE: &str =
+    "⠒ Tip: Hit Tab to adjust reasoning level (off → low → medium → high)  (esc to interrupt)";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum LoopAction {

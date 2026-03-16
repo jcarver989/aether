@@ -175,23 +175,6 @@ fn render_stream_segment(
     }
 }
 
-#[cfg(test)]
-pub fn render_segments_to_lines(
-    segments: &[SegmentContent],
-    tool_call_statuses: &ToolCallStatuses,
-    context: &ViewContext,
-) -> Vec<Line> {
-    let mut lines = Vec::new();
-    let mut last_segment_kind = None;
-
-    for segment in segments {
-        let kind = discriminant(segment);
-        let rendered = render_stream_segment(segment, tool_call_statuses, context);
-        extend_with_vertical_margin(&mut lines, &mut last_segment_kind, kind, &rendered);
-    }
-
-    lines
-}
 
 fn extend_with_vertical_margin(
     target: &mut Vec<Line>,
