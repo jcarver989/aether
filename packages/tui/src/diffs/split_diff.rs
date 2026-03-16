@@ -36,12 +36,7 @@ fn highlight_split_diff(preview: &DiffPreview, context: &ViewContext) -> Vec<Lin
     let mut rows_consumed = 0usize;
 
     for row in &preview.rows {
-        let left_lines = render_cell(
-            row.left.as_ref(),
-            left_content,
-            &preview.lang_hint,
-            context,
-        );
+        let left_lines = render_cell(row.left.as_ref(), left_content, &preview.lang_hint, context);
         let right_lines = render_cell(
             row.right.as_ref(),
             right_content,
@@ -236,7 +231,10 @@ mod tests {
         let all_text: String = lines.iter().map(|l| l.plain_text()).collect();
         let x_count = all_text.chars().filter(|&c| c == 'x').count();
         // Both left and right panels contain 200 x's each
-        assert_eq!(x_count, 400, "all content should be present across wrapped lines");
+        assert_eq!(
+            x_count, 400,
+            "all content should be present across wrapped lines"
+        );
     }
 
     #[test]
@@ -349,11 +347,7 @@ mod tests {
         // All lines should have consistent width
         let first_width = lines[0].display_width();
         for (i, line) in lines.iter().enumerate() {
-            assert_eq!(
-                line.display_width(),
-                first_width,
-                "line {i} width mismatch"
-            );
+            assert_eq!(line.display_width(), first_width, "line {i} width mismatch");
         }
     }
 
