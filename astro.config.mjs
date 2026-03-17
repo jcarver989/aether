@@ -7,12 +7,9 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'Aether',
-			customCss: ['./src/styles/global.css'],
+			customCss: ['./src/styles/global.css', './src/styles/starlight.css'],
 			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/joshka/aether' }],
-			components: {
-				Hero: './src/components/Hero.astro',
-			},
-			sidebar: [
+sidebar: [
 				{
 					label: 'Getting Started',
 					items: [

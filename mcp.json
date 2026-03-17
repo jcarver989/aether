@@ -20,11 +20,11 @@
       "type": "in-memory",
       "input": {
         "servers": {
-          "playwright": {
+	  "chrome-devtools": {
             "type": "stdio",
-            "command": "npx",
-            "args": ["@playwright/mcp@latest"]
-          }
+	    "command": "npx",
+	      "args": ["-y", "chrome-devtools-mcp@latest", "--no-usage-statistics"]
+	    }
         }
       }
     }
