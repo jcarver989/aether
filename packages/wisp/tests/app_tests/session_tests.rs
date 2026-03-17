@@ -114,12 +114,7 @@ async fn test_in_progress_tool_call_visible_after_initial_render() {
         ))
         .unwrap();
 
-    let expected = expected_with_prompt(
-        &["⠒ Read", PROGRESS_LINE],
-        TEST_WIDTH,
-        "",
-        TEST_AGENT,
-    );
+    let expected = expected_with_prompt(&["⠒ Read", PROGRESS_LINE], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 

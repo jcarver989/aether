@@ -1,6 +1,6 @@
 use super::menu::{SettingMenuMessage, SettingsMenu};
 use super::picker::{SettingsPicker, SettingsPickerMessage};
-use crate::components::model_selector::{ModelSelector, ModelSelectorMessage};
+use crate::components::model_selector::{ModelEntry, ModelSelector, ModelSelectorMessage};
 use crate::components::provider_login::{ProviderLoginMessage, ProviderLoginOverlay};
 use crate::components::server_status::{ServerStatusMessage, ServerStatusOverlay};
 use acp_utils::config_option_id::ConfigOptionId;
@@ -259,12 +259,22 @@ impl Component for SettingsOverlay {
                         if let Some(entry) = self.menu.selected_entry() {
                             let current =
                                 Some(entry.current_raw_value.as_str()).filter(|v| !v.is_empty());
-                            self.active_pane =
-                                SettingsPane::ModelSelector(ModelSelector::from_model_entry(
-                                    entry,
-                                    current,
-                                    self.current_reasoning_effort.as_deref(),
-                                ));
+                            let items: Vec<ModelEntry> = entry
+                                .values
+                                .iter()
+                                .filter(|v| !v.is_disabled)
+                                .map(|v| ModelEntry {
+                                    value: v.value.clone(),
+                                    name: v.name.clone(),
+                                    supports_reasoning: v.meta.supports_reasoning,
+                                })
+                                .collect();
+                            self.active_pane = SettingsPane::ModelSelector(ModelSelector::new(
+                                items,
+                                entry.config_id.clone(),
+                                current,
+                                self.current_reasoning_effort.as_deref(),
+                            ));
                         }
                         Some(vec![])
                     }

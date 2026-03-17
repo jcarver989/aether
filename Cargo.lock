@@ -50,7 +50,9 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "tui",
  "uuid",
+ "wisp",
 ]
 
 [[package]]

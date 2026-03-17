@@ -21,14 +21,14 @@ pub struct RuntimeState {
 }
 
 impl RuntimeState {
-    pub async fn from_cli(cli: &Cli) -> Result<Self, AppError> {
+    pub async fn new(agent_command: &str) -> Result<Self, AppError> {
         let cwd = current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let new_session_request = NewSessionRequest::new(cwd.clone());
         let init_request = InitializeRequest::new(ProtocolVersion::LATEST)
             .client_info(Implementation::new("wisp", env!("CARGO_PKG_VERSION")));
 
         let session = spawn_acp_session(
-            &cli.agent,
+            agent_command,
             init_request,
             new_session_request,
             AutoApproveClient::new,
@@ -48,5 +48,9 @@ impl RuntimeState {
             prompt_handle: session.prompt_handle,
             working_dir: cwd,
         })
+    }
+
+    pub async fn from_cli(cli: &Cli) -> Result<Self, AppError> {
+        Self::new(&cli.agent).await
     }
 }

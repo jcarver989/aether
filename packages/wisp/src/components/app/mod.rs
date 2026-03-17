@@ -329,14 +329,13 @@ impl App {
             let server_reset = new_selections
                 .iter()
                 .any(|(new_id, new_val)| new_id == id && new_val != old_value);
-            if server_reset {
-                if let Err(e) =
+            if server_reset
+                && let Err(e) =
                     self.prompt_handle
                         .set_config_option(&self.session_id, id, old_value)
                 {
                     tracing::warn!(config_id = id, error = %e, "failed to restore config option");
                 }
-            }
         }
     }
 
