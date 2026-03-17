@@ -29,6 +29,9 @@ importers:
       astro:
         specifier: ^6.0.1
         version: 6.0.5(@types/node@24.12.0)(jiti@2.6.1)(lightningcss@1.31.1)(rollup@4.59.0)
+      astro-expressive-code:
+        specifier: ^0.41.7
+        version: 0.41.7(astro@6.0.5(@types/node@24.12.0)(jiti@2.6.1)(lightningcss@1.31.1)(rollup@4.59.0))
       sharp:
         specifier: ^0.34.2
         version: 0.34.5

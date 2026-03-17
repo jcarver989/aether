@@ -1,0 +1,100 @@
+---
+
+---
+
+<section class="px-16 pt-16 pb-16 sm:pt-28 sm:pb-20">
+    <div class="max-w-350 mx-auto">
+        <div
+            class="grid grid-cols-1 gap-10 items-center lg:grid-cols-[5fr_7fr] lg:gap-16"
+        >
+            <div class="text-center lg:text-left">
+                <h1
+                    class="font-mono text-2xl sm:text-4xl lg:text-6xl font-semibold tracking-tight text-white mb-6 [word-spacing:-0.15em]"
+                >
+                    The open-source coding agent toolkit, built just for <span
+                        class="italic underline">you</span
+                    >
+                </h1>
+                <p
+                    class="text-sm sm:text-base lg:text-lg text-gray-300 mb-8 leading-relaxed"
+                >
+                    Build a custom coding agent in ~5 minutes. Control every
+                    token in context. Use any LLM, any tools and run your agent
+                    anywhere (TUI, IDE/editor or headless). Written in Rust.
+                    Batteries-included.
+                </p>
+
+                <div
+                    class="flex flex-wrap justify-center lg:justify-start gap-4 mb-8"
+                >
+                    <a
+                        href="/guides/introduction/"
+                        class="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium bg-accent-600 text-white hover:bg-accent-500 transition-all duration-200 shadow-lg shadow-accent-900/30"
+                        >Quick Start<span aria-hidden="true">&rarr;</span></a
+                    >
+                    <a
+                        href="https://github.com/joshka/aether"
+                        class="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium border border-gray-500 text-gray-200 hover:border-accent-400 hover:text-accent-400 transition-all duration-200"
+                        ><span>View on GitHub</span><svg
+                            class="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            ><path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                            ></path></svg
+                        ></a
+                    >
+                </div>
+
+                <div
+                    class="inline-flex items-center gap-3 px-5 py-3 bg-gray-900/80 border border-gray-400/30 rounded-lg text-gray-200"
+                >
+                    <span
+                        class="text-accent-500 font-mono font-semibold select-none"
+                        >$</span
+                    >
+                    <code class="font-mono text-gray-50"
+                        >cargo install aether</code
+                    >
+                </div>
+            </div>
+
+            <div>
+                <div
+                    class="flex items-end gap-1 mb-2 overflow-x-auto font-mono"
+                >
+                    <button
+                        class="pill active"
+                        data-feature="context"
+                        data-src="/demos/demo.cast">Any Model</button
+                    >
+                    <button
+                        class="pill"
+                        data-feature="model"
+                        data-src="/demos/demo.cast">Any Tools</button
+                    >
+                    <button
+                        class="pill"
+                        data-feature="tools"
+                        data-src="/demos/demo.cast">Control Every Token</button
+                    >
+                    <button
+                        class="pill"
+                        data-feature="interface"
+                        data-src="/demos/demo.cast">Run Anywhere</button
+                    >
+                </div>
+                <div
+                    id="hero-player"
+                    class="min-h-50 max-h-105 overflow-hidden rounded-lg border border-gray-400/30 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)]"
+                    data-src="/demos/demo.cast"
+                >
+                </div>
+            </div>
+        </div>
+    </div>
+</section>

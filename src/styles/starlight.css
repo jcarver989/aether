@@ -1,25 +1,26 @@
 @layer base, starlight, theme, components, utilities;
 @import '@astrojs/starlight-tailwind';
 
-/* Starlight CSS variable overrides for dark mode */
+/* Starlight CSS variable overrides for dark mode.
+ * Wired to Tailwind custom properties so they cascade with theme changes. */
 :root {
   --sl-font: 'IBM Plex Sans', sans-serif;
   --sl-font-mono: 'IBM Plex Mono', monospace;
 
-  --sl-color-white: #e6edf3;
-  --sl-color-gray-1: #d8dbe2;
-  --sl-color-gray-2: #8891a0;
-  --sl-color-gray-3: #636c7c;
-  --sl-color-gray-4: #444c5c;
-  --sl-color-gray-5: #2d333b;
-  --sl-color-gray-6: #22272e;
-  --sl-color-black: #0d1117;
+  --sl-color-white: var(--color-gray-50);
+  --sl-color-gray-1: var(--color-gray-100);
+  --sl-color-gray-2: var(--color-gray-300);
+  --sl-color-gray-3: var(--color-gray-400);
+  --sl-color-gray-4: var(--color-gray-500);
+  --sl-color-gray-5: var(--color-gray-600);
+  --sl-color-gray-6: var(--color-gray-700);
+  --sl-color-black: var(--color-gray-950);
 
-  --sl-color-accent-low: #064e3b;
-  --sl-color-accent: #10b981;
-  --sl-color-accent-high: #a7f3d0;
+  --sl-color-accent-low: var(--color-accent-900);
+  --sl-color-accent: var(--color-accent-500);
+  --sl-color-accent-high: var(--color-accent-200);
 
   --sl-color-bg: var(--sl-color-black);
-  --sl-color-bg-nav: #161b22;
-  --sl-color-bg-sidebar: #161b22;
+  --sl-color-bg-nav: var(--color-gray-900);
+  --sl-color-bg-sidebar: var(--color-gray-900);
 }
