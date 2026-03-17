@@ -1,8 +1,6 @@
-use acp_utils::config_meta::SelectOptionMeta;
 use tui::testing::render_component;
 use tui::{Component, Event, KeyCode, KeyEvent, KeyModifiers};
-use wisp::components::model_selector::ModelSelector;
-use wisp::settings::types::{SettingsMenuEntry, SettingsMenuEntryKind, SettingsMenuValue};
+use wisp::components::model_selector::{ModelEntry, ModelSelector};
 
 async fn type_query(picker: &mut ModelSelector, text: &str) {
     for c in text.chars() {
@@ -25,81 +23,49 @@ fn rendered_lines(selector: &mut ModelSelector) -> Vec<String> {
     lines[..last_non_empty].to_vec()
 }
 
-fn model_entry() -> SettingsMenuEntry {
-    SettingsMenuEntry {
-        config_id: "model".to_string(),
-        title: "Model".to_string(),
-        values: vec![
-            SettingsMenuValue {
-                value: "anthropic:claude-sonnet-4-5".to_string(),
-                name: "Anthropic / Claude Sonnet 4.5".to_string(),
-                description: None,
-                is_disabled: false,
-                meta: SelectOptionMeta::default(),
-            },
-            SettingsMenuValue {
-                value: "deepseek:deepseek-chat".to_string(),
-                name: "DeepSeek / DeepSeek Chat".to_string(),
-                description: None,
-                is_disabled: false,
-                meta: SelectOptionMeta::default(),
-            },
-            SettingsMenuValue {
-                value: "gemini:gemini-2.5-pro".to_string(),
-                name: "Google / Gemini 2.5 Pro".to_string(),
-                description: None,
-                is_disabled: false,
-                meta: SelectOptionMeta::default(),
-            },
-        ],
-        current_value_index: 0,
-        current_raw_value: "anthropic:claude-sonnet-4-5".to_string(),
-        entry_kind: SettingsMenuEntryKind::Select,
-        multi_select: true,
-        display_name: None,
-    }
+fn model_values() -> Vec<ModelEntry> {
+    vec![
+        ModelEntry {
+            value: "anthropic:claude-sonnet-4-5".to_string(),
+            name: "Anthropic / Claude Sonnet 4.5".to_string(),
+            supports_reasoning: false,
+        },
+        ModelEntry {
+            value: "deepseek:deepseek-chat".to_string(),
+            name: "DeepSeek / DeepSeek Chat".to_string(),
+            supports_reasoning: false,
+        },
+        ModelEntry {
+            value: "gemini:gemini-2.5-pro".to_string(),
+            name: "Google / Gemini 2.5 Pro".to_string(),
+            supports_reasoning: false,
+        },
+    ]
 }
 
-fn model_entry_with_groups() -> SettingsMenuEntry {
-    SettingsMenuEntry {
-        config_id: "model".to_string(),
-        title: "Model".to_string(),
-        values: vec![
-            SettingsMenuValue {
-                value: "openrouter:anthropic/claude-sonnet-4-5".to_string(),
-                name: "OpenRouter / Claude Sonnet 4.5".to_string(),
-                description: None,
-                is_disabled: false,
-                meta: SelectOptionMeta::default(),
-            },
-            SettingsMenuValue {
-                value: "openrouter:google/gemini-2.5-pro".to_string(),
-                name: "OpenRouter / Gemini 2.5 Pro".to_string(),
-                description: None,
-                is_disabled: false,
-                meta: SelectOptionMeta::default(),
-            },
-            SettingsMenuValue {
-                value: "anthropic:claude-sonnet-4-5".to_string(),
-                name: "Anthropic / Claude Sonnet 4.5".to_string(),
-                description: None,
-                is_disabled: false,
-                meta: SelectOptionMeta::default(),
-            },
-            SettingsMenuValue {
-                value: "gemini:gemini-2.5-pro".to_string(),
-                name: "Google / Gemini 2.5 Pro".to_string(),
-                description: None,
-                is_disabled: false,
-                meta: SelectOptionMeta::default(),
-            },
-        ],
-        current_value_index: 0,
-        current_raw_value: "openrouter:anthropic/claude-sonnet-4-5".to_string(),
-        entry_kind: SettingsMenuEntryKind::Select,
-        multi_select: true,
-        display_name: None,
-    }
+fn model_values_with_groups() -> Vec<ModelEntry> {
+    vec![
+        ModelEntry {
+            value: "openrouter:anthropic/claude-sonnet-4-5".to_string(),
+            name: "OpenRouter / Claude Sonnet 4.5".to_string(),
+            supports_reasoning: false,
+        },
+        ModelEntry {
+            value: "openrouter:google/gemini-2.5-pro".to_string(),
+            name: "OpenRouter / Gemini 2.5 Pro".to_string(),
+            supports_reasoning: false,
+        },
+        ModelEntry {
+            value: "anthropic:claude-sonnet-4-5".to_string(),
+            name: "Anthropic / Claude Sonnet 4.5".to_string(),
+            supports_reasoning: false,
+        },
+        ModelEntry {
+            value: "gemini:gemini-2.5-pro".to_string(),
+            name: "Google / Gemini 2.5 Pro".to_string(),
+            supports_reasoning: false,
+        },
+    ]
 }
 
 fn key(code: KeyCode) -> KeyEvent {
@@ -129,43 +95,36 @@ fn focused_provider_and_row(selector: &mut ModelSelector) -> (String, String) {
     (provider, lines[focused_idx].clone())
 }
 
-fn reasoning_meta() -> SelectOptionMeta {
-    SelectOptionMeta {
-        supports_reasoning: true,
-    }
+fn model_values_with_reasoning() -> Vec<ModelEntry> {
+    vec![
+        ModelEntry {
+            value: "anthropic:claude-opus-4-6".to_string(),
+            name: "Anthropic / Claude Opus 4.6".to_string(),
+            supports_reasoning: true,
+        },
+        ModelEntry {
+            value: "deepseek:deepseek-chat".to_string(),
+            name: "DeepSeek / DeepSeek Chat".to_string(),
+            supports_reasoning: false,
+        },
+    ]
 }
 
-fn model_entry_with_reasoning() -> SettingsMenuEntry {
-    SettingsMenuEntry {
-        config_id: "model".to_string(),
-        title: "Model".to_string(),
-        values: vec![
-            SettingsMenuValue {
-                value: "anthropic:claude-opus-4-6".to_string(),
-                name: "Anthropic / Claude Opus 4.6".to_string(),
-                description: None,
-                is_disabled: false,
-                meta: reasoning_meta(),
-            },
-            SettingsMenuValue {
-                value: "deepseek:deepseek-chat".to_string(),
-                name: "DeepSeek / DeepSeek Chat".to_string(),
-                description: None,
-                is_disabled: false,
-                meta: SelectOptionMeta::default(),
-            },
-        ],
-        current_value_index: 0,
-        current_raw_value: "anthropic:claude-opus-4-6".to_string(),
-        entry_kind: SettingsMenuEntryKind::Select,
-        multi_select: true,
-        display_name: None,
-    }
+fn make_selector(values: Vec<ModelEntry>) -> ModelSelector {
+    ModelSelector::new(values, "model".to_string(), None, None)
+}
+
+fn make_selector_with(
+    values: Vec<ModelEntry>,
+    selection: Option<&str>,
+    reasoning: Option<&str>,
+) -> ModelSelector {
+    ModelSelector::new(values, "model".to_string(), selection, reasoning)
 }
 
 #[tokio::test]
 async fn search_filters_entries() {
-    let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
+    let mut builder = make_selector(model_values());
     type_query(&mut builder, "deepseek").await;
     let lines = rendered_lines(&mut builder);
     assert!(lines.iter().any(|l| l.trim() == "DeepSeek"));
@@ -174,7 +133,7 @@ async fn search_filters_entries() {
 
 #[test]
 fn render_groups_models_under_provider_headers() {
-    let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
+    let mut builder = make_selector(model_values_with_groups());
     let lines = rendered_lines(&mut builder);
 
     let openrouter_headers = lines.iter().filter(|l| l.trim() == "OpenRouter").count();
@@ -191,7 +150,7 @@ fn render_groups_models_under_provider_headers() {
 
 #[tokio::test]
 async fn search_filters_and_keeps_provider_headers() {
-    let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
+    let mut builder = make_selector(model_values_with_groups());
     type_query(&mut builder, "gemini").await;
     let lines = rendered_lines(&mut builder);
 
@@ -208,46 +167,29 @@ async fn search_filters_and_keeps_provider_headers() {
 
 #[tokio::test]
 async fn search_does_not_duplicate_provider_headers() {
-    let entry = SettingsMenuEntry {
-        config_id: "model".to_string(),
-        title: "Model".to_string(),
-        values: vec![
-            SettingsMenuValue {
-                value: "codex:gpt-5".to_string(),
-                name: "Codex / GPT-5".to_string(),
-                description: None,
-                is_disabled: false,
-                meta: SelectOptionMeta::default(),
-            },
-            SettingsMenuValue {
-                value: "openrouter:gpt-5".to_string(),
-                name: "OpenRouter / GPT-5".to_string(),
-                description: None,
-                is_disabled: false,
-                meta: SelectOptionMeta::default(),
-            },
-            SettingsMenuValue {
-                value: "codex:gpt-5-mini".to_string(),
-                name: "Codex / GPT-5 Mini".to_string(),
-                description: None,
-                is_disabled: false,
-                meta: SelectOptionMeta::default(),
-            },
-            SettingsMenuValue {
-                value: "openrouter:gpt-5-mini".to_string(),
-                name: "OpenRouter / GPT-5 Mini".to_string(),
-                description: None,
-                is_disabled: false,
-                meta: SelectOptionMeta::default(),
-            },
-        ],
-        current_value_index: 0,
-        current_raw_value: "codex:gpt-5".to_string(),
-        entry_kind: SettingsMenuEntryKind::Select,
-        multi_select: true,
-        display_name: None,
-    };
-    let mut selector = ModelSelector::from_model_entry(&entry, None, None);
+    let values = vec![
+        ModelEntry {
+            value: "codex:gpt-5".to_string(),
+            name: "Codex / GPT-5".to_string(),
+            supports_reasoning: false,
+        },
+        ModelEntry {
+            value: "openrouter:gpt-5".to_string(),
+            name: "OpenRouter / GPT-5".to_string(),
+            supports_reasoning: false,
+        },
+        ModelEntry {
+            value: "codex:gpt-5-mini".to_string(),
+            name: "Codex / GPT-5 Mini".to_string(),
+            supports_reasoning: false,
+        },
+        ModelEntry {
+            value: "openrouter:gpt-5-mini".to_string(),
+            name: "OpenRouter / GPT-5 Mini".to_string(),
+            supports_reasoning: false,
+        },
+    ];
+    let mut selector = make_selector(values);
     type_query(&mut selector, "gpt").await;
     let lines = rendered_lines(&mut selector);
 
@@ -265,7 +207,7 @@ async fn search_does_not_duplicate_provider_headers() {
 
 #[tokio::test]
 async fn grouped_navigation_follows_rendered_order() {
-    let mut selector = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
+    let mut selector = make_selector(model_values_with_groups());
 
     let (provider, focused) = focused_provider_and_row(&mut selector);
     assert_eq!(provider, "Anthropic");
@@ -284,7 +226,7 @@ async fn grouped_navigation_follows_rendered_order() {
 
 #[tokio::test]
 async fn grouped_navigation_after_search_follows_rendered_order() {
-    let mut selector = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
+    let mut selector = make_selector(model_values_with_groups());
     type_query(&mut selector, "2.5").await;
 
     let (provider, focused) = focused_provider_and_row(&mut selector);
@@ -299,7 +241,7 @@ async fn grouped_navigation_after_search_follows_rendered_order() {
 
 #[test]
 fn grouped_render_respects_small_height() {
-    let mut builder = ModelSelector::from_model_entry(&model_entry_with_groups(), None, None);
+    let mut builder = make_selector(model_values_with_groups());
     builder.update_viewport(6);
     let term = render_component(|ctx| builder.render(ctx), 120, 6);
     let output = term.get_lines();
@@ -318,8 +260,8 @@ fn grouped_render_respects_small_height() {
 
 #[test]
 fn render_shows_selected_models_at_top() {
-    let mut builder = ModelSelector::from_model_entry(
-        &model_entry(),
+    let mut builder = make_selector_with(
+        model_values(),
         Some("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"),
         None,
     );
@@ -344,7 +286,7 @@ fn render_shows_selected_models_at_top() {
 
 #[test]
 fn render_hides_selected_line_when_none_selected() {
-    let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
+    let mut builder = make_selector(model_values());
     let lines = rendered_lines(&mut builder);
     assert!(
         !lines.iter().any(|l| l.contains("Selected:")),
@@ -358,8 +300,7 @@ fn render_hides_selected_line_when_none_selected() {
 
 #[test]
 fn render_shows_bar_on_focused_reasoning_row() {
-    let mut selector =
-        ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, Some("medium"));
+    let mut selector = make_selector_with(model_values_with_reasoning(), None, Some("medium"));
     let term = render_component(|ctx| selector.render(ctx), 120, 40);
     let output = term.get_lines();
     let focused_line = output
@@ -374,8 +315,7 @@ fn render_shows_bar_on_focused_reasoning_row() {
 
 #[tokio::test]
 async fn render_no_bar_on_non_reasoning_focused_row() {
-    let mut selector =
-        ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, Some("medium"));
+    let mut selector = make_selector_with(model_values_with_reasoning(), None, Some("medium"));
     // Move to non-reasoning model
     selector.on_event(&Event::Key(key(KeyCode::Down))).await;
     let lines = rendered_lines(&mut selector);

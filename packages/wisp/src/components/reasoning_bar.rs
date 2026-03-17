@@ -1,4 +1,4 @@
-use crate::components::context_bar::slot_bar;
+use super::context_bar::slot_bar;
 use tui::{Color, Theme};
 use utils::ReasoningEffort;
 
@@ -21,9 +21,9 @@ pub(crate) fn reasoning_bar(effort: Option<ReasoningEffort>) -> String {
 
 /// Returns the appropriate theme color for the given reasoning effort.
 ///
-/// - None/Low  → text_secondary (subdued)
-/// - Medium    → info
-/// - High      → success
+/// - None/Low  → `text_secondary` (subdued)
+/// - Medium    → `info`
+/// - High      → `success`
 pub(crate) fn reasoning_color(effort: Option<ReasoningEffort>, theme: &Theme) -> Color {
     match effort {
         None | Some(ReasoningEffort::Low) => theme.text_secondary(),

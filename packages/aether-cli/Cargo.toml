@@ -20,6 +20,8 @@ aether-project = { path = "../aether-project" }
 llm = { path = "../llm", features = ["bedrock", "codex"] }
 mcp_utils = { path = "../mcp-utils" }
 mcp-servers = { path = "../mcp-servers", features = ["all"] }
+wisp = { path = "../wisp" }
+tui = { path = "../tui", default-features = false }
 acp_utils = { path = "../acp-utils", features = ["server"] }
 agent-client-protocol = { workspace = true }
 rmcp = { workspace = true }

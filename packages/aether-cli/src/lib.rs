@@ -1,6 +1,7 @@
 pub mod acp;
 pub mod error;
 pub mod headless;
+pub mod init;
 pub mod prompt;
 pub mod runtime;
 pub mod sandbox;

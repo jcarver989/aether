@@ -4,6 +4,7 @@ use tokio::runtime::Runtime;
 
 use aether_cli::acp::{AcpArgs, run_acp};
 use aether_cli::headless::{HeadlessArgs, run_headless};
+use aether_cli::init::{InitArgs, run_init};
 use aether_cli::show_prompt::{PromptArgs, run_prompt};
 
 #[derive(Parser)]
@@ -15,7 +16,7 @@ struct Cli {
     sandbox_image: Option<String>,
 
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -26,6 +27,8 @@ enum Command {
     Acp(AcpArgs),
     /// Print the fully assembled system prompt (for debugging)
     ShowPrompt(PromptArgs),
+    /// Initialize a new Aether project
+    Init(InitArgs),
 }
 
 fn main() -> ExitCode {
@@ -37,15 +40,25 @@ fn main() -> ExitCode {
 
     let rt = Runtime::new().expect("Failed to create tokio runtime");
     let result: Result<ExitCode, String> = match cli.command {
-        Command::Headless(args) => rt.block_on(run_headless(args)).map_err(|e| e.to_string()),
+        Some(Command::Headless(args)) => rt.block_on(run_headless(args)).map_err(|e| e.to_string()),
 
-        Command::Acp(args) => rt
+        Some(Command::Acp(args)) => rt
             .block_on(run_acp(args))
             .map(|()| ExitCode::SUCCESS)
             .map_err(|e| e.to_string()),
 
-        Command::ShowPrompt(args) => rt
+        Some(Command::ShowPrompt(args)) => rt
             .block_on(run_prompt(args))
+            .map(|()| ExitCode::SUCCESS)
+            .map_err(|e| e.to_string()),
+
+        Some(Command::Init(args)) => rt
+            .block_on(run_init(args))
+            .map(|()| ExitCode::SUCCESS)
+            .map_err(|e| e.to_string()),
+
+        None => rt
+            .block_on(wisp::run_tui("aether acp"))
             .map(|()| ExitCode::SUCCESS)
             .map_err(|e| e.to_string()),
     };

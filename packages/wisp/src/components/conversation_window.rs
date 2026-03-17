@@ -175,7 +175,6 @@ fn render_stream_segment(
     }
 }
 
-
 fn extend_with_vertical_margin(
     target: &mut Vec<Line>,
     last_segment_kind: &mut Option<Discriminant<SegmentContent>>,

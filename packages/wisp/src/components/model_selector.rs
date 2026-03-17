@@ -1,6 +1,5 @@
-use crate::components::reasoning_bar::reasoning_bar;
-use crate::settings::types::{SettingsChange, SettingsMenuEntry};
-use acp_utils::config_option_id::ConfigOptionId;
+use super::reasoning_bar::reasoning_bar;
+use crate::settings::types::SettingsChange;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use tui::{
@@ -13,7 +12,6 @@ use utils::ReasoningEffort;
 pub struct ModelEntry {
     pub value: String,
     pub name: String,
-    pub is_disabled: bool,
     pub supports_reasoning: bool,
 }
 
@@ -64,6 +62,8 @@ fn compare_model_entries(a: &ModelEntry, b: &ModelEntry) -> Ordering {
         .then_with(|| a.value.cmp(&b.value))
 }
 
+const REASONING_EFFORT_CONFIG_ID: &str = "reasoning_effort";
+
 pub struct ModelSelector {
     combobox: Combobox<ModelEntry>,
     all_items: Vec<ModelEntry>,
@@ -80,23 +80,12 @@ pub enum ModelSelectorMessage {
 }
 
 impl ModelSelector {
-    pub fn from_model_entry(
-        entry: &SettingsMenuEntry,
+    pub fn new(
+        items: Vec<ModelEntry>,
+        config_id: String,
         current_selection: Option<&str>,
         current_reasoning_effort: Option<&str>,
     ) -> Self {
-        let items: Vec<ModelEntry> = entry
-            .values
-            .iter()
-            .filter(|v| !v.is_disabled)
-            .map(|v| ModelEntry {
-                value: v.value.clone(),
-                name: v.name.clone(),
-                is_disabled: v.is_disabled,
-                supports_reasoning: v.meta.supports_reasoning,
-            })
-            .collect();
-
         let selected_models: HashSet<String> = current_selection
             .map(|s| s.split(',').map(|p| p.trim().to_string()).collect())
             .unwrap_or_default();
@@ -115,7 +104,7 @@ impl ModelSelector {
             all_items,
             selected_models,
             original_models,
-            config_id: entry.config_id.clone(),
+            config_id,
             reasoning_effort: reasoning,
             original_reasoning_effort: reasoning,
         }
@@ -132,9 +121,6 @@ impl ModelSelector {
 
     fn toggle_focused(&mut self) {
         if let Some(entry) = self.combobox.selected() {
-            if entry.is_disabled {
-                return;
-            }
             let value = entry.value.clone();
             if !self.selected_models.remove(&value) {
                 self.selected_models.insert(value);
@@ -158,8 +144,8 @@ impl ModelSelector {
         }
         if self.reasoning_effort != self.original_reasoning_effort {
             changes.push(SettingsChange {
-                config_id: ConfigOptionId::ReasoningEffort.as_str().to_string(),
-                new_value: reasoning_config_value(self.reasoning_effort).to_string(),
+                config_id: REASONING_EFFORT_CONFIG_ID.to_string(),
+                new_value: ReasoningEffort::config_str(self.reasoning_effort).to_string(),
             });
         }
         changes
@@ -175,11 +161,6 @@ impl ModelSelector {
         };
         let available = max_height.saturating_sub(header_lines);
 
-        // Start with the maximum possible items, then shrink to account for
-        // provider group headers and blank separators that render() injects.
-        // Each group adds 1 header line, and every group after the first adds
-        // 1 blank separator, so extra lines = groups + (groups - 1) = 2*groups - 1.
-        // We iterate because the group count depends on which items are visible.
         let mut max_items = available;
         for _ in 0..3 {
             self.combobox.set_max_visible(max_items.max(1));
@@ -207,11 +188,11 @@ impl Component for ModelSelector {
         if let Event::Mouse(mouse) = event {
             return match mouse.kind {
                 MouseEventKind::ScrollUp => {
-                    self.combobox.move_up_where(|e| !e.is_disabled);
+                    self.combobox.move_up();
                     Some(vec![])
                 }
                 MouseEventKind::ScrollDown => {
-                    self.combobox.move_down_where(|e| !e.is_disabled);
+                    self.combobox.move_down();
                     Some(vec![])
                 }
                 _ => Some(vec![]),
@@ -226,11 +207,11 @@ impl Component for ModelSelector {
                 Some(vec![ModelSelectorMessage::Done(changes)])
             }
             PickerKey::MoveUp => {
-                self.combobox.move_up_where(|e| !e.is_disabled);
+                self.combobox.move_up();
                 Some(vec![])
             }
             PickerKey::MoveDown => {
-                self.combobox.move_down_where(|e| !e.is_disabled);
+                self.combobox.move_down();
                 Some(vec![])
             }
             PickerKey::Tab => {
@@ -312,9 +293,7 @@ impl Component for ModelSelector {
                 let prefix = if *is_focused { "▶ " } else { "  " };
                 let label = format!("{prefix}{check}{}", entry.model_label());
 
-                if entry.is_disabled {
-                    item_lines.push(Line::styled(label, context.theme.muted()));
-                } else if *is_focused {
+                if *is_focused {
                     let mut line = Line::with_style(label, context.theme.selected_row_style());
                     if entry.supports_reasoning {
                         let bar = reasoning_bar(self.reasoning_effort);
@@ -363,50 +342,36 @@ fn cycle_reasoning(effort: Option<ReasoningEffort>) -> Option<ReasoningEffort> {
     }
 }
 
-fn reasoning_config_value(effort: Option<ReasoningEffort>) -> &'static str {
-    ReasoningEffort::config_str(effort)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settings::types::{SettingsMenuEntryKind, SettingsMenuValue};
-    use acp_utils::config_meta::SelectOptionMeta;
     use tui::{KeyCode, KeyEvent, KeyModifiers};
 
-    fn model_entry() -> SettingsMenuEntry {
-        SettingsMenuEntry {
-            config_id: "model".to_string(),
-            title: "Model".to_string(),
-            values: vec![
-                SettingsMenuValue {
-                    value: "anthropic:claude-sonnet-4-5".to_string(),
-                    name: "Anthropic / Claude Sonnet 4.5".to_string(),
-                    description: None,
-                    is_disabled: false,
-                    meta: SelectOptionMeta::default(),
-                },
-                SettingsMenuValue {
-                    value: "deepseek:deepseek-chat".to_string(),
-                    name: "DeepSeek / DeepSeek Chat".to_string(),
-                    description: None,
-                    is_disabled: false,
-                    meta: SelectOptionMeta::default(),
-                },
-                SettingsMenuValue {
-                    value: "gemini:gemini-2.5-pro".to_string(),
-                    name: "Google / Gemini 2.5 Pro".to_string(),
-                    description: None,
-                    is_disabled: false,
-                    meta: SelectOptionMeta::default(),
-                },
-            ],
-            current_value_index: 0,
-            current_raw_value: "anthropic:claude-sonnet-4-5".to_string(),
-            entry_kind: SettingsMenuEntryKind::Select,
-            multi_select: true,
-            display_name: None,
-        }
+    fn make_items() -> Vec<ModelEntry> {
+        vec![
+            ModelEntry {
+                value: "anthropic:claude-sonnet-4-5".to_string(),
+                name: "Anthropic / Claude Sonnet 4.5".to_string(),
+
+                supports_reasoning: false,
+            },
+            ModelEntry {
+                value: "deepseek:deepseek-chat".to_string(),
+                name: "DeepSeek / DeepSeek Chat".to_string(),
+
+                supports_reasoning: false,
+            },
+            ModelEntry {
+                value: "gemini:gemini-2.5-pro".to_string(),
+                name: "Google / Gemini 2.5 Pro".to_string(),
+
+                supports_reasoning: false,
+            },
+        ]
+    }
+
+    fn make_selector() -> ModelSelector {
+        ModelSelector::new(make_items(), "model".to_string(), None, None)
     }
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -419,27 +384,27 @@ mod tests {
 
     #[tokio::test]
     async fn toggle_adds_and_removes_model() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-        assert_eq!(builder.selected_count(), 0);
+        let mut s = make_selector();
+        assert_eq!(s.selected_count(), 0);
 
-        builder.on_event(&Event::Key(space())).await; // toggle first
-        assert_eq!(builder.selected_count(), 1);
+        s.on_event(&Event::Key(space())).await;
+        assert_eq!(s.selected_count(), 1);
 
-        builder.on_event(&Event::Key(space())).await; // toggle first again
-        assert_eq!(builder.selected_count(), 0);
+        s.on_event(&Event::Key(space())).await;
+        assert_eq!(s.selected_count(), 0);
     }
 
     #[test]
     fn confirm_with_zero_returns_empty() {
-        let builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-        assert!(builder.confirm().is_empty());
+        let s = make_selector();
+        assert!(s.confirm().is_empty());
     }
 
     #[tokio::test]
     async fn confirm_with_one_returns_single_model() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-        builder.on_event(&Event::Key(space())).await; // select first
-        let changes = builder.confirm();
+        let mut s = make_selector();
+        s.on_event(&Event::Key(space())).await;
+        let changes = s.confirm();
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].config_id, "model");
         assert_eq!(changes[0].new_value, "anthropic:claude-sonnet-4-5");
@@ -447,34 +412,33 @@ mod tests {
 
     #[tokio::test]
     async fn confirm_with_two_returns_comma_joined() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-        builder.on_event(&Event::Key(space())).await; // select first
-        builder.on_event(&Event::Key(key(KeyCode::Down))).await;
-        builder.on_event(&Event::Key(space())).await; // select second
+        let mut s = make_selector();
+        s.on_event(&Event::Key(space())).await;
+        s.on_event(&Event::Key(key(KeyCode::Down))).await;
+        s.on_event(&Event::Key(space())).await;
 
-        let changes = builder.confirm();
+        let changes = s.confirm();
         assert_eq!(changes.len(), 1);
-        let change = &changes[0];
-        assert_eq!(change.config_id, "model");
-        let parts: HashSet<&str> = change.new_value.split(',').collect();
+        let parts: HashSet<&str> = changes[0].new_value.split(',').collect();
         assert!(parts.contains("anthropic:claude-sonnet-4-5"));
         assert!(parts.contains("deepseek:deepseek-chat"));
     }
 
     #[test]
     fn pre_selected_values_from_current_selection() {
-        let builder = ModelSelector::from_model_entry(
-            &model_entry(),
+        let s = ModelSelector::new(
+            make_items(),
+            "model".to_string(),
             Some("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"),
             None,
         );
-        assert_eq!(builder.selected_count(), 2);
+        assert_eq!(s.selected_count(), 2);
     }
 
     #[tokio::test]
     async fn escape_returns_done_action() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-        let outcome = builder.on_event(&Event::Key(key(KeyCode::Esc))).await;
+        let mut s = make_selector();
+        let outcome = s.on_event(&Event::Key(key(KeyCode::Esc))).await;
         let messages = outcome.unwrap();
         match messages.as_slice() {
             [ModelSelectorMessage::Done(changes)] => assert!(changes.is_empty()),
@@ -484,31 +448,29 @@ mod tests {
 
     #[tokio::test]
     async fn enter_toggles_focused_model() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-        assert_eq!(builder.selected_count(), 0);
+        let mut s = make_selector();
+        assert_eq!(s.selected_count(), 0);
 
-        builder.on_event(&Event::Key(key(KeyCode::Enter))).await; // toggle first
-        assert_eq!(builder.selected_count(), 1);
+        s.on_event(&Event::Key(key(KeyCode::Enter))).await;
+        assert_eq!(s.selected_count(), 1);
 
-        builder.on_event(&Event::Key(key(KeyCode::Enter))).await; // toggle first again
-        assert_eq!(builder.selected_count(), 0);
+        s.on_event(&Event::Key(key(KeyCode::Enter))).await;
+        assert_eq!(s.selected_count(), 0);
     }
 
     #[tokio::test]
     async fn escape_with_selections_returns_done_with_change() {
-        let mut builder = ModelSelector::from_model_entry(&model_entry(), None, None);
-        builder.on_event(&Event::Key(space())).await; // select first
-        builder.on_event(&Event::Key(key(KeyCode::Down))).await;
-        builder.on_event(&Event::Key(space())).await; // select second
+        let mut s = make_selector();
+        s.on_event(&Event::Key(space())).await;
+        s.on_event(&Event::Key(key(KeyCode::Down))).await;
+        s.on_event(&Event::Key(space())).await;
 
-        let outcome = builder.on_event(&Event::Key(key(KeyCode::Esc))).await;
+        let outcome = s.on_event(&Event::Key(key(KeyCode::Esc))).await;
         let messages = outcome.unwrap();
         match messages.as_slice() {
             [ModelSelectorMessage::Done(changes)] => {
                 assert_eq!(changes.len(), 1);
-                let change = &changes[0];
-                assert_eq!(change.config_id, "model");
-                let parts: HashSet<&str> = change.new_value.split(',').collect();
+                let parts: HashSet<&str> = changes[0].new_value.split(',').collect();
                 assert!(parts.contains("anthropic:claude-sonnet-4-5"));
                 assert!(parts.contains("deepseek:deepseek-chat"));
             }
@@ -518,77 +480,47 @@ mod tests {
 
     #[test]
     fn escape_without_toggle_returns_no_change() {
-        let builder = ModelSelector::from_model_entry(
-            &model_entry(),
+        let s = ModelSelector::new(
+            make_items(),
+            "model".to_string(),
             Some("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"),
             None,
         );
-        // No toggling — confirm should return empty since selection == original
-        assert!(builder.confirm().is_empty());
+        assert!(s.confirm().is_empty());
     }
 
     #[tokio::test]
     async fn escape_after_toggle_returns_change() {
-        let mut builder = ModelSelector::from_model_entry(
-            &model_entry(),
+        let mut s = ModelSelector::new(
+            make_items(),
+            "model".to_string(),
             Some("anthropic:claude-sonnet-4-5"),
             None,
         );
-        // Toggle a second model on
-        builder.on_event(&Event::Key(key(KeyCode::Down))).await;
-        builder.on_event(&Event::Key(space())).await;
-        let changes = builder.confirm();
+        s.on_event(&Event::Key(key(KeyCode::Down))).await;
+        s.on_event(&Event::Key(space())).await;
+        let changes = s.confirm();
         assert_eq!(changes.len(), 1);
-        let change = &changes[0];
-        assert_eq!(change.config_id, "model");
-        let parts: HashSet<&str> = change.new_value.split(',').collect();
+        let parts: HashSet<&str> = changes[0].new_value.split(',').collect();
         assert!(parts.contains("anthropic:claude-sonnet-4-5"));
         assert!(parts.contains("deepseek:deepseek-chat"));
     }
 
-    #[test]
-    fn disabled_entries_filtered_from_builder() {
-        let mut entry = model_entry();
-        entry.values[1].is_disabled = true;
-        entry.values[1].description = Some("Unavailable: set DEEPSEEK_API_KEY".to_string());
+    fn make_reasoning_items() -> Vec<ModelEntry> {
+        vec![
+            ModelEntry {
+                value: "anthropic:claude-opus-4-6".to_string(),
+                name: "Anthropic / Claude Opus 4.6".to_string(),
 
-        let builder = ModelSelector::from_model_entry(&entry, None, None);
-        // Should only have 2 entries (disabled one filtered)
-        assert_eq!(builder.combobox.matches().len(), 2);
-    }
+                supports_reasoning: true,
+            },
+            ModelEntry {
+                value: "deepseek:deepseek-chat".to_string(),
+                name: "DeepSeek / DeepSeek Chat".to_string(),
 
-    fn reasoning_meta() -> SelectOptionMeta {
-        SelectOptionMeta {
-            supports_reasoning: true,
-        }
-    }
-
-    fn model_entry_with_reasoning() -> SettingsMenuEntry {
-        SettingsMenuEntry {
-            config_id: "model".to_string(),
-            title: "Model".to_string(),
-            values: vec![
-                SettingsMenuValue {
-                    value: "anthropic:claude-opus-4-6".to_string(),
-                    name: "Anthropic / Claude Opus 4.6".to_string(),
-                    description: None,
-                    is_disabled: false,
-                    meta: reasoning_meta(),
-                },
-                SettingsMenuValue {
-                    value: "deepseek:deepseek-chat".to_string(),
-                    name: "DeepSeek / DeepSeek Chat".to_string(),
-                    description: None,
-                    is_disabled: false,
-                    meta: SelectOptionMeta::default(),
-                },
-            ],
-            current_value_index: 0,
-            current_raw_value: "anthropic:claude-opus-4-6".to_string(),
-            entry_kind: SettingsMenuEntryKind::Select,
-            multi_select: true,
-            display_name: None,
-        }
+                supports_reasoning: false,
+            },
+        ]
     }
 
     #[test]
@@ -602,45 +534,39 @@ mod tests {
 
     #[tokio::test]
     async fn tab_on_reasoning_model_cycles_level() {
-        let mut selector =
-            ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, None);
-        assert_eq!(selector.reasoning_effort, None);
+        let mut s = ModelSelector::new(make_reasoning_items(), "model".to_string(), None, None);
+        assert_eq!(s.reasoning_effort, None);
 
-        selector.on_event(&Event::Key(key(KeyCode::Tab))).await;
-        assert_eq!(selector.reasoning_effort, Some(ReasoningEffort::Low));
+        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        assert_eq!(s.reasoning_effort, Some(ReasoningEffort::Low));
 
-        selector.on_event(&Event::Key(key(KeyCode::Tab))).await;
-        assert_eq!(selector.reasoning_effort, Some(ReasoningEffort::Medium));
+        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        assert_eq!(s.reasoning_effort, Some(ReasoningEffort::Medium));
 
-        selector.on_event(&Event::Key(key(KeyCode::Tab))).await;
-        assert_eq!(selector.reasoning_effort, Some(ReasoningEffort::High));
+        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        assert_eq!(s.reasoning_effort, Some(ReasoningEffort::High));
 
-        selector.on_event(&Event::Key(key(KeyCode::Tab))).await;
-        assert_eq!(selector.reasoning_effort, None);
+        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        assert_eq!(s.reasoning_effort, None);
     }
 
     #[tokio::test]
     async fn tab_on_non_reasoning_model_is_noop() {
-        let mut selector =
-            ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, None);
-        // Move to non-reasoning model (DeepSeek)
-        selector.on_event(&Event::Key(key(KeyCode::Down))).await;
-        assert!(!selector.combobox.selected().unwrap().supports_reasoning);
+        let mut s = ModelSelector::new(make_reasoning_items(), "model".to_string(), None, None);
+        s.on_event(&Event::Key(key(KeyCode::Down))).await;
+        assert!(!s.combobox.selected().unwrap().supports_reasoning);
 
-        selector.on_event(&Event::Key(key(KeyCode::Tab))).await;
-        assert_eq!(selector.reasoning_effort, None);
+        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        assert_eq!(s.reasoning_effort, None);
     }
 
     #[tokio::test]
     async fn confirm_returns_both_model_and_reasoning_changes() {
-        let mut selector =
-            ModelSelector::from_model_entry(&model_entry_with_reasoning(), None, None);
-        // Toggle a model on
-        selector.on_event(&Event::Key(space())).await;
-        // Change reasoning
-        selector.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        let mut s = ModelSelector::new(make_reasoning_items(), "model".to_string(), None, None);
+        s.on_event(&Event::Key(space())).await;
+        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
 
-        let changes = selector.confirm();
+        let changes = s.confirm();
         assert_eq!(changes.len(), 2, "expected model + reasoning changes");
         assert!(changes.iter().any(|c| c.config_id == "model"));
         assert!(
@@ -652,16 +578,16 @@ mod tests {
 
     #[tokio::test]
     async fn confirm_returns_only_reasoning_when_only_reasoning_changed() {
-        let mut selector = ModelSelector::from_model_entry(
-            &model_entry_with_reasoning(),
+        let mut s = ModelSelector::new(
+            make_reasoning_items(),
+            "model".to_string(),
             Some("anthropic:claude-opus-4-6"),
             None,
         );
-        // Don't change models, just reasoning
-        selector.on_event(&Event::Key(key(KeyCode::Tab))).await;
-        selector.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
 
-        let changes = selector.confirm();
+        let changes = s.confirm();
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].config_id, "reasoning_effort");
         assert_eq!(changes[0].new_value, "medium");
@@ -669,20 +595,21 @@ mod tests {
 
     #[test]
     fn confirm_returns_empty_when_nothing_changed() {
-        let selector = ModelSelector::from_model_entry(
-            &model_entry_with_reasoning(),
+        let s = ModelSelector::new(
+            make_reasoning_items(),
+            "model".to_string(),
             Some("anthropic:claude-opus-4-6"),
             Some("high"),
         );
-        assert!(selector.confirm().is_empty());
+        assert!(s.confirm().is_empty());
     }
 
     #[tokio::test]
     async fn mouse_scroll_moves_selection() {
         use tui::{MouseEvent, MouseEventKind};
 
-        let mut selector = ModelSelector::from_model_entry(&model_entry(), None, None);
-        let first = selector.combobox.selected().unwrap().value.clone();
+        let mut s = make_selector();
+        let first = s.combobox.selected().unwrap().value.clone();
 
         let scroll_down = Event::Mouse(MouseEvent {
             kind: MouseEventKind::ScrollDown,
@@ -690,10 +617,10 @@ mod tests {
             row: 0,
             modifiers: KeyModifiers::NONE,
         });
-        let outcome = selector.on_event(&scroll_down).await;
+        let outcome = s.on_event(&scroll_down).await;
         assert!(outcome.is_some(), "mouse scroll should be consumed");
 
-        let second = selector.combobox.selected().unwrap().value.clone();
+        let second = s.combobox.selected().unwrap().value.clone();
         assert_ne!(
             first, second,
             "scroll down should move to a different model"
@@ -705,81 +632,36 @@ mod tests {
             row: 0,
             modifiers: KeyModifiers::NONE,
         });
-        selector.on_event(&scroll_up).await;
-        let back = selector.combobox.selected().unwrap().value.clone();
+        s.on_event(&scroll_up).await;
+        let back = s.combobox.selected().unwrap().value.clone();
         assert_eq!(first, back, "scroll up should return to the original model");
     }
 
-    /// Build an entry with many providers so group headers consume viewport space.
-    fn many_provider_entry() -> SettingsMenuEntry {
-        SettingsMenuEntry {
-            config_id: "model".to_string(),
-            title: "Model".to_string(),
-            values: vec![
-                SettingsMenuValue {
-                    value: "a:m1".into(),
-                    name: "A / M1".into(),
-                    description: None,
-                    is_disabled: false,
-                    meta: SelectOptionMeta::default(),
-                },
-                SettingsMenuValue {
-                    value: "b:m2".into(),
-                    name: "B / M2".into(),
-                    description: None,
-                    is_disabled: false,
-                    meta: SelectOptionMeta::default(),
-                },
-                SettingsMenuValue {
-                    value: "c:m3".into(),
-                    name: "C / M3".into(),
-                    description: None,
-                    is_disabled: false,
-                    meta: SelectOptionMeta::default(),
-                },
-                SettingsMenuValue {
-                    value: "d:m4".into(),
-                    name: "D / M4".into(),
-                    description: None,
-                    is_disabled: false,
-                    meta: SelectOptionMeta::default(),
-                },
-                SettingsMenuValue {
-                    value: "e:m5".into(),
-                    name: "E / M5".into(),
-                    description: None,
-                    is_disabled: false,
-                    meta: SelectOptionMeta::default(),
-                },
-                SettingsMenuValue {
-                    value: "f:m6".into(),
-                    name: "F / M6".into(),
-                    description: None,
-                    is_disabled: false,
-                    meta: SelectOptionMeta::default(),
-                },
-            ],
-            current_value_index: 0,
-            current_raw_value: String::new(),
-            entry_kind: SettingsMenuEntryKind::Select,
-            multi_select: true,
-            display_name: None,
-        }
+    fn many_provider_items() -> Vec<ModelEntry> {
+        ["a:m1", "b:m2", "c:m3", "d:m4", "e:m5", "f:m6"]
+            .into_iter()
+            .map(|v| {
+                let (prov, model) = v.split_once(':').unwrap();
+                ModelEntry {
+                    value: v.to_string(),
+                    name: format!("{} / {}", prov.to_uppercase(), model.to_uppercase()),
+    
+                    supports_reasoning: false,
+                }
+            })
+            .collect()
     }
 
     #[tokio::test]
     async fn focused_item_always_visible_after_scroll() {
-        let mut selector = ModelSelector::from_model_entry(&many_provider_entry(), None, None);
-        // Tight viewport: 8 lines for items (header=2, so max_height=10).
-        // 6 items from 6 providers = 6 group headers + 5 blank separators + 6 items = 17 lines.
-        // max_visible will be set to 8, but 8 items need ~21 rendered lines with headers.
-        selector.update_viewport(10);
+        let mut s = ModelSelector::new(many_provider_items(), "model".to_string(), None, None);
+        s.update_viewport(10);
 
         let ctx = ViewContext::new((80, 10));
 
         for _ in 0..6 {
-            selector.on_event(&Event::Key(key(KeyCode::Down))).await;
-            let frame = selector.render(&ctx);
+            s.on_event(&Event::Key(key(KeyCode::Down))).await;
+            let frame = s.render(&ctx);
             let lines = frame.lines();
             assert!(
                 lines.iter().any(|l| l.plain_text().contains("▶")),
