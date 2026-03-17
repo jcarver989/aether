@@ -8,7 +8,7 @@ pub struct Cli {
         short = 'a',
         long = "agent",
         help = "Agent subprocess command to spawn (speaks ACP over stdin/stdout)",
-        default_value = "aether-acp"
+        default_value = "aether acp"
     )]
     pub agent: String,
 
