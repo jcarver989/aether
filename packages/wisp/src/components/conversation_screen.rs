@@ -160,8 +160,10 @@ impl ConversationScreen {
         }
     }
 
-    pub fn on_prompt_done(&mut self) {
+    pub fn on_prompt_done(&mut self, stop_reason: acp::StopReason) {
         self.waiting_for_response = false;
+        self.tool_call_statuses
+            .finalize_running(matches!(stop_reason, acp::StopReason::Cancelled));
         self.conversation.close_thought_block();
     }
 

@@ -108,6 +108,22 @@ impl ToolCallStatuses {
         }
     }
 
+    pub fn finalize_running(&mut self, cancelled: bool) {
+        let terminal_status = if cancelled {
+            ToolCallStatus::Error("cancelled".to_string())
+        } else {
+            ToolCallStatus::Success
+        };
+
+        for tool_call in self.tool_calls.values_mut() {
+            if matches!(tool_call.status, ToolCallStatus::Running) {
+                tool_call.status = terminal_status.clone();
+            }
+        }
+
+        self.sub_agents.finalize_running(cancelled);
+    }
+
     pub fn has_tool(&self, id: &str) -> bool {
         self.tool_calls.contains_key(id)
     }
@@ -377,5 +393,34 @@ mod tests {
 
         let lines = statuses.render_tool("tool-1", &ctx());
         assert_eq!(lines.len(), 1, "Should only have status line while running");
+    }
+
+    #[test]
+    fn finalize_running_marks_top_level_tools_terminal() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_tool_call(&make_tool_call("tool-1", "Read", None));
+
+        statuses.finalize_running(false);
+
+        assert!(!statuses.is_tool_running("tool-1"));
+        assert!(!statuses.progress().running_any);
+        let lines = statuses.render_tool("tool-1", &ctx());
+        assert!(lines[0].plain_text().contains('✓'));
+    }
+
+    #[test]
+    fn finalize_running_marks_sub_agent_tools_terminal() {
+        let mut statuses = ToolCallStatuses::new();
+        statuses.on_sub_agent_progress(&make_sub_agent_notification(
+            "parent-1",
+            "explorer",
+            r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
+        ));
+
+        assert!(statuses.progress().running_any);
+
+        statuses.finalize_running(true);
+
+        assert!(!statuses.progress().running_any);
     }
 }
