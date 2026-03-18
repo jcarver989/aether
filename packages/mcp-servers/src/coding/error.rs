@@ -123,6 +123,10 @@ pub enum GrepError {
     /// Search error during file processing
     #[error("Search error: {0}")]
     SearchFailed(String),
+
+    /// Search path does not exist
+    #[error("Search path does not exist: {0}")]
+    PathNotFound(String),
 }
 
 /// Errors related to find file operations

@@ -6,15 +6,21 @@ Text/pattern search using ripgrep.
 
 ```json
 {"pattern": "TODO|FIXME"}
-{"pattern": "error.*failed", "outputMode": "content", "-n": true}
+{"pattern": "error.*failed", "outputMode": "content", "lineNumbers": true}
 {"pattern": "impl Handler", "type": "rust"}
-{"pattern": "*.test.ts", "glob": "*.ts"}
+{"pattern": "api_key", "glob": "*.ts", "caseInsensitive": true}
+{"pattern": "struct \\{[\\s\\S]*?field", "multiline": true}
 ```
 
-- `pattern` — **required**, regex pattern
-- `outputMode` — `files_with_matches` (default), `content`, or `count`
+- `pattern` — **required**, regex pattern to search for
+- `path` — absolute path to file or directory (defaults to cwd)
+- `outputMode` — `content` (default, shows matching lines), `filesWithMatches` (file paths only), or `count` (match counts per file)
 - `type` — file type filter (`js`, `py`, `rust`, etc.)
-- `glob` — glob pattern filter (e.g., `*.ts`)
-- `-n` — show line numbers (for content mode)
-- `-C` — context lines around matches
-- `multiline` — for cross-line patterns
+- `glob` — glob pattern filter (e.g., `*.ts`, `*.{js,jsx}`)
+- `caseInsensitive` — case insensitive search (default: false)
+- `lineNumbers` — show line numbers (content mode only, default: true)
+- `contextBefore` — lines before each match (content mode only)
+- `contextAfter` — lines after each match (content mode only)
+- `contextAround` — lines before and after each match (content mode only, overrides contextBefore/contextAfter)
+- `headLimit` — limit output to first N entries
+- `multiline` — for cross-line patterns where `.` matches newlines
