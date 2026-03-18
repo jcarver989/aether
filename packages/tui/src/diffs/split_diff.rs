@@ -13,9 +13,15 @@ const SEPARATOR: &str = "";
 const SEPARATOR_WIDTH: usize = 0;
 const FIXED_OVERHEAD: usize = GUTTER_WIDTH * 2 + SEPARATOR_WIDTH;
 
-/// Renders a diff preview, choosing split or unified based on terminal width.
+/// Renders a diff preview, choosing split or unified based on terminal width
+/// and whether the diff has removals.
+///
+/// For new files (only additions, no removals), uses unified view since
+/// split view would have an empty left panel.
 pub fn render_diff(preview: &DiffPreview, context: &ViewContext) -> Vec<Line> {
-    if context.size.width >= MIN_SPLIT_WIDTH {
+    let has_removals = preview.lines.iter().any(|l| l.tag == DiffTag::Removed);
+
+    if context.size.width >= MIN_SPLIT_WIDTH && has_removals {
         highlight_split_diff(preview, context)
     } else {
         highlight_diff(preview, context)
@@ -283,6 +289,52 @@ mod tests {
             lines[0].plain_text().contains("- old"),
             "should use unified renderer below 80: {}",
             lines[0].plain_text()
+        );
+    }
+
+    #[test]
+    fn new_file_uses_unified_view_even_at_wide_width() {
+        // A new file (only additions, no removals) should use unified view
+        // since split view would have an empty left panel
+        let preview = DiffPreview {
+            lines: vec![
+                DiffLine {
+                    tag: DiffTag::Added,
+                    content: "fn main() {".to_string(),
+                },
+                DiffLine {
+                    tag: DiffTag::Added,
+                    content: "    println!(\"Hello\");".to_string(),
+                },
+                DiffLine {
+                    tag: DiffTag::Added,
+                    content: "}".to_string(),
+                },
+            ],
+            rows: vec![
+                SplitDiffRow {
+                    left: None,
+                    right: Some(added_cell("fn main() {", 1)),
+                },
+                SplitDiffRow {
+                    left: None,
+                    right: Some(added_cell("    println!(\"Hello\");", 2)),
+                },
+                SplitDiffRow {
+                    left: None,
+                    right: Some(added_cell("}", 3)),
+                },
+            ],
+            lang_hint: "rs".to_string(),
+            start_line: None,
+        };
+        let ctx = test_context_with_width(100);
+        let lines = render_diff(&preview, &ctx);
+        // Unified renderer uses prefix "  + "
+        let text = lines[0].plain_text();
+        assert!(
+            text.contains("+ fn main()"),
+            "should use unified renderer for new file: {text}"
         );
     }
 
