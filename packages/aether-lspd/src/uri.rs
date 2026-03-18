@@ -12,6 +12,9 @@ pub fn path_to_uri(path: &Path) -> Result<Uri, String> {
     } else {
         std::env::current_dir().unwrap_or_default().join(path)
     };
+    // Canonicalize to resolve symlinks (e.g. /var → /private/var on macOS).
+    // This ensures URIs match what language servers like rust-analyzer produce.
+    let absolute = absolute.canonicalize().unwrap_or(absolute);
 
     #[cfg(windows)]
     let uri_str = {
