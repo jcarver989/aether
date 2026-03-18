@@ -74,37 +74,30 @@ pub enum GrepOutput {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GrepInput {
-    /// The regular expression pattern to search for
+    /// The regular expression pattern to search for in file contents
     pub pattern: String,
-    /// File or directory to search in (defaults to cwd)
+    /// Absolute path to a file or directory to search in. Defaults to the current working directory.
     pub path: Option<String>,
-    /// Glob pattern to filter files (e.g. "*.js")
+    /// Glob pattern to filter files (e.g. "*.js", "*.{ts,tsx}")
     pub glob: Option<String>,
-    /// File type to search (e.g. "js", "py", "rust")
-    #[serde(rename = "type", alias = "file_type")]
+    /// File type to search (e.g. "js", "py", "rust"). More efficient than glob for standard file types.
+    #[serde(rename = "type")]
     pub file_type: Option<String>,
-    /// Output mode: "content", "`files_with_matches`", or "count"
-    #[serde(alias = "output_mode")]
+    /// Output mode: "content" (default, shows matching lines), "filesWithMatches" (file paths only), or "count" (match counts per file)
     pub output_mode: Option<OutputMode>,
     /// Case insensitive search
-    #[serde(rename = "-i", alias = "case_insensitive")]
     pub case_insensitive: Option<bool>,
-    /// Show line numbers (for content mode)
-    #[serde(rename = "-n", alias = "line_numbers")]
+    /// Show line numbers in output (content mode only). Defaults to true.
     pub line_numbers: Option<bool>,
-    /// Lines to show before each match
-    #[serde(rename = "-B", alias = "context_before")]
+    /// Number of lines to show before each match (content mode only)
     pub context_before: Option<u32>,
-    /// Lines to show after each match
-    #[serde(rename = "-A", alias = "context_after")]
+    /// Number of lines to show after each match (content mode only)
     pub context_after: Option<u32>,
-    /// Lines to show before and after each match
-    #[serde(rename = "-C", alias = "context_around")]
+    /// Number of lines to show before and after each match (content mode only). Overrides contextBefore/contextAfter.
     pub context_around: Option<u32>,
-    /// Limit output to first N lines/entries
-    #[serde(alias = "head_limit")]
+    /// Limit output to first N entries. In content mode limits match lines, in filesWithMatches mode limits file paths, in count mode limits file entries.
     pub head_limit: Option<usize>,
-    /// Enable multiline mode
+    /// Enable multiline mode where . matches newlines and patterns can span lines
     pub multiline: Option<bool>,
 }
 
@@ -153,7 +146,11 @@ fn should_include_file(
     true
 }
 
-pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, GrepError> {
+pub async fn perform_grep(mut args: GrepInput) -> Result<GrepOutput, GrepError> {
+    if args.path.as_deref().is_some_and(|p| p.trim().is_empty()) {
+        args.path = None;
+    }
+
     let glob_set = build_glob_set(args.glob.as_deref())?;
 
     let matcher = build_matcher(&args.pattern, args.case_insensitive, args.multiline)?;
@@ -164,6 +161,10 @@ pub async fn perform_grep(args: GrepInput) -> Result<GrepOutput, GrepError> {
 
     let search_path = args.path.as_deref().unwrap_or(".");
     let path_obj = Path::new(search_path);
+
+    if !path_obj.exists() {
+        return Err(GrepError::PathNotFound(search_path.to_string()));
+    }
 
     let config = SearchConfig {
         output_mode,
@@ -792,18 +793,18 @@ mod tests {
     }
 
     #[test]
-    fn grep_input_accepts_snake_case_fields() {
+    fn grep_input_accepts_camel_case_fields() {
         let args: GrepInput = serde_json::from_value(serde_json::json!({
             "pattern": "hello",
             "path": "/tmp",
-            "file_type": "rust",
-            "output_mode": "files_with_matches",
-            "case_insensitive": true,
-            "line_numbers": true,
-            "context_before": 1,
-            "context_after": 2,
-            "context_around": 3,
-            "head_limit": 10,
+            "type": "rust",
+            "outputMode": "filesWithMatches",
+            "caseInsensitive": true,
+            "lineNumbers": true,
+            "contextBefore": 1,
+            "contextAfter": 2,
+            "contextAround": 3,
+            "headLimit": 10,
             "multiline": false
         }))
         .unwrap();
@@ -820,5 +821,70 @@ mod tests {
         assert_eq!(args.context_around, Some(3));
         assert_eq!(args.head_limit, Some(10));
         assert_eq!(args.multiline, Some(false));
+    }
+
+    #[test]
+    fn output_mode_files_with_matches_snake_case_alias() {
+        let args: GrepInput = serde_json::from_value(serde_json::json!({
+            "pattern": "hello",
+            "outputMode": "files_with_matches"
+        }))
+        .unwrap();
+
+        assert!(matches!(
+            args.output_mode,
+            Some(OutputMode::FilesWithMatches)
+        ));
+    }
+
+    #[tokio::test]
+    async fn empty_path_treated_as_cwd() {
+        let temp_dir = create_test_dir();
+        // Set cwd to temp_dir so the default "." resolves there
+        let _guard = std::env::set_current_dir(temp_dir.path());
+
+        let args = GrepInput {
+            pattern: "hello".to_string(),
+            path: Some("".to_string()),
+            glob: None,
+            file_type: None,
+            output_mode: Some(OutputMode::Content),
+            case_insensitive: Some(true),
+            line_numbers: None,
+            context_before: None,
+            context_after: None,
+            context_around: None,
+            head_limit: None,
+            multiline: None,
+        };
+
+        let result = perform_grep(args).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn nonexistent_path_returns_error() {
+        let args = GrepInput {
+            pattern: "hello".to_string(),
+            path: Some("/no/such/path/exists".to_string()),
+            glob: None,
+            file_type: None,
+            output_mode: None,
+            case_insensitive: None,
+            line_numbers: None,
+            context_before: None,
+            context_after: None,
+            context_around: None,
+            head_limit: None,
+            multiline: None,
+        };
+
+        let result = perform_grep(args).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, GrepError::PathNotFound(_)),
+            "Expected PathNotFound, got: {err}"
+        );
     }
 }
