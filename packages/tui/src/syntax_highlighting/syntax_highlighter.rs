@@ -29,7 +29,7 @@ impl Default for SyntaxHighlighter {
 impl SyntaxHighlighter {
     pub fn new() -> Self {
         Self {
-            syntax_set: SyntaxSet::load_defaults_newlines(),
+            syntax_set: two_face::syntax::extra_newlines(),
             cache: Mutex::new(HashMap::new()),
         }
     }

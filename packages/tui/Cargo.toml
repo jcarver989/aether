@@ -19,7 +19,7 @@ workspace = true
 default = ["syntax", "picker"]
 
 ## Enable syntax highlighting, markdown rendering, and diff previews via syntect.
-syntax = ["dep:syntect", "dep:pulldown-cmark"]
+syntax = ["dep:syntect", "dep:two-face", "dep:pulldown-cmark"]
 
 ## Enable fuzzy search/picker in combobox.
 picker = ["dep:nucleo"]
@@ -30,6 +30,7 @@ testing = []
 [dependencies]
 crossterm = { workspace = true }
 syntect = { workspace = true, optional = true }
+two-face = { workspace = true, optional = true }
 pulldown-cmark = { workspace = true, optional = true }
 nucleo = { workspace = true, optional = true }
 unicode-width = { workspace = true }
@@ -39,6 +40,6 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tui = { path = ".", features = ["testing"] }
-tempfile = { workspace = true }
+tempfile.workspace = true
 crossterm = { workspace = true }
 tokio = { workspace = true }
