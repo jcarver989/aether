@@ -141,7 +141,7 @@ async fn test_multiple_parallel_tool_calls() {
 }
 
 #[tokio::test]
-async fn test_text_complete_preserves_running_tool_calls() {
+async fn test_prompt_done_finalizes_running_tool_calls() {
     let renderer = render(vec![
         tool_call_with_id("Read", "call_1", r#"{"file": "a.rs"}"#),
         tool_call_with_id("Write", "call_2", r#"{"file": "b.rs"}"#),
@@ -153,10 +153,9 @@ async fn test_text_complete_preserves_running_tool_calls() {
     let expected = expected_with_prompt(
         &[
             r#"✓ Read {"file":"a.rs"}"#,
-            "⠒ Write",
+            r#"✓ Write {"file":"b.rs"}"#,
             "",
             "Done reading",
-            PROGRESS_LINE,
         ],
         TEST_WIDTH,
         "",

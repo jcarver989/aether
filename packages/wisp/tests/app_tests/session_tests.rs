@@ -5,12 +5,12 @@ use tui::{KeyCode, KeyEvent, KeyModifiers};
 use super::common::*;
 
 #[tokio::test]
-async fn test_prompt_done_keeps_running_tool_segment() {
+async fn test_prompt_done_clears_running_tool_spinner() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
-    // Send a tool call that remains in-progress
+    // Send a tool call that never gets a terminal update.
     renderer
         .on_session_update(acp::SessionUpdate::ToolCall(acp::ToolCall::new(
             "tool-1",
@@ -20,11 +20,11 @@ async fn test_prompt_done_keeps_running_tool_segment() {
 
     renderer.on_prompt_done().unwrap();
 
-    // The running tool should still be visible
     let lines = renderer.writer().get_lines();
+    let has_progress = lines.iter().any(|l| l.contains("esc to interrupt"));
     assert!(
-        lines.iter().any(|l| l.contains("Read file")),
-        "Running tool should remain visible after prompt_done.\nBuffer:\n{}",
+        !has_progress,
+        "Progress indicator should not remain visible after prompt_done.\nBuffer:\n{}",
         lines.join("\n")
     );
 }

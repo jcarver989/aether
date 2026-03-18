@@ -92,7 +92,7 @@ impl App {
             AcpEvent::ExtNotification(notification) => {
                 self.on_ext_notification(&notification);
             }
-            AcpEvent::PromptDone(_) => self.on_prompt_done(),
+            AcpEvent::PromptDone(stop_reason) => self.on_prompt_done(stop_reason),
             AcpEvent::PromptError(error) => {
                 self.conversation_screen.on_prompt_error(&error);
             }
@@ -369,8 +369,8 @@ impl App {
         }
     }
 
-    fn on_prompt_done(&mut self) {
-        self.conversation_screen.on_prompt_done();
+    fn on_prompt_done(&mut self, stop_reason: acp::StopReason) {
+        self.conversation_screen.on_prompt_done(stop_reason);
     }
 
     fn on_elicitation_request(

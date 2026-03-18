@@ -117,6 +117,25 @@ impl SubAgentTracker {
             .any(|agents| agents.iter().any(SubAgentState::is_active_for_render))
     }
 
+    pub(crate) fn finalize_running(&mut self, cancelled: bool) {
+        let terminal_status = if cancelled {
+            ToolCallStatus::Error("cancelled".to_string())
+        } else {
+            ToolCallStatus::Success
+        };
+
+        for agents in self.agents.values_mut() {
+            for agent in agents {
+                agent.done = true;
+                for tool_call in agent.tool_calls.values_mut() {
+                    if matches!(tool_call.status, ToolCallStatus::Running) {
+                        tool_call.status = terminal_status.clone();
+                    }
+                }
+            }
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn remove(&mut self, id: &str) {
         self.agents.remove(id);
