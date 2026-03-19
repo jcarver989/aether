@@ -1,4 +1,7 @@
-use crate::{CodingMcp, DefaultCodingTools, LspMcp, SkillsMcp, SubAgentsMcp, SurveyMcp, TasksMcp};
+use crate::{
+    CodingMcp, CodingMcpArgs, DefaultCodingTools, LspMcp, SkillsMcp, SubAgentsMcp, SurveyMcp,
+    TasksMcp,
+};
 use aether_core::mcp::McpBuilder;
 use futures::FutureExt;
 use mcp_utils::ServiceExt;
@@ -21,13 +24,15 @@ impl McpBuilderExt for McpBuilder {
         let lsp_cwd = cwd.clone();
         self.register_in_memory_server(
             "coding",
-            Box::new(move |_args, _input| {
+            Box::new(move |args, _input| {
                 let project_path = cwd.clone();
                 async move {
-                    debug!("CodingMcp created with LSP for coding server");
+                    let parsed = CodingMcpArgs::from_args(args).unwrap_or_default();
+                    debug!("CodingMcp created with LSP, permission_mode={:?}", parsed.permission_mode);
                     CodingMcp::with_tools(DefaultCodingTools::new())
                         .with_lsp(project_path.clone())
                         .with_root_dir(project_path)
+                        .with_permission_mode(parsed.permission_mode)
                         .into_dyn()
                 }
                 .boxed()

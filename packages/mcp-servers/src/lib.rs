@@ -23,7 +23,7 @@ pub mod survey;
 
 // Re-export primary types for convenience
 #[cfg(feature = "coding")]
-pub use coding::{CodingMcp, CodingMcpArgs, CodingTools, DefaultCodingTools};
+pub use coding::{CodingMcp, CodingMcpArgs, CodingTools, DefaultCodingTools, PermissionMode};
 
 #[cfg(feature = "coding")]
 pub use lsp::{LspMcp, LspMcpArgs, LspRegistry};
