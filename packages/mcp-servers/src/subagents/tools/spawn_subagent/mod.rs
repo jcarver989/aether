@@ -283,12 +283,13 @@ async fn execute_single_agent(
             catalog.project_root(),
         )
         .await?;
+        let filtered_tools = spec.tools.apply(tool_definitions);
         spec.prompts
             .push(Prompt::system_env().with_cwd(catalog.project_root().to_path_buf()));
         spec.prompts.push(Prompt::mcp_instructions(instructions));
 
         let (user_tx, mut agent_rx, _agent_handle) =
-            spawn_agent(spec, command_tx, tool_definitions).await?;
+            spawn_agent(spec, command_tx, filtered_tools).await?;
 
         let prompt_with_instructions =
             format!("{}\n\n{}", task.prompt, STRUCTURED_OUTPUT_INSTRUCTIONS);

@@ -215,7 +215,7 @@ impl AgentBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent_spec::AgentSpecExposure;
+    use crate::agent_spec::{AgentSpecExposure, ToolFilter};
 
     #[tokio::test]
     async fn test_agent_handle_is_finished() {
@@ -261,6 +261,7 @@ mod tests {
             prompts: vec![],
             mcp_config_path: None,
             exposure: AgentSpecExposure::both(),
+            tools: ToolFilter::default(),
         };
 
         let builder = AgentBuilder::from_spec(&spec, vec![]);

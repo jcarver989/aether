@@ -266,7 +266,7 @@ pub(crate) fn pick_default_model(available: &[LlmModel]) -> Option<&LlmModel> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aether_core::agent_spec::AgentSpecExposure;
+    use aether_core::agent_spec::{AgentSpecExposure, ToolFilter};
     use agent_client_protocol::{SessionConfigKind, SessionConfigSelectOptions};
     use llm::catalog::{AnthropicModel, DeepSeekModel, GeminiModel};
 
@@ -289,6 +289,7 @@ mod tests {
                 prompts: vec![],
                 mcp_config_path: None,
                 exposure: AgentSpecExposure::both(),
+                tools: ToolFilter::default(),
             },
             AgentSpec {
                 name: "Coder".to_string(),
@@ -298,6 +299,7 @@ mod tests {
                 prompts: vec![],
                 mcp_config_path: None,
                 exposure: AgentSpecExposure::both(),
+                tools: ToolFilter::default(),
             },
         ]
     }

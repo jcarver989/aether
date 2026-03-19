@@ -1,7 +1,7 @@
 //! Settings file parsing and validation.
 
 use crate::error::SettingsError;
-use aether_core::agent_spec::{AgentSpec, AgentSpecExposure};
+use aether_core::agent_spec::{AgentSpec, AgentSpecExposure, ToolFilter};
 use aether_core::core::Prompt;
 use glob::glob;
 use llm::{LlmModel, ReasoningEffort};
@@ -36,6 +36,8 @@ struct AgentEntry {
     #[serde(default)]
     prompts: Vec<String>,
     mcp_servers: Option<String>,
+    #[serde(default)]
+    tools: ToolFilter,
 }
 
 /// Load and resolve the agent catalog from a project root.
@@ -176,6 +178,7 @@ fn resolve_agent_entry(
             user_invocable: entry.user_invocable,
             agent_invocable: entry.agent_invocable,
         },
+        tools: entry.tools,
     })
 }
 
@@ -1018,6 +1021,56 @@ mod tests {
         let catalog = load_agent_catalog(dir.path()).unwrap();
         let names: Vec<_> = catalog.all().iter().map(|s| s.name.as_str()).collect();
         assert_ne!(names, vec!["alpha", "zebra"]);
+    }
+
+    #[test]
+    fn tools_filter_parsed_from_settings() {
+        let dir = create_temp_project();
+        write_file(dir.path(), "AGENTS.md", "Be helpful");
+        write_settings(
+            dir.path(),
+            r#"{
+                "agents": [{
+                    "name": "researcher",
+                    "description": "Read-only agent",
+                    "model": "anthropic:claude-sonnet-4-5",
+                    "agentInvocable": true,
+                    "prompts": ["AGENTS.md"],
+                    "tools": {
+                        "allow": ["coding__grep", "coding__read_file"],
+                        "deny": ["coding__write*"]
+                    }
+                }]
+            }"#,
+        );
+
+        let catalog = load_agent_catalog(dir.path()).unwrap();
+        let spec = catalog.get("researcher").unwrap();
+        assert_eq!(spec.tools.allow, vec!["coding__grep", "coding__read_file"]);
+        assert_eq!(spec.tools.deny, vec!["coding__write*"]);
+    }
+
+    #[test]
+    fn absent_tools_field_yields_default_filter() {
+        let dir = create_temp_project();
+        write_file(dir.path(), "AGENTS.md", "Be helpful");
+        write_settings(
+            dir.path(),
+            r#"{
+                "agents": [{
+                    "name": "planner",
+                    "description": "Planner agent",
+                    "model": "anthropic:claude-sonnet-4-5",
+                    "userInvocable": true,
+                    "prompts": ["AGENTS.md"]
+                }]
+            }"#,
+        );
+
+        let catalog = load_agent_catalog(dir.path()).unwrap();
+        let spec = catalog.get("planner").unwrap();
+        assert!(spec.tools.allow.is_empty());
+        assert!(spec.tools.deny.is_empty());
     }
 
     #[test]
