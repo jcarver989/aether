@@ -12,7 +12,7 @@ use utils::ReasoningEffort;
 pub struct ModelEntry {
     pub value: String,
     pub name: String,
-    pub supports_reasoning: bool,
+    pub reasoning_levels: Vec<ReasoningEffort>,
 }
 
 impl ModelEntry {
@@ -128,6 +128,18 @@ impl ModelSelector {
         }
     }
 
+    fn clamp_reasoning_to_focused(&mut self) {
+        if let Some(effort) = self.reasoning_effort
+            && let Some(entry) = self.combobox.selected()
+        {
+            if entry.reasoning_levels.is_empty() {
+                self.reasoning_effort = None;
+            } else {
+                self.reasoning_effort = Some(effort.clamp_to(&entry.reasoning_levels));
+            }
+        }
+    }
+
     fn confirm(&self) -> Vec<SettingsChange> {
         let mut changes = Vec::new();
         if !self.selected_models.is_empty() && self.selected_models != self.original_models {
@@ -189,10 +201,12 @@ impl Component for ModelSelector {
             return match mouse.kind {
                 MouseEventKind::ScrollUp => {
                     self.combobox.move_up();
+                    self.clamp_reasoning_to_focused();
                     Some(vec![])
                 }
                 MouseEventKind::ScrollDown => {
                     self.combobox.move_down();
+                    self.clamp_reasoning_to_focused();
                     Some(vec![])
                 }
                 _ => Some(vec![]),
@@ -208,19 +222,22 @@ impl Component for ModelSelector {
             }
             PickerKey::MoveUp => {
                 self.combobox.move_up();
+                self.clamp_reasoning_to_focused();
                 Some(vec![])
             }
             PickerKey::MoveDown => {
                 self.combobox.move_down();
+                self.clamp_reasoning_to_focused();
                 Some(vec![])
             }
             PickerKey::Tab => {
-                if self
-                    .combobox
-                    .selected()
-                    .is_some_and(|e| e.supports_reasoning)
+                if let Some(entry) = self.combobox.selected()
+                    && !entry.reasoning_levels.is_empty()
                 {
-                    self.reasoning_effort = cycle_reasoning(self.reasoning_effort);
+                    self.reasoning_effort = ReasoningEffort::cycle_within(
+                        self.reasoning_effort,
+                        &entry.reasoning_levels,
+                    );
                 }
                 Some(vec![])
             }
@@ -294,8 +311,9 @@ impl Component for ModelSelector {
                 let label = format!("{check}{}", entry.model_label());
                 if *is_focused {
                     let mut line = Line::with_style(label, context.theme.selected_row_style());
-                    if entry.supports_reasoning {
-                        let bar = reasoning_bar(self.reasoning_effort);
+                    if !entry.reasoning_levels.is_empty() {
+                        let bar =
+                            reasoning_bar(self.reasoning_effort, entry.reasoning_levels.len());
                         line.push_with_style(
                             format!("    {bar}"),
                             context
@@ -332,15 +350,6 @@ fn count_provider_groups(items: &[(&ModelEntry, bool)]) -> usize {
     count
 }
 
-fn cycle_reasoning(effort: Option<ReasoningEffort>) -> Option<ReasoningEffort> {
-    match effort {
-        None => Some(ReasoningEffort::Low),
-        Some(ReasoningEffort::Low) => Some(ReasoningEffort::Medium),
-        Some(ReasoningEffort::Medium) => Some(ReasoningEffort::High),
-        Some(ReasoningEffort::High) => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -351,20 +360,17 @@ mod tests {
             ModelEntry {
                 value: "anthropic:claude-sonnet-4-5".to_string(),
                 name: "Anthropic / Claude Sonnet 4.5".to_string(),
-
-                supports_reasoning: false,
+                reasoning_levels: vec![],
             },
             ModelEntry {
                 value: "deepseek:deepseek-chat".to_string(),
                 name: "DeepSeek / DeepSeek Chat".to_string(),
-
-                supports_reasoning: false,
+                reasoning_levels: vec![],
             },
             ModelEntry {
                 value: "gemini:gemini-2.5-pro".to_string(),
                 name: "Google / Gemini 2.5 Pro".to_string(),
-
-                supports_reasoning: false,
+                reasoning_levels: vec![],
             },
         ]
     }
@@ -510,25 +516,34 @@ mod tests {
             ModelEntry {
                 value: "anthropic:claude-opus-4-6".to_string(),
                 name: "Anthropic / Claude Opus 4.6".to_string(),
-
-                supports_reasoning: true,
+                reasoning_levels: vec![
+                    ReasoningEffort::Low,
+                    ReasoningEffort::Medium,
+                    ReasoningEffort::High,
+                ],
             },
             ModelEntry {
                 value: "deepseek:deepseek-chat".to_string(),
                 name: "DeepSeek / DeepSeek Chat".to_string(),
-
-                supports_reasoning: false,
+                reasoning_levels: vec![],
             },
         ]
     }
 
     #[test]
-    fn reasoning_cycle_wraps() {
+    fn reasoning_cycle_within_wraps() {
         use ReasoningEffort::*;
-        assert_eq!(cycle_reasoning(None), Some(Low));
-        assert_eq!(cycle_reasoning(Some(Low)), Some(Medium));
-        assert_eq!(cycle_reasoning(Some(Medium)), Some(High));
-        assert_eq!(cycle_reasoning(Some(High)), None);
+        let levels = &[Low, Medium, High];
+        assert_eq!(ReasoningEffort::cycle_within(None, levels), Some(Low));
+        assert_eq!(
+            ReasoningEffort::cycle_within(Some(Low), levels),
+            Some(Medium)
+        );
+        assert_eq!(
+            ReasoningEffort::cycle_within(Some(Medium), levels),
+            Some(High)
+        );
+        assert_eq!(ReasoningEffort::cycle_within(Some(High), levels), None);
     }
 
     #[tokio::test]
@@ -553,7 +568,7 @@ mod tests {
     async fn tab_on_non_reasoning_model_is_noop() {
         let mut s = ModelSelector::new(make_reasoning_items(), "model".to_string(), None, None);
         s.on_event(&Event::Key(key(KeyCode::Down))).await;
-        assert!(!s.combobox.selected().unwrap().supports_reasoning);
+        assert!(s.combobox.selected().unwrap().reasoning_levels.is_empty());
 
         s.on_event(&Event::Key(key(KeyCode::Tab))).await;
         assert_eq!(s.reasoning_effort, None);
@@ -636,6 +651,73 @@ mod tests {
         assert_eq!(first, back, "scroll up should return to the original model");
     }
 
+    fn make_mixed_reasoning_items() -> Vec<ModelEntry> {
+        vec![
+            ModelEntry {
+                value: "codex:gpt-5.4-codex".to_string(),
+                name: "Codex / GPT-5.4 Codex".to_string(),
+                reasoning_levels: vec![
+                    ReasoningEffort::Low,
+                    ReasoningEffort::Medium,
+                    ReasoningEffort::High,
+                    ReasoningEffort::Xhigh,
+                ],
+            },
+            ModelEntry {
+                value: "anthropic:claude-opus-4-6".to_string(),
+                name: "Anthropic / Claude Opus 4.6".to_string(),
+                reasoning_levels: vec![
+                    ReasoningEffort::Low,
+                    ReasoningEffort::Medium,
+                    ReasoningEffort::High,
+                ],
+            },
+        ]
+    }
+
+    #[tokio::test]
+    async fn tab_cycles_through_four_levels_on_codex() {
+        let mut s =
+            ModelSelector::new(make_mixed_reasoning_items(), "model".to_string(), None, None);
+        // Sorted alphabetically: Anthropic first, Codex second. Move to Codex.
+        s.on_event(&Event::Key(key(KeyCode::Down))).await;
+        assert_eq!(s.reasoning_effort, None);
+
+        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        assert_eq!(s.reasoning_effort, Some(ReasoningEffort::Low));
+        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        assert_eq!(s.reasoning_effort, Some(ReasoningEffort::Medium));
+        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        assert_eq!(s.reasoning_effort, Some(ReasoningEffort::High));
+        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        assert_eq!(s.reasoning_effort, Some(ReasoningEffort::Xhigh));
+        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        assert_eq!(s.reasoning_effort, None);
+    }
+
+    #[tokio::test]
+    async fn moving_to_fewer_levels_clamps_xhigh_to_high() {
+        let mut s =
+            ModelSelector::new(make_mixed_reasoning_items(), "model".to_string(), None, None);
+        // Move to Codex model (4 levels)
+        s.on_event(&Event::Key(key(KeyCode::Down))).await;
+
+        // Set xhigh on codex model
+        s.on_event(&Event::Key(key(KeyCode::Tab))).await; // Low
+        s.on_event(&Event::Key(key(KeyCode::Tab))).await; // Medium
+        s.on_event(&Event::Key(key(KeyCode::Tab))).await; // High
+        s.on_event(&Event::Key(key(KeyCode::Tab))).await; // Xhigh
+        assert_eq!(s.reasoning_effort, Some(ReasoningEffort::Xhigh));
+
+        // Move back up to anthropic model (3 levels only)
+        s.on_event(&Event::Key(key(KeyCode::Up))).await;
+        assert_eq!(
+            s.reasoning_effort,
+            Some(ReasoningEffort::High),
+            "xhigh should clamp to high when moving to a 3-level model"
+        );
+    }
+
     fn many_provider_items() -> Vec<ModelEntry> {
         ["a:m1", "b:m2", "c:m3", "d:m4", "e:m5", "f:m6"]
             .into_iter()
@@ -644,8 +726,7 @@ mod tests {
                 ModelEntry {
                     value: v.to_string(),
                     name: format!("{} / {}", prov.to_uppercase(), model.to_uppercase()),
-
-                    supports_reasoning: false,
+                    reasoning_levels: vec![],
                 }
             })
             .collect()

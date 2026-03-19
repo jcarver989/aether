@@ -95,9 +95,10 @@ pub(crate) fn build_model_config_option(
                     format!("{display}: {} (unavailable)", m.display_name())
                 };
                 let mut option = acp::SessionConfigSelectOption::new(value, name);
-                if m.supports_reasoning() {
+                let levels = m.reasoning_levels();
+                if !levels.is_empty() {
                     let meta = SelectOptionMeta {
-                        supports_reasoning: true,
+                        reasoning_levels: levels.to_vec(),
                     };
                     option = option.meta(meta.into_meta());
                 }
@@ -124,16 +125,16 @@ pub(crate) fn build_model_config_option(
 
 fn build_reasoning_effort_config_option(
     current_effort: Option<ReasoningEffort>,
-    supports_reasoning: bool,
+    levels: &[ReasoningEffort],
 ) -> Option<SessionConfigOption> {
-    if !supports_reasoning {
+    if levels.is_empty() {
         return None;
     }
 
     let current = current_effort.map_or("none".to_string(), |e| e.as_str().to_string());
 
     let mut options = vec![acp::SessionConfigSelectOption::new("none", "None")];
-    options.extend(ReasoningEffort::all().iter().map(|e| {
+    options.extend(levels.iter().map(|e| {
         let value = e.as_str();
         let mut label = value.to_string();
         label[..1].make_ascii_uppercase();
@@ -240,17 +241,32 @@ pub(crate) fn build_config_options_from_modes(
 
     options.push(build_model_config_option(available, current_model));
 
-    let supports_reasoning = current_model
-        .split(',')
-        .map(str::trim)
-        .filter_map(|m| m.parse::<LlmModel>().ok())
-        .any(|m| m.supports_reasoning());
+    let levels = intersect_reasoning_levels(current_model);
 
-    if let Some(opt) = build_reasoning_effort_config_option(reasoning_effort, supports_reasoning) {
+    if let Some(opt) = build_reasoning_effort_config_option(reasoning_effort, &levels) {
         options.push(opt);
     }
 
     options
+}
+
+/// Compute the intersection of reasoning levels across all selected models.
+/// If any model doesn't support reasoning, the intersection naturally becomes empty.
+fn intersect_reasoning_levels(current_model: &str) -> Vec<ReasoningEffort> {
+    let mut models = current_model
+        .split(',')
+        .map(str::trim)
+        .filter_map(|m| m.parse::<LlmModel>().ok());
+
+    let Some(first) = models.next() else {
+        return Vec::new();
+    };
+
+    let mut result: Vec<ReasoningEffort> = first.reasoning_levels().to_vec();
+    for m in models {
+        result.retain(|level| m.reasoning_levels().contains(level));
+    }
+    result
 }
 
 /// Pick a default model from the available list.

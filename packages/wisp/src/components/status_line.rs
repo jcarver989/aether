@@ -41,10 +41,11 @@ impl StatusLine<'_> {
 
         let mut right_parts: Vec<(String, Color)> = Vec::new();
 
-        if model_display.is_some() && has_reasoning_option(self.config_options) {
+        let reasoning_levels = extract_reasoning_levels(self.config_options);
+        if model_display.is_some() && !reasoning_levels.is_empty() {
             right_parts.push((
-                reasoning_bar(reasoning_effort),
-                reasoning_color(reasoning_effort, &context.theme),
+                reasoning_bar(reasoning_effort, reasoning_levels.len()),
+                reasoning_color(reasoning_effort, reasoning_levels.len(), &context.theme),
             ));
         }
 
@@ -82,10 +83,26 @@ impl StatusLine<'_> {
     }
 }
 
-pub(crate) fn has_reasoning_option(config_options: &[SessionConfigOption]) -> bool {
-    config_options
+/// Extract the parsed reasoning levels from config options (excludes "none").
+pub(crate) fn extract_reasoning_levels(
+    config_options: &[SessionConfigOption],
+) -> Vec<ReasoningEffort> {
+    let Some(option) = config_options
         .iter()
-        .any(|option| option.id.0.as_ref() == ConfigOptionId::ReasoningEffort.as_str())
+        .find(|o| o.id.0.as_ref() == ConfigOptionId::ReasoningEffort.as_str())
+    else {
+        return Vec::new();
+    };
+    let SessionConfigKind::Select(ref select) = option.kind else {
+        return Vec::new();
+    };
+    let SessionConfigSelectOptions::Ungrouped(ref options) = select.options else {
+        return Vec::new();
+    };
+    options
+        .iter()
+        .filter_map(|o| o.value.0.as_ref().parse().ok())
+        .collect()
 }
 
 pub(crate) fn is_cycleable_mode_option(option: &SessionConfigOption) -> bool {
@@ -253,14 +270,14 @@ mod tests {
     }
 
     #[test]
-    fn has_reasoning_option_returns_false_without_it() {
+    fn extract_reasoning_levels_empty_without_option() {
         let options = vec![model_option()];
-        assert!(!has_reasoning_option(&options));
+        assert!(extract_reasoning_levels(&options).is_empty());
     }
 
     #[test]
-    fn has_reasoning_option_returns_true_with_it() {
+    fn extract_reasoning_levels_nonempty_with_option() {
         let options = vec![model_option(), reasoning_option()];
-        assert!(has_reasoning_option(&options));
+        assert!(!extract_reasoning_levels(&options).is_empty());
     }
 }

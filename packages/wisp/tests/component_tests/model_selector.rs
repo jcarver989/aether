@@ -28,17 +28,17 @@ fn model_values() -> Vec<ModelEntry> {
         ModelEntry {
             value: "anthropic:claude-sonnet-4-5".to_string(),
             name: "Anthropic / Claude Sonnet 4.5".to_string(),
-            supports_reasoning: false,
+            reasoning_levels: vec![],
         },
         ModelEntry {
             value: "deepseek:deepseek-chat".to_string(),
             name: "DeepSeek / DeepSeek Chat".to_string(),
-            supports_reasoning: false,
+            reasoning_levels: vec![],
         },
         ModelEntry {
             value: "gemini:gemini-2.5-pro".to_string(),
             name: "Google / Gemini 2.5 Pro".to_string(),
-            supports_reasoning: false,
+            reasoning_levels: vec![],
         },
     ]
 }
@@ -48,22 +48,22 @@ fn model_values_with_groups() -> Vec<ModelEntry> {
         ModelEntry {
             value: "openrouter:anthropic/claude-sonnet-4-5".to_string(),
             name: "OpenRouter / Claude Sonnet 4.5".to_string(),
-            supports_reasoning: false,
+            reasoning_levels: vec![],
         },
         ModelEntry {
             value: "openrouter:google/gemini-2.5-pro".to_string(),
             name: "OpenRouter / Gemini 2.5 Pro".to_string(),
-            supports_reasoning: false,
+            reasoning_levels: vec![],
         },
         ModelEntry {
             value: "anthropic:claude-sonnet-4-5".to_string(),
             name: "Anthropic / Claude Sonnet 4.5".to_string(),
-            supports_reasoning: false,
+            reasoning_levels: vec![],
         },
         ModelEntry {
             value: "gemini:gemini-2.5-pro".to_string(),
             name: "Google / Gemini 2.5 Pro".to_string(),
-            supports_reasoning: false,
+            reasoning_levels: vec![],
         },
     ]
 }
@@ -113,12 +113,12 @@ fn model_values_with_reasoning() -> Vec<ModelEntry> {
         ModelEntry {
             value: "anthropic:claude-opus-4-6".to_string(),
             name: "Anthropic / Claude Opus 4.6".to_string(),
-            supports_reasoning: true,
+            reasoning_levels: vec![utils::ReasoningEffort::Low, utils::ReasoningEffort::Medium, utils::ReasoningEffort::High],
         },
         ModelEntry {
             value: "deepseek:deepseek-chat".to_string(),
             name: "DeepSeek / DeepSeek Chat".to_string(),
-            supports_reasoning: false,
+            reasoning_levels: vec![],
         },
     ]
 }
@@ -184,22 +184,22 @@ async fn search_does_not_duplicate_provider_headers() {
         ModelEntry {
             value: "codex:gpt-5".to_string(),
             name: "Codex / GPT-5".to_string(),
-            supports_reasoning: false,
+            reasoning_levels: vec![],
         },
         ModelEntry {
             value: "openrouter:gpt-5".to_string(),
             name: "OpenRouter / GPT-5".to_string(),
-            supports_reasoning: false,
+            reasoning_levels: vec![],
         },
         ModelEntry {
             value: "codex:gpt-5-mini".to_string(),
             name: "Codex / GPT-5 Mini".to_string(),
-            supports_reasoning: false,
+            reasoning_levels: vec![],
         },
         ModelEntry {
             value: "openrouter:gpt-5-mini".to_string(),
             name: "OpenRouter / GPT-5 Mini".to_string(),
-            supports_reasoning: false,
+            reasoning_levels: vec![],
         },
     ];
     let mut selector = make_selector(values);

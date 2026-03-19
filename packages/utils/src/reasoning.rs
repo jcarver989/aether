@@ -8,6 +8,7 @@ pub enum ReasoningEffort {
     Low,
     Medium,
     High,
+    Xhigh,
 }
 
 impl ReasoningEffort {
@@ -16,21 +17,50 @@ impl ReasoningEffort {
             Self::Low => "low",
             Self::Medium => "medium",
             Self::High => "high",
+            Self::Xhigh => "xhigh",
         }
     }
 
     pub fn all() -> &'static [ReasoningEffort] {
-        &[Self::Low, Self::Medium, Self::High]
+        &[Self::Low, Self::Medium, Self::High, Self::Xhigh]
     }
 
-    /// Cycles: None → Low → Medium → High → None
-    pub fn cycle_next(current: Option<Self>) -> Option<Self> {
-        match current {
-            None => Some(Self::Low),
-            Some(Self::Low) => Some(Self::Medium),
-            Some(Self::Medium) => Some(Self::High),
-            Some(Self::High) => None,
+    /// Numeric position derived from `all()` ordering.
+    pub fn ordinal(self) -> usize {
+        Self::all()
+            .iter()
+            .position(|&e| e == self)
+            .expect("variant must be in all()")
+    }
+
+    /// Cycles through only the given `levels`, wrapping to `None` after the last.
+    /// Returns `None` when `levels` is empty.
+    pub fn cycle_within(current: Option<Self>, levels: &[Self]) -> Option<Self> {
+        if levels.is_empty() {
+            return None;
         }
+        match current {
+            None => Some(levels[0]),
+            Some(effort) => levels
+                .iter()
+                .position(|&l| l == effort)
+                .and_then(|i| levels.get(i + 1))
+                .copied(),
+        }
+    }
+
+    /// Returns `self` if it's in `levels`, otherwise the highest level ≤ self by ordinal.
+    /// Falls back to the first element of `levels`. Panics if `levels` is empty.
+    pub fn clamp_to(self, levels: &[Self]) -> Self {
+        if levels.contains(&self) {
+            return self;
+        }
+        levels
+            .iter()
+            .rev()
+            .find(|&&l| l.ordinal() <= self.ordinal())
+            .copied()
+            .unwrap_or(*levels.first().expect("levels must not be empty"))
     }
 
     /// Converts `Option<ReasoningEffort>` to a config string value.
@@ -39,7 +69,7 @@ impl ReasoningEffort {
     }
 
     /// Parse a string into an optional effort level.
-    /// Accepts "none" / "" as `None`, and "low"/"medium"/"high" as `Some`.
+    /// Accepts "none" / "" as `None`, and "low"/"medium"/"high"/"xhigh" as `Some`.
     pub fn parse(s: &str) -> Result<Option<Self>, String> {
         match s {
             "none" | "" => Ok(None),
@@ -62,6 +92,7 @@ impl FromStr for ReasoningEffort {
             "low" => Ok(Self::Low),
             "medium" => Ok(Self::Medium),
             "high" => Ok(Self::High),
+            "xhigh" => Ok(Self::Xhigh),
             _ => Err(format!("Unknown reasoning effort: '{s}'")),
         }
     }
@@ -93,8 +124,8 @@ mod tests {
     }
 
     #[test]
-    fn all_returns_three_variants() {
-        assert_eq!(ReasoningEffort::all().len(), 3);
+    fn all_returns_four_variants() {
+        assert_eq!(ReasoningEffort::all().len(), 4);
     }
 
     #[test]
@@ -121,19 +152,6 @@ mod tests {
     }
 
     #[test]
-    fn cycle_next_sequence() {
-        let mut current = None;
-        current = ReasoningEffort::cycle_next(current);
-        assert_eq!(current, Some(ReasoningEffort::Low));
-        current = ReasoningEffort::cycle_next(current);
-        assert_eq!(current, Some(ReasoningEffort::Medium));
-        current = ReasoningEffort::cycle_next(current);
-        assert_eq!(current, Some(ReasoningEffort::High));
-        current = ReasoningEffort::cycle_next(current);
-        assert_eq!(current, None);
-    }
-
-    #[test]
     fn config_str_values() {
         assert_eq!(ReasoningEffort::config_str(None), "none");
         assert_eq!(
@@ -152,5 +170,89 @@ mod tests {
             let json = serde_json::to_value(effort).unwrap();
             assert_eq!(json.as_str().unwrap(), effort.as_str());
         }
+    }
+
+    #[test]
+    fn ordinal_values() {
+        assert_eq!(ReasoningEffort::Low.ordinal(), 0);
+        assert_eq!(ReasoningEffort::Medium.ordinal(), 1);
+        assert_eq!(ReasoningEffort::High.ordinal(), 2);
+        assert_eq!(ReasoningEffort::Xhigh.ordinal(), 3);
+    }
+
+    #[test]
+    fn cycle_within_three_levels() {
+        use ReasoningEffort::*;
+        let levels = &[Low, Medium, High];
+        assert_eq!(ReasoningEffort::cycle_within(None, levels), Some(Low));
+        assert_eq!(
+            ReasoningEffort::cycle_within(Some(Low), levels),
+            Some(Medium)
+        );
+        assert_eq!(
+            ReasoningEffort::cycle_within(Some(Medium), levels),
+            Some(High)
+        );
+        assert_eq!(ReasoningEffort::cycle_within(Some(High), levels), None);
+    }
+
+    #[test]
+    fn cycle_within_four_levels() {
+        use ReasoningEffort::*;
+        let levels = &[Low, Medium, High, Xhigh];
+        assert_eq!(ReasoningEffort::cycle_within(None, levels), Some(Low));
+        assert_eq!(
+            ReasoningEffort::cycle_within(Some(High), levels),
+            Some(Xhigh)
+        );
+        assert_eq!(ReasoningEffort::cycle_within(Some(Xhigh), levels), None);
+    }
+
+    #[test]
+    fn cycle_within_empty_returns_none() {
+        assert_eq!(ReasoningEffort::cycle_within(None, &[]), None);
+        assert_eq!(
+            ReasoningEffort::cycle_within(Some(ReasoningEffort::Low), &[]),
+            None
+        );
+    }
+
+    #[test]
+    fn cycle_within_unknown_current_wraps_to_none() {
+        use ReasoningEffort::*;
+        // Current is Xhigh but levels only have Low/Medium/High
+        assert_eq!(
+            ReasoningEffort::cycle_within(Some(Xhigh), &[Low, Medium, High]),
+            None
+        );
+    }
+
+    #[test]
+    fn clamp_to_self_in_levels() {
+        use ReasoningEffort::*;
+        assert_eq!(High.clamp_to(&[Low, Medium, High]), High);
+        assert_eq!(Xhigh.clamp_to(&[Low, Medium, High, Xhigh]), Xhigh);
+    }
+
+    #[test]
+    fn clamp_to_highest_le() {
+        use ReasoningEffort::*;
+        // Xhigh not in [Low, Medium, High] → clamp to High
+        assert_eq!(Xhigh.clamp_to(&[Low, Medium, High]), High);
+    }
+
+    #[test]
+    fn clamp_to_fallback_first() {
+        use ReasoningEffort::*;
+        // Low not in [Medium, High] and no level ≤ Low → fallback to first (Medium)
+        assert_eq!(Low.clamp_to(&[Medium, High]), Medium);
+    }
+
+    #[test]
+    fn parse_xhigh() {
+        assert_eq!(
+            ReasoningEffort::parse("xhigh").unwrap(),
+            Some(ReasoningEffort::Xhigh)
+        );
     }
 }

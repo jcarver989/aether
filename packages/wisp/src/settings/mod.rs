@@ -234,24 +234,21 @@ pub(crate) fn cycle_quick_option(
 pub(crate) fn cycle_reasoning_option(
     config_options: &[agent_client_protocol::SessionConfigOption],
 ) -> Option<(String, String)> {
-    use crate::components::status_line::extract_reasoning_effort;
+    use crate::components::status_line::{extract_reasoning_effort, extract_reasoning_levels};
     use acp_utils::config_option_id::ConfigOptionId;
     use utils::ReasoningEffort;
 
-    let has_reasoning = config_options
-        .iter()
-        .any(|option| option.id.0.as_ref() == ConfigOptionId::ReasoningEffort.as_str());
-
-    if has_reasoning {
-        let current = extract_reasoning_effort(config_options);
-        let next = ReasoningEffort::cycle_next(current);
-        Some((
-            ConfigOptionId::ReasoningEffort.as_str().to_string(),
-            ReasoningEffort::config_str(next).to_string(),
-        ))
-    } else {
-        None
+    let levels = extract_reasoning_levels(config_options);
+    if levels.is_empty() {
+        return None;
     }
+
+    let current = extract_reasoning_effort(config_options);
+    let next = ReasoningEffort::cycle_within(current, &levels);
+    Some((
+        ConfigOptionId::ReasoningEffort.as_str().to_string(),
+        ReasoningEffort::config_str(next).to_string(),
+    ))
 }
 
 pub(crate) fn unhealthy_server_count(statuses: &[McpServerStatusEntry]) -> usize {

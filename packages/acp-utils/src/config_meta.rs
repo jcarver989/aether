@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use utils::ReasoningEffort;
 
 type Meta = serde_json::Map<String, serde_json::Value>;
 
@@ -9,16 +10,22 @@ pub struct ConfigOptionMeta {
     pub multi_select: bool,
 }
 
-/// Meta for an individual `SessionConfigSelectOption` (e.g. one model choice).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SelectOptionMeta {
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub supports_reasoning: bool,
-}
-
 #[allow(clippy::trivially_copy_pass_by_ref)] // serde requires &T
 fn is_false(b: &bool) -> bool {
     !b
+}
+
+/// Meta for an individual `SessionConfigSelectOption` (e.g. one model choice).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SelectOptionMeta {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reasoning_levels: Vec<ReasoningEffort>,
+}
+
+impl SelectOptionMeta {
+    pub fn supports_reasoning(&self) -> bool {
+        !self.reasoning_levels.is_empty()
+    }
 }
 
 impl ConfigOptionMeta {
@@ -71,7 +78,7 @@ mod tests {
     #[test]
     fn select_option_meta_roundtrip() {
         let original = SelectOptionMeta {
-            supports_reasoning: true,
+            reasoning_levels: vec![ReasoningEffort::Low, ReasoningEffort::Medium, ReasoningEffort::High],
         };
         let meta = original.clone().into_meta();
         assert!(meta.is_some());
@@ -118,11 +125,18 @@ mod tests {
         let obj = value.as_object().unwrap();
         assert!(!obj.contains_key("multi_select"));
 
-        let meta = SelectOptionMeta {
-            supports_reasoning: false,
-        };
+        let meta = SelectOptionMeta::default();
         let value = serde_json::to_value(&meta).unwrap();
         let obj = value.as_object().unwrap();
-        assert!(!obj.contains_key("supports_reasoning"));
+        assert!(!obj.contains_key("reasoning_levels"));
+    }
+
+    #[test]
+    fn supports_reasoning_convenience() {
+        assert!(!SelectOptionMeta::default().supports_reasoning());
+        let meta = SelectOptionMeta {
+            reasoning_levels: vec![ReasoningEffort::Low, ReasoningEffort::High],
+        };
+        assert!(meta.supports_reasoning());
     }
 }
