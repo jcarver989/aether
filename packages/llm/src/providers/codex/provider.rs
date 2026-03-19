@@ -226,6 +226,7 @@ fn to_codex_effort(effort: crate::ReasoningEffort) -> ReasoningEffort {
         crate::ReasoningEffort::Low => ReasoningEffort::Low,
         crate::ReasoningEffort::Medium => ReasoningEffort::Medium,
         crate::ReasoningEffort::High => ReasoningEffort::High,
+        crate::ReasoningEffort::Xhigh => ReasoningEffort::Xhigh,
     }
 }
 

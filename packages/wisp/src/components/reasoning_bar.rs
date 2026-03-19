@@ -2,33 +2,39 @@ use super::context_bar::slot_bar;
 use tui::{Color, Theme};
 use utils::ReasoningEffort;
 
-/// Renders a compact labeled 3-slot reasoning effort bar.
+fn filled_slots(effort: Option<ReasoningEffort>, total: usize) -> usize {
+    effort.map_or(0, |e| e.ordinal() + 1).min(total)
+}
+
+/// Renders a compact labeled reasoning effort bar with a dynamic slot count.
 ///
-/// Visual mapping:
+/// Visual mapping (e.g. `total_levels = 3`):
 /// - `None` => `reasoning [···]` (all empty)
 /// - `Low` => `reasoning [■··]` (1 filled)
 /// - `Medium` => `reasoning [■■·]` (2 filled)
 /// - `High` => `reasoning [■■■]` (3 filled)
-pub(crate) fn reasoning_bar(effort: Option<ReasoningEffort>) -> String {
-    let filled = match effort {
-        None => 0,
-        Some(ReasoningEffort::Low) => 1,
-        Some(ReasoningEffort::Medium) => 2,
-        Some(ReasoningEffort::High) => 3,
-    };
-    format!("reasoning {}", slot_bar(filled, 3))
+pub(crate) fn reasoning_bar(effort: Option<ReasoningEffort>, total_levels: usize) -> String {
+    format!("reasoning {}", slot_bar(filled_slots(effort, total_levels), total_levels))
 }
 
 /// Returns the appropriate theme color for the given reasoning effort.
 ///
-/// - None/Low  → `text_secondary` (subdued)
-/// - Medium    → `info`
-/// - High      → `success`
-pub(crate) fn reasoning_color(effort: Option<ReasoningEffort>, theme: &Theme) -> Color {
-    match effort {
-        None | Some(ReasoningEffort::Low) => theme.text_secondary(),
-        Some(ReasoningEffort::Medium) => theme.info(),
-        Some(ReasoningEffort::High) => theme.success(),
+/// Uses ratio-based thresholds:
+/// - filled ≤ 1/total  → `text_secondary` (subdued)
+/// - filled ≤ 2/3 of total → `info`
+/// - above            → `success`
+pub(crate) fn reasoning_color(
+    effort: Option<ReasoningEffort>,
+    total_levels: usize,
+    theme: &Theme,
+) -> Color {
+    let filled = filled_slots(effort, total_levels);
+    if total_levels == 0 || filled * 3 <= total_levels {
+        theme.text_secondary()
+    } else if filled * 3 <= total_levels * 2 {
+        theme.info()
+    } else {
+        theme.success()
     }
 }
 
@@ -37,45 +43,99 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bar_none() {
-        assert_eq!(reasoning_bar(None), "reasoning [···]");
+    fn bar_none_3_slots() {
+        assert_eq!(reasoning_bar(None, 3), "reasoning [···]");
     }
 
     #[test]
-    fn bar_low() {
-        assert_eq!(reasoning_bar(Some(ReasoningEffort::Low)), "reasoning [■··]");
-    }
-
-    #[test]
-    fn bar_medium() {
+    fn bar_low_3_slots() {
         assert_eq!(
-            reasoning_bar(Some(ReasoningEffort::Medium)),
+            reasoning_bar(Some(ReasoningEffort::Low), 3),
+            "reasoning [■··]"
+        );
+    }
+
+    #[test]
+    fn bar_medium_3_slots() {
+        assert_eq!(
+            reasoning_bar(Some(ReasoningEffort::Medium), 3),
             "reasoning [■■·]"
         );
     }
 
     #[test]
-    fn bar_high() {
+    fn bar_high_3_slots() {
         assert_eq!(
-            reasoning_bar(Some(ReasoningEffort::High)),
+            reasoning_bar(Some(ReasoningEffort::High), 3),
             "reasoning [■■■]"
         );
     }
 
     #[test]
-    fn color_tiers() {
-        let theme = Theme::default();
-        assert_eq!(reasoning_color(None, &theme), theme.text_secondary());
+    fn bar_4_slots() {
+        assert_eq!(reasoning_bar(None, 4), "reasoning [····]");
         assert_eq!(
-            reasoning_color(Some(ReasoningEffort::Low), &theme),
+            reasoning_bar(Some(ReasoningEffort::Low), 4),
+            "reasoning [■···]"
+        );
+        assert_eq!(
+            reasoning_bar(Some(ReasoningEffort::High), 4),
+            "reasoning [■■■·]"
+        );
+        assert_eq!(
+            reasoning_bar(Some(ReasoningEffort::Xhigh), 4),
+            "reasoning [■■■■]"
+        );
+    }
+
+    #[test]
+    fn bar_xhigh_clamped_to_3_slots() {
+        // Xhigh ordinal=3, clamped to total_levels=3
+        assert_eq!(
+            reasoning_bar(Some(ReasoningEffort::Xhigh), 3),
+            "reasoning [■■■]"
+        );
+    }
+
+    #[test]
+    fn color_tiers_3_slots() {
+        let theme = Theme::default();
+        assert_eq!(reasoning_color(None, 3, &theme), theme.text_secondary());
+        assert_eq!(
+            reasoning_color(Some(ReasoningEffort::Low), 3, &theme),
             theme.text_secondary()
         );
         assert_eq!(
-            reasoning_color(Some(ReasoningEffort::Medium), &theme),
+            reasoning_color(Some(ReasoningEffort::Medium), 3, &theme),
             theme.info()
         );
         assert_eq!(
-            reasoning_color(Some(ReasoningEffort::High), &theme),
+            reasoning_color(Some(ReasoningEffort::High), 3, &theme),
+            theme.success()
+        );
+    }
+
+    #[test]
+    fn color_tiers_4_slots() {
+        let theme = Theme::default();
+        // 4 slots: filled=1 → 1*3=3 ≤ 4 → secondary
+        assert_eq!(
+            reasoning_color(Some(ReasoningEffort::Low), 4, &theme),
+            theme.text_secondary()
+        );
+        // filled=2 → 2*3=6 ≤ 8 → info
+        assert_eq!(
+            reasoning_color(Some(ReasoningEffort::Medium), 4, &theme),
+            theme.info()
+        );
+        // filled=3 → 3*3=9 > 8 → success
+        assert_eq!(
+            reasoning_color(Some(ReasoningEffort::High), 4, &theme),
+            theme.success()
+        );
+        // filled=4 → success
+        assert_eq!(
+            reasoning_color(Some(ReasoningEffort::Xhigh), 4, &theme),
             theme.success()
         );
     }

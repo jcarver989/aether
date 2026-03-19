@@ -69,6 +69,8 @@ struct ProviderConfig {
     env_var: Option<&'static str>,
     /// OAuth provider ID for providers that require OAuth login (e.g. "codex")
     oauth_provider_id: Option<&'static str>,
+    /// Default reasoning levels for models that support reasoning (empty = use standard 3)
+    default_reasoning_levels: &'static [&'static str],
 }
 
 impl ProviderConfig {
@@ -89,6 +91,7 @@ impl ProviderConfig {
             display_name,
             env_var,
             oauth_provider_id: None,
+            default_reasoning_levels: &["low", "medium", "high"],
         }
     }
 
@@ -126,6 +129,7 @@ const PROVIDERS: &[ProviderConfig] = &[
         display_name: "Codex",
         env_var: None,
         oauth_provider_id: Some("codex"),
+        default_reasoning_levels: &["low", "medium", "high", "xhigh"],
     },
     ProviderConfig::standard(
         "deepseek",
@@ -178,7 +182,7 @@ struct ModelInfo {
     model_id: String,
     display_name: String,
     context_window: u32,
-    supports_reasoning: bool,
+    reasoning_levels: Vec<String>,
 }
 
 type ProviderModels = BTreeMap<&'static str, Vec<ModelInfo>>;
@@ -213,12 +217,22 @@ fn build_provider_models(data: &ModelsDevData) -> Result<ProviderModels, String>
             .filter(|m| m.tool_call == Some(true))
             .filter(|m| !is_alias(&m.id))
             .filter(|m| cfg.model_filter.is_none_or(|f| f(&m.id)))
-            .map(|m| ModelInfo {
-                variant_name: model_id_to_variant(&m.id),
-                model_id: m.id.clone(),
-                display_name: m.name.clone(),
-                context_window: m.limit.as_ref().map_or(0, |l| l.context),
-                supports_reasoning: m.reasoning.unwrap_or(false),
+            .map(|m| {
+                let reasoning_levels = if m.reasoning.unwrap_or(false) {
+                    cfg.default_reasoning_levels
+                        .iter()
+                        .map(|s| (*s).to_string())
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                ModelInfo {
+                    variant_name: model_id_to_variant(&m.id),
+                    model_id: m.id.clone(),
+                    display_name: m.name.clone(),
+                    context_window: m.limit.as_ref().map_or(0, |l| l.context),
+                    reasoning_levels,
+                }
             })
             .collect();
 
@@ -281,6 +295,7 @@ fn emit_header(out: &mut String) {
     blank(out);
     pushln(out, "use std::borrow::Cow;");
     pushln(out, "use std::sync::LazyLock;");
+    pushln(out, "use crate::ReasoningEffort;");
     blank(out);
 }
 
@@ -347,16 +362,25 @@ fn emit_provider_impls(out: &mut String, provider_models: &ProviderModels) {
         pushln(out, "    }");
         blank(out);
 
-        // supports_reasoning — group variants that share the same value
-        pushln(out, "    pub fn supports_reasoning(self) -> bool {");
+        // reasoning_levels — per-model reasoning level list
+        pushln(
+            out,
+            "    pub fn reasoning_levels(self) -> &'static [ReasoningEffort] {",
+        );
         pushln(out, "        match self {");
         emit_grouped_arms(
             out,
             models,
-            |m| m.supports_reasoning.to_string(),
-            std::string::ToString::to_string,
+            |m| m.reasoning_levels.join(","),
+            |key| format_reasoning_levels_rhs(key),
         );
         pushln(out, "        }");
+        pushln(out, "    }");
+        blank(out);
+
+        // supports_reasoning — derived from reasoning_levels
+        pushln(out, "    pub fn supports_reasoning(self) -> bool {");
+        pushln(out, "        !self.reasoning_levels().is_empty()");
         pushln(out, "    }");
         blank(out);
 
@@ -433,6 +457,33 @@ fn emit_grouped_arms(
     }
 }
 
+/// Format the RHS of a `reasoning_levels()` match arm from a comma-joined key.
+fn format_reasoning_levels_rhs(key: &str) -> String {
+    if key.is_empty() {
+        return "&[]".to_string();
+    }
+    let items: Vec<String> = key
+        .split(',')
+        .map(|l| {
+            let variant = level_str_to_variant(l);
+            format!("ReasoningEffort::{variant}")
+        })
+        .collect();
+    format!("&[{}]", items.join(", "))
+}
+
+/// Map a reasoning level string to its `ReasoningEffort` variant name.
+/// Panics at build time if an unknown level is encountered.
+fn level_str_to_variant(level: &str) -> &'static str {
+    match level {
+        "low" => "Low",
+        "medium" => "Medium",
+        "high" => "High",
+        "xhigh" => "Xhigh",
+        other => panic!("Unknown reasoning level: {other}"),
+    }
+}
+
 fn emit_llm_model_enum(out: &mut String) {
     pushln(out, "/// A model from a specific provider");
     pushln(out, "#[derive(Debug, Clone, PartialEq, Eq, Hash)]");
@@ -478,6 +529,7 @@ fn emit_llm_model_impl(out: &mut String) {
     emit_llm_required_env_var(out);
     emit_llm_all_required_env_vars(out);
     emit_llm_oauth_provider_id(out);
+    emit_llm_reasoning_levels(out);
     emit_llm_supports_reasoning(out);
     emit_llm_all(out);
     pushln(out, "}");
@@ -716,18 +768,21 @@ fn emit_llm_oauth_provider_id(out: &mut String) {
     blank(out);
 }
 
-fn emit_llm_supports_reasoning(out: &mut String) {
+fn emit_llm_reasoning_levels(out: &mut String) {
     pushln(
         out,
-        "    /// Whether this model supports reasoning/extended thinking",
+        "    /// Reasoning levels supported by this model (empty if not a reasoning model)",
     );
-    pushln(out, "    pub fn supports_reasoning(&self) -> bool {");
+    pushln(
+        out,
+        "    pub fn reasoning_levels(&self) -> &'static [ReasoningEffort] {",
+    );
     pushln(out, "        match self {");
     for cfg in PROVIDERS {
         pushln(
             out,
             format!(
-                "            Self::{}(m) => m.supports_reasoning(),",
+                "            Self::{}(m) => m.reasoning_levels(),",
                 cfg.enum_name
             ),
         );
@@ -735,11 +790,22 @@ fn emit_llm_supports_reasoning(out: &mut String) {
     pushln(
         out,
         format!(
-            "            {} => false,",
+            "            {} => &[],",
             dynamic_pattern_with_binding("_")
         ),
     );
     pushln(out, "        }");
+    pushln(out, "    }");
+    blank(out);
+}
+
+fn emit_llm_supports_reasoning(out: &mut String) {
+    pushln(
+        out,
+        "    /// Whether this model supports reasoning/extended thinking",
+    );
+    pushln(out, "    pub fn supports_reasoning(&self) -> bool {");
+    pushln(out, "        !self.reasoning_levels().is_empty()");
     pushln(out, "    }");
     blank(out);
 }
@@ -1066,7 +1132,7 @@ mod tests {
     }
 
     #[test]
-    fn generate_contains_supports_reasoning() {
+    fn generate_contains_reasoning_levels_and_supports_reasoning() {
         let mut data = minimal_models_dev_json();
         let root = data.as_object_mut().expect("root object");
         let anthropic = root
@@ -1095,14 +1161,48 @@ mod tests {
         );
 
         let source = generate_from_value(&data);
-        // Provider enum should have supports_reasoning method
+        // Provider enum should have reasoning_levels method
+        assert!(source.contains("pub fn reasoning_levels(self) -> &'static [ReasoningEffort] {"));
+        // Thinker (anthropic) gets standard 3 levels
+        assert!(source.contains("Self::Thinker => &[ReasoningEffort::Low, ReasoningEffort::Medium, ReasoningEffort::High],"));
+        // Fast gets empty
+        assert!(source.contains("Self::Fast => &[],"));
+        // supports_reasoning delegates to reasoning_levels
         assert!(source.contains("pub fn supports_reasoning(self) -> bool {"));
-        // LlmModel should delegate to provider
-        assert!(source.contains("pub fn supports_reasoning(&self) -> bool {"));
-        assert!(source.contains("Self::Thinker => true,"));
-        assert!(source.contains("Self::Fast => false,"));
-        // Dynamic providers return false
-        assert!(source.contains("Self::Ollama(_) | Self::LlamaCpp(_) => false,"));
+        assert!(source.contains("!self.reasoning_levels().is_empty()"));
+        // LlmModel level
+        assert!(source.contains("pub fn reasoning_levels(&self) -> &'static [ReasoningEffort] {"));
+        // Dynamic providers return empty
+        assert!(source.contains("Self::Ollama(_) | Self::LlamaCpp(_) => &[],"));
+    }
+
+    #[test]
+    fn generate_codex_gets_four_reasoning_levels() {
+        let mut data = minimal_models_dev_json();
+        let root = data.as_object_mut().expect("root object");
+        let openai = root
+            .get_mut("openai")
+            .and_then(Value::as_object_mut)
+            .expect("openai provider");
+
+        openai.insert(
+            "models".to_string(),
+            json!({
+                "gpt-5.4-codex": {
+                    "id": "gpt-5.4-codex",
+                    "name": "GPT-5.4 Codex",
+                    "tool_call": true,
+                    "reasoning": true,
+                    "limit": {"context": 200000, "output": 0}
+                }
+            }),
+        );
+
+        let source = generate_from_value(&data);
+        assert!(
+            source.contains("ReasoningEffort::Low, ReasoningEffort::Medium, ReasoningEffort::High, ReasoningEffort::Xhigh"),
+            "Codex reasoning model should have 4 levels including Xhigh"
+        );
     }
 
     fn generate_from_value(data: &Value) -> String {
@@ -1126,5 +1226,13 @@ mod tests {
             });
         }
         Value::Object(root)
+    }
+
+    #[test]
+    fn level_str_to_variant_covers_all_reasoning_efforts() {
+        for effort in utils::ReasoningEffort::all() {
+            // Should not panic for any known variant
+            let _ = level_str_to_variant(effort.as_str());
+        }
     }
 }

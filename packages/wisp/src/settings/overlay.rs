@@ -266,7 +266,7 @@ impl Component for SettingsOverlay {
                                 .map(|v| ModelEntry {
                                     value: v.value.clone(),
                                     name: v.name.clone(),
-                                    supports_reasoning: v.meta.supports_reasoning,
+                                    reasoning_levels: v.meta.reasoning_levels.clone(),
                                 })
                                 .collect();
                             self.active_pane = SettingsPane::ModelSelector(ModelSelector::new(
@@ -607,7 +607,11 @@ mod tests {
                     description: None,
                     is_disabled: false,
                     meta: SelectOptionMeta {
-                        supports_reasoning: true,
+                        reasoning_levels: vec![
+                            utils::ReasoningEffort::Low,
+                            utils::ReasoningEffort::Medium,
+                            utils::ReasoningEffort::High,
+                        ],
                     },
                 },
                 SettingsMenuValue {

@@ -65,7 +65,7 @@ fn build_model_entries() -> Vec<ModelEntry> {
         .map(|m| ModelEntry {
             value: m.to_string(),
             name: format!("{} / {}", m.provider_display_name(), m.display_name()),
-            supports_reasoning: m.supports_reasoning(),
+            reasoning_levels: m.reasoning_levels().to_vec(),
         })
         .collect()
 }
