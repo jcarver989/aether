@@ -6,7 +6,7 @@ use aether_core::mcp::McpBuilder;
 use futures::FutureExt;
 use mcp_utils::ServiceExt;
 use std::path::{Path, PathBuf};
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// Extension trait that adds built-in MCP server registration to [`McpBuilder`].
 pub trait McpBuilderExt {
@@ -27,7 +27,13 @@ impl McpBuilderExt for McpBuilder {
             Box::new(move |args, _input| {
                 let project_path = cwd.clone();
                 async move {
-                    let parsed = CodingMcpArgs::from_args(args).unwrap_or_default();
+                    let parsed = match CodingMcpArgs::from_args(args) {
+                        Ok(args) => args,
+                        Err(e) => {
+                            warn!("CodingMcp args parse failed: {e}, using defaults");
+                            CodingMcpArgs::default()
+                        }
+                    };
                     debug!("CodingMcp created with LSP, permission_mode={:?}", parsed.permission_mode);
                     CodingMcp::with_tools(DefaultCodingTools::new())
                         .with_lsp(project_path.clone())
