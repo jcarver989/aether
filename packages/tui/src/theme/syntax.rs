@@ -150,6 +150,11 @@ impl From<&syntect::highlighting::Theme> for Theme {
             .or(syntect.settings.selection)
             .map_or(DEFAULT_HIGHLIGHT_BG, |c| composite_over(c, syntect_bg));
 
+        let highlight_fg = syntect
+            .settings
+            .selection_foreground
+            .map_or(fg, color_from_syntect);
+
         let inline_code_bg = syntect
             .settings
             .background
@@ -163,6 +168,7 @@ impl From<&syntect::highlighting::Theme> for Theme {
             bg,
             accent,
             highlight_bg,
+            highlight_fg,
             text_secondary,
             code_fg: inline_code_fg,
             code_bg: inline_code_bg,

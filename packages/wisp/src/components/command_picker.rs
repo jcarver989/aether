@@ -56,21 +56,19 @@ impl Component for CommandPicker {
             .combobox
             .matches()
             .iter()
-            .map(|cmd| display_width_text(&format!("  /{}", cmd.name)))
+            .map(|cmd| display_width_text(&format!("/{}", cmd.name)))
             .max()
             .unwrap_or(0);
 
         let item_lines = self
             .combobox
             .render_items(context, |command, is_selected, ctx| {
-                let prefix = if is_selected { "▶ " } else { "  " };
-
                 let hint_suffix = match &command.hint {
                     Some(hint) => format!("  [{hint}]"),
                     None => String::new(),
                 };
 
-                let name_part = format!("{prefix}/{}", command.name);
+                let name_part = format!("/{}", command.name);
                 let padded_name = pad_text_to_width(&name_part, max_name_width);
                 let line_text = format!("{padded_name}  {}{}", command.description, hint_suffix);
 

@@ -1,7 +1,7 @@
 use tui::Component;
 use tui::Event;
 use tui::testing::render_component;
-use tui::{KeyCode, KeyEvent, KeyModifiers, ViewContext, display_width_text};
+use tui::{KeyCode, KeyEvent, KeyModifiers, Theme, ViewContext, display_width_text};
 use wisp::components::command_picker::{CommandEntry, CommandPicker};
 
 const DEFAULT_SIZE: (u16, u16) = (120, 40);
@@ -54,9 +54,17 @@ fn rendered_lines(picker: &mut CommandPicker, width: u16, height: u16) -> Vec<St
 }
 
 fn selected_text(picker: &mut CommandPicker) -> Option<String> {
+    let theme = Theme::default();
+    let highlight_bg = theme.highlight_bg();
     let term = render_component(|ctx| picker.render(ctx), DEFAULT_SIZE.0, DEFAULT_SIZE.1);
     let output = term.get_lines();
-    output.iter().find(|l| l.starts_with("▶ ")).cloned()
+    // Check col 2 (after the 2-char prepend) to find the row with highlight_bg,
+    // and skip empty rows (which may be wrap overflow from extend_bg_to_width).
+    output
+        .iter()
+        .enumerate()
+        .find(|(i, l)| !l.is_empty() && term.get_style_at(*i, 2).bg == Some(highlight_bg))
+        .map(|(_, l)| l.clone())
 }
 
 #[test]
@@ -148,10 +156,10 @@ fn selected_entry_has_highlight_background() {
     let output = term.get_lines();
     let row = output
         .iter()
-        .position(|l| l.starts_with("▶ "))
+        .position(|l| l.starts_with("  /"))
         .expect("should render a selected line");
 
-    let style = term.style_of_text(row, "▶").unwrap();
+    let style = term.style_of_text(row, "/settings").unwrap();
     assert_eq!(
         style.bg,
         Some(ctx.theme.highlight_bg()),
@@ -167,10 +175,10 @@ fn selected_entry_has_text_primary_foreground() {
     let output = term.get_lines();
     let row = output
         .iter()
-        .position(|l| l.starts_with("▶ "))
+        .position(|l| l.starts_with("  /"))
         .expect("should render a selected line");
 
-    let style = term.style_of_text(row, "▶").unwrap();
+    let style = term.style_of_text(row, "/settings").unwrap();
     assert_eq!(
         style.fg,
         Some(ctx.theme.text_primary()),
@@ -185,7 +193,7 @@ fn selected_entry_highlight_fills_full_line_width() {
     let output = term.get_lines();
     let row = output
         .iter()
-        .position(|l| l.starts_with("▶ "))
+        .position(|l| l.starts_with("  /"))
         .expect("should render a selected line");
 
     let ctx = ViewContext::new((30, 24));
@@ -202,13 +210,16 @@ fn non_selected_items_have_multi_span_styling() {
     let mut picker = CommandPicker::new(sample_commands());
     let term = render_component(|c| picker.render(c), DEFAULT_SIZE.0, DEFAULT_SIZE.1);
     let output = term.get_lines();
+    // Skip the first (selected) row and find a non-selected command line
     let row = output
         .iter()
-        .position(|l| l.starts_with("  /"))
+        .enumerate()
+        .skip(1)
+        .find(|(_, l)| l.starts_with("  /"))
+        .map(|(i, _)| i)
         .expect("should have a non-selected command line");
 
     // Check that the command name and description have different styles
-    // The non-selected line starting with "  /" will be /search or /web (not /settings which is selected)
     let name_style = term
         .style_of_text(row, "/search")
         .or_else(|| term.style_of_text(row, "/web"))
@@ -260,8 +271,9 @@ fn long_commands_are_truncated_to_terminal_width() {
         builtin: false,
     }];
 
+    let terminal_width: u16 = 40;
     let mut picker = CommandPicker::new(commands);
-    let lines = rendered_lines(&mut picker, 30, 10);
+    let lines = rendered_lines(&mut picker, terminal_width, 10);
     let command_line = &lines[0];
 
     assert_eq!(lines.len(), 1);
@@ -272,7 +284,7 @@ fn long_commands_are_truncated_to_terminal_width() {
 
     let width = display_width_text(command_line);
     assert!(
-        width <= 30,
-        "Line width {width} exceeds terminal width 30: {command_line}"
+        width <= terminal_width as usize,
+        "Line width {width} exceeds terminal width {terminal_width}: {command_line}"
     );
 }

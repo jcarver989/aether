@@ -36,6 +36,7 @@ pub struct Theme {
     bg: Color,
     accent: Color,
     highlight_bg: Color,
+    highlight_fg: Color,
 
     // Text colors
     text_secondary: Color,
@@ -73,6 +74,7 @@ pub struct ThemeBuilder {
     bg: Option<Color>,
     accent: Option<Color>,
     highlight_bg: Option<Color>,
+    highlight_fg: Option<Color>,
     text_secondary: Option<Color>,
     code_fg: Option<Color>,
     code_bg: Option<Color>,
@@ -109,6 +111,11 @@ impl ThemeBuilder {
 
     pub fn highlight_bg(mut self, color: Color) -> Self {
         self.highlight_bg = Some(color);
+        self
+    }
+
+    pub fn highlight_fg(mut self, color: Color) -> Self {
+        self.highlight_fg = Some(color);
         self
     }
 
@@ -211,6 +218,9 @@ impl Theme {
             highlight_bg: b
                 .highlight_bg
                 .ok_or(ThemeBuildError::MissingField("highlight_bg"))?,
+            highlight_fg: b
+                .highlight_fg
+                .ok_or(ThemeBuildError::MissingField("highlight_fg"))?,
             text_secondary: b
                 .text_secondary
                 .ok_or(ThemeBuildError::MissingField("text_secondary"))?,
@@ -274,8 +284,12 @@ impl Theme {
         self.highlight_bg
     }
 
+    pub fn highlight_fg(&self) -> Color {
+        self.highlight_fg
+    }
+
     pub fn selected_row_style(&self) -> Style {
-        self.selected_row_style_with_fg(self.text_primary())
+        self.selected_row_style_with_fg(self.highlight_fg())
     }
 
     pub fn selected_row_style_with_fg(&self, fg: Color) -> Style {
@@ -371,10 +385,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn selected_row_style_uses_text_primary_and_highlight_bg() {
+    fn selected_row_style_uses_highlight_fg_and_highlight_bg() {
         let theme = Theme::default();
         let style = theme.selected_row_style();
-        assert_eq!(style.fg, Some(theme.text_primary()));
+        assert_eq!(style.fg, Some(theme.highlight_fg()));
         assert_eq!(style.bg, Some(theme.highlight_bg()));
     }
 
@@ -421,6 +435,7 @@ mod tests {
             .bg(Color::White)
             .accent(Color::Red)
             .highlight_bg(Color::Green)
+            .highlight_fg(Color::Black)
             .text_secondary(Color::Yellow)
             .code_fg(Color::Blue)
             .code_bg(Color::Magenta)

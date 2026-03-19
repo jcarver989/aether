@@ -124,11 +124,15 @@ impl<T: SelectItem> Component for SelectList<T> {
             return Frame::new(vec![Line::new(format!("  ({})", self.placeholder))]);
         }
 
+        let inner = ctx.with_size((ctx.size.width.saturating_sub(2), ctx.size.height));
         Frame::new(
             self.items
                 .iter()
                 .enumerate()
-                .map(|(i, item)| item.render_item(i == self.selected_index, ctx))
+                .map(|(i, item)| {
+                    item.render_item(i == self.selected_index, &inner)
+                        .prepend("  ")
+                })
                 .collect(),
         )
     }
@@ -142,9 +146,8 @@ mod tests {
     struct TestItem(String);
 
     impl SelectItem for TestItem {
-        fn render_item(&self, selected: bool, _ctx: &ViewContext) -> Line {
-            let prefix = if selected { "▶ " } else { "  " };
-            Line::new(format!("{prefix}{}", self.0))
+        fn render_item(&self, _selected: bool, _ctx: &ViewContext) -> Line {
+            Line::new(self.0.clone())
         }
     }
 
@@ -219,7 +222,7 @@ mod tests {
         let ctx = ViewContext::new((80, 24));
         let frame = list.render(&ctx);
         assert_eq!(frame.lines().len(), 2);
-        assert!(frame.lines()[0].plain_text().starts_with("▶"));
+        assert!(frame.lines()[0].plain_text().starts_with("  "));
         assert!(frame.lines()[1].plain_text().starts_with("  "));
     }
 

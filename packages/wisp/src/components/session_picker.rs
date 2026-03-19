@@ -93,7 +93,7 @@ impl Component for SessionPicker {
             .iter()
             .map(|e| {
                 let title = display_title(&e.0);
-                display_width_text(&format!("  {title}"))
+                display_width_text(&title)
             })
             .max()
             .unwrap_or(0);
@@ -101,7 +101,6 @@ impl Component for SessionPicker {
         let item_lines =
             self.combobox
                 .render_items(context, |SessionEntry(info), is_selected, ctx| {
-                    let prefix = if is_selected { "▶ " } else { "  " };
                     let title = display_title(info);
                     let relative = info
                         .updated_at
@@ -109,8 +108,7 @@ impl Component for SessionPicker {
                         .map(|ts| format_relative_time(ts, now))
                         .unwrap_or_default();
 
-                    let title_part = format!("{prefix}{title}");
-                    let padded_title = pad_text_to_width(&title_part, max_title_width);
+                    let padded_title = pad_text_to_width(&title, max_title_width);
                     let line_text = format!("{padded_title}  {relative}");
 
                     let max_width = ctx.size.width as usize;
@@ -210,7 +208,7 @@ mod tests {
                 "",
                 "  Resume a previous session:",
                 "",
-                &format!("▶ Fix the login page redirect bug   {d1}"),
+                &format!("  Fix the login page redirect bug   {d1}"),
                 &format!("  Add unit tests for session store  {d2}"),
             ],
         );
@@ -230,7 +228,7 @@ mod tests {
                 "  Resume a previous session:",
                 "",
                 &format!("  Fix the login page redirect bug   {d1}"),
-                &format!("▶ Add unit tests for session store  {d2}"),
+                &format!("  Add unit tests for session store  {d2}"),
             ],
         );
     }
@@ -291,7 +289,7 @@ mod tests {
                 "",
                 "  Resume a previous session:",
                 "",
-                &format!("▶ my-project  {d}"),
+                &format!("  my-project  {d}"),
             ],
         );
     }

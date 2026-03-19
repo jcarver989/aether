@@ -104,8 +104,7 @@ impl Component for FilePicker {
         let item_lines = self
             .combobox
             .render_items(context, |file, is_selected, ctx| {
-                let prefix = if is_selected { "▶ " } else { "  " };
-                let line_text = format!("{}{}", prefix, file.display_name);
+                let line_text = file.display_name.clone();
                 if is_selected {
                     let mut line = Line::with_style(line_text, ctx.theme.selected_row_style());
                     line.extend_bg_to_width(ctx.size.width as usize);
@@ -146,7 +145,7 @@ mod tests {
         frame
             .lines()
             .iter()
-            .find(|line| line.plain_text().starts_with("▶ "))
+            .find(|line| line.plain_text().starts_with("  "))
             .map(|line| line.plain_text())
     }
 
@@ -207,7 +206,7 @@ mod tests {
         let selected_line = frame
             .lines()
             .iter()
-            .find(|line| line.plain_text().starts_with("▶ "))
+            .find(|line| line.plain_text().starts_with("  "))
             .expect("should render a selected line");
 
         let has_bg = selected_line
@@ -224,7 +223,7 @@ mod tests {
         let lines = rendered_raw_lines_with_context(|ctx| picker.render(ctx), (80, 24));
         let selected_line = lines
             .iter()
-            .find(|line| line.plain_text().starts_with("▶ "))
+            .find(|line| line.plain_text().starts_with("  "))
             .expect("should render a selected line");
 
         let has_fg = selected_line
@@ -241,7 +240,7 @@ mod tests {
         let lines = rendered_raw_lines_with_context(|ctx| picker.render(ctx), (20, 24));
         let selected_line = lines
             .iter()
-            .find(|line| line.plain_text().starts_with("▶ "))
+            .find(|line| line.plain_text().starts_with("  "))
             .expect("should render a selected line");
 
         assert_eq!(

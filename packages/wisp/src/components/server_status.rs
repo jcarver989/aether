@@ -5,13 +5,12 @@ struct ServerItem(McpServerStatusEntry);
 
 impl SelectItem for ServerItem {
     fn render_item(&self, selected: bool, context: &ViewContext) -> Line {
-        let prefix = if selected { "▶ " } else { "  " };
         let (indicator, detail) = match &self.0.status {
             McpServerStatus::Connected { tool_count } => ("✓", format!("{tool_count} tools")),
             McpServerStatus::Failed { error } => ("✗", error.clone()),
             McpServerStatus::NeedsOAuth => ("⚡", "needs authentication".to_string()),
         };
-        let text = format!("{prefix}{}  {indicator} {detail}", self.0.name);
+        let text = format!("{}  {indicator} {detail}", self.0.name);
         match &self.0.status {
             McpServerStatus::Connected { .. } => {
                 if selected {
@@ -169,7 +168,7 @@ mod tests {
         let ctx = ViewContext::new((80, 24));
         let frame = overlay.render(&ctx);
 
-        assert!(frame.lines()[0].plain_text().starts_with("▶"));
+        assert!(frame.lines()[0].plain_text().starts_with("  "));
         assert!(frame.lines()[1].plain_text().starts_with("  "));
     }
 

@@ -290,9 +290,8 @@ impl Component for ModelSelector {
                 } else {
                     "[ ] "
                 };
-                let prefix = if *is_focused { "▶ " } else { "  " };
-                let label = format!("{prefix}{check}{}", entry.model_label());
 
+                let label = format!("{check}{}", entry.model_label());
                 if *is_focused {
                     let mut line = Line::with_style(label, context.theme.selected_row_style());
                     if entry.supports_reasoning {
@@ -645,7 +644,7 @@ mod tests {
                 ModelEntry {
                     value: v.to_string(),
                     name: format!("{} / {}", prov.to_uppercase(), model.to_uppercase()),
-    
+
                     supports_reasoning: false,
                 }
             })
@@ -658,14 +657,18 @@ mod tests {
         s.update_viewport(10);
 
         let ctx = ViewContext::new((80, 10));
+        let highlight_bg = ctx.theme.highlight_bg();
 
         for _ in 0..6 {
             s.on_event(&Event::Key(key(KeyCode::Down))).await;
             let frame = s.render(&ctx);
             let lines = frame.lines();
             assert!(
-                lines.iter().any(|l| l.plain_text().contains("▶")),
-                "focused item (▶) must be visible after scrolling down, got: {:?}",
+                lines.iter().any(|l| l
+                    .spans()
+                    .iter()
+                    .any(|span| span.style().bg == Some(highlight_bg))),
+                "focused item must be visible after scrolling down, got: {:?}",
                 lines.iter().map(|l| l.plain_text()).collect::<Vec<_>>()
             );
         }

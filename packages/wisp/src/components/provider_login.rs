@@ -24,13 +24,12 @@ pub enum ProviderLoginMessage {
 
 impl SelectItem for ProviderLoginEntry {
     fn render_item(&self, selected: bool, context: &ViewContext) -> Line {
-        let prefix = if selected { "▶ " } else { "  " };
         let (indicator, detail) = match &self.status {
             ProviderLoginStatus::NeedsLogin => ("⚡", "needs login"),
             ProviderLoginStatus::Authenticating => ("⏳", "authenticating..."),
             ProviderLoginStatus::LoggedIn => ("✓", "logged in"),
         };
-        let text = format!("{prefix}{}  {indicator} {detail}", self.name);
+        let text = format!("{}  {indicator} {detail}", self.name);
         if self.status == ProviderLoginStatus::LoggedIn {
             if selected {
                 Line::with_style(

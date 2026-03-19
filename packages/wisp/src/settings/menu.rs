@@ -20,7 +20,6 @@ pub enum SettingMenuMessage {
 
 impl SelectItem for SettingsMenuEntry {
     fn render_item(&self, selected: bool, ctx: &ViewContext) -> Line {
-        let prefix = if selected { "▶ " } else { "  " };
         let current_name = self
             .display_name
             .as_deref()
@@ -35,7 +34,7 @@ impl SelectItem for SettingsMenuEntry {
                 .values
                 .get(self.current_value_index)
                 .is_some_and(|v| v.is_disabled);
-        let text = format!("{}{}: {}", prefix, self.title, current_name);
+        let text = format!("{}: {}", self.title, current_name);
         if current_disabled {
             Line::styled(text, ctx.theme.muted())
         } else if selected {
