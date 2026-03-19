@@ -41,7 +41,7 @@ impl StatusLine<'_> {
 
         let mut right_parts: Vec<(String, Color)> = Vec::new();
 
-        if model_display.is_some() {
+        if model_display.is_some() && has_reasoning_option(self.config_options) {
             right_parts.push((
                 reasoning_bar(reasoning_effort),
                 reasoning_color(reasoning_effort, &context.theme),
@@ -80,6 +80,12 @@ impl StatusLine<'_> {
         }
         vec![left_line]
     }
+}
+
+pub(crate) fn has_reasoning_option(config_options: &[SessionConfigOption]) -> bool {
+    config_options
+        .iter()
+        .any(|option| option.id.0.as_ref() == ConfigOptionId::ReasoningEffort.as_str())
 }
 
 pub(crate) fn is_cycleable_mode_option(option: &SessionConfigOption) -> bool {
@@ -175,4 +181,86 @@ pub(crate) fn extract_reasoning_effort(
     };
 
     ReasoningEffort::parse(&select.current_value.0).unwrap_or(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn model_option() -> SessionConfigOption {
+        acp::SessionConfigOption::select(
+            "model",
+            "Model",
+            "claude-sonnet",
+            vec![acp::SessionConfigSelectOption::new(
+                "claude-sonnet",
+                "Claude Sonnet",
+            )],
+        )
+    }
+
+    fn reasoning_option() -> SessionConfigOption {
+        acp::SessionConfigOption::select(
+            "reasoning_effort",
+            "Reasoning",
+            "medium",
+            vec![
+                acp::SessionConfigSelectOption::new("low", "Low"),
+                acp::SessionConfigSelectOption::new("medium", "Medium"),
+                acp::SessionConfigSelectOption::new("high", "High"),
+            ],
+        )
+    }
+
+    #[test]
+    fn reasoning_bar_hidden_without_reasoning_option() {
+        let options = vec![model_option()];
+        let status = StatusLine {
+            agent_name: "test-agent",
+            config_options: &options,
+            context_pct_left: None,
+            waiting_for_response: false,
+            unhealthy_server_count: 0,
+        };
+
+        let context = ViewContext::new((120, 40));
+        let lines = status.render(&context);
+        let text = lines[0].plain_text();
+        assert!(
+            !text.contains("reasoning"),
+            "reasoning bar should be hidden when no reasoning_effort option exists, got: {text}"
+        );
+    }
+
+    #[test]
+    fn reasoning_bar_shown_with_reasoning_option() {
+        let options = vec![model_option(), reasoning_option()];
+        let status = StatusLine {
+            agent_name: "test-agent",
+            config_options: &options,
+            context_pct_left: None,
+            waiting_for_response: false,
+            unhealthy_server_count: 0,
+        };
+
+        let context = ViewContext::new((120, 40));
+        let lines = status.render(&context);
+        let text = lines[0].plain_text();
+        assert!(
+            text.contains("reasoning"),
+            "reasoning bar should be visible when reasoning_effort option exists, got: {text}"
+        );
+    }
+
+    #[test]
+    fn has_reasoning_option_returns_false_without_it() {
+        let options = vec![model_option()];
+        assert!(!has_reasoning_option(&options));
+    }
+
+    #[test]
+    fn has_reasoning_option_returns_true_with_it() {
+        let options = vec![model_option(), reasoning_option()];
+        assert!(has_reasoning_option(&options));
+    }
 }

@@ -448,7 +448,7 @@ fn does_not_render_reasoning_bar_when_model_absent() {
 
 #[test]
 fn renders_empty_reasoning_bar_for_none_effort() {
-    let options = vec![model_option("gpt-4o", "gpt-4o")];
+    let options = vec![model_option("gpt-4o", "gpt-4o"), reasoning_option("none")];
     let status = StatusLine {
         agent_name: "wisp",
         config_options: &options,
