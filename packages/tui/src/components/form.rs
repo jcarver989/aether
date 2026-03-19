@@ -124,18 +124,26 @@ impl Form {
 
         let mut lines = Vec::new();
         let required_marker = if field.required { "*" } else { "" };
-        let mut label_line = Line::with_style(
+        let label_line = Line::with_style(
             format!("{}{required_marker}: ", field.label),
             Style::fg(context.theme.text_primary()).bold(),
         );
 
         let field_lines = field.kind.render_field(context, true);
-        if let Some((first, rest)) = field_lines.split_first() {
-            label_line.append_line(first);
-            lines.push(label_line);
-            lines.extend_from_slice(rest);
+        let inline = field.kind.is_inline();
+        if inline {
+            let mut combined = label_line;
+            if let Some((first, rest)) = field_lines.split_first() {
+                combined.append_line(first);
+                lines.push(combined);
+                lines.extend_from_slice(rest);
+            } else {
+                lines.push(combined);
+            }
         } else {
+            // Multi-line widgets (radio, multi-select): label on its own line.
             lines.push(label_line);
+            lines.extend(field_lines);
         }
 
         if let Some(desc) = &field.description {
@@ -196,6 +204,12 @@ impl Form {
 }
 
 impl FormFieldKind {
+    /// Returns `true` for widgets that render on a single line (text, number, checkbox)
+    /// and `false` for multi-line widgets (radio select, multi-select).
+    pub fn is_inline(&self) -> bool {
+        matches!(self, Self::Text(_) | Self::Number(_) | Self::Boolean(_))
+    }
+
     pub fn is_answered(&self) -> bool {
         match self {
             Self::Text(w) => !w.value.is_empty(),
@@ -278,7 +292,12 @@ impl Component for Form {
     }
 
     fn render(&mut self, context: &ViewContext) -> Frame {
-        let mut lines = vec![self.render_tab_bar(context)];
+        let mut lines = vec![Line::with_style(
+            &self.message,
+            Style::fg(context.theme.text_primary()).bold(),
+        )];
+        lines.push(Line::default());
+        lines.push(self.render_tab_bar(context));
         lines.push(Line::default());
         lines.extend(self.render_active_field(context));
         lines.push(Line::default());
