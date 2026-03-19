@@ -1,6 +1,7 @@
 use crate::error::CliError;
 use crate::init::InitArgs;
 use llm::LlmModel;
+use llm::providers::local::discovery::discover_local_models;
 use serde_json::Value;
 use std::io;
 use std::path::Path;
@@ -36,7 +37,7 @@ pub async fn run_init(args: InitArgs) -> Result<(), CliError> {
 
         renderer.clear_screen().map_err(CliError::IoError)?;
         let mut selector = ModelSelector::new(
-            build_model_entries(),
+            build_model_entries().await,
             "model".to_string(),
             Some("anthropic:claude-sonnet-4-5"),
             None,
@@ -59,9 +60,12 @@ pub async fn run_init(args: InitArgs) -> Result<(), CliError> {
     Ok(())
 }
 
-fn build_model_entries() -> Vec<ModelEntry> {
+async fn build_model_entries() -> Vec<ModelEntry> {
+    let discovered = discover_local_models().await;
     LlmModel::all()
         .iter()
+        .cloned()
+        .chain(discovered)
         .map(|m| ModelEntry {
             value: m.to_string(),
             name: format!("{} / {}", m.provider_display_name(), m.display_name()),
@@ -429,15 +433,15 @@ mod tests {
         assert!(!raw.servers.contains_key("tasks"));
     }
 
-    #[test]
-    fn build_model_entries_has_items() {
-        let items = build_model_entries();
+    #[tokio::test]
+    async fn build_model_entries_has_items() {
+        let items = build_model_entries().await;
         assert!(!items.is_empty());
     }
 
-    #[test]
-    fn build_model_entries_includes_default() {
-        let items = build_model_entries();
+    #[tokio::test]
+    async fn build_model_entries_includes_default() {
+        let items = build_model_entries().await;
         assert!(
             items
                 .iter()

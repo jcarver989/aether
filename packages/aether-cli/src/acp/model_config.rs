@@ -3,7 +3,7 @@ use acp_utils::config_option_id::ConfigOptionId;
 use aether_core::agent_spec::AgentSpec;
 use agent_client_protocol::{self as acp, SessionConfigOption, SessionConfigOptionCategory};
 use llm::ReasoningEffort;
-use llm::catalog::{self, LlmModel};
+use llm::catalog::LlmModel;
 use llm::oauth::OAuthCredentialStore;
 use std::collections::{BTreeMap, HashSet};
 
@@ -48,8 +48,8 @@ struct ProviderGroup<'a> {
 pub(crate) fn build_model_config_option(
     available: &[LlmModel],
     current_model: &str,
+    all_models: &[LlmModel],
 ) -> SessionConfigOption {
-    let all_models = catalog::LlmModel::all();
     let available_models: HashSet<String> = available.iter().map(ToString::to_string).collect();
     let credential_ids = OAuthCredentialStore::credential_ids_sync();
 
@@ -232,6 +232,7 @@ pub(crate) fn build_config_options_from_modes(
     selected_mode: Option<&str>,
     current_model: &str,
     reasoning_effort: Option<ReasoningEffort>,
+    all_models: &[LlmModel],
 ) -> Vec<SessionConfigOption> {
     let mut options = Vec::new();
 
@@ -239,7 +240,7 @@ pub(crate) fn build_config_options_from_modes(
         options.push(mode_option);
     }
 
-    options.push(build_model_config_option(available, current_model));
+    options.push(build_model_config_option(available, current_model, all_models));
 
     let levels = intersect_reasoning_levels(current_model);
 
@@ -369,6 +370,7 @@ mod tests {
             Some("Planner"),
             "anthropic:claude-sonnet-4-5",
             Some(ReasoningEffort::High),
+            LlmModel::all(),
         );
 
         let mode_option = options
@@ -382,7 +384,7 @@ mod tests {
     fn build_config_options_from_modes_returns_single_model_option() {
         let models = test_models();
         let opts =
-            build_config_options_from_modes(&[], &models, None, "deepseek:deepseek-chat", None);
+            build_config_options_from_modes(&[], &models, None, "deepseek:deepseek-chat", None, LlmModel::all());
 
         assert_eq!(opts.len(), 1);
 
@@ -449,7 +451,7 @@ mod tests {
     #[test]
     fn build_model_config_option_includes_multi_select_meta() {
         let models = test_models();
-        let opt = build_model_config_option(&models, "anthropic:claude-sonnet-4-5");
+        let opt = build_model_config_option(&models, "anthropic:claude-sonnet-4-5", LlmModel::all());
         let meta = ConfigOptionMeta::from_meta(opt.meta.as_ref());
         assert!(meta.multi_select);
     }
@@ -477,7 +479,7 @@ mod tests {
     fn collapsed_entry_for_fully_unavailable_provider() {
         // test_models() has no Moonshot models available
         let models = test_models();
-        let opt = build_model_config_option(&models, "anthropic:claude-sonnet-4-5");
+        let opt = build_model_config_option(&models, "anthropic:claude-sonnet-4-5", LlmModel::all());
 
         let SessionConfigKind::Select(ref select) = opt.kind else {
             panic!("Expected Select kind");
@@ -519,6 +521,7 @@ mod tests {
             None,
             "anthropic:claude-opus-4-6",
             Some(ReasoningEffort::High),
+            LlmModel::all(),
         );
 
         assert!(opts.len() >= 2, "Expected model + reasoning options");
@@ -545,6 +548,7 @@ mod tests {
             None,
             "deepseek:deepseek-chat",
             None,
+            LlmModel::all(),
         );
         assert!(
             !opts.iter().any(|o| o.id.0.as_ref() == "reasoning_effort"),
@@ -564,6 +568,7 @@ mod tests {
             None,
             "anthropic:claude-opus-4-6",
             Some(ReasoningEffort::High),
+            LlmModel::all(),
         );
         assert!(
             opts_with
@@ -578,6 +583,7 @@ mod tests {
             None,
             "deepseek:deepseek-chat",
             None,
+            LlmModel::all(),
         );
         assert!(
             !opts_without
@@ -591,7 +597,7 @@ mod tests {
     fn mixed_provider_lists_models_individually() {
         // test_models() has Gemini25Pro available, so Gemini is "mixed"
         let models = test_models();
-        let opt = build_model_config_option(&models, "anthropic:claude-sonnet-4-5");
+        let opt = build_model_config_option(&models, "anthropic:claude-sonnet-4-5", LlmModel::all());
 
         let SessionConfigKind::Select(ref select) = opt.kind else {
             panic!("Expected Select kind");

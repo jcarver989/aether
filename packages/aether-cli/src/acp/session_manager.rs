@@ -10,7 +10,7 @@ use agent_client_protocol::{
     SetSessionModeRequest, SetSessionModeResponse,
 };
 use llm::ReasoningEffort;
-use llm::catalog::{self, LlmModel};
+use llm::catalog::{self, LlmModel, get_local_models};
 use llm::oauth::OAuthCredentialStore;
 use llm::types::IsoString;
 use std::collections::{HashMap, HashSet};
@@ -134,13 +134,13 @@ impl SessionManager {
         }
     }
 
-    fn load_mode_catalog(cwd: &Path) -> Result<SessionModeCatalog, acp::Error> {
+    async fn load_mode_catalog(cwd: &Path) -> Result<SessionModeCatalog, acp::Error> {
         let catalog = load_agent_catalog(cwd).map_err(|e| {
             error!("Failed to load agent catalog: {e}");
             acp::Error::invalid_params()
         })?;
 
-        let available = catalog::available_models();
+        let available = get_local_models().await;
         let specs: Vec<_> = catalog.user_invocable().cloned().collect();
         let modes = validated_modes_from_specs(&specs, &available);
 
@@ -184,13 +184,15 @@ impl SessionManager {
         let mut sessions = self.sessions.lock().await;
         sessions.insert(session_id.to_string(), state);
 
-        let available = catalog::available_models();
+        let available = get_local_models().await;
+        let all_models = get_all_models(&available);
         build_config_options_from_modes(
             &modes,
             &available,
             selected_mode.as_deref(),
             model,
             reasoning_effort,
+            &all_models,
         )
     }
 
@@ -223,6 +225,18 @@ impl SessionManager {
             }
         });
     }
+}
+
+/// Merge catalog `all()` with locally-discovered models for the `all_models`
+/// parameter of `build_model_config_option`.
+fn get_all_models(discovered: &[LlmModel]) -> Vec<LlmModel> {
+    let mut all = LlmModel::all().to_vec();
+    for m in discovered {
+        if !all.contains(m) {
+            all.push(m.clone());
+        }
+    }
+    all
 }
 
 fn build_auth_methods() -> Vec<AuthMethod> {
@@ -422,7 +436,8 @@ impl Agent for SessionManager {
         }
 
         // Broadcast updated config options to all active sessions
-        let available = catalog::available_models();
+        let available = catalog::get_local_models().await;
+        let all_models = get_all_models(&available);
         let sessions = self.sessions.lock().await;
         for (id, state) in sessions.iter() {
             let model = effective_model(
@@ -435,6 +450,7 @@ impl Agent for SessionManager {
                 state.config.selected_mode.as_deref(),
                 model,
                 state.config.reasoning_effort,
+                &all_models,
             );
             let notification = SessionNotification::new(
                 SessionId::new(id.clone()),
@@ -468,8 +484,8 @@ impl Agent for SessionManager {
         let session_id = uuid::Uuid::new_v4().to_string();
         let acp_session_id = acp::SessionId::new(session_id.clone());
 
-        let mode_catalog = Self::load_mode_catalog(&args.cwd)?;
-        let available = catalog::available_models();
+        let mode_catalog = Self::load_mode_catalog(&args.cwd).await?;
+        let available = catalog::get_local_models().await;
         let default_model = pick_default_model(&available).ok_or_else(|| {
             error!("No models available — set an API key env var (e.g. ANTHROPIC_API_KEY)");
             acp::Error::internal_error()
@@ -584,7 +600,7 @@ impl Agent for SessionManager {
         })?;
 
         let context = Context::from_events(&events);
-        let mode_catalog = Self::load_mode_catalog(&args.cwd)?;
+        let mode_catalog = Self::load_mode_catalog(&args.cwd).await?;
 
         let spec = if let Some(mode_name) = meta.selected_mode.as_deref() {
             mode_catalog
@@ -768,7 +784,8 @@ impl Agent for SessionManager {
             acp::Error::invalid_params()
         })?;
 
-        let available = catalog::available_models();
+        let available = get_local_models().await;
+        let all_models = get_all_models(&available);
 
         let mut sessions = self.sessions.lock().await;
         let state = sessions.get_mut(&session_id_str).ok_or_else(|| {
@@ -790,6 +807,7 @@ impl Agent for SessionManager {
             state.config.selected_mode.as_deref(),
             effective_model,
             state.config.reasoning_effort,
+            &all_models,
         );
         Ok(SetSessionConfigOptionResponse::new(options))
     }
