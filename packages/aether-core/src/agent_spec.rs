@@ -4,7 +4,7 @@
 //! It represents a resolved runtime type, not a raw settings DTO.
 
 use crate::core::Prompt;
-use llm::{LlmModel, ReasoningEffort};
+use llm::{LlmModel, ReasoningEffort, ToolDefinition};
 use std::path::{Path, PathBuf};
 
 /// A resolved agent specification ready for runtime use.
@@ -39,6 +39,8 @@ pub struct AgentSpec {
     pub mcp_config_path: Option<PathBuf>,
     /// How this agent can be invoked.
     pub exposure: AgentSpecExposure,
+    /// Tool filter for restricting which MCP tools this agent can use.
+    pub tools: ToolFilter,
 }
 
 impl AgentSpec {
@@ -56,6 +58,7 @@ impl AgentSpec {
             prompts,
             mcp_config_path: None,
             exposure: AgentSpecExposure::none(),
+            tools: ToolFilter::default(),
         }
     }
 
@@ -75,6 +78,47 @@ impl AgentSpec {
         if cwd_mcp.is_file() {
             self.mcp_config_path = Some(cwd_mcp);
         }
+    }
+}
+
+/// Filter for restricting which tools an agent can use.
+///
+/// Supports `allow` (allowlist) and `deny` (blocklist) with trailing `*` wildcards.
+/// If both are set, allow is applied first, then deny removes from the result.
+/// An empty filter (the default) allows all tools.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct ToolFilter {
+    /// If non-empty, only tools matching these patterns are allowed.
+    #[serde(default)]
+    pub allow: Vec<String>,
+    /// Tools matching these patterns are removed.
+    #[serde(default)]
+    pub deny: Vec<String>,
+}
+
+impl ToolFilter {
+    /// Apply this filter to a list of tool definitions.
+    pub fn apply(&self, tools: Vec<ToolDefinition>) -> Vec<ToolDefinition> {
+        tools
+            .into_iter()
+            .filter(|t| self.is_allowed(&t.name))
+            .collect()
+    }
+
+    /// Check whether a tool name passes this filter.
+    pub fn is_allowed(&self, tool_name: &str) -> bool {
+        let allowed =
+            self.allow.is_empty() || self.allow.iter().any(|p| matches_pattern(p, tool_name));
+        allowed && !self.deny.iter().any(|p| matches_pattern(p, tool_name))
+    }
+}
+
+/// Match a pattern against a name, supporting a trailing `*` wildcard.
+fn matches_pattern(pattern: &str, name: &str) -> bool {
+    if let Some(prefix) = pattern.strip_suffix('*') {
+        name.starts_with(prefix)
+    } else {
+        pattern == name
     }
 }
 
@@ -139,6 +183,7 @@ mod tests {
             prompts: vec![],
             mcp_config_path: None,
             exposure: AgentSpecExposure::both(),
+            tools: ToolFilter::default(),
         }
     }
 
@@ -203,5 +248,102 @@ mod tests {
         let mut spec = make_spec();
         spec.resolve_mcp_config(None, dir.path());
         assert!(spec.mcp_config_path.is_none());
+    }
+
+    fn make_tool(name: &str) -> ToolDefinition {
+        ToolDefinition {
+            name: name.to_string(),
+            description: String::new(),
+            parameters: String::new(),
+            server: None,
+        }
+    }
+
+    #[test]
+    fn empty_filter_allows_all_tools() {
+        let filter = ToolFilter::default();
+        let tools = vec![make_tool("bash"), make_tool("read_file")];
+        let result = filter.apply(tools);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn allow_keeps_only_matching_tools() {
+        let filter = ToolFilter {
+            allow: vec!["read_file".to_string(), "grep".to_string()],
+            deny: vec![],
+        };
+        let tools = vec![
+            make_tool("bash"),
+            make_tool("read_file"),
+            make_tool("grep"),
+        ];
+        let result = filter.apply(tools);
+        let names: Vec<_> = result.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, vec!["read_file", "grep"]);
+    }
+
+    #[test]
+    fn deny_removes_matching_tools() {
+        let filter = ToolFilter {
+            allow: vec![],
+            deny: vec!["bash".to_string()],
+        };
+        let tools = vec![make_tool("bash"), make_tool("read_file")];
+        let result = filter.apply(tools);
+        let names: Vec<_> = result.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, vec!["read_file"]);
+    }
+
+    #[test]
+    fn wildcard_matching() {
+        let filter = ToolFilter {
+            allow: vec!["coding__*".to_string()],
+            deny: vec![],
+        };
+        let tools = vec![
+            make_tool("coding__grep"),
+            make_tool("coding__read_file"),
+            make_tool("plugins__bash"),
+        ];
+        let result = filter.apply(tools);
+        let names: Vec<_> = result.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, vec!["coding__grep", "coding__read_file"]);
+    }
+
+    #[test]
+    fn combined_allow_and_deny() {
+        let filter = ToolFilter {
+            allow: vec!["coding__*".to_string()],
+            deny: vec!["coding__write_file".to_string()],
+        };
+        let tools = vec![
+            make_tool("coding__grep"),
+            make_tool("coding__write_file"),
+            make_tool("coding__read_file"),
+            make_tool("plugins__bash"),
+        ];
+        let result = filter.apply(tools);
+        let names: Vec<_> = result.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, vec!["coding__grep", "coding__read_file"]);
+    }
+
+    #[test]
+    fn is_allowed_exact_match() {
+        let filter = ToolFilter {
+            allow: vec!["bash".to_string()],
+            deny: vec![],
+        };
+        assert!(filter.is_allowed("bash"));
+        assert!(!filter.is_allowed("bash_extended"));
+    }
+
+    #[test]
+    fn matches_pattern_exact_and_wildcard() {
+        assert!(matches_pattern("foo", "foo"));
+        assert!(!matches_pattern("foo", "foobar"));
+        assert!(matches_pattern("foo*", "foobar"));
+        assert!(matches_pattern("foo*", "foo"));
+        assert!(!matches_pattern("bar*", "foo"));
     }
 }

@@ -92,7 +92,7 @@ impl AgentCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aether_core::agent_spec::AgentSpecExposure;
+    use aether_core::agent_spec::{AgentSpecExposure, ToolFilter};
     use std::fs;
 
     fn create_temp_project() -> tempfile::TempDir {
@@ -116,6 +116,7 @@ mod tests {
             prompts: vec![],
             mcp_config_path: None,
             exposure,
+            tools: ToolFilter::default(),
         }
     }
 
@@ -135,6 +136,7 @@ mod tests {
             ],
             mcp_config_path: None,
             exposure: AgentSpecExposure::both(),
+            tools: ToolFilter::default(),
         };
         AgentCatalog::new(project_root, inherited_prompts, None, vec![planner])
     }

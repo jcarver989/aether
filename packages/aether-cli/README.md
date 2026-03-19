@@ -140,6 +140,18 @@ Define agents with specific model, prompts, and tool configurations:
       "mcpServers": ".aether/mcp/planner.json"
     },
     {
+      "name": "researcher",
+      "description": "Read-only research agent",
+      "model": "anthropic:claude-sonnet-4-5",
+      "userInvocable": false,
+      "agentInvocable": true,
+      "prompts": [".aether/prompts/researcher.md"],
+      "tools": {
+        "allow": ["coding__grep", "coding__read_file", "coding__glob"],
+        "deny": []
+      }
+    },
+    {
       "name": "coder",
       "description": "Fast coding agent",
       "model": "deepseek:deepseek-chat",
@@ -155,6 +167,7 @@ Define agents with specific model, prompts, and tool configurations:
 - **`agentInvocable: true`** — Agent can be spawned as a sub-agent
 - **`prompts`** — Explicit prompt file references (supports glob patterns)
 - **`mcpServers`** — Path to MCP configuration file (optional, overrides top-level `mcpServers`)
+- **`tools`** — Filter which MCP tools the agent can use (optional). Supports `allow` (allowlist) and `deny` (blocklist) with trailing `*` wildcards. If both are set, `allow` is applied first, then `deny` removes from the result. Omit or leave empty to allow all tools.
 - Top-level `prompts` are inherited by all agents
 - Top-level `mcpServers` is the default MCP config for all agents
 

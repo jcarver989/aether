@@ -95,9 +95,10 @@ impl RuntimeBuilder {
     ) -> Result<Runtime, CliError> {
         let mcp = self.spawn_mcp().await?;
 
+        let filtered_tools = mcp.spec.tools.apply(mcp.tool_definitions);
         let mut agent_builder = AgentBuilder::from_spec(&mcp.spec, vec![])
             .map_err(|e| CliError::AgentError(e.to_string()))?
-            .tools(mcp.mcp_tx.clone(), mcp.tool_definitions);
+            .tools(mcp.mcp_tx.clone(), filtered_tools);
 
         if let Some(prompt) = custom_prompt {
             agent_builder = agent_builder.system_prompt(prompt);
@@ -125,9 +126,10 @@ impl RuntimeBuilder {
 
     pub async fn build_prompt_info(self) -> Result<PromptInfo, CliError> {
         let mcp = self.spawn_mcp().await?;
+        let filtered_tools = mcp.spec.tools.apply(mcp.tool_definitions);
         Ok(PromptInfo {
             spec: mcp.spec,
-            tool_definitions: mcp.tool_definitions,
+            tool_definitions: filtered_tools,
         })
     }
 
