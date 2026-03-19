@@ -185,9 +185,12 @@ pub(super) fn expected_with_prompt(
 
 pub(super) fn has_file_picker(terminal: &TestTerminal) -> bool {
     let lines = terminal.get_lines();
-    lines
-        .iter()
-        .any(|l| l.contains("▶ ") || l.contains("(no matches found)"))
+    lines.iter().any(|l| {
+        l.contains("(no matches found)")
+            || (l.starts_with("  ")
+                && (l.contains('/') || l.contains('.'))
+                && !l.contains(TEST_AGENT))
+    })
 }
 
 pub(super) fn has_command_picker(terminal: &TestTerminal) -> bool {
@@ -206,11 +209,17 @@ pub(super) fn has_settings_picker(terminal: &TestTerminal) -> bool {
 }
 
 pub(super) fn settings_menu_selected_label(terminal: &TestTerminal) -> Option<String> {
+    let theme = Theme::default();
+    let highlight_bg = theme.highlight_bg();
     let lines = terminal.get_lines();
-    for line in &lines {
-        if let Some(pos) = line.find("▶ ") {
-            let rest = &line[pos + "▶ ".len()..];
-            let label = rest.trim().to_string();
+    let width = terminal.get_lines().first().map_or(80, |l| l.len().max(80));
+    // Scan each row for any cell with highlight_bg to find the selected row.
+    // The menu is inside a bordered overlay so we need to check multiple columns.
+    for (row, line) in lines.iter().enumerate() {
+        let has_highlight = (0..width)
+            .any(|col| terminal.get_style_at(row, col).bg == Some(highlight_bg));
+        if has_highlight {
+            let label = line.trim().to_string();
             if !label.is_empty() {
                 return Some(label);
             }
@@ -223,14 +232,9 @@ pub(super) fn command_picker_visible_names(terminal: &TestTerminal) -> Vec<Strin
     let lines = terminal.get_lines();
     let mut names = Vec::new();
     for line in &lines {
-        // Match lines like "▶ /name  description" or "  /name  description"
+        // Match lines like "  /name  description"
         let trimmed = line.trim();
-        let content = if let Some(rest) = trimmed.strip_prefix("▶ ") {
-            rest
-        } else {
-            trimmed
-        };
-        if let Some(rest) = content.strip_prefix('/') {
+        if let Some(rest) = trimmed.strip_prefix('/') {
             if let Some(name) = rest.split_whitespace().next() {
                 names.push(name.to_string());
             }

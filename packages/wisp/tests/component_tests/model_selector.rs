@@ -1,5 +1,5 @@
 use tui::testing::render_component;
-use tui::{Component, Event, KeyCode, KeyEvent, KeyModifiers};
+use tui::{Component, Event, KeyCode, KeyEvent, KeyModifiers, ViewContext};
 use wisp::components::model_selector::{ModelEntry, ModelSelector};
 
 async fn type_query(picker: &mut ModelSelector, text: &str) {
@@ -73,11 +73,25 @@ fn key(code: KeyCode) -> KeyEvent {
 }
 
 fn focused_provider_and_row(selector: &mut ModelSelector) -> (String, String) {
-    let lines = rendered_lines(selector);
+    let ctx = ViewContext::new((120, 40));
+    let term = render_component(|ctx| selector.render(ctx), 120, 40);
+    let lines = term.get_lines();
+    let last_non_empty = lines
+        .iter()
+        .rposition(|l| !l.is_empty())
+        .map_or(0, |i| i + 1);
+    let lines = &lines[..last_non_empty];
+
+    // Find the focused row by checking for highlight_bg style
     let focused_idx = lines
         .iter()
-        .position(|line| line.starts_with("▶"))
+        .enumerate()
+        .position(|(i, _)| {
+            let style = term.get_style_at(i, 0);
+            style.bg == Some(ctx.theme.highlight_bg())
+        })
         .expect("should have focused row");
+
     let provider = lines[..focused_idx]
         .iter()
         .rev()
@@ -87,12 +101,11 @@ fn focused_provider_and_row(selector: &mut ModelSelector) -> (String, String) {
                 && !line.contains("Model search:")
                 && !line.contains("Selected:")
                 && !line.starts_with('[')
-                && !line.starts_with('▶')
         })
         .expect("should find provider header")
         .to_string();
 
-    (provider, lines[focused_idx].clone())
+    (provider, lines[focused_idx].to_string())
 }
 
 fn model_values_with_reasoning() -> Vec<ModelEntry> {
@@ -303,9 +316,12 @@ fn render_shows_bar_on_focused_reasoning_row() {
     let mut selector = make_selector_with(model_values_with_reasoning(), None, Some("medium"));
     let term = render_component(|ctx| selector.render(ctx), 120, 40);
     let output = term.get_lines();
+    let ctx = ViewContext::new((120, 40));
     let focused_line = output
         .iter()
-        .find(|l| l.contains("▶"))
+        .enumerate()
+        .find(|(i, _)| term.get_style_at(*i, 0).bg == Some(ctx.theme.highlight_bg()))
+        .map(|(_, l)| l)
         .expect("should have focused line");
     assert!(
         focused_line.contains("reasoning [■■·]"),
@@ -318,10 +334,14 @@ async fn render_no_bar_on_non_reasoning_focused_row() {
     let mut selector = make_selector_with(model_values_with_reasoning(), None, Some("medium"));
     // Move to non-reasoning model
     selector.on_event(&Event::Key(key(KeyCode::Down))).await;
-    let lines = rendered_lines(&mut selector);
-    let focused_line = lines
+    let ctx = ViewContext::new((120, 40));
+    let term = render_component(|ctx| selector.render(ctx), 120, 40);
+    let output = term.get_lines();
+    let focused_line = output
         .iter()
-        .find(|l| l.contains("▶"))
+        .enumerate()
+        .find(|(i, _)| term.get_style_at(*i, 0).bg == Some(ctx.theme.highlight_bg()))
+        .map(|(_, l)| l)
         .expect("should have focused line");
     assert!(
         !focused_line.contains('■'),

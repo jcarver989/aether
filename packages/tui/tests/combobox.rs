@@ -342,14 +342,13 @@ fn render_items_calls_closure_for_each_visible() {
         FakeItem::new("c"),
     ]);
     let context = ViewContext::new((120, 40));
-    let lines = combobox.render_items(&context, |item, selected, _ctx| {
-        let prefix = if selected { "> " } else { "  " };
-        Line::new(format!("{prefix}{}", item.text))
+    let lines = combobox.render_items(&context, |item, _selected, _ctx| {
+        Line::new(item.text.clone())
     });
     let term = render_lines(&lines, 120, 3);
     let output = term.get_lines();
     assert_eq!(output.len(), 3);
-    assert!(output[0].contains("> a"));
+    assert!(output[0].contains("a"));
     assert!(output[1].contains("b"));
     assert!(output[2].contains("c"));
 }

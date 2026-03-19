@@ -82,6 +82,7 @@ impl Theme {
                 g: 0x4A,
                 b: 0x56,
             })
+            .highlight_fg(TEXT)
             .text_secondary(OVERLAY0)
             .code_fg(GREEN)
             .code_bg(SURFACE1)
@@ -145,6 +146,7 @@ impl Theme {
                 g: 0xDD,
                 b: 0xDD,
             })
+            .highlight_fg(FG)
             .text_secondary(Color::Rgb {
                 r: 0x66,
                 g: 0x66,

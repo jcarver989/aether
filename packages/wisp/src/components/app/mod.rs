@@ -333,9 +333,9 @@ impl App {
                 && let Err(e) =
                     self.prompt_handle
                         .set_config_option(&self.session_id, id, old_value)
-                {
-                    tracing::warn!(config_id = id, error = %e, "failed to restore config option");
-                }
+            {
+                tracing::warn!(config_id = id, error = %e, "failed to restore config option");
+            }
         }
     }
 

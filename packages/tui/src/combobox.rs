@@ -157,9 +157,10 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
         context: &ViewContext,
         render_item: impl Fn(&T, bool, &ViewContext) -> Line,
     ) -> Vec<Line> {
+        let inner = context.with_size((context.size.width.saturating_sub(2), context.size.height));
         self.visible_matches_with_selection()
             .into_iter()
-            .map(|(item, is_selected)| render_item(item, is_selected, context))
+            .map(|(item, is_selected)| render_item(item, is_selected, &inner).prepend("  "))
             .collect()
     }
 

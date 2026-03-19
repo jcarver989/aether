@@ -50,6 +50,28 @@ impl Line {
         self.spans.is_empty()
     }
 
+    pub fn prepend(mut self, text: impl Into<String>) -> Self {
+        let text = text.into();
+
+        if text.is_empty() {
+            return self;
+        } else if let Some(first) = self.spans.first_mut()
+            && first.style == Style::default()
+        {
+            first.text.insert_str(0, &text);
+        } else {
+            let bg_style = self
+                .spans
+                .iter()
+                .find_map(|s| s.style().bg)
+                .map(|bg| Style::default().bg_color(bg))
+                .unwrap_or_default();
+            self.spans.insert(0, Span::with_style(text, bg_style));
+        }
+
+        self
+    }
+
     pub fn push_text(&mut self, text: impl Into<String>) {
         self.push_span(Span::new(text));
     }
@@ -224,6 +246,32 @@ fn emit_style_transition(out: &mut String, from: Style, to: Style) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prepend_merges_into_default_style_span() {
+        let line = Line::new("hello").prepend("  ");
+        assert_eq!(line.plain_text(), "  hello");
+        assert_eq!(line.spans().len(), 1, "should merge into the existing span");
+    }
+
+    #[test]
+    fn prepend_carries_bg_from_styled_span() {
+        let line = Line::with_style("hello", Style::default().bg_color(Color::Blue));
+        let prepended = line.prepend("  ");
+        assert_eq!(prepended.plain_text(), "  hello");
+        assert_eq!(prepended.spans().len(), 2);
+        assert_eq!(
+            prepended.spans()[0].style().bg,
+            Some(Color::Blue),
+            "prepended span should inherit the bg color"
+        );
+    }
+
+    #[test]
+    fn prepend_empty_is_noop() {
+        let line = Line::new("hello").prepend("");
+        assert_eq!(line.plain_text(), "hello");
+    }
 
     #[test]
     fn builder_style_supports_bold_and_color() {

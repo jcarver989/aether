@@ -42,12 +42,14 @@ fn component_renders_selected_row() {
     ];
     let mut menu = SettingsMenu::from_config_options(&opts);
 
-    let term = render_component(|ctx| menu.render(ctx), 80, 24);
+    let ctx = ViewContext::new((80, 24));
+    let term = render_component(|c| menu.render(c), 80, 24);
     let output = term.get_lines();
 
+    // The prepend_text("  ") adds 2 plain-text chars, so check col 2 for highlight_bg
     assert!(
-        output[0].contains("▶"),
-        "first row should have selection indicator"
+        term.get_style_at(0, 2).bg == Some(ctx.theme.highlight_bg()),
+        "first row should have selection highlight background"
     );
     assert!(
         output[0].contains("Model"),
@@ -66,8 +68,8 @@ fn component_renders_selected_row() {
         "second row should contain 'Code'"
     );
     assert!(
-        !output[1].contains("▶"),
-        "second row should not have selection indicator"
+        term.get_style_at(1, 2).bg != Some(ctx.theme.highlight_bg()),
+        "second row should not have selection highlight background"
     );
     // Rows after the two entries should be empty
     assert!(output[2].trim().is_empty(), "row 2 should be empty");
