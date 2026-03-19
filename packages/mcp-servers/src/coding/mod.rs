@@ -6,7 +6,10 @@ use rmcp::{
         router::tool::ToolRouter,
         wrapper::{Json, Parameters},
     },
-    model::{Implementation, ProgressNotificationParam, ServerCapabilities, ServerInfo},
+    model::{
+        CreateElicitationRequestParams, ElicitationAction, ElicitationSchema, Implementation,
+        ProgressNotificationParam, ServerCapabilities, ServerInfo,
+    },
     service::RequestContext,
     tool, tool_handler, tool_router,
 };
@@ -65,12 +68,28 @@ impl<T, E: std::fmt::Display> IntoMcpResult<T> for Result<T, E> {
     }
 }
 
+/// Controls whether tool calls require user approval before executing.
+#[derive(Debug, Clone, Default, PartialEq, clap::ValueEnum)]
+pub enum PermissionMode {
+    /// Everything auto-executes (current default behavior).
+    #[default]
+    AlwaysAllow,
+    /// File writes auto-execute; destructive bash commands trigger elicitation.
+    Auto,
+    /// All write/edit/bash calls trigger elicitation; read-only tools are ungated.
+    AlwaysAsk,
+}
+
 /// CLI arguments for `CodingMcp` server
-#[derive(Debug, Clone, Parser)]
+#[derive(Debug, Clone, Default, Parser)]
 pub struct CodingMcpArgs {
     /// Root directory for workspace (used for LSP initialization)
     #[arg(long = "root-dir")]
     pub root_dir: Option<PathBuf>,
+
+    /// Permission mode controlling user approval for tool calls
+    #[arg(long = "permission-mode", default_value = "always-allow")]
+    pub permission_mode: PermissionMode,
 }
 
 impl CodingMcpArgs {
@@ -122,6 +141,8 @@ pub struct CodingMcp<T: CodingTools = DefaultCodingTools> {
     roots: RwLock<Vec<PathBuf>>,
     /// Read rules discovered from skill files (activated on file reads)
     read_rule_state: prompt_rule_matcher::PromptRuleMatcher,
+    /// Permission mode controlling user approval for tool calls
+    permission_mode: PermissionMode,
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -137,17 +158,7 @@ impl<T: CodingTools + 'static> ServerHandler for CodingMcp<T> {
 impl CodingMcp<DefaultCodingTools> {
     /// Create a new `CodingMcp` with default (local filesystem) tools
     pub fn new() -> Self {
-        Self {
-            tool_router: Self::tool_router(),
-            background_processes: Mutex::new(HashMap::new()),
-            files_read: RwLock::new(HashSet::new()),
-            tools: DefaultCodingTools::new(),
-            lsp: None,
-            web_fetcher: WebFetcher::new(),
-            web_searcher: WebSearcher::try_new().ok(),
-            roots: RwLock::new(Vec::new()),
-            read_rule_state: prompt_rule_matcher::PromptRuleMatcher::default(),
-        }
+        Self::with_tools(DefaultCodingTools::new())
     }
 }
 
@@ -167,6 +178,44 @@ async fn notify_preview(context: &RequestContext<RoleServer>, meta: ToolDisplayM
     }
 }
 
+/// Returns `true` if the command looks destructive (deletes files, force-pushes, etc.).
+///
+/// Uses simple substring matching — conservative by design.
+fn is_dangerous_cmd(command: &str) -> bool {
+    const PATTERNS: &[&str] = &[
+        "rm ",
+        "rm\t",
+        "rmdir ",
+        "git push",
+        "git reset",
+        "git checkout --",
+        "git clean",
+        "chmod ",
+        "chown ",
+        "kill ",
+        "pkill ",
+        "mv ",
+        "dd ",
+        "--force",
+        "--hard",
+    ];
+
+    // Check simple substring patterns
+    if PATTERNS.iter().any(|p| command.contains(p)) {
+        return true;
+    }
+
+    // Check redirect operators: only match >/>> that aren't inside quotes or part of =>
+    // Simple heuristic: look for "> " or ">> " not preceded by '='
+    for (i, _) in command.match_indices("> ") {
+        if i == 0 || command.as_bytes()[i - 1] != b'=' {
+            return true;
+        }
+    }
+
+    false
+}
+
 #[tool_router]
 impl<T: CodingTools + 'static> CodingMcp<T> {
     /// Create a `CodingMcp` with custom tool implementation
@@ -181,6 +230,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             web_searcher: WebSearcher::try_new().ok(),
             roots: RwLock::new(Vec::new()),
             read_rule_state: prompt_rule_matcher::PromptRuleMatcher::default(),
+            permission_mode: PermissionMode::AlwaysAllow,
         }
     }
 
@@ -213,6 +263,12 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
     /// Set the workspace root directory from a single path.
     pub fn with_root_dir(self, root_dir: PathBuf) -> Self {
         self.with_roots(vec![root_dir])
+    }
+
+    /// Set the permission mode controlling user approval for tool calls.
+    pub fn with_permission_mode(mut self, mode: PermissionMode) -> Self {
+        self.permission_mode = mode;
+        self
     }
 
     /// Get the current workspace root.
@@ -250,6 +306,69 @@ When using tools that take file paths, always use absolute paths from:
                 root.display()
             ),
             None => base.to_string(),
+        }
+    }
+
+    /// Prompt the user for approval via elicitation. Always sends the prompt —
+    /// callers are responsible for deciding when to call this based on `permission_mode`.
+    async fn elicit_permission(
+        &self,
+        context: &RequestContext<RoleServer>,
+        tool_name: &str,
+        description: &str,
+    ) -> Result<(), String> {
+        let message = format!("Allow {tool_name}: {description}?");
+        let result = context
+            .peer
+            .create_elicitation(CreateElicitationRequestParams::FormElicitationParams {
+                meta: None,
+                message,
+                requested_schema: ElicitationSchema::builder().build().unwrap(),
+            })
+            .await
+            .map_err(|e| format!("Elicitation failed: {e}"))?;
+
+        if result.action == ElicitationAction::Accept {
+            Ok(())
+        } else {
+            Err(format!(
+                "Operation declined by user: {tool_name} {description}"
+            ))
+        }
+    }
+
+    /// Ask the user for permission to run a bash command. In `Auto` mode only
+    /// triggers for destructive commands; in `AlwaysAsk` mode triggers always.
+    async fn check_bash_permission(
+        &self,
+        context: &RequestContext<RoleServer>,
+        command: &str,
+    ) -> Result<(), String> {
+        match self.permission_mode {
+            PermissionMode::AlwaysAllow => Ok(()),
+            PermissionMode::AlwaysAsk => self.elicit_permission(context, "bash", command).await,
+            PermissionMode::Auto => {
+                if is_dangerous_cmd(command) {
+                    self.elicit_permission(context, "bash", command).await
+                } else {
+                    Ok(())
+                }
+            }
+        }
+    }
+
+    /// Ask the user for permission to write/edit a file. Only triggers in
+    /// `AlwaysAsk` mode; `Auto` and `AlwaysAllow` auto-approve file mutations.
+    async fn check_write_permission(
+        &self,
+        context: &RequestContext<RoleServer>,
+        tool_name: &str,
+        file_path: &str,
+    ) -> Result<(), String> {
+        if self.permission_mode == PermissionMode::AlwaysAsk {
+            self.elicit_permission(context, tool_name, file_path).await
+        } else {
+            Ok(())
         }
     }
 
@@ -342,6 +461,9 @@ When using tools that take file paths, always use absolute paths from:
         )
         .await;
 
+        self.check_write_permission(&context, "write_file", &args.file_path)
+            .await?;
+
         // Safety check: if file exists, ensure it has been read first
         if try_exists(&args.file_path)
             .await
@@ -378,6 +500,9 @@ When using tools that take file paths, always use absolute paths from:
             ToolDisplayMeta::new("Edit file", basename(&args.file_path)),
         )
         .await;
+
+        self.check_write_permission(&context, "edit_file", &args.file_path)
+            .await?;
 
         // Safety check: ensure file has been read first
         {
@@ -428,6 +553,9 @@ When using tools that take file paths, always use absolute paths from:
             ToolDisplayMeta::new("Run command", truncate(&args.command, 40)),
         )
         .await;
+
+        self.check_bash_permission(&context, &args.command).await?;
+
         let command = args.command.clone();
         let result = self.tools.bash(args).await.map_err(|e| e.to_string())?;
 
@@ -680,5 +808,145 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             .await
             .map(Json)
             .map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn args_default_permission_mode_is_always_allow() {
+        let args = CodingMcpArgs::from_args(vec![]).unwrap();
+        assert_eq!(args.permission_mode, PermissionMode::AlwaysAllow);
+    }
+
+    #[test]
+    fn args_parses_always_allow() {
+        let args =
+            CodingMcpArgs::from_args(vec!["--permission-mode".into(), "always-allow".into()])
+                .unwrap();
+        assert_eq!(args.permission_mode, PermissionMode::AlwaysAllow);
+    }
+
+    #[test]
+    fn args_parses_auto() {
+        let args =
+            CodingMcpArgs::from_args(vec!["--permission-mode".into(), "auto".into()]).unwrap();
+        assert_eq!(args.permission_mode, PermissionMode::Auto);
+    }
+
+    #[test]
+    fn args_parses_always_ask() {
+        let args = CodingMcpArgs::from_args(vec!["--permission-mode".into(), "always-ask".into()])
+            .unwrap();
+        assert_eq!(args.permission_mode, PermissionMode::AlwaysAsk);
+    }
+
+    #[test]
+    fn args_rejects_invalid_permission_mode() {
+        assert!(CodingMcpArgs::from_args(vec!["--permission-mode".into(), "yolo".into()]).is_err());
+    }
+
+    #[test]
+    fn with_permission_mode_stores_mode() {
+        let mcp = CodingMcp::new().with_permission_mode(PermissionMode::AlwaysAsk);
+        assert_eq!(mcp.permission_mode, PermissionMode::AlwaysAsk);
+    }
+
+    #[test]
+    fn default_permission_mode_is_always_allow() {
+        let mcp = CodingMcp::new();
+        assert_eq!(mcp.permission_mode, PermissionMode::AlwaysAllow);
+    }
+
+    #[test]
+    fn detects_rm() {
+        assert!(is_dangerous_cmd("rm -rf /tmp/foo"));
+        assert!(is_dangerous_cmd("rm\tfoo.txt"));
+    }
+
+    #[test]
+    fn detects_git_push() {
+        assert!(is_dangerous_cmd("git push origin main"));
+    }
+
+    #[test]
+    fn detects_git_reset() {
+        assert!(is_dangerous_cmd("git reset --hard HEAD~1"));
+    }
+
+    #[test]
+    fn detects_git_checkout_discard() {
+        assert!(is_dangerous_cmd("git checkout -- ."));
+    }
+
+    #[test]
+    fn detects_git_clean() {
+        assert!(is_dangerous_cmd("git clean -fd"));
+    }
+
+    #[test]
+    fn detects_redirect() {
+        assert!(is_dangerous_cmd("echo x > file.txt"));
+        assert!(is_dangerous_cmd("echo x >> file.txt"));
+    }
+
+    #[test]
+    fn does_not_flag_fat_arrow() {
+        assert!(!is_dangerous_cmd("grep '=> ' file.txt"));
+    }
+
+    #[test]
+    fn detects_chmod_chown() {
+        assert!(is_dangerous_cmd("chmod 777 /etc/passwd"));
+        assert!(is_dangerous_cmd("chown root:root /tmp/x"));
+    }
+
+    #[test]
+    fn detects_kill_signals() {
+        assert!(is_dangerous_cmd("kill -9 1234"));
+        assert!(is_dangerous_cmd("pkill node"));
+    }
+
+    #[test]
+    fn does_not_flag_kill_substring() {
+        assert!(!is_dangerous_cmd("echo skillset"));
+    }
+
+    #[test]
+    fn detects_mv() {
+        assert!(is_dangerous_cmd("mv old.txt new.txt"));
+    }
+
+    #[test]
+    fn detects_force_flags() {
+        assert!(is_dangerous_cmd("npm install --force"));
+        assert!(is_dangerous_cmd("git reset --hard"));
+    }
+
+    #[test]
+    fn detects_dd() {
+        assert!(is_dangerous_cmd("dd if=/dev/zero of=/dev/sda"));
+    }
+
+    #[test]
+    fn detects_rmdir() {
+        assert!(is_dangerous_cmd("rmdir empty_dir"));
+    }
+
+    #[test]
+    fn does_not_flag_redirect_in_output() {
+        assert!(is_dangerous_cmd("> file.txt"));
+    }
+
+    #[test]
+    fn allows_safe_commands() {
+        assert!(!is_dangerous_cmd("ls -la"));
+        assert!(!is_dangerous_cmd("cat foo.txt"));
+        assert!(!is_dangerous_cmd("git status"));
+        assert!(!is_dangerous_cmd("git diff"));
+        assert!(!is_dangerous_cmd("cargo test"));
+        assert!(!is_dangerous_cmd("grep -r pattern ."));
     }
 }
