@@ -1,8 +1,7 @@
 {
   "servers": {
     "coding": {
-      "type": "in-memory",
-      "args": ["--permission-mode", "always-ask"]
+      "type": "in-memory"
     },
     "skills": {
       "type": "in-memory",
