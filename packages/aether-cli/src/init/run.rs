@@ -12,6 +12,8 @@ use tui::{
 };
 use wisp::components::model_selector::{ModelEntry, ModelSelector, ModelSelectorMessage};
 
+const SYSTEM_MD_TEMPLATE: &str = include_str!("../../templates/SYSTEM.md");
+
 pub async fn run_init(args: InitArgs) -> Result<(), CliError> {
     let project_root = args.path.canonicalize().unwrap_or(args.path);
     // Scope the TUI session and renderer so they drop before we print to
@@ -243,12 +245,16 @@ async fn run_model_selector<W: io::Write>(
 fn scaffold(project_root: &Path, input: &WizardInput) -> Result<(), CliError> {
     std::fs::create_dir_all(project_root).map_err(CliError::IoError)?;
 
+    write_if_absent(&project_root.join(".aether/SYSTEM.md"), SYSTEM_MD_TEMPLATE)?;
+    write_if_absent(
+        &project_root.join(".aether/mcp.json"),
+        &build_mcp_json(input),
+    )?;
+    write_if_absent(&project_root.join("AGENTS.md"), &build_agents_md(input))?;
     write_if_absent(
         &project_root.join(".aether/settings.json"),
         &build_settings_json(input),
     )?;
-    write_if_absent(&project_root.join("mcp.json"), &build_mcp_json(input))?;
-    write_if_absent(&project_root.join("AGENTS.md"), &build_agents_md(input))?;
 
     Ok(())
 }
@@ -268,14 +274,15 @@ fn write_if_absent(path: &Path, content: &str) -> Result<(), CliError> {
 
 fn build_settings_json(input: &WizardInput) -> String {
     let value = serde_json::json!({
-        "prompts": ["AGENTS.md"],
+        "prompts": [".aether/SYSTEM.md", "AGENTS.md"],
+        "mcpServers": ".aether/mcp.json",
         "agents": [{
             "name": input.name,
             "description": input.description,
             "model": input.model,
             "userInvocable": true,
             "agentInvocable": true,
-            "prompts": ["AGENTS.md"]
+            "prompts": []
         }]
     });
     serde_json::to_string_pretty(&value).expect("settings serialization cannot fail")
@@ -331,7 +338,8 @@ mod tests {
         scaffold(dir.path(), &default_input()).unwrap();
 
         assert!(dir.path().join(".aether/settings.json").exists());
-        assert!(dir.path().join("mcp.json").exists());
+        assert!(dir.path().join(".aether/mcp.json").exists());
+        assert!(dir.path().join(".aether/SYSTEM.md").exists());
         assert!(dir.path().join("AGENTS.md").exists());
     }
 
@@ -375,7 +383,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         scaffold(dir.path(), &default_input()).unwrap();
 
-        let mcp_path = dir.path().join("mcp.json");
+        let mcp_path = dir.path().join(".aether/mcp.json");
         let raw = RawMcpConfig::from_json_file(&mcp_path).unwrap();
         assert_eq!(raw.servers.len(), 3);
         assert!(raw.servers.contains_key("coding"));
@@ -400,7 +408,8 @@ mod tests {
         scaffold(&nested, &default_input()).unwrap();
 
         assert!(nested.join(".aether/settings.json").exists());
-        assert!(nested.join("mcp.json").exists());
+        assert!(nested.join(".aether/mcp.json").exists());
+        assert!(nested.join(".aether/SYSTEM.md").exists());
         assert!(nested.join("AGENTS.md").exists());
     }
 
@@ -413,7 +422,7 @@ mod tests {
         };
         scaffold(dir.path(), &input).unwrap();
 
-        let raw = RawMcpConfig::from_json_file(&dir.path().join("mcp.json")).unwrap();
+        let raw = RawMcpConfig::from_json_file(&dir.path().join(".aether/mcp.json")).unwrap();
         assert_eq!(raw.servers.len(), 2);
         assert!(raw.servers.contains_key("coding"));
         assert!(raw.servers.contains_key("lsp"));
@@ -433,6 +442,78 @@ mod tests {
             items
                 .iter()
                 .any(|e| e.value == "anthropic:claude-sonnet-4-5")
+        );
+    }
+
+    #[test]
+    fn generated_settings_reference_aether_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        scaffold(dir.path(), &default_input()).unwrap();
+
+        let settings_path = dir.path().join(".aether/settings.json");
+        let content = fs::read_to_string(&settings_path).unwrap();
+        let settings: Value = serde_json::from_str(&content).unwrap();
+
+        let prompts = settings["prompts"].as_array().unwrap();
+        assert!(prompts.contains(&Value::String(".aether/SYSTEM.md".to_string())));
+        assert!(prompts.contains(&Value::String("AGENTS.md".to_string())));
+
+        assert_eq!(settings["mcpServers"].as_str().unwrap(), ".aether/mcp.json");
+
+        let agents = settings["agents"].as_array().unwrap();
+        assert_eq!(agents.len(), 1);
+        assert!(agents[0]["prompts"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn scaffold_system_md_is_written() {
+        let dir = tempfile::tempdir().unwrap();
+        scaffold(dir.path(), &default_input()).unwrap();
+
+        let system_md_path = dir.path().join(".aether/SYSTEM.md");
+        assert!(system_md_path.exists());
+
+        let content = fs::read_to_string(&system_md_path).unwrap();
+        assert!(!content.is_empty());
+    }
+
+    #[test]
+    fn scaffold_system_md_matches_template() {
+        let dir = tempfile::tempdir().unwrap();
+        scaffold(dir.path(), &default_input()).unwrap();
+
+        let system_md_path = dir.path().join(".aether/SYSTEM.md");
+        let content = fs::read_to_string(&system_md_path).unwrap();
+
+        assert_eq!(content, SYSTEM_MD_TEMPLATE);
+    }
+
+    #[test]
+    fn default_agent_inherits_generated_mcp() {
+        let dir = tempfile::tempdir().unwrap();
+        scaffold(dir.path(), &default_input()).unwrap();
+
+        let catalog = load_agent_catalog(dir.path()).unwrap();
+        let model: llm::LlmModel = "anthropic:claude-sonnet-4-5".parse().unwrap();
+        let default_agent = catalog.resolve_default(&model, None, dir.path());
+
+        let expected_path = dir.path().join(".aether/mcp.json");
+        assert_eq!(default_agent.mcp_config_path, Some(expected_path));
+    }
+
+    #[test]
+    fn scaffold_template_matches_repo_root_system_md() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let repo_root = manifest_dir.parent().and_then(|p| p.parent()).unwrap();
+        let repo_system_md = repo_root.join("SYSTEM.md");
+
+        let repo_content = fs::read_to_string(&repo_system_md)
+            .expect("repo root SYSTEM.md should exist and be readable");
+
+        assert_eq!(
+            SYSTEM_MD_TEMPLATE, repo_content,
+            "Scaffold template must match repo root SYSTEM.md. \
+             If this fails intentionally, update packages/aether-cli/templates/SYSTEM.md"
         );
     }
 }

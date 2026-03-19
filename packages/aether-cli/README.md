@@ -126,8 +126,8 @@ Define agents with specific model, prompts, and tool configurations:
 
 ```json
 {
-  "prompts": ["SYSTEM.md", "AGENTS.md"],
-  "mcpServers": ".aether/mcp/default.json",
+  "prompts": [".aether/SYSTEM.md", "AGENTS.md"],
+  "mcpServers": ".aether/mcp.json",
   "agents": [
     {
       "name": "planner",
