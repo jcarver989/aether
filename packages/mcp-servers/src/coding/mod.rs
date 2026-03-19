@@ -7,7 +7,8 @@ use rmcp::{
         wrapper::{Json, Parameters},
     },
     model::{
-        CreateElicitationRequestParams, ElicitationAction, ElicitationSchema, Implementation,
+        CreateElicitationRequestParams, ElicitationSchema, EnumSchema,
+        Implementation,
         ProgressNotificationParam, ServerCapabilities, ServerInfo,
     },
     service::RequestContext,
@@ -311,6 +312,9 @@ When using tools that take file paths, always use absolute paths from:
 
     /// Prompt the user for approval via elicitation. Always sends the prompt —
     /// callers are responsible for deciding when to call this based on `permission_mode`.
+    ///
+    /// Returns `Ok(())` if allowed, or `Err` with either a generic decline
+    /// message or the user's feedback explaining what to do instead.
     async fn elicit_permission(
         &self,
         context: &RequestContext<RoleServer>,
@@ -323,17 +327,30 @@ When using tools that take file paths, always use absolute paths from:
             .create_elicitation(CreateElicitationRequestParams::FormElicitationParams {
                 meta: None,
                 message,
-                requested_schema: ElicitationSchema::builder().build().unwrap(),
+                requested_schema: ElicitationSchema::builder()
+                    .required_enum_schema(
+                        "decision",
+                        EnumSchema::builder(vec!["allow".into(), "deny".into()])
+                            .untitled()
+                            .build(),
+                    )
+                    .build()
+                    .unwrap(),
             })
             .await
             .map_err(|e| format!("Elicitation failed: {e}"))?;
 
-        if result.action == ElicitationAction::Accept {
+        let allowed = result
+            .content
+            .as_ref()
+            .and_then(|c| c.get("decision"))
+            .and_then(|v| v.as_str())
+            == Some("allow");
+
+        if allowed {
             Ok(())
         } else {
-            Err(format!(
-                "Operation declined by user: {tool_name} {description}"
-            ))
+            Err(format!("Operation declined by user: {tool_name}"))
         }
     }
 
