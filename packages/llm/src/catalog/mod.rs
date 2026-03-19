@@ -1,3 +1,5 @@
+use crate::providers::local::discovery::discover_local_models;
+
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
 /// Returns models whose provider env var is set
@@ -10,6 +12,14 @@ pub fn available_models() -> Vec<LlmModel> {
         })
         .cloned()
         .collect()
+}
+
+/// Returns available catalog models plus any locally discovered models.
+pub async fn get_local_models() -> Vec<LlmModel> {
+    let mut models = available_models();
+    let local = discover_local_models().await;
+    models.extend(local);
+    models
 }
 
 #[cfg(test)]

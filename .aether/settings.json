@@ -49,7 +49,7 @@
     {
       "name": "Local",
       "description": "Llama.cpp",
-      "model": "llamacpp",
+      "model": "llamacpp:unsloth/Qwen3.5-9B-GGUF",
       "userInvocable": true,
       "agentInvocable": false
     },
