@@ -7,14 +7,14 @@ use llm::catalog::LlmModel;
 use llm::oauth::OAuthCredentialStore;
 use std::collections::{BTreeMap, HashSet};
 
-fn needs_oauth_login(model: &LlmModel, credential_ids: &HashSet<String>) -> bool {
+fn needs_oauth_login(model: &LlmModel) -> bool {
     model
         .oauth_provider_id()
-        .is_some_and(|id| !credential_ids.contains(id))
+        .is_some_and(|id| !OAuthCredentialStore::has_credentials_sync(id))
 }
 
-pub(crate) fn unavailable_reason(model: &LlmModel, credential_ids: &HashSet<String>) -> String {
-    if needs_oauth_login(model, credential_ids) {
+pub(crate) fn unavailable_reason(model: &LlmModel) -> String {
+    if needs_oauth_login(model) {
         return "Needs login".to_string();
     }
     model.required_env_var().map_or_else(
@@ -51,7 +51,6 @@ pub(crate) fn build_model_config_option(
     all_models: &[LlmModel],
 ) -> SessionConfigOption {
     let available_models: HashSet<String> = available.iter().map(ToString::to_string).collect();
-    let credential_ids = OAuthCredentialStore::credential_ids_sync();
 
     // Phase 1: Group models by provider, counting available models per provider
     let mut groups: BTreeMap<&str, ProviderGroup<'_>> = BTreeMap::new();
@@ -79,14 +78,14 @@ pub(crate) fn build_model_config_option(
             let noun = if count == 1 { "model" } else { "models" };
             let name = format!("{display} ({count} {noun})");
             let value = format!("__unavailable:{provider_key}");
-            let reason = unavailable_reason(group.models[0], &credential_ids);
+            let reason = unavailable_reason(group.models[0]);
             options.push(acp::SessionConfigSelectOption::new(value, name).description(reason));
         } else {
             // Mixed or fully available — list each model individually
             for m in &group.models {
                 let value = m.to_string();
                 let is_available = available_models.contains(&value);
-                let needs_login = needs_oauth_login(m, &credential_ids);
+                let needs_login = needs_oauth_login(m);
                 let name = if is_available && !needs_login {
                     format!("{display}: {}", m.display_name())
                 } else if needs_login {
@@ -240,7 +239,11 @@ pub(crate) fn build_config_options_from_modes(
         options.push(mode_option);
     }
 
-    options.push(build_model_config_option(available, current_model, all_models));
+    options.push(build_model_config_option(
+        available,
+        current_model,
+        all_models,
+    ));
 
     let levels = intersect_reasoning_levels(current_model);
 
@@ -383,8 +386,14 @@ mod tests {
     #[test]
     fn build_config_options_from_modes_returns_single_model_option() {
         let models = test_models();
-        let opts =
-            build_config_options_from_modes(&[], &models, None, "deepseek:deepseek-chat", None, LlmModel::all());
+        let opts = build_config_options_from_modes(
+            &[],
+            &models,
+            None,
+            "deepseek:deepseek-chat",
+            None,
+            LlmModel::all(),
+        );
 
         assert_eq!(opts.len(), 1);
 
@@ -451,7 +460,8 @@ mod tests {
     #[test]
     fn build_model_config_option_includes_multi_select_meta() {
         let models = test_models();
-        let opt = build_model_config_option(&models, "anthropic:claude-sonnet-4-5", LlmModel::all());
+        let opt =
+            build_model_config_option(&models, "anthropic:claude-sonnet-4-5", LlmModel::all());
         let meta = ConfigOptionMeta::from_meta(opt.meta.as_ref());
         assert!(meta.multi_select);
     }
@@ -479,7 +489,8 @@ mod tests {
     fn collapsed_entry_for_fully_unavailable_provider() {
         // test_models() has no Moonshot models available
         let models = test_models();
-        let opt = build_model_config_option(&models, "anthropic:claude-sonnet-4-5", LlmModel::all());
+        let opt =
+            build_model_config_option(&models, "anthropic:claude-sonnet-4-5", LlmModel::all());
 
         let SessionConfigKind::Select(ref select) = opt.kind else {
             panic!("Expected Select kind");
@@ -597,7 +608,8 @@ mod tests {
     fn mixed_provider_lists_models_individually() {
         // test_models() has Gemini25Pro available, so Gemini is "mixed"
         let models = test_models();
-        let opt = build_model_config_option(&models, "anthropic:claude-sonnet-4-5", LlmModel::all());
+        let opt =
+            build_model_config_option(&models, "anthropic:claude-sonnet-4-5", LlmModel::all());
 
         let SessionConfigKind::Select(ref select) = opt.kind else {
             panic!("Expected Select kind");

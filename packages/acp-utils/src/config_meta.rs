@@ -78,7 +78,11 @@ mod tests {
     #[test]
     fn select_option_meta_roundtrip() {
         let original = SelectOptionMeta {
-            reasoning_levels: vec![ReasoningEffort::Low, ReasoningEffort::Medium, ReasoningEffort::High],
+            reasoning_levels: vec![
+                ReasoningEffort::Low,
+                ReasoningEffort::Medium,
+                ReasoningEffort::High,
+            ],
         };
         let meta = original.clone().into_meta();
         assert!(meta.is_some());

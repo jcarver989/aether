@@ -273,11 +273,7 @@ mod tests {
             allow: vec!["read_file".to_string(), "grep".to_string()],
             deny: vec![],
         };
-        let tools = vec![
-            make_tool("bash"),
-            make_tool("read_file"),
-            make_tool("grep"),
-        ];
+        let tools = vec![make_tool("bash"), make_tool("read_file"), make_tool("grep")];
         let result = filter.apply(tools);
         let names: Vec<_> = result.iter().map(|t| t.name.as_str()).collect();
         assert_eq!(names, vec!["read_file", "grep"]);

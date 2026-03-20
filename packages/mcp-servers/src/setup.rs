@@ -34,7 +34,10 @@ impl McpBuilderExt for McpBuilder {
                             CodingMcpArgs::default()
                         }
                     };
-                    debug!("CodingMcp created with LSP, permission_mode={:?}", parsed.permission_mode);
+                    debug!(
+                        "CodingMcp created with LSP, permission_mode={:?}",
+                        parsed.permission_mode
+                    );
                     CodingMcp::with_tools(DefaultCodingTools::new())
                         .with_lsp(project_path.clone())
                         .with_root_dir(project_path)

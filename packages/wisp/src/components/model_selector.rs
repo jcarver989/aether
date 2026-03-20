@@ -677,8 +677,12 @@ mod tests {
 
     #[tokio::test]
     async fn tab_cycles_through_four_levels_on_codex() {
-        let mut s =
-            ModelSelector::new(make_mixed_reasoning_items(), "model".to_string(), None, None);
+        let mut s = ModelSelector::new(
+            make_mixed_reasoning_items(),
+            "model".to_string(),
+            None,
+            None,
+        );
         // Sorted alphabetically: Anthropic first, Codex second. Move to Codex.
         s.on_event(&Event::Key(key(KeyCode::Down))).await;
         assert_eq!(s.reasoning_effort, None);
@@ -697,8 +701,12 @@ mod tests {
 
     #[tokio::test]
     async fn moving_to_fewer_levels_clamps_xhigh_to_high() {
-        let mut s =
-            ModelSelector::new(make_mixed_reasoning_items(), "model".to_string(), None, None);
+        let mut s = ModelSelector::new(
+            make_mixed_reasoning_items(),
+            "model".to_string(),
+            None,
+            None,
+        );
         // Move to Codex model (4 levels)
         s.on_event(&Event::Key(key(KeyCode::Down))).await;
 

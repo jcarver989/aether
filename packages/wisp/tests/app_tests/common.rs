@@ -216,8 +216,8 @@ pub(super) fn settings_menu_selected_label(terminal: &TestTerminal) -> Option<St
     // Scan each row for any cell with highlight_bg to find the selected row.
     // The menu is inside a bordered overlay so we need to check multiple columns.
     for (row, line) in lines.iter().enumerate() {
-        let has_highlight = (0..width)
-            .any(|col| terminal.get_style_at(row, col).bg == Some(highlight_bg));
+        let has_highlight =
+            (0..width).any(|col| terminal.get_style_at(row, col).bg == Some(highlight_bg));
         if has_highlight {
             let label = line.trim().to_string();
             if !label.is_empty() {

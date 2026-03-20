@@ -14,7 +14,10 @@ fn filled_slots(effort: Option<ReasoningEffort>, total: usize) -> usize {
 /// - `Medium` => `reasoning [■■·]` (2 filled)
 /// - `High` => `reasoning [■■■]` (3 filled)
 pub(crate) fn reasoning_bar(effort: Option<ReasoningEffort>, total_levels: usize) -> String {
-    format!("reasoning {}", slot_bar(filled_slots(effort, total_levels), total_levels))
+    format!(
+        "reasoning {}",
+        slot_bar(filled_slots(effort, total_levels), total_levels)
+    )
 }
 
 /// Returns the appropriate theme color for the given reasoning effort.

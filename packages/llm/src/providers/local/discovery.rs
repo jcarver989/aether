@@ -11,8 +11,8 @@ pub async fn discover_local_models() -> Vec<LlmModel> {
 }
 
 async fn discover_ollama() -> Vec<LlmModel> {
-    let base = std::env::var("OLLAMA_HOST")
-        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+    let base =
+        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_string());
     let url = format!("{base}/api/tags");
 
     let body = match fetch(&url).await {
@@ -34,8 +34,8 @@ async fn discover_ollama() -> Vec<LlmModel> {
 }
 
 async fn discover_llama_cpp() -> Vec<LlmModel> {
-    let base = std::env::var("LLAMA_CPP_HOST")
-        .unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let base =
+        std::env::var("LLAMA_CPP_HOST").unwrap_or_else(|_| "http://localhost:8080".to_string());
     let url = format!("{base}/v1/models");
 
     let body = match fetch(&url).await {
