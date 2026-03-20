@@ -7,8 +7,7 @@ use rmcp::{
         wrapper::{Json, Parameters},
     },
     model::{
-        CreateElicitationRequestParams, ElicitationSchema, EnumSchema,
-        Implementation,
+        CreateElicitationRequestParams, ElicitationSchema, EnumSchema, Implementation,
         ProgressNotificationParam, ServerCapabilities, ServerInfo,
     },
     service::RequestContext,

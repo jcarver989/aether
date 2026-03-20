@@ -113,7 +113,11 @@ fn model_values_with_reasoning() -> Vec<ModelEntry> {
         ModelEntry {
             value: "anthropic:claude-opus-4-6".to_string(),
             name: "Anthropic / Claude Opus 4.6".to_string(),
-            reasoning_levels: vec![utils::ReasoningEffort::Low, utils::ReasoningEffort::Medium, utils::ReasoningEffort::High],
+            reasoning_levels: vec![
+                utils::ReasoningEffort::Low,
+                utils::ReasoningEffort::Medium,
+                utils::ReasoningEffort::High,
+            ],
         },
         ModelEntry {
             value: "deepseek:deepseek-chat".to_string(),

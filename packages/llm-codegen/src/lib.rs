@@ -789,10 +789,7 @@ fn emit_llm_reasoning_levels(out: &mut String) {
     }
     pushln(
         out,
-        format!(
-            "            {} => &[],",
-            dynamic_pattern_with_binding("_")
-        ),
+        format!("            {} => &[],", dynamic_pattern_with_binding("_")),
     );
     pushln(out, "        }");
     pushln(out, "    }");
