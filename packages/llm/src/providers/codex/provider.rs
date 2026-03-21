@@ -22,11 +22,11 @@ const CODEX_API_BASE: &str = "https://chatgpt.com/backend-api/codex";
 pub struct CodexProvider {
     client: reqwest::Client,
     model: String,
-    token_manager: Arc<CodexTokenManager>,
+    token_manager: Arc<CodexTokenManager<OAuthCredentialStore>>,
 }
 
 impl CodexProvider {
-    pub fn new(token_manager: CodexTokenManager) -> Self {
+    pub fn new(token_manager: CodexTokenManager<OAuthCredentialStore>) -> Self {
         Self {
             client: reqwest::Client::new(),
             model: "gpt-5.4".to_string(),
@@ -156,7 +156,7 @@ impl CodexProvider {
 impl ProviderFactory for CodexProvider {
     fn from_env() -> Result<Self> {
         let store = OAuthCredentialStore::new(super::PROVIDER_ID);
-        let token_manager = CodexTokenManager::new(store);
+        let token_manager = CodexTokenManager::new(store, super::PROVIDER_ID);
         Ok(Self::new(token_manager))
     }
 
@@ -236,13 +236,10 @@ mod tests {
     use crate::ChatMessage;
     use crate::ToolDefinition;
     use crate::types::IsoString;
-    fn create_test_token_manager() -> CodexTokenManager {
-        let store = OAuthCredentialStore::new("codex-test");
-        CodexTokenManager::new(store)
-    }
 
     fn create_test_provider() -> CodexProvider {
-        let tm = create_test_token_manager();
+        let store = OAuthCredentialStore::new("codex-test");
+        let tm = CodexTokenManager::new(store, "codex-test");
         CodexProvider::new(tm).with_model("gpt-5.4")
     }
 

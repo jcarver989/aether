@@ -4,17 +4,17 @@ use aether_core::agent_spec::AgentSpec;
 use agent_client_protocol::{self as acp, SessionConfigOption, SessionConfigOptionCategory};
 use llm::ReasoningEffort;
 use llm::catalog::LlmModel;
-use llm::oauth::OAuthCredentialStore;
+use llm::oauth::OAuthCredentialStorage;
 use std::collections::{BTreeMap, HashSet};
 
-fn needs_oauth_login(model: &LlmModel) -> bool {
+fn needs_oauth_login(model: &LlmModel, store: &impl OAuthCredentialStorage) -> bool {
     model
         .oauth_provider_id()
-        .is_some_and(|id| !OAuthCredentialStore::has_credential(id))
+        .is_some_and(|id| !store.has_credential(id))
 }
 
-pub(crate) fn unavailable_reason(model: &LlmModel) -> String {
-    if needs_oauth_login(model) {
+pub(crate) fn unavailable_reason(model: &LlmModel, store: &impl OAuthCredentialStorage) -> String {
+    if needs_oauth_login(model, store) {
         return "Needs login".to_string();
     }
     model.required_env_var().map_or_else(
@@ -49,6 +49,7 @@ pub(crate) fn build_model_config_option(
     available: &[LlmModel],
     current_model: &str,
     all_models: &[LlmModel],
+    credential_store: &impl OAuthCredentialStorage,
 ) -> SessionConfigOption {
     let available_models: HashSet<String> = available.iter().map(ToString::to_string).collect();
 
@@ -78,14 +79,14 @@ pub(crate) fn build_model_config_option(
             let noun = if count == 1 { "model" } else { "models" };
             let name = format!("{display} ({count} {noun})");
             let value = format!("__unavailable:{provider_key}");
-            let reason = unavailable_reason(group.models[0]);
+            let reason = unavailable_reason(group.models[0], credential_store);
             options.push(acp::SessionConfigSelectOption::new(value, name).description(reason));
         } else {
             // Mixed or fully available — list each model individually
             for m in &group.models {
                 let value = m.to_string();
                 let is_available = available_models.contains(&value);
-                let needs_login = needs_oauth_login(m);
+                let needs_login = needs_oauth_login(m, credential_store);
                 let name = if is_available && !needs_login {
                     format!("{display}: {}", m.display_name())
                 } else if needs_login {
@@ -104,7 +105,7 @@ pub(crate) fn build_model_config_option(
                 if is_available && !needs_login {
                     options.push(option);
                 } else {
-                    options.push(option.description(unavailable_reason(m)));
+                    options.push(option.description(unavailable_reason(m, credential_store)));
                 }
             }
         }
@@ -232,6 +233,7 @@ pub(crate) fn build_config_options_from_modes(
     current_model: &str,
     reasoning_effort: Option<ReasoningEffort>,
     all_models: &[LlmModel],
+    credential_store: &impl OAuthCredentialStorage,
 ) -> Vec<SessionConfigOption> {
     let mut options = Vec::new();
 
@@ -243,6 +245,7 @@ pub(crate) fn build_config_options_from_modes(
         available,
         current_model,
         all_models,
+        credential_store,
     ));
 
     let levels = intersect_reasoning_levels(current_model);
@@ -291,6 +294,7 @@ mod tests {
         SessionConfigKind, SessionConfigSelectOption, SessionConfigSelectOptions,
     };
     use llm::catalog::{AnthropicModel, DeepSeekModel, GeminiModel};
+    use llm::testing::FakeOAuthCredentialStore;
 
     fn test_models() -> Vec<LlmModel> {
         vec![
@@ -350,9 +354,13 @@ mod tests {
         opts.iter().find(|o| o.id.0.as_ref() == id).unwrap_or_else(|| panic!("option '{id}' not found"))
     }
 
+    fn fake_store() -> FakeOAuthCredentialStore {
+        FakeOAuthCredentialStore::new()
+    }
+
     fn config_opts(model: &str, effort: Option<ReasoningEffort>) -> Vec<SessionConfigOption> {
         let modes = test_validated_modes();
-        build_config_options_from_modes(&modes, &test_models(), None, model, effort, LlmModel::all())
+        build_config_options_from_modes(&modes, &test_models(), None, model, effort, LlmModel::all(), &fake_store())
     }
 
     #[test]
@@ -383,7 +391,7 @@ mod tests {
         let modes = test_validated_modes();
         let options = build_config_options_from_modes(
             &modes, &test_models(), Some("Planner"),
-            "anthropic:claude-sonnet-4-5", Some(ReasoningEffort::High), LlmModel::all(),
+            "anthropic:claude-sonnet-4-5", Some(ReasoningEffort::High), LlmModel::all(), &fake_store(),
         );
         assert!(has_option_id(&options, "mode"));
     }
@@ -391,7 +399,7 @@ mod tests {
     #[test]
     fn build_config_options_from_modes_returns_single_model_option() {
         let opts = build_config_options_from_modes(
-            &[], &test_models(), None, "deepseek:deepseek-chat", None, LlmModel::all(),
+            &[], &test_models(), None, "deepseek:deepseek-chat", None, LlmModel::all(), &fake_store(),
         );
         assert_eq!(opts.len(), 1);
 
@@ -421,7 +429,7 @@ mod tests {
 
     #[test]
     fn build_model_config_option_includes_multi_select_meta() {
-        let opt = build_model_config_option(&test_models(), "anthropic:claude-sonnet-4-5", LlmModel::all());
+        let opt = build_model_config_option(&test_models(), "anthropic:claude-sonnet-4-5", LlmModel::all(), &fake_store());
         assert!(ConfigOptionMeta::from_meta(opt.meta.as_ref()).multi_select);
     }
 
@@ -437,7 +445,7 @@ mod tests {
 
     #[test]
     fn collapsed_entry_for_fully_unavailable_provider() {
-        let opt = build_model_config_option(&test_models(), "anthropic:claude-sonnet-4-5", LlmModel::all());
+        let opt = build_model_config_option(&test_models(), "anthropic:claude-sonnet-4-5", LlmModel::all(), &fake_store());
         let options = select_options(&opt);
 
         let moonshot = options.iter()
@@ -461,7 +469,7 @@ mod tests {
 
     #[test]
     fn mixed_provider_lists_models_individually() {
-        let opt = build_model_config_option(&test_models(), "anthropic:claude-sonnet-4-5", LlmModel::all());
+        let opt = build_model_config_option(&test_models(), "anthropic:claude-sonnet-4-5", LlmModel::all(), &fake_store());
         let options = select_options(&opt);
 
         assert!(!options.iter().any(|o| o.value.0.as_ref() == "__unavailable:gemini"),

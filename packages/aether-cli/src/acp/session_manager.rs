@@ -118,6 +118,7 @@ pub struct SessionManager {
     sessions: Arc<Mutex<HashMap<String, SessionState>>>,
     actor_handle: AcpActorHandle,
     session_store: Arc<SessionStore>,
+    has_oauth_credential: fn(&str) -> bool,
 }
 
 impl SessionManager {
@@ -131,6 +132,7 @@ impl SessionManager {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             actor_handle,
             session_store,
+            has_oauth_credential: OAuthCredentialStore::has_credential,
         }
     }
 
@@ -193,6 +195,7 @@ impl SessionManager {
             model,
             reasoning_effort,
             &all_models,
+            &OAuthCredentialStore::default(),
         )
     }
 
@@ -239,7 +242,7 @@ fn get_all_models(discovered: &[LlmModel]) -> Vec<LlmModel> {
     all
 }
 
-fn build_auth_methods() -> Vec<AuthMethod> {
+fn build_auth_methods(has_credential: impl Fn(&str) -> bool) -> Vec<AuthMethod> {
     let mut seen = HashSet::new();
     LlmModel::all()
         .iter()
@@ -251,7 +254,7 @@ fn build_auth_methods() -> Vec<AuthMethod> {
                 .find(|m| m.oauth_provider_id() == Some(id))
                 .map_or(id, |m| m.provider_display_name());
             let mut method = acp::AuthMethodAgent::new(id, display);
-            if OAuthCredentialStore::has_credential(id) {
+            if has_credential(id) {
                 method = method.description("authenticated");
             }
             AuthMethod::Agent(method)
@@ -375,7 +378,8 @@ mod tests {
     #[tokio::test]
     async fn initialize_always_advertises_load_session_support() {
         let (tx, _rx) = mpsc::unbounded_channel();
-        let manager = SessionManager::new(AcpActorHandle::new(tx));
+        let mut manager = SessionManager::new(AcpActorHandle::new(tx));
+        manager.has_oauth_credential = |_| false;
         let response = manager
             .initialize(InitializeRequest::new(ProtocolVersion::LATEST))
             .await
@@ -389,7 +393,7 @@ mod tests {
 impl Agent for SessionManager {
     async fn initialize(&self, args: InitializeRequest) -> Result<InitializeResponse, acp::Error> {
         info!("Received initialize request: {:?}", args);
-        let auth_methods = build_auth_methods();
+        let auth_methods = build_auth_methods(self.has_oauth_credential);
         Ok(InitializeResponse::new(ProtocolVersion::V1)
             .agent_info(Implementation::new("Aether", "0.1.0"))
             .agent_capabilities(
@@ -424,7 +428,7 @@ impl Agent for SessionManager {
             }
             _ => return Err(acp::Error::invalid_params()),
         }
-        let auth_methods = build_auth_methods();
+        let auth_methods = build_auth_methods(self.has_oauth_credential);
         let auth_methods_notification: ExtNotification =
             AuthMethodsUpdatedParams { auth_methods }.into();
         if let Err(e) = self
@@ -436,6 +440,7 @@ impl Agent for SessionManager {
         }
 
         // Broadcast updated config options to all active sessions
+        let credential_store = OAuthCredentialStore::default();
         let available = catalog::get_local_models().await;
         let all_models = get_all_models(&available);
         let sessions = self.sessions.lock().await;
@@ -451,6 +456,7 @@ impl Agent for SessionManager {
                 model,
                 state.config.reasoning_effort,
                 &all_models,
+                &credential_store,
             );
             let notification = SessionNotification::new(
                 SessionId::new(id.clone()),
@@ -808,6 +814,7 @@ impl Agent for SessionManager {
             effective_model,
             state.config.reasoning_effort,
             &all_models,
+            &OAuthCredentialStore::default(),
         );
         Ok(SetSessionConfigOptionResponse::new(options))
     }
