@@ -7,12 +7,10 @@ use crate::providers::bedrock::BedrockProvider;
 use crate::providers::codex::CodexProvider;
 use crate::providers::{
     anthropic::AnthropicProvider,
-    deepseek::DeepSeekProvider,
     gemini::GeminiProvider,
     local::{llama_cpp::LlamaCppProvider, ollama::OllamaProvider},
-    moonshot::MoonshotProvider,
+    openai_compatible::generic::{self, GenericOpenAiProvider},
     openrouter::OpenRouterProvider,
-    z_ai::ZAiProvider,
 };
 use crate::{LlmError, ProviderFactory, StreamingModelProvider, alloyed::AlloyedModelProvider};
 
@@ -35,12 +33,12 @@ impl Default for ModelProviderParser {
     fn default() -> Self {
         let parser = Self::new(HashMap::new())
             .with_provider::<AnthropicProvider>("anthropic")
-            .with_provider::<DeepSeekProvider>("deepseek")
+            .with_generic_provider("deepseek", &generic::DEEPSEEK)
             .with_provider::<GeminiProvider>("gemini")
-            .with_provider::<MoonshotProvider>("moonshot")
+            .with_generic_provider("moonshot", &generic::MOONSHOT)
             .with_provider::<OpenRouterProvider>("openrouter")
             .with_provider::<OllamaProvider>("ollama")
-            .with_provider::<ZAiProvider>("zai")
+            .with_generic_provider("zai", &generic::ZAI)
             .with_provider::<LlamaCppProvider>("llamacpp");
 
         #[cfg(feature = "bedrock")]
@@ -61,6 +59,22 @@ impl ModelProviderParser {
         self.factories.insert(
             name.into(),
             Box::new(|model| Ok(Box::new(P::from_env()?.with_model(model)))),
+        );
+        self
+    }
+
+    pub fn with_generic_provider(
+        mut self,
+        name: impl Into<String>,
+        config: &'static generic::ProviderConfig,
+    ) -> Self {
+        self.factories.insert(
+            name.into(),
+            Box::new(move |model| {
+                Ok(Box::new(
+                    GenericOpenAiProvider::from_env(config)?.with_model(model),
+                ))
+            }),
         );
         self
     }
