@@ -84,11 +84,8 @@ struct WizardInput {
 
 impl WizardInput {
     fn from_form_and_model(json: &Value, model: String) -> Self {
-        let name = json["name"].as_str().unwrap_or("Default").to_string();
-        let description = json["description"]
-            .as_str()
-            .unwrap_or("Default coding agent")
-            .to_string();
+        let name = json["name"].as_str().unwrap_or("").to_string();
+        let description = json["description"].as_str().unwrap_or("").to_string();
         let servers = json["servers"]
             .as_array()
             .map(|arr| {
@@ -149,14 +146,14 @@ fn build_form() -> Form {
                 label: "Agent Name".to_string(),
                 description: None,
                 required: true,
-                kind: FormFieldKind::Text(TextField::new("Default".to_string())),
+                kind: FormFieldKind::Text(TextField::new("".to_string())),
             },
             FormField {
                 name: "description".to_string(),
                 label: "Description".to_string(),
                 description: None,
                 required: true,
-                kind: FormFieldKind::Text(TextField::new("Default coding agent".to_string())),
+                kind: FormFieldKind::Text(TextField::new("".to_string())),
             },
             FormField {
                 name: "servers".to_string(),
@@ -165,7 +162,7 @@ fn build_form() -> Form {
                 required: true,
                 kind: FormFieldKind::MultiSelect(MultiSelect::new(
                     server_options,
-                    vec![true, true, true, false, true, true],
+                    vec![true, true, true, true, true, true],
                 )),
             },
         ],
