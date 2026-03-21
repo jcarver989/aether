@@ -9,7 +9,7 @@ workspace = true
 [features]
 default = []
 bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types"]
-oauth = ["dep:rmcp", "dep:oauth2", "dep:async-trait"]
+oauth = ["dep:rmcp", "dep:oauth2", "dep:async-trait", "dep:keyring"]
 codex = ["oauth", "dep:base64", "dep:url"]
 
 [dependencies]
@@ -41,6 +41,7 @@ utils = { path = "../utils" }
 rmcp = { workspace = true, optional = true }
 oauth2 = { workspace = true, optional = true }
 async-trait = { workspace = true, optional = true }
+keyring = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
 
 [build-dependencies]

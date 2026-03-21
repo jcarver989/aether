@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, HashSet};
 fn needs_oauth_login(model: &LlmModel) -> bool {
     model
         .oauth_provider_id()
-        .is_some_and(|id| !OAuthCredentialStore::has_credentials_sync(id))
+        .is_some_and(|id| !OAuthCredentialStore::has_credential(id))
 }
 
 pub(crate) fn unavailable_reason(model: &LlmModel) -> String {
@@ -104,7 +104,7 @@ pub(crate) fn build_model_config_option(
                 if is_available && !needs_login {
                     options.push(option);
                 } else {
-                    options.push(option.description(unavailable_reason(m, &credential_ids)));
+                    options.push(option.description(unavailable_reason(m)));
                 }
             }
         }

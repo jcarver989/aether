@@ -96,7 +96,7 @@ pub async fn perform_codex_oauth_flow() -> Result<(), LlmError> {
         expires_at,
     };
 
-    let store = OAuthCredentialStore::new(super::PROVIDER_ID)?;
+    let store = OAuthCredentialStore::new(super::PROVIDER_ID);
     store
         .save_credential(credential)
         .await
