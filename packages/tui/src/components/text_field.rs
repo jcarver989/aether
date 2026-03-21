@@ -282,420 +282,269 @@ mod tests {
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
-
     fn ctrl(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::CONTROL)
     }
-
     fn alt(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::ALT)
+    }
+    fn field(text: &str) -> TextField {
+        TextField::new(text.to_string())
+    }
+    fn field_at(text: &str, cursor: usize) -> TextField {
+        let mut f = field(text);
+        f.set_cursor_pos(cursor);
+        f
+    }
+
+    async fn send(f: &mut TextField, evt: Event) -> Option<Vec<()>> {
+        f.on_event(&evt).await
+    }
+    async fn send_key(f: &mut TextField, k: KeyEvent) -> Option<Vec<()>> {
+        send(f, Event::Key(k)).await
+    }
+
+    /// Assert both value and cursor position.
+    fn assert_state(f: &TextField, value: &str, cursor: usize) {
+        assert_eq!(f.value, value, "value mismatch");
+        assert_eq!(f.cursor_pos(), cursor, "cursor mismatch");
     }
 
     #[tokio::test]
     async fn typing_appends_characters() {
-        let mut field = TextField::new(String::new());
-        field.on_event(&Event::Key(key(KeyCode::Char('h')))).await;
-        field.on_event(&Event::Key(key(KeyCode::Char('i')))).await;
-        assert_eq!(field.value, "hi");
+        let mut f = field("");
+        send_key(&mut f, key(KeyCode::Char('h'))).await;
+        send_key(&mut f, key(KeyCode::Char('i'))).await;
+        assert_eq!(f.value, "hi");
     }
 
     #[tokio::test]
-    async fn backspace_removes_last_character() {
-        let mut field = TextField::new("abc".to_string());
-        field.on_event(&Event::Key(key(KeyCode::Backspace))).await;
-        assert_eq!(field.value, "ab");
-    }
+    async fn backspace_variants() {
+        // End of string
+        let mut f = field("abc");
+        send_key(&mut f, key(KeyCode::Backspace)).await;
+        assert_eq!(f.value, "ab");
 
-    #[tokio::test]
-    async fn backspace_on_empty_is_no_op() {
-        let mut field = TextField::new(String::new());
-        field.on_event(&Event::Key(key(KeyCode::Backspace))).await;
-        assert_eq!(field.value, "");
+        // Empty string (no-op)
+        let mut f = field("");
+        send_key(&mut f, key(KeyCode::Backspace)).await;
+        assert_eq!(f.value, "");
+
+        // Middle of string
+        let mut f = field_at("hello", 3);
+        send_key(&mut f, key(KeyCode::Backspace)).await;
+        assert_state(&f, "helo", 2);
     }
 
     #[test]
     fn to_json_returns_string_value() {
-        let field = TextField::new("hello".to_string());
-        assert_eq!(field.to_json(), serde_json::json!("hello"));
+        assert_eq!(field("hello").to_json(), serde_json::json!("hello"));
     }
 
     #[tokio::test]
     async fn unhandled_keys_are_ignored() {
-        let mut field = TextField::new(String::new());
-        let outcome = field.on_event(&Event::Key(key(KeyCode::F(1)))).await;
-        assert!(outcome.is_none());
+        let mut f = field("");
+        assert!(send_key(&mut f, key(KeyCode::F(1))).await.is_none());
     }
 
     #[tokio::test]
-    async fn paste_appends_text() {
-        let mut field = TextField::new(String::new());
-        let outcome = field.on_event(&Event::Paste("hello".to_string())).await;
+    async fn paste_variants() {
+        // Into empty field
+        let mut f = field("");
+        let outcome = send(&mut f, Event::Paste("hello".into())).await;
         assert!(outcome.is_some());
-        assert_eq!(field.value, "hello");
+        assert_eq!(f.value, "hello");
+
+        // At cursor position
+        let mut f = field_at("hd", 1);
+        send(&mut f, Event::Paste("ello worl".into())).await;
+        assert_state(&f, "hello world", 10);
     }
 
     #[test]
     fn cursor_starts_at_end() {
-        let field = TextField::new("hello".to_string());
-        assert_eq!(field.cursor_pos(), 5);
+        assert_eq!(field("hello").cursor_pos(), 5);
     }
 
     #[tokio::test]
-    async fn left_moves_cursor_back() {
-        let mut field = TextField::new("hello".to_string());
-        field.on_event(&Event::Key(key(KeyCode::Left))).await;
-        assert_eq!(field.cursor_pos(), 4);
-    }
-
-    #[tokio::test]
-    async fn right_at_end_stays() {
-        let mut field = TextField::new("hello".to_string());
-        field.on_event(&Event::Key(key(KeyCode::Right))).await;
-        assert_eq!(field.cursor_pos(), 5);
-    }
-
-    #[tokio::test]
-    async fn left_at_start_stays() {
-        let mut field = TextField::new(String::new());
-        field.on_event(&Event::Key(key(KeyCode::Left))).await;
-        assert_eq!(field.cursor_pos(), 0);
-    }
-
-    #[tokio::test]
-    async fn home_moves_to_start() {
-        let mut field = TextField::new("hello".to_string());
-        field.on_event(&Event::Key(key(KeyCode::Home))).await;
-        assert_eq!(field.cursor_pos(), 0);
-    }
-
-    #[tokio::test]
-    async fn end_moves_to_end() {
-        let mut field = TextField::new("hello".to_string());
-        field.set_cursor_pos(0);
-        field.on_event(&Event::Key(key(KeyCode::End))).await;
-        assert_eq!(field.cursor_pos(), 5);
+    async fn cursor_movement_single_keys() {
+        // (initial_text, initial_cursor, key_event, expected_cursor)
+        let cases: Vec<(&str, Option<usize>, KeyEvent, usize)> = vec![
+            ("hello", None, key(KeyCode::Left), 4),
+            ("hello", None, key(KeyCode::Right), 5),
+            ("", None, key(KeyCode::Left), 0),
+            ("hello", None, key(KeyCode::Home), 0),
+            ("hello", Some(0), key(KeyCode::End), 5),
+            ("hello", None, ctrl(KeyCode::Char('a')), 0),
+            ("hello", Some(0), ctrl(KeyCode::Char('e')), 5),
+        ];
+        for (text, cursor, k, expected) in cases {
+            let mut f = cursor.map_or_else(|| field(text), |c| field_at(text, c));
+            send_key(&mut f, k).await;
+            assert_eq!(f.cursor_pos(), expected, "failed for key {k:?} on {text:?}");
+        }
     }
 
     #[tokio::test]
     async fn insert_at_middle() {
-        let mut field = TextField::new("hllo".to_string());
-        field.set_cursor_pos(1);
-        field.on_event(&Event::Key(key(KeyCode::Char('e')))).await;
-        assert_eq!(field.value, "hello");
-        assert_eq!(field.cursor_pos(), 2);
-    }
-
-    #[tokio::test]
-    async fn backspace_at_middle() {
-        let mut field = TextField::new("hello".to_string());
-        field.set_cursor_pos(3);
-        field.on_event(&Event::Key(key(KeyCode::Backspace))).await;
-        assert_eq!(field.value, "helo");
-        assert_eq!(field.cursor_pos(), 2);
-    }
-
-    #[tokio::test]
-    async fn paste_at_cursor() {
-        let mut field = TextField::new("hd".to_string());
-        field.set_cursor_pos(1);
-        field.on_event(&Event::Paste("ello worl".to_string())).await;
-        assert_eq!(field.value, "hello world");
-        assert_eq!(field.cursor_pos(), 10);
+        let mut f = field_at("hllo", 1);
+        send_key(&mut f, key(KeyCode::Char('e'))).await;
+        assert_state(&f, "hello", 2);
     }
 
     #[tokio::test]
     async fn multibyte_utf8_navigation() {
-        let mut field = TextField::new("a中b".to_string());
-        assert_eq!(field.cursor_pos(), 5);
-
-        field.on_event(&Event::Key(key(KeyCode::Left))).await;
-        assert_eq!(field.cursor_pos(), 4);
-
-        field.on_event(&Event::Key(key(KeyCode::Left))).await;
-        assert_eq!(field.cursor_pos(), 1);
-
-        field.on_event(&Event::Key(key(KeyCode::Left))).await;
-        assert_eq!(field.cursor_pos(), 0);
-
-        field.on_event(&Event::Key(key(KeyCode::Right))).await;
-        assert_eq!(field.cursor_pos(), 1);
-
-        field.on_event(&Event::Key(key(KeyCode::Right))).await;
-        assert_eq!(field.cursor_pos(), 4);
+        let mut f = field("a中b");
+        assert_eq!(f.cursor_pos(), 5);
+        for expected in [4, 1, 0] {
+            send_key(&mut f, key(KeyCode::Left)).await;
+            assert_eq!(f.cursor_pos(), expected);
+        }
+        for expected in [1, 4] {
+            send_key(&mut f, key(KeyCode::Right)).await;
+            assert_eq!(f.cursor_pos(), expected);
+        }
     }
 
     #[test]
     fn set_value_moves_cursor_to_end() {
-        let mut field = TextField::new(String::new());
-        field.set_value("hello".to_string());
-        assert_eq!(field.value, "hello");
-        assert_eq!(field.cursor_pos(), 5);
+        let mut f = field("");
+        f.set_value("hello".to_string());
+        assert_state(&f, "hello", 5);
     }
 
     #[test]
     fn clear_resets_cursor() {
-        let mut field = TextField::new("hello".to_string());
-        field.clear();
-        assert_eq!(field.value, "");
-        assert_eq!(field.cursor_pos(), 0);
+        let mut f = field("hello");
+        f.clear();
+        assert_state(&f, "", 0);
     }
 
     #[tokio::test]
-    async fn delete_after_cursor_removes_char() {
-        let mut field = TextField::new("hello".to_string());
-        field.set_cursor_pos(2);
-        field.on_event(&Event::Key(key(KeyCode::Delete))).await;
-        assert_eq!(field.value, "helo");
-        assert_eq!(field.cursor_pos(), 2);
+    async fn delete_forward_variants() {
+        // Middle of string
+        let mut f = field_at("hello", 2);
+        send_key(&mut f, key(KeyCode::Delete)).await;
+        assert_state(&f, "helo", 2);
+
+        // At end (no-op)
+        let mut f = field("hello");
+        send_key(&mut f, key(KeyCode::Delete)).await;
+        assert_eq!(f.value, "hello");
+
+        // Multibyte character
+        let mut f = field_at("a中b", 1);
+        send_key(&mut f, key(KeyCode::Delete)).await;
+        assert_state(&f, "ab", 1);
     }
 
     #[tokio::test]
-    async fn delete_after_cursor_at_end_is_noop() {
-        let mut field = TextField::new("hello".to_string());
-        field.on_event(&Event::Key(key(KeyCode::Delete))).await;
-        assert_eq!(field.value, "hello");
-    }
-
-    #[tokio::test]
-    async fn delete_after_cursor_multibyte() {
-        let mut field = TextField::new("a中b".to_string());
-        field.set_cursor_pos(1);
-        field.on_event(&Event::Key(key(KeyCode::Delete))).await;
-        assert_eq!(field.value, "ab");
-        assert_eq!(field.cursor_pos(), 1);
-    }
-
-    #[tokio::test]
-    async fn ctrl_a_moves_to_start() {
-        let mut field = TextField::new("hello".to_string());
-        field.on_event(&Event::Key(ctrl(KeyCode::Char('a')))).await;
-        assert_eq!(field.cursor_pos(), 0);
-    }
-
-    #[tokio::test]
-    async fn ctrl_e_moves_to_end() {
-        let mut field = TextField::new("hello".to_string());
-        field.set_cursor_pos(0);
-        field.on_event(&Event::Key(ctrl(KeyCode::Char('e')))).await;
-        assert_eq!(field.cursor_pos(), 5);
-    }
-
-    #[tokio::test]
-    async fn ctrl_w_deletes_word() {
-        let mut field = TextField::new("hello world".to_string());
-        field.on_event(&Event::Key(ctrl(KeyCode::Char('w')))).await;
-        assert_eq!(field.value, "hello ");
-        assert_eq!(field.cursor_pos(), 6);
-    }
-
-    #[tokio::test]
-    async fn ctrl_w_trailing_whitespace() {
-        let mut field = TextField::new("hello   ".to_string());
-        field.on_event(&Event::Key(ctrl(KeyCode::Char('w')))).await;
-        assert_eq!(field.value, "");
-        assert_eq!(field.cursor_pos(), 0);
-    }
-
-    #[tokio::test]
-    async fn ctrl_w_at_start_is_noop() {
-        let mut field = TextField::new("hello".to_string());
-        field.set_cursor_pos(0);
-        field.on_event(&Event::Key(ctrl(KeyCode::Char('w')))).await;
-        assert_eq!(field.value, "hello");
-        assert_eq!(field.cursor_pos(), 0);
-    }
-
-    #[tokio::test]
-    async fn ctrl_w_mid_word() {
-        let mut field = TextField::new("hello world".to_string());
-        field.set_cursor_pos(8); // "hello wo|rld"
-        field.on_event(&Event::Key(ctrl(KeyCode::Char('w')))).await;
-        assert_eq!(field.value, "hello rld");
-        assert_eq!(field.cursor_pos(), 6);
-    }
-
-    #[tokio::test]
-    async fn ctrl_w_does_not_insert_w() {
-        let mut field = TextField::new(String::new());
-        field.on_event(&Event::Key(ctrl(KeyCode::Char('w')))).await;
-        assert_eq!(field.value, "");
+    async fn ctrl_w_variants() {
+        // (text, cursor, expected_value, expected_cursor)
+        let cases: Vec<(&str, Option<usize>, &str, usize)> = vec![
+            ("hello world", None, "hello ", 6),
+            ("hello   ", None, "", 0),
+            ("hello", Some(0), "hello", 0),
+            ("hello world", Some(8), "hello rld", 6),
+            ("", None, "", 0),
+        ];
+        for (text, cursor, exp_val, exp_cur) in cases {
+            let mut f = cursor.map_or_else(|| field(text), |c| field_at(text, c));
+            send_key(&mut f, ctrl(KeyCode::Char('w'))).await;
+            assert_state(&f, exp_val, exp_cur);
+        }
     }
 
     #[tokio::test]
     async fn alt_backspace_deletes_word() {
-        let mut field = TextField::new("hello world".to_string());
-        field.on_event(&Event::Key(alt(KeyCode::Backspace))).await;
-        assert_eq!(field.value, "hello ");
+        let mut f = field("hello world");
+        send_key(&mut f, alt(KeyCode::Backspace)).await;
+        assert_eq!(f.value, "hello ");
     }
 
     #[tokio::test]
-    async fn ctrl_u_deletes_to_start() {
-        let mut field = TextField::new("hello world".to_string());
-        field.set_cursor_pos(5);
-        field.on_event(&Event::Key(ctrl(KeyCode::Char('u')))).await;
-        assert_eq!(field.value, " world");
-        assert_eq!(field.cursor_pos(), 0);
+    async fn ctrl_u_variants() {
+        let mut f = field_at("hello world", 5);
+        send_key(&mut f, ctrl(KeyCode::Char('u'))).await;
+        assert_state(&f, " world", 0);
+
+        // At start (no-op)
+        let mut f = field_at("hello", 0);
+        send_key(&mut f, ctrl(KeyCode::Char('u'))).await;
+        assert_state(&f, "hello", 0);
     }
 
     #[tokio::test]
-    async fn ctrl_u_at_start_is_noop() {
-        let mut field = TextField::new("hello".to_string());
-        field.set_cursor_pos(0);
-        field.on_event(&Event::Key(ctrl(KeyCode::Char('u')))).await;
-        assert_eq!(field.value, "hello");
-        assert_eq!(field.cursor_pos(), 0);
+    async fn ctrl_k_variants() {
+        let mut f = field_at("hello world", 5);
+        send_key(&mut f, ctrl(KeyCode::Char('k'))).await;
+        assert_state(&f, "hello", 5);
+
+        // At end (no-op)
+        let mut f = field("hello");
+        send_key(&mut f, ctrl(KeyCode::Char('k'))).await;
+        assert_eq!(f.value, "hello");
     }
 
     #[tokio::test]
-    async fn ctrl_k_deletes_to_end() {
-        let mut field = TextField::new("hello world".to_string());
-        field.set_cursor_pos(5);
-        field.on_event(&Event::Key(ctrl(KeyCode::Char('k')))).await;
-        assert_eq!(field.value, "hello");
-        assert_eq!(field.cursor_pos(), 5);
-    }
-
-    #[tokio::test]
-    async fn ctrl_k_at_end_is_noop() {
-        let mut field = TextField::new("hello".to_string());
-        field.on_event(&Event::Key(ctrl(KeyCode::Char('k')))).await;
-        assert_eq!(field.value, "hello");
-    }
-
-    #[tokio::test]
-    async fn alt_left_moves_word_left() {
-        let mut field = TextField::new("hello world".to_string());
-        field.on_event(&Event::Key(alt(KeyCode::Left))).await;
-        assert_eq!(field.cursor_pos(), 6);
-    }
-
-    #[tokio::test]
-    async fn alt_left_from_mid_word() {
-        let mut field = TextField::new("hello world".to_string());
-        field.set_cursor_pos(8);
-        field.on_event(&Event::Key(alt(KeyCode::Left))).await;
-        assert_eq!(field.cursor_pos(), 6);
-    }
-
-    #[tokio::test]
-    async fn alt_left_at_start_stays() {
-        let mut field = TextField::new("hello".to_string());
-        field.set_cursor_pos(0);
-        field.on_event(&Event::Key(alt(KeyCode::Left))).await;
-        assert_eq!(field.cursor_pos(), 0);
-    }
-
-    #[tokio::test]
-    async fn ctrl_left_moves_word_left() {
-        let mut field = TextField::new("hello world".to_string());
-        field.on_event(&Event::Key(ctrl(KeyCode::Left))).await;
-        assert_eq!(field.cursor_pos(), 6);
-    }
-
-    #[tokio::test]
-    async fn alt_right_moves_word_right() {
-        let mut field = TextField::new("hello world".to_string());
-        field.set_cursor_pos(0);
-        field.on_event(&Event::Key(alt(KeyCode::Right))).await;
-        assert_eq!(field.cursor_pos(), 6);
-    }
-
-    #[tokio::test]
-    async fn alt_right_at_end_stays() {
-        let mut field = TextField::new("hello".to_string());
-        field.on_event(&Event::Key(alt(KeyCode::Right))).await;
-        assert_eq!(field.cursor_pos(), 5);
-    }
-
-    #[tokio::test]
-    async fn alt_right_multibyte() {
-        let mut field = TextField::new("a中 b".to_string());
-        field.set_cursor_pos(0);
-        field.on_event(&Event::Key(alt(KeyCode::Right))).await;
-        assert_eq!(field.cursor_pos(), 5);
-    }
-
-    #[tokio::test]
-    async fn ctrl_right_moves_word_right() {
-        let mut field = TextField::new("hello world".to_string());
-        field.set_cursor_pos(0);
-        field.on_event(&Event::Key(ctrl(KeyCode::Right))).await;
-        assert_eq!(field.cursor_pos(), 6);
+    async fn word_navigation() {
+        // (text, cursor, key_event, expected_cursor)
+        let cases: Vec<(&str, Option<usize>, KeyEvent, usize)> = vec![
+            ("hello world", None, alt(KeyCode::Left), 6),
+            ("hello world", Some(8), alt(KeyCode::Left), 6),
+            ("hello", Some(0), alt(KeyCode::Left), 0),
+            ("hello world", None, ctrl(KeyCode::Left), 6),
+            ("hello world", Some(0), alt(KeyCode::Right), 6),
+            ("hello", None, alt(KeyCode::Right), 5),
+            ("a中 b", Some(0), alt(KeyCode::Right), 5),
+            ("hello world", Some(0), ctrl(KeyCode::Right), 6),
+        ];
+        for (text, cursor, k, expected) in cases {
+            let mut f = cursor.map_or_else(|| field(text), |c| field_at(text, c));
+            send_key(&mut f, k).await;
+            assert_eq!(f.cursor_pos(), expected, "failed for {k:?} on {text:?} at {cursor:?}");
+        }
     }
 
     #[test]
-    fn move_cursor_up_first_row_goes_home() {
-        let mut field = TextField::new("hello world".to_string());
-        field.set_cursor_pos(3);
-        field.move_cursor_up(10);
-        assert_eq!(field.cursor_pos(), 0);
-    }
-
-    #[test]
-    fn move_cursor_down_last_row_goes_end() {
-        let mut field = TextField::new("hello world".to_string());
-        field.set_cursor_pos(0);
-        field.move_cursor_down(20);
-        assert_eq!(field.cursor_pos(), 11);
-    }
-
-    #[test]
-    fn move_cursor_up_multi_row() {
-        // "hello world" with content_width=5:
-        // row 0: "hello" (display 0-4)
-        // row 1: " worl" (display 5-9)
-        // row 2: "d"     (display 10)
-        let mut field = TextField::new("hello world".to_string());
-        field.set_cursor_pos(8); // display width 8, row 1, col 3
-        field.move_cursor_up(5);
-        // Target: row 0, col 3 → display width 3 → byte 3 ('l')
-        assert_eq!(field.cursor_pos(), 3);
-    }
-
-    #[test]
-    fn move_cursor_down_multi_row() {
-        let mut field = TextField::new("hello world".to_string());
-        field.set_cursor_pos(3); // display width 3, row 0, col 3
-        field.move_cursor_down(5);
-        // Target: row 1, col 3 → display width 8 → byte 8 ('r')
-        assert_eq!(field.cursor_pos(), 8);
-    }
-
-    #[test]
-    fn move_cursor_down_clamps_to_total_width() {
-        // "hello world" with content_width=5:
-        // row 2 has only "d" (display 10), col 0
-        // Pressing down from row 1, col 3 (display 8) → row 2, col 3 → display 13 → clamped to 11
-        let mut field = TextField::new("hello world".to_string());
-        field.set_cursor_pos(8);
-        field.move_cursor_down(5);
-        assert_eq!(field.cursor_pos(), 11);
+    fn move_cursor_up_cases() {
+        // (text, cursor, width, expected)
+        let cases: Vec<(&str, Option<usize>, usize, usize)> = vec![
+            ("hello world", Some(3), 10, 0),   // first row goes home
+            ("hello world", Some(8), 5, 3),    // multi-row: row1->row0
+            ("hello", Some(3), 0, 3),          // zero width is no-op
+        ];
+        for (text, cursor, width, expected) in cases {
+            let mut f = cursor.map_or_else(|| field(text), |c| field_at(text, c));
+            f.move_cursor_up(width);
+            assert_eq!(f.cursor_pos(), expected, "up failed: {text:?} cursor={cursor:?} w={width}");
+        }
     }
 
     #[test]
     fn move_cursor_up_wide_chars() {
         // '中' is 2 display-width columns
-        // "中中中中中" = 10 display cols, content_width=5 → 2 rows
-        let mut field = TextField::new("中中中中中".to_string());
+        // "中中中中中" = 10 display cols, content_width=5 -> 2 rows
         // Cursor at end: byte 15, display 10, row 2, col 0
-        field.move_cursor_up(5);
-        // byte_offset_for_display_width(5): wide chars can't land exactly on the boundary.
-        // Returns byte 9 (display width 6, not 5).
-        assert_eq!(field.cursor_pos(), 9);
+        // byte_offset_for_display_width(5): wide chars can't land exactly on boundary
+        let mut f = field("中中中中中");
+        f.move_cursor_up(5);
+        assert_eq!(f.cursor_pos(), 9);
     }
 
     #[test]
-    fn move_cursor_down_on_empty_string() {
-        let mut field = TextField::new(String::new());
-        field.move_cursor_down(10);
-        assert_eq!(field.cursor_pos(), 0);
-    }
-
-    #[test]
-    fn move_cursor_up_zero_width_is_noop() {
-        let mut field = TextField::new("hello".to_string());
-        field.set_cursor_pos(3);
-        field.move_cursor_up(0);
-        assert_eq!(field.cursor_pos(), 3);
+    fn move_cursor_down_cases() {
+        // (text, cursor, width, expected)
+        let cases: Vec<(&str, Option<usize>, usize, usize)> = vec![
+            ("hello world", Some(0), 20, 11),  // last row goes end
+            ("hello world", Some(3), 5, 8),    // multi-row: row0->row1
+            ("hello world", Some(8), 5, 11),   // clamps to total width
+            ("", None, 10, 0),                 // empty string
+        ];
+        for (text, cursor, width, expected) in cases {
+            let mut f = cursor.map_or_else(|| field(text), |c| field_at(text, c));
+            f.move_cursor_down(width);
+            assert_eq!(f.cursor_pos(), expected, "down failed: {text:?} cursor={cursor:?} w={width}");
+        }
     }
 }

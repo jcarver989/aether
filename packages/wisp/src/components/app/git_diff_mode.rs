@@ -506,10 +506,34 @@ mod tests {
         }
     }
 
+    fn mode_with(paths: &[&str]) -> GitDiffMode {
+        let mut mode = GitDiffMode::new(PathBuf::from("."));
+        mode.state.load_state = GitDiffLoadState::Ready(make_doc(paths));
+        mode
+    }
+
+    fn comment(
+        file: &str,
+        hunk_text: &str,
+        line_text: &str,
+        line_number: usize,
+        kind: PatchLineKind,
+        comment: &str,
+    ) -> QueuedComment {
+        QueuedComment {
+            file_path: file.to_string(),
+            hunk_index: 0,
+            hunk_text: hunk_text.to_string(),
+            line_text: line_text.to_string(),
+            line_number: Some(line_number),
+            line_kind: kind,
+            comment: comment.to_string(),
+        }
+    }
+
     #[test]
     fn begin_refresh_preserves_selected_path_and_focus_after_load() {
-        let mut mode = GitDiffMode::new(PathBuf::from("."));
-        mode.state.load_state = GitDiffLoadState::Ready(make_doc(&["a.rs", "b.rs"]));
+        let mut mode = mode_with(&["a.rs", "b.rs"]);
         mode.state.selected_file = 1;
         mode.state.focus = PatchFocus::Patch;
         mode.begin_refresh();
@@ -524,8 +548,7 @@ mod tests {
 
     #[test]
     fn mouse_scroll_moves_patch_scroll() {
-        let mut mode = GitDiffMode::new(PathBuf::from("."));
-        mode.state.load_state = GitDiffLoadState::Ready(make_doc(&["a.rs"]));
+        let mut mode = mode_with(&["a.rs"]);
         mode.state.focus = PatchFocus::Patch;
         mode.state.cached_patch_lines = vec![Line::new("a"), Line::new("b"), Line::new("c")];
         mode.on_mouse_event(&Event::Mouse(MouseEvent {
@@ -539,57 +562,20 @@ mod tests {
 
     #[test]
     fn format_review_prompt_groups_by_file() {
+        let hunk = "@@ -1,3 +1,3 @@\n fn main() {\n-    old();\n+    new();\n }";
         let comments = vec![
-            QueuedComment {
-                file_path: "src/foo.rs".to_string(),
-                hunk_index: 0,
-                hunk_text: "@@ -1,3 +1,3 @@\n fn main() {\n-    old();\n+    new();\n }"
-                    .to_string(),
-                line_text: "    new();".to_string(),
-                line_number: Some(2),
-                line_kind: PatchLineKind::Added,
-                comment: "Looks risky".to_string(),
-            },
-            QueuedComment {
-                file_path: "src/foo.rs".to_string(),
-                hunk_index: 0,
-                hunk_text: "@@ -1,3 +1,3 @@\n fn main() {\n-    old();\n+    new();\n }"
-                    .to_string(),
-                line_text: "    old();".to_string(),
-                line_number: Some(2),
-                line_kind: PatchLineKind::Removed,
-                comment: "Why remove this?".to_string(),
-            },
-            QueuedComment {
-                file_path: "src/bar.rs".to_string(),
-                hunk_index: 0,
-                hunk_text: "@@ -1 +1 @@\n+new_line".to_string(),
-                line_text: "new_line".to_string(),
-                line_number: Some(1),
-                line_kind: PatchLineKind::Added,
-                comment: "Needs a test".to_string(),
-            },
+            comment("src/foo.rs", hunk, "    new();", 2, PatchLineKind::Added, "Looks risky"),
+            comment("src/foo.rs", hunk, "    old();", 2, PatchLineKind::Removed, "Why remove this?"),
+            comment("src/bar.rs", "@@ -1 +1 @@\n+new_line", "new_line", 1, PatchLineKind::Added, "Needs a test"),
         ];
 
         let prompt = format_review_prompt(&comments);
-        assert!(
-            prompt.contains("## `src/foo.rs`"),
-            "should have foo.rs header"
-        );
-        assert!(
-            prompt.contains("## `src/bar.rs`"),
-            "should have bar.rs header"
-        );
-        assert_eq!(
-            prompt.matches("```diff").count(),
-            2,
-            "one hunk per file group"
-        );
-        assert!(prompt.contains("Looks risky"));
-        assert!(prompt.contains("Why remove this?"));
-        assert!(prompt.contains("Needs a test"));
-        assert!(prompt.contains("Line 2 (added)"));
-        assert!(prompt.contains("Line 2 (removed)"));
-        assert!(prompt.contains("Line 1 (added)"));
+        assert!(prompt.contains("## `src/foo.rs`"), "should have foo.rs header");
+        assert!(prompt.contains("## `src/bar.rs`"), "should have bar.rs header");
+        assert_eq!(prompt.matches("```diff").count(), 2, "one hunk per file group");
+        for expected in ["Looks risky", "Why remove this?", "Needs a test",
+                         "Line 2 (added)", "Line 2 (removed)", "Line 1 (added)"] {
+            assert!(prompt.contains(expected), "missing: {expected}");
+        }
     }
 }

@@ -150,44 +150,40 @@ fn extract_result_meta(value: &mut serde_json::Value) -> Option<ToolResultMeta> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mcp_utils::display_meta::PlanMetaStatus;
     use rmcp::model::{CallToolResult as McpCallToolResult, Content};
     use serde::Serialize;
     use serde_json::json;
 
-    fn make_request() -> ToolCallRequest {
-        ToolCallRequest {
-            id: "call_123".to_string(),
-            name: "test_tool".to_string(),
-            arguments: "{}".to_string(),
-        }
+    fn req() -> ToolCallRequest {
+        ToolCallRequest { id: "call_123".into(), name: "test_tool".into(), arguments: "{}".into() }
+    }
+
+    fn call_structured(structured: serde_json::Value) -> (ToolCallResult, Option<ToolResultMeta>) {
+        let mut mcp = McpCallToolResult::structured(structured);
+        mcp.content = vec![];
+        mcp_result_to_tool_call_result(&req(), mcp).unwrap()
+    }
+
+    fn extract_preview(result: &str) -> &str {
+        let start = result.find("<preview>\n").unwrap() + "<preview>\n".len();
+        let end = result.find("\n</preview>").unwrap();
+        &result[start..end]
     }
 
     #[test]
     fn test_extracts_and_strips_meta() {
-        let request = make_request();
-
         let structured = json!({
-            "status": "success",
-            "file_path": "/test/file.rs",
-            "_meta": {
-                "display": {
-                    "title": "Read file",
-                    "value": "file.rs, 50 lines"
-                }
-            }
+            "status": "success", "file_path": "/test/file.rs",
+            "_meta": { "display": { "title": "Read file", "value": "file.rs, 50 lines" } }
         });
+        let mut mcp = McpCallToolResult::structured(structured);
+        mcp.content = vec![Content::text("plain text fallback")];
+        let (result, meta) = mcp_result_to_tool_call_result(&req(), mcp).unwrap();
 
-        let mut mcp_result = McpCallToolResult::structured(structured);
-        mcp_result.content = vec![Content::text("plain text fallback")];
-
-        let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
-
-        // _meta should be stripped from the result
         assert!(!result.result.contains("_meta"));
         assert!(result.result.contains("success"));
-
-        // result_meta should be extracted
-        let rm = result_meta.expect("result_meta should be present");
+        let rm = meta.expect("meta should be present");
         assert_eq!(rm.display.title, "Read file");
         assert_eq!(rm.display.value, "file.rs, 50 lines");
         assert!(rm.file_diff.is_none());
@@ -195,30 +191,15 @@ mod tests {
 
     #[test]
     fn test_extracts_meta_with_file_diff() {
-        let request = make_request();
-
-        let structured = json!({
+        let (result, meta) = call_structured(json!({
             "status": "success",
             "_meta": {
-                "display": {
-                    "title": "Edit file",
-                    "value": "main.rs"
-                },
-                "file_diff": {
-                    "path": "/tmp/main.rs",
-                    "old_text": "old content",
-                    "new_text": "new content"
-                }
+                "display": { "title": "Edit file", "value": "main.rs" },
+                "file_diff": { "path": "/tmp/main.rs", "old_text": "old content", "new_text": "new content" }
             }
-        });
-
-        let mut mcp_result = McpCallToolResult::structured(structured);
-        mcp_result.content = vec![];
-
-        let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
+        }));
         assert!(!result.result.contains("_meta"));
-
-        let rm = result_meta.expect("result_meta should be present");
+        let rm = meta.expect("meta should be present");
         assert_eq!(rm.display.title, "Edit file");
         let fd = rm.file_diff.expect("file_diff should be present");
         assert_eq!(fd.path, "/tmp/main.rs");
@@ -228,348 +209,195 @@ mod tests {
 
     #[test]
     fn test_extracts_known_meta_and_preserves_unknown_meta_keys() {
-        let request = make_request();
-
-        let structured = json!({
+        let (result, meta) = call_structured(json!({
             "status": "success",
             "_meta": {
-                "display": {
-                    "title": "Edit file",
-                    "value": "main.rs"
-                },
-                "file_diff": {
-                    "path": "/tmp/main.rs",
-                    "old_text": "old",
-                    "new_text": "new"
-                },
-                "trace_id": "trace-123",
-                "duration_ms": 18
+                "display": { "title": "Edit file", "value": "main.rs" },
+                "file_diff": { "path": "/tmp/main.rs", "old_text": "old", "new_text": "new" },
+                "trace_id": "trace-123", "duration_ms": 18
             }
-        });
-
-        let mut mcp_result = McpCallToolResult::structured(structured);
-        mcp_result.content = vec![];
-
-        let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
-        let rm = result_meta.expect("result_meta should be present");
+        }));
+        let rm = meta.expect("meta should be present");
         assert_eq!(rm.display.title, "Edit file");
         assert!(rm.file_diff.is_some());
-        assert!(!result.result.contains("display:"));
-        assert!(!result.result.contains("file_diff:"));
-        assert!(result.result.contains("trace_id:"));
-        assert!(result.result.contains("trace-123"));
-        assert!(result.result.contains("duration_ms:"));
-        assert!(result.result.contains("18"));
+        for absent in ["display:", "file_diff:"] {
+            assert!(!result.result.contains(absent));
+        }
+        for present in ["trace_id:", "trace-123", "duration_ms:", "18"] {
+            assert!(result.result.contains(present));
+        }
     }
 
     #[test]
     fn test_malformed_meta_returns_none() {
-        let request = make_request();
-
-        let structured = json!({
+        let (result, meta) = call_structured(json!({
             "status": "success",
-            "_meta": {
-                "display": "not a valid ToolDisplayMeta"
-            }
-        });
-
-        let mut mcp_result = McpCallToolResult::structured(structured);
-        mcp_result.content = vec![];
-
-        let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
-        assert!(result_meta.is_none());
-        assert!(result.result.contains("display:"));
+            "_meta": { "display": "not a valid ToolDisplayMeta" }
+        }));
+        assert!(meta.is_none());
         assert!(result.result.contains("not a valid ToolDisplayMeta"));
     }
 
     #[test]
     fn test_no_meta_passes_through_unchanged() {
-        let request = make_request();
-
-        let structured = json!({
-            "status": "success",
-            "data": "hello"
-        });
-
-        let mut mcp_result = McpCallToolResult::structured(structured);
-        mcp_result.content = vec![];
-
-        let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
+        let (result, meta) = call_structured(json!({"status": "success", "data": "hello"}));
         assert!(result.result.contains("success"));
         assert!(result.result.contains("hello"));
-        assert!(result_meta.is_none());
+        assert!(meta.is_none());
     }
 
     #[test]
     fn test_tool_call_result_falls_back_to_content() {
-        let request = make_request();
-
-        let mcp_result = McpCallToolResult::success(vec![Content::text("plain text result")]);
-
-        let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
+        let mcp = McpCallToolResult::success(vec![Content::text("plain text result")]);
+        let (result, meta) = mcp_result_to_tool_call_result(&req(), mcp).unwrap();
         assert!(result.result.contains("plain text result"));
-        assert!(result_meta.is_none());
+        assert!(meta.is_none());
     }
 
-    /// Regression test: verifies that a struct with `#[serde(rename_all = "camelCase")]`
-    /// correctly serializes `_meta` as `"_meta"` (not `"Meta"`) when `#[serde(rename = "_meta")]`
-    /// is present, so `extract_result_meta` can find it.
     #[test]
-    fn test_meta_survives_serde_round_trip_with_camel_case_rename() {
+    fn test_extracts_meta_with_plan() {
+        let (result, meta) = call_structured(json!({
+            "status": "success",
+            "_meta": {
+                "display": { "title": "Todo", "value": "Research AI agents" },
+                "plan": { "entries": [
+                    { "content": "Research AI agents", "status": "in_progress" },
+                    { "content": "Write tests", "status": "pending" }
+                ]}
+            }
+        }));
+        assert!(!result.result.contains("_meta"));
+        let rm = meta.expect("meta should be present");
+        assert_eq!(rm.display.title, "Todo");
+        let plan = rm.plan.expect("plan should be present");
+        assert_eq!(plan.entries.len(), 2);
+        assert_eq!(plan.entries[0].content, "Research AI agents");
+        assert_eq!(plan.entries[0].status, PlanMetaStatus::InProgress);
+        assert_eq!(plan.entries[1].status, PlanMetaStatus::Pending);
+    }
+
+    /// Regression: verifies `#[serde(rename = "_meta")]` preserves the key under camelCase,
+    /// and that omitting the rename breaks extraction.
+    #[test]
+    fn test_meta_camel_case_serde_round_trip() {
+        let display_meta = json!({
+            "display": { "title": "Read file", "value": "file.rs, 50 lines" }
+        });
+
+        // With explicit rename: _meta key survives camelCase
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
-        struct FakeToolResult {
+        struct GoodResult {
             file_path: String,
             total_lines: usize,
             #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
             _meta: Option<serde_json::Value>,
         }
-
-        let result = FakeToolResult {
-            file_path: "/test/file.rs".to_string(),
+        let good = serde_json::to_value(&GoodResult {
+            file_path: "/test/file.rs".into(),
             total_lines: 50,
-            _meta: Some(json!({
-                "display": {
-                    "title": "Read file",
-                    "value": "file.rs, 50 lines"
-                }
-            })),
-        };
-
-        let serialized = serde_json::to_value(&result).unwrap();
-
-        // The key assertion: `_meta` must appear as "_meta" in the JSON, not "Meta"
-        assert!(
-            serialized.get("_meta").is_some(),
-            "expected `_meta` key in serialized JSON, got: {serialized}"
-        );
-
-        // Verify extract_result_and_meta can find it
-        let (stripped, result_meta) = extract_result_and_meta(Some(serialized), &[]);
-        let rm = result_meta.expect("result_meta should be extracted from serialized struct");
+            _meta: Some(display_meta.clone()),
+        })
+        .unwrap();
+        assert!(good.get("_meta").is_some(), "expected `_meta` key, got: {good}");
+        let (stripped, meta) = extract_result_and_meta(Some(good), &[]);
+        let rm = meta.expect("meta should be extracted");
         assert_eq!(rm.display.title, "Read file");
         assert_eq!(rm.display.value, "file.rs, 50 lines");
-
-        // _meta should be stripped from the result
         assert!(stripped.get("_meta").is_none());
-    }
 
-    #[test]
-    fn test_extracts_meta_with_plan() {
-        let request = make_request();
-
-        let structured = json!({
-            "status": "success",
-            "_meta": {
-                "display": {
-                    "title": "Todo",
-                    "value": "Research AI agents"
-                },
-                "plan": {
-                    "entries": [
-                        { "content": "Research AI agents", "status": "in_progress" },
-                        { "content": "Write tests", "status": "pending" }
-                    ]
-                }
-            }
-        });
-
-        let mut mcp_result = McpCallToolResult::structured(structured);
-        mcp_result.content = vec![];
-
-        let (result, result_meta) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
-        assert!(!result.result.contains("_meta"));
-
-        let rm = result_meta.expect("result_meta should be present");
-        assert_eq!(rm.display.title, "Todo");
-        let plan = rm.plan.expect("plan should be present");
-        assert_eq!(plan.entries.len(), 2);
-        assert_eq!(plan.entries[0].content, "Research AI agents");
-        assert_eq!(
-            plan.entries[0].status,
-            mcp_utils::display_meta::PlanMetaStatus::InProgress
-        );
-        assert_eq!(
-            plan.entries[1].status,
-            mcp_utils::display_meta::PlanMetaStatus::Pending
-        );
-    }
-
-    /// Demonstrates the bug: without `#[serde(rename = "_meta")]`, camelCase
-    /// converts `_meta` to `"Meta"`, making it invisible to extraction.
-    #[test]
-    fn test_meta_without_rename_breaks_extraction() {
+        // Without rename: camelCase mangles _meta to "meta", breaking extraction
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
-        struct BrokenToolResult {
+        struct BrokenResult {
             file_path: String,
-            // Intentionally missing `#[serde(rename = "_meta")]`
             #[serde(skip_serializing_if = "Option::is_none")]
             _meta: Option<serde_json::Value>,
         }
-
-        let result = BrokenToolResult {
-            file_path: "/test/file.rs".to_string(),
-            _meta: Some(json!({
-                "display": {
-                    "title": "Read file",
-                    "value": "file.rs, 50 lines"
-                }
-            })),
-        };
-
-        let serialized = serde_json::to_value(&result).unwrap();
-
-        // Without the rename, camelCase mangles `_meta` into "meta"
-        assert!(
-            serialized.get("_meta").is_none(),
-            "without #[serde(rename)], _meta should be mangled by camelCase"
-        );
-        assert!(serialized.get("meta").is_some());
-
-        // Extraction fails — this is the bug we fixed
-        let (_, result_meta) = extract_result_and_meta(Some(serialized), &[]);
-        assert!(
-            result_meta.is_none(),
-            "extraction should fail when _meta is mangled to Meta"
-        );
+        let broken = serde_json::to_value(&BrokenResult {
+            file_path: "/test/file.rs".into(),
+            _meta: Some(display_meta),
+        })
+        .unwrap();
+        assert!(broken.get("_meta").is_none(), "should be mangled by camelCase");
+        assert!(broken.get("meta").is_some());
+        let (_, meta) = extract_result_and_meta(Some(broken), &[]);
+        assert!(meta.is_none(), "extraction should fail when _meta is mangled");
     }
 
     #[test]
     fn test_tool_call_result_handles_error() {
-        let request = make_request();
-
-        let mcp_result = McpCallToolResult::error(vec![Content::text("Error: file not found")]);
-
-        let err = mcp_result_to_tool_call_result(&request, mcp_result).unwrap_err();
+        let mcp = McpCallToolResult::error(vec![Content::text("Error: file not found")]);
+        let err = mcp_result_to_tool_call_result(&req(), mcp).unwrap_err();
         assert!(err.error.contains("file not found"));
     }
 
     #[test]
     fn test_result_is_yaml_format() {
-        let request = make_request();
-
-        let structured = json!({
+        let (result, _) = call_structured(json!({
             "status": "success",
-            "files": [
-                {"name": "Cargo.toml", "path": "./Cargo.toml"},
-                {"name": "src", "path": "./src"}
-            ],
+            "files": [{"name": "Cargo.toml", "path": "./Cargo.toml"}, {"name": "src", "path": "./src"}],
             "totalCount": 2
-        });
-
-        let mut mcp_result = McpCallToolResult::structured(structured);
-        mcp_result.content = vec![];
-
-        let (result, _) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
-
-        // YAML uses unquoted keys with colons, not JSON braces/quotes
-        assert!(
-            result.result.contains("status: success"),
-            "expected YAML key: value format, got: {}",
-            result.result
-        );
-        assert!(
-            result.result.contains("totalCount: 2"),
-            "expected YAML key: value format, got: {}",
-            result.result
-        );
-        // YAML lists use `- ` prefix
-        assert!(
-            result.result.contains("- name:"),
-            "expected YAML list items, got: {}",
-            result.result
-        );
-        // Should NOT contain JSON braces/brackets at the top level
-        assert!(
-            !result.result.starts_with('{'),
-            "expected YAML, not JSON: {}",
-            result.result
-        );
+        }));
+        let r = &result.result;
+        for expected in ["status: success", "totalCount: 2", "- name:"] {
+            assert!(r.contains(expected), "expected '{expected}' in YAML, got: {r}");
+        }
+        assert!(!r.starts_with('{'), "expected YAML, not JSON: {r}");
     }
 
     #[test]
     fn test_serde_yml_produces_yaml_not_json() {
-        let value = json!({"key": "value"});
-        let yaml = serde_yml::to_string(&value).unwrap();
-        assert!(yaml.contains("key:"));
-        assert!(yaml.contains("value"));
-        assert!(!yaml.starts_with('{'));
+        let yaml = serde_yml::to_string(&json!({"key": "value"})).unwrap();
+        assert!(yaml.contains("key:") && yaml.contains("value") && !yaml.starts_with('{'));
     }
 
     #[test]
     fn test_spillover_small_input_unchanged() {
         let dir = tempfile::tempdir().unwrap();
         let input = "hello world".to_string();
-        let result = maybe_spillover("test_small", input.clone(), 1000, dir.path());
-        assert_eq!(result, input);
+        assert_eq!(maybe_spillover("id", input.clone(), 1000, dir.path()), input);
     }
 
     #[test]
     fn test_spillover_large_input_writes_file() {
         let dir = tempfile::tempdir().unwrap();
         let large = "x".repeat(5000);
-        let result = maybe_spillover("test_large_write", large.clone(), 1000, dir.path());
-
-        assert!(result.contains("<preview>"));
-        assert!(result.contains("</preview>"));
-        assert!(result.contains("Tool result too large"));
-        assert!(result.contains("5000 bytes"));
-        assert!(result.contains("test_large_write.txt"));
-
-        let file_path = dir.path().join("test_large_write.txt");
-        assert!(file_path.exists());
-        let on_disk = std::fs::read_to_string(&file_path).unwrap();
+        let result = maybe_spillover("test_large", large.clone(), 1000, dir.path());
+        for expected in ["<preview>", "</preview>", "Tool result too large", "5000 bytes", "test_large.txt"] {
+            assert!(result.contains(expected), "missing '{expected}' in: {result}");
+        }
+        let on_disk = std::fs::read_to_string(dir.path().join("test_large.txt")).unwrap();
         assert_eq!(on_disk, large);
     }
 
     #[test]
     fn test_spillover_preview_content() {
         let dir = tempfile::tempdir().unwrap();
-        let head = "HEAD_CONTENT_";
-        let tail_marker = "TAIL_MARKER";
-        let padding = "z".repeat(SPILLOVER_PREVIEW_BYTES + 5000);
-        let large = format!("{head}{padding}{tail_marker}");
-        let result = maybe_spillover("test_preview", large, 1000, dir.path());
-
-        assert!(result.contains(head));
-        assert!(!result.contains(tail_marker));
+        let large = format!("HEAD_{}{}", "z".repeat(SPILLOVER_PREVIEW_BYTES + 5000), "TAIL");
+        let result = maybe_spillover("id", large, 1000, dir.path());
+        assert!(result.contains("HEAD_"));
+        assert!(!result.contains("TAIL"));
     }
 
     #[test]
     fn test_spillover_preserves_utf8_boundaries() {
         let dir = tempfile::tempdir().unwrap();
-        let emoji_line = "\u{1F600}".repeat(300); // 1200 bytes of emoji
-        let large = format!("{}{}", emoji_line, "a".repeat(5000));
-
-        let result = maybe_spillover("test_utf8", large, 100, dir.path());
-
-        assert!(result.contains("<preview>"));
-
-        let preview_start = result.find("<preview>\n").unwrap() + "<preview>\n".len();
-        let preview_end = result.find("\n</preview>").unwrap();
-        let preview = &result[preview_start..preview_end];
-        assert!(preview.chars().count() > 0);
+        let large = format!("{}{}", "\u{1F600}".repeat(300), "a".repeat(5000));
+        let result = maybe_spillover("id", large, 100, dir.path());
+        assert!(extract_preview(&result).chars().count() > 0);
     }
 
     #[test]
     fn test_mcp_result_spills_large_output() {
         let request = ToolCallRequest {
-            id: "spill_integration".to_string(),
-            name: "big_tool".to_string(),
-            arguments: "{}".to_string(),
+            id: "spill_integration".into(), name: "big_tool".into(), arguments: "{}".into(),
         };
-
-        let big_value = "x".repeat(TOOL_RESULT_MAX_BYTES + 1000);
-        let structured = json!({ "data": big_value });
-
-        let mut mcp_result = McpCallToolResult::structured(structured);
-        mcp_result.content = vec![];
-
-        let (result, _) = mcp_result_to_tool_call_result(&request, mcp_result).unwrap();
-
-        assert!(result.result.contains("<preview>"));
-        assert!(result.result.contains("Tool result too large"));
-        assert!(result.result.contains("spill_integration.txt"));
+        let mut mcp = McpCallToolResult::structured(json!({"data": "x".repeat(TOOL_RESULT_MAX_BYTES + 1000)}));
+        mcp.content = vec![];
+        let (result, _) = mcp_result_to_tool_call_result(&request, mcp).unwrap();
+        for expected in ["<preview>", "Tool result too large", "spill_integration.txt"] {
+            assert!(result.result.contains(expected));
+        }
     }
 }

@@ -277,70 +277,62 @@ mod tests {
     use crate::acp::config_setting::ConfigSetting;
     use agent_client_protocol::{InitializeRequest, ProtocolVersion};
 
+    const SONNET: &str = "anthropic:claude-sonnet-4-5";
+    const DEEPSEEK: &str = "deepseek:deepseek-chat";
+
     fn available_models() -> Vec<LlmModel> {
-        vec![
-            "anthropic:claude-sonnet-4-5".parse().expect("valid model"),
-            "anthropic:claude-opus-4-6".parse().expect("valid model"),
-            "deepseek:deepseek-chat".parse().expect("valid model"),
-        ]
+        [SONNET, "anthropic:claude-opus-4-6", DEEPSEEK]
+            .into_iter()
+            .map(|s| s.parse().expect("valid model"))
+            .collect()
     }
 
     fn validated_modes() -> Vec<ValidatedMode> {
         vec![
             ValidatedMode {
                 name: "Planner".to_string(),
-                model: "anthropic:claude-sonnet-4-5".to_string(),
+                model: SONNET.to_string(),
                 reasoning_effort: Some(ReasoningEffort::High),
             },
             ValidatedMode {
                 name: "Coder".to_string(),
-                model: "deepseek:deepseek-chat".to_string(),
+                model: DEEPSEEK.to_string(),
                 reasoning_effort: None,
             },
         ]
     }
 
-    fn fake_config_state(active_model: &str) -> SessionConfigState {
-        SessionConfigState::new(active_model.to_string())
+    /// Apply a config change to a fresh state and return (result, state).
+    fn apply(active: &str, setting: ConfigSetting) -> (Result<(), acp::Error>, SessionConfigState) {
+        let mut state = SessionConfigState::new(active.to_string());
+        let result = state.apply_config_change(&validated_modes(), &available_models(), &setting);
+        (result, state)
     }
 
     #[test]
     fn session_config_state_new_initializes_defaults() {
-        let state = SessionConfigState::new("deepseek:deepseek-chat".to_string());
-
-        assert_eq!(state.active_model, "deepseek:deepseek-chat");
-        assert_eq!(state.pending_model, None);
-        assert_eq!(state.reasoning_effort, None);
-        assert_eq!(state.selected_mode, None);
+        let state = SessionConfigState::new(DEEPSEEK.to_string());
+        let expected = SessionConfigState {
+            active_model: DEEPSEEK.to_string(),
+            pending_model: None,
+            reasoning_effort: None,
+            selected_mode: None,
+        };
+        assert_eq!(state, expected);
     }
 
     #[test]
     fn mode_selection_updates_pending_model_and_reasoning() {
-        let modes = validated_modes();
-        let available = available_models();
-        let mut state = fake_config_state("deepseek:deepseek-chat");
-        let setting = ConfigSetting::Mode("Planner".to_string());
-
-        let result = state.apply_config_change(&modes, &available, &setting);
-
+        let (result, state) = apply(DEEPSEEK, ConfigSetting::Mode("Planner".to_string()));
         assert!(result.is_ok());
-        assert_eq!(
-            state.pending_model.as_deref(),
-            Some("anthropic:claude-sonnet-4-5")
-        );
+        assert_eq!(state.pending_model.as_deref(), Some(SONNET));
         assert_eq!(state.reasoning_effort, Some(ReasoningEffort::High));
         assert_eq!(state.selected_mode.as_deref(), Some("Planner"));
     }
 
     #[test]
     fn unknown_mode_is_rejected() {
-        let modes = validated_modes();
-        let available = available_models();
-        let mut state = fake_config_state("deepseek:deepseek-chat");
-        let setting = ConfigSetting::Mode("Unknown".to_string());
-
-        let result = state.apply_config_change(&modes, &available, &setting);
-
+        let (result, _) = apply(DEEPSEEK, ConfigSetting::Mode("Unknown".to_string()));
         assert!(result.is_err());
     }
 
@@ -348,13 +340,15 @@ mod tests {
     fn reasoning_effort_change_preserves_selected_mode() {
         let modes = validated_modes();
         let available = available_models();
-        let mut state = fake_config_state("anthropic:claude-sonnet-4-5");
+        let mut state = SessionConfigState::new(SONNET.to_string());
         state.reasoning_effort = Some(ReasoningEffort::High);
         state.selected_mode = Some("Planner".to_string());
 
-        let setting = ConfigSetting::ReasoningEffort(Some(ReasoningEffort::Low));
-        let result = state.apply_config_change(&modes, &available, &setting);
-
+        let result = state.apply_config_change(
+            &modes,
+            &available,
+            &ConfigSetting::ReasoningEffort(Some(ReasoningEffort::Low)),
+        );
         assert!(result.is_ok());
         assert_eq!(state.reasoning_effort, Some(ReasoningEffort::Low));
         assert_eq!(state.selected_mode.as_deref(), Some("Planner"));
@@ -364,18 +358,17 @@ mod tests {
     fn manual_model_change_clears_mode_selection_when_no_tuple_match() {
         let modes = validated_modes();
         let available = available_models();
-        let mut state = fake_config_state("anthropic:claude-sonnet-4-5");
+        let mut state = SessionConfigState::new(SONNET.to_string());
         state.reasoning_effort = Some(ReasoningEffort::Medium);
         state.selected_mode = Some("Planner".to_string());
-        let setting = ConfigSetting::Model("deepseek:deepseek-chat".to_string());
 
-        let result = state.apply_config_change(&modes, &available, &setting);
-
-        assert!(result.is_ok());
-        assert_eq!(
-            state.pending_model.as_deref(),
-            Some("deepseek:deepseek-chat")
+        let result = state.apply_config_change(
+            &modes,
+            &available,
+            &ConfigSetting::Model(DEEPSEEK.to_string()),
         );
+        assert!(result.is_ok());
+        assert_eq!(state.pending_model.as_deref(), Some(DEEPSEEK));
         assert!(state.selected_mode.is_none());
     }
 
@@ -383,12 +376,10 @@ mod tests {
     async fn initialize_always_advertises_load_session_support() {
         let (tx, _rx) = mpsc::unbounded_channel();
         let manager = SessionManager::new(AcpActorHandle::new(tx));
-
         let response = manager
             .initialize(InitializeRequest::new(ProtocolVersion::LATEST))
             .await
             .expect("initialize succeeds");
-
         let json = serde_json::to_string(&response).expect("response serializes");
         assert!(json.contains("\"loadSession\":true"));
     }

@@ -537,259 +537,151 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    fn create_test_dir() -> TempDir {
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let test_dir = temp_dir.path();
-
-        fs::write(
-            test_dir.join("test.rs"),
-            "fn main() {\n    println!(\"Hello, world!\");\n    let x = 42;\n}",
-        )
-        .unwrap();
-        fs::write(
-            test_dir.join("script.py"),
-            "def hello():\n    print(\"Hello, world!\")\n    x = 42\n",
-        )
-        .unwrap();
-        fs::write(
-            test_dir.join("app.js"),
-            "function hello() {\n    console.log(\"Hello, world!\");\n    const x = 42;\n}",
-        )
-        .unwrap();
-
-        temp_dir
-    }
-
-    #[tokio::test]
-    async fn test_file_type_filtering() {
-        let temp_dir = create_test_dir();
-        let test_path = temp_dir.path().to_str().unwrap();
-
-        let args = GrepInput {
-            pattern: "hello".to_string(),
-            path: Some(test_path.to_string()),
+    fn input(pattern: &str) -> GrepInput {
+        GrepInput {
+            pattern: pattern.to_string(),
+            path: None,
             glob: None,
-            file_type: Some("rust".to_string()),
-            output_mode: Some(OutputMode::Content),
-            case_insensitive: Some(true),
-            line_numbers: Some(true),
+            file_type: None,
+            output_mode: None,
+            case_insensitive: None,
+            line_numbers: None,
             context_before: None,
             context_after: None,
             context_around: None,
             head_limit: None,
             multiline: None,
-        };
-
-        let result = perform_grep(args).await.expect("Failed to perform grep");
-
-        match result {
-            GrepOutput::Content(content) => {
-                assert!(content.total_matches > 0);
-                // Should only find matches in .rs files
-                assert!(content.matches.iter().all(|m| m.file.contains("test.rs")));
-            }
-            _ => panic!("Expected Content output"),
         }
     }
 
+    fn create_test_dir() -> TempDir {
+        let dir = TempDir::new().expect("Failed to create temp dir");
+        let p = dir.path();
+        fs::write(p.join("test.rs"), "fn main() {\n    println!(\"Hello, world!\");\n    let x = 42;\n}").unwrap();
+        fs::write(p.join("script.py"), "def hello():\n    print(\"Hello, world!\")\n    x = 42\n").unwrap();
+        fs::write(p.join("app.js"), "function hello() {\n    console.log(\"Hello, world!\");\n    const x = 42;\n}").unwrap();
+        dir
+    }
+
+    fn unwrap_content(output: GrepOutput) -> GrepContentOutput {
+        match output { GrepOutput::Content(c) => c, other => panic!("Expected Content, got {other:?}") }
+    }
+
+    fn unwrap_files(output: GrepOutput) -> GrepFilesOutput {
+        match output { GrepOutput::Files(f) => f, other => panic!("Expected Files, got {other:?}") }
+    }
+
+    fn unwrap_count(output: GrepOutput) -> GrepCountOutput {
+        match output { GrepOutput::Count(c) => c, other => panic!("Expected Count, got {other:?}") }
+    }
+
+    async fn grep(args: GrepInput) -> GrepOutput {
+        perform_grep(args).await.expect("grep failed")
+    }
+
     #[tokio::test]
-    async fn test_glob_filtering() {
+    async fn test_file_type_and_glob_filtering() {
         let temp_dir = create_test_dir();
-        let test_path = temp_dir.path().to_str().unwrap();
+        let path = temp_dir.path().to_str().unwrap().to_string();
 
-        let args = GrepInput {
-            pattern: "hello".to_string(),
-            path: Some(test_path.to_string()),
-            glob: Some("*.py".to_string()),
-            file_type: None,
-            output_mode: Some(OutputMode::Content),
-            case_insensitive: Some(true),
-            line_numbers: Some(true),
-            context_before: None,
-            context_after: None,
-            context_around: None,
-            head_limit: None,
-            multiline: None,
-        };
+        let cases: Vec<(Option<String>, Option<String>, &str)> = vec![
+            (Some("rust".into()), None, "test.rs"),
+            (None, Some("*.py".into()), "script.py"),
+        ];
+        for (file_type, glob, expected_file) in cases {
+            let mut args = input("hello");
+            args.path = Some(path.clone());
+            args.file_type = file_type;
+            args.glob = glob;
+            args.output_mode = Some(OutputMode::Content);
+            args.case_insensitive = Some(true);
+            args.line_numbers = Some(true);
 
-        let result = perform_grep(args).await.expect("Failed to perform grep");
-
-        match result {
-            GrepOutput::Content(content) => {
-                assert!(content.total_matches > 0);
-                // Should only find matches in .py files
-                assert!(content.matches.iter().all(|m| m.file.contains("script.py")));
-            }
-            _ => panic!("Expected Content output"),
+            let content = unwrap_content(grep(args).await);
+            assert!(content.total_matches > 0, "no matches for {expected_file}");
+            assert!(content.matches.iter().all(|m| m.file.contains(expected_file)),
+                "expected all matches in {expected_file}");
         }
     }
 
     #[tokio::test]
     async fn test_files_with_matches_output() {
         let temp_dir = create_test_dir();
-        let test_path = temp_dir.path().to_str().unwrap();
+        let mut args = input("hello");
+        args.path = Some(temp_dir.path().to_str().unwrap().to_string());
+        args.output_mode = Some(OutputMode::FilesWithMatches);
+        args.case_insensitive = Some(true);
 
-        let args = GrepInput {
-            pattern: "hello".to_string(),
-            path: Some(test_path.to_string()),
-            glob: None,
-            file_type: None,
-            output_mode: Some(OutputMode::FilesWithMatches),
-            case_insensitive: Some(true),
-            line_numbers: None,
-            context_before: None,
-            context_after: None,
-            context_around: None,
-            head_limit: None,
-            multiline: None,
-        };
-
-        let result = perform_grep(args).await.expect("Failed to perform grep");
-
-        match result {
-            GrepOutput::Files(files) => {
-                assert!(files.count >= 2); // At least python and js files
-                assert!(files.files.iter().any(|f| f.contains(".py")));
-                assert!(files.files.iter().any(|f| f.contains(".js")));
-            }
-            _ => panic!("Expected Files output"),
-        }
+        let files = unwrap_files(grep(args).await);
+        assert!(files.count >= 2);
+        assert!(files.files.iter().any(|f| f.contains(".py")));
+        assert!(files.files.iter().any(|f| f.contains(".js")));
     }
 
     #[tokio::test]
     async fn test_count_output() {
         let temp_dir = create_test_dir();
-        let test_path = temp_dir.path().to_str().unwrap();
+        let mut args = input("hello");
+        args.path = Some(temp_dir.path().to_str().unwrap().to_string());
+        args.output_mode = Some(OutputMode::Count);
+        args.case_insensitive = Some(true);
 
-        let args = GrepInput {
-            pattern: "hello".to_string(),
-            path: Some(test_path.to_string()),
-            glob: None,
-            file_type: None,
-            output_mode: Some(OutputMode::Count),
-            case_insensitive: Some(true),
-            line_numbers: None,
-            context_before: None,
-            context_after: None,
-            context_around: None,
-            head_limit: None,
-            multiline: None,
-        };
-
-        let result = perform_grep(args).await.expect("Failed to perform grep");
-
-        match result {
-            GrepOutput::Count(count) => {
-                assert!(count.counts.len() >= 2);
-                assert!(count.total >= 2);
-                assert!(count.counts.iter().all(|fc| fc.count > 0));
-            }
-            _ => panic!("Expected Count output"),
-        }
+        let count = unwrap_count(grep(args).await);
+        assert!(count.counts.len() >= 2);
+        assert!(count.total >= 2);
+        assert!(count.counts.iter().all(|fc| fc.count > 0));
     }
 
     #[tokio::test]
     async fn test_head_limit() {
         let temp_dir = create_test_dir();
-        let test_path = temp_dir.path().to_str().unwrap();
+        let mut args = input("hello");
+        args.path = Some(temp_dir.path().to_str().unwrap().to_string());
+        args.output_mode = Some(OutputMode::Content);
+        args.case_insensitive = Some(true);
+        args.line_numbers = Some(true);
+        args.head_limit = Some(1);
 
-        let args = GrepInput {
-            pattern: "hello".to_string(),
-            path: Some(test_path.to_string()),
-            glob: None,
-            file_type: None,
-            output_mode: Some(OutputMode::Content),
-            case_insensitive: Some(true),
-            line_numbers: Some(true),
-            context_before: None,
-            context_after: None,
-            context_around: None,
-            head_limit: Some(1),
-            multiline: None,
-        };
-
-        let result = perform_grep(args).await.expect("Failed to perform grep");
-
-        match result {
-            GrepOutput::Content(content) => {
-                assert!(content.total_matches <= 1);
-            }
-            _ => panic!("Expected Content output"),
-        }
+        let content = unwrap_content(grep(args).await);
+        assert!(content.total_matches <= 1);
     }
 
     #[tokio::test]
     async fn test_multiline_mode() {
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let test_path = temp_dir.path().join("multiline.txt");
+        let file = temp_dir.path().join("multiline.txt");
+        fs::write(&file, "start\nmiddle content\nend").unwrap();
 
-        // Create a file with content that spans multiple lines
-        fs::write(&test_path, "start\nmiddle content\nend").unwrap();
+        let mut args = input(r"start.*end");
+        args.path = Some(file.to_str().unwrap().to_string());
+        args.output_mode = Some(OutputMode::Content);
+        args.line_numbers = Some(true);
+        args.multiline = Some(true);
 
-        // Test multiline pattern that matches across lines
-        let args = GrepInput {
-            pattern: r"start.*end".to_string(),
-            path: Some(test_path.to_str().unwrap().to_string()),
-            glob: None,
-            file_type: None,
-            output_mode: Some(OutputMode::Content),
-            case_insensitive: None,
-            line_numbers: Some(true),
-            context_before: None,
-            context_after: None,
-            context_around: None,
-            head_limit: None,
-            multiline: Some(true),
-        };
-
-        let result = perform_grep(args).await.expect("Failed to perform grep");
-
-        match result {
-            GrepOutput::Content(content) => {
-                // With multiline mode, it should match the pattern spanning multiple lines
-                assert!(content.total_matches > 0);
-            }
-            _ => panic!("Expected Content output"),
-        }
+        let content = unwrap_content(grep(args).await);
+        assert!(content.total_matches > 0);
     }
 
     #[tokio::test]
     async fn test_context_lines() {
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let test_path = temp_dir.path().join("context.txt");
+        let file = temp_dir.path().join("context.txt");
+        fs::write(&file, "line 1\nline 2\ntarget\nline 4\nline 5").unwrap();
 
-        fs::write(&test_path, "line 1\nline 2\ntarget\nline 4\nline 5").unwrap();
+        let mut args = input("target");
+        args.path = Some(file.to_str().unwrap().to_string());
+        args.output_mode = Some(OutputMode::Content);
+        args.line_numbers = Some(true);
+        args.context_before = Some(1);
+        args.context_after = Some(1);
 
-        let args = GrepInput {
-            pattern: "target".to_string(),
-            path: Some(test_path.to_str().unwrap().to_string()),
-            glob: None,
-            file_type: None,
-            output_mode: Some(OutputMode::Content),
-            case_insensitive: None,
-            line_numbers: Some(true),
-            context_before: Some(1),
-            context_after: Some(1),
-            context_around: None,
-            head_limit: None,
-            multiline: None,
-        };
-
-        let result = perform_grep(args).await.expect("Failed to perform grep");
-
-        match result {
-            GrepOutput::Content(content) => {
-                assert!(content.total_matches > 0);
-                // Check that context is present
-                assert!(content.matches[0].before_context.is_some());
-                assert!(content.matches[0].after_context.is_some());
-                let before = content.matches[0].before_context.as_ref().unwrap();
-                let after = content.matches[0].after_context.as_ref().unwrap();
-                assert_eq!(before.len(), 1);
-                assert_eq!(after.len(), 1);
-            }
-            _ => panic!("Expected Content output"),
-        }
+        let content = unwrap_content(grep(args).await);
+        assert!(content.total_matches > 0);
+        let m = &content.matches[0];
+        let before = m.before_context.as_ref().expect("missing before_context");
+        let after = m.after_context.as_ref().expect("missing after_context");
+        assert_eq!(before.len(), 1);
+        assert_eq!(after.len(), 1);
     }
 
     #[test]
@@ -810,10 +702,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(args.file_type, Some("rust".to_string()));
-        assert!(matches!(
-            args.output_mode,
-            Some(OutputMode::FilesWithMatches)
-        ));
+        assert!(matches!(args.output_mode, Some(OutputMode::FilesWithMatches)));
         assert_eq!(args.case_insensitive, Some(true));
         assert_eq!(args.line_numbers, Some(true));
         assert_eq!(args.context_before, Some(1));
@@ -830,61 +719,28 @@ mod tests {
             "outputMode": "files_with_matches"
         }))
         .unwrap();
-
-        assert!(matches!(
-            args.output_mode,
-            Some(OutputMode::FilesWithMatches)
-        ));
+        assert!(matches!(args.output_mode, Some(OutputMode::FilesWithMatches)));
     }
 
     #[tokio::test]
     async fn empty_path_treated_as_cwd() {
         let temp_dir = create_test_dir();
-        // Set cwd to temp_dir so the default "." resolves there
         let _guard = std::env::set_current_dir(temp_dir.path());
 
-        let args = GrepInput {
-            pattern: "hello".to_string(),
-            path: Some("".to_string()),
-            glob: None,
-            file_type: None,
-            output_mode: Some(OutputMode::Content),
-            case_insensitive: Some(true),
-            line_numbers: None,
-            context_before: None,
-            context_after: None,
-            context_around: None,
-            head_limit: None,
-            multiline: None,
-        };
+        let mut args = input("hello");
+        args.path = Some("".to_string());
+        args.output_mode = Some(OutputMode::Content);
+        args.case_insensitive = Some(true);
 
-        let result = perform_grep(args).await;
-        assert!(result.is_ok());
+        assert!(perform_grep(args).await.is_ok());
     }
 
     #[tokio::test]
     async fn nonexistent_path_returns_error() {
-        let args = GrepInput {
-            pattern: "hello".to_string(),
-            path: Some("/no/such/path/exists".to_string()),
-            glob: None,
-            file_type: None,
-            output_mode: None,
-            case_insensitive: None,
-            line_numbers: None,
-            context_before: None,
-            context_after: None,
-            context_around: None,
-            head_limit: None,
-            multiline: None,
-        };
+        let mut args = input("hello");
+        args.path = Some("/no/such/path/exists".to_string());
 
-        let result = perform_grep(args).await;
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(
-            matches!(err, GrepError::PathNotFound(_)),
-            "Expected PathNotFound, got: {err}"
-        );
+        let err = perform_grep(args).await.unwrap_err();
+        assert!(matches!(err, GrepError::PathNotFound(_)), "Expected PathNotFound, got: {err}");
     }
 }

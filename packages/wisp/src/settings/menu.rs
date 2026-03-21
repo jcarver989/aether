@@ -291,12 +291,7 @@ mod tests {
     };
     use tui::{KeyCode, KeyEvent, KeyModifiers};
 
-    fn make_select_option(
-        id: &str,
-        name: &str,
-        current: &str,
-        values: &[(&str, &str)],
-    ) -> SessionConfigOption {
+    fn sel(id: &str, name: &str, current: &str, values: &[(&str, &str)]) -> SessionConfigOption {
         let options: Vec<SessionConfigSelectOption> = values
             .iter()
             .map(|(v, n)| SessionConfigSelectOption::new(v.to_string(), n.to_string()))
@@ -309,32 +304,54 @@ mod tests {
         )
     }
 
+    fn menu(opts: &[SessionConfigOption]) -> SettingsMenu {
+        SettingsMenu::from_config_options(opts)
+    }
+
+    fn key(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    async fn press(menu: &mut SettingsMenu, code: KeyCode) -> Option<Vec<SettingMenuMessage>> {
+        menu.on_event(&key(code)).await
+    }
+
+    fn theme_files() -> Vec<String> {
+        vec!["catppuccin.tmTheme".into(), "nord.tmTheme".into()]
+    }
+
+    fn theme_menu(current: Option<&str>) -> SettingsMenu {
+        let mut m = menu(&[]);
+        m.add_theme_entry(current, &theme_files());
+        m
+    }
+
     #[test]
     fn from_config_options_builds_entries() {
-        let opts = vec![
-            make_select_option(
+        let m = menu(&[
+            sel(
                 "model",
                 "Model",
                 "gpt-4o",
                 &[("gpt-4o", "GPT-4o"), ("claude", "Claude")],
             ),
-            make_select_option(
+            sel(
                 "mode",
                 "Mode",
                 "code",
                 &[("code", "Code"), ("chat", "Chat")],
             ),
-        ];
-        let menu = SettingsMenu::from_config_options(&opts);
-        assert_eq!(menu.options().len(), 2);
-        assert_eq!(menu.options()[0].config_id, "model");
-        assert_eq!(menu.options()[0].current_value_index, 0);
-        assert_eq!(menu.options()[1].config_id, "mode");
+        ]);
+        assert_eq!(m.options().len(), 2);
+        assert_eq!(m.options()[0].config_id, "model");
+        assert_eq!(m.options()[0].current_value_index, 0);
+        assert_eq!(m.options()[0].display_name, None);
+        assert_eq!(m.options()[1].config_id, "mode");
     }
 
     #[test]
     fn from_config_options_finds_current_value() {
-        let opts = vec![make_select_option(
+        let m = menu(&[sel(
             "model",
             "Model",
             "claude",
@@ -343,279 +360,181 @@ mod tests {
                 ("claude", "Claude"),
                 ("llama", "Llama"),
             ],
-        )];
-        let menu = SettingsMenu::from_config_options(&opts);
-        assert_eq!(menu.options()[0].current_value_index, 1);
+        )]);
+        assert_eq!(m.options()[0].current_value_index, 1);
     }
 
     #[tokio::test]
     async fn navigation_wraps_around() {
-        let opts = vec![
-            make_select_option("a", "A", "v1", &[("v1", "V1")]),
-            make_select_option("b", "B", "v1", &[("v1", "V1")]),
-            make_select_option("c", "C", "v1", &[("v1", "V1")]),
-        ];
-        let mut menu = SettingsMenu::from_config_options(&opts);
-        assert_eq!(menu.selected_index(), 0);
+        let mut m = menu(&[
+            sel("a", "A", "v1", &[("v1", "V1")]),
+            sel("b", "B", "v1", &[("v1", "V1")]),
+            sel("c", "C", "v1", &[("v1", "V1")]),
+        ]);
+        assert_eq!(m.selected_index(), 0);
 
-        menu.on_event(&Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)))
-            .await;
-        assert_eq!(menu.selected_index(), 2);
+        press(&mut m, KeyCode::Up).await;
+        assert_eq!(m.selected_index(), 2);
 
-        menu.on_event(&Event::Key(KeyEvent::new(
-            KeyCode::Down,
-            KeyModifiers::NONE,
-        )))
-        .await;
-        assert_eq!(menu.selected_index(), 0);
+        press(&mut m, KeyCode::Down).await;
+        assert_eq!(m.selected_index(), 0);
 
-        menu.on_event(&Event::Key(KeyEvent::new(
-            KeyCode::Down,
-            KeyModifiers::NONE,
-        )))
-        .await;
-        menu.on_event(&Event::Key(KeyEvent::new(
-            KeyCode::Down,
-            KeyModifiers::NONE,
-        )))
-        .await;
-        menu.on_event(&Event::Key(KeyEvent::new(
-            KeyCode::Down,
-            KeyModifiers::NONE,
-        )))
-        .await;
-        assert_eq!(menu.selected_index(), 0);
+        for _ in 0..3 {
+            press(&mut m, KeyCode::Down).await;
+        }
+        assert_eq!(m.selected_index(), 0);
     }
 
     #[test]
     fn update_options_clamps_index() {
-        let opts = vec![
-            make_select_option("a", "A", "v1", &[("v1", "V1")]),
-            make_select_option("b", "B", "v1", &[("v1", "V1")]),
-            make_select_option("c", "C", "v1", &[("v1", "V1")]),
-        ];
-        let mut menu = SettingsMenu::from_config_options(&opts);
-        menu.list.set_selected(2);
-
-        let fewer = vec![make_select_option("a", "A", "v1", &[("v1", "V1")])];
-        menu.update_options(&fewer);
-        assert_eq!(menu.selected_index(), 0);
+        let mut m = menu(&[
+            sel("a", "A", "v1", &[("v1", "V1")]),
+            sel("b", "B", "v1", &[("v1", "V1")]),
+            sel("c", "C", "v1", &[("v1", "V1")]),
+        ]);
+        m.list.set_selected(2);
+        m.update_options(&[sel("a", "A", "v1", &[("v1", "V1")])]);
+        assert_eq!(m.selected_index(), 0);
     }
 
     #[test]
     fn update_options_preserves_index_when_within_bounds() {
-        let opts = vec![
-            make_select_option("provider", "Provider", "a", &[("a", "A"), ("b", "B")]),
-            make_select_option("model", "Model", "m1", &[("m1", "M1"), ("m2", "M2")]),
-        ];
-        let mut menu = SettingsMenu::from_config_options(&opts);
-        menu.list.set_selected(1);
-
-        let new_opts = vec![
-            make_select_option("provider", "Provider", "b", &[("a", "A"), ("b", "B")]),
-            make_select_option("model", "Model", "m3", &[("m3", "M3")]),
-        ];
-        menu.update_options(&new_opts);
-        assert_eq!(menu.selected_index(), 1);
+        let mut m = menu(&[
+            sel("provider", "Provider", "a", &[("a", "A"), ("b", "B")]),
+            sel("model", "Model", "m1", &[("m1", "M1"), ("m2", "M2")]),
+        ]);
+        m.list.set_selected(1);
+        m.update_options(&[
+            sel("provider", "Provider", "b", &[("a", "A"), ("b", "B")]),
+            sel("model", "Model", "m3", &[("m3", "M3")]),
+        ]);
+        assert_eq!(m.selected_index(), 1);
     }
 
     #[test]
     fn from_config_options_skips_empty_values() {
         let empty =
             SessionConfigOption::select("x", "X", "v", Vec::<SessionConfigSelectOption>::new());
-        let opts = vec![
-            empty,
-            make_select_option("model", "Model", "a", &[("a", "A")]),
-        ];
-        let menu = SettingsMenu::from_config_options(&opts);
-        assert_eq!(menu.options().len(), 1);
-        assert_eq!(menu.options()[0].config_id, "model");
+        let m = menu(&[empty, sel("model", "Model", "a", &[("a", "A")])]);
+        assert_eq!(m.options().len(), 1);
+        assert_eq!(m.options()[0].config_id, "model");
     }
 
     #[test]
     fn from_config_options_with_category() {
-        let opt = make_select_option("model", "Model", "gpt-4o", &[("gpt-4o", "GPT-4o")])
+        let opt = sel("model", "Model", "gpt-4o", &[("gpt-4o", "GPT-4o")])
             .category(SessionConfigOptionCategory::Model);
-        let menu = SettingsMenu::from_config_options(&[opt]);
-        assert_eq!(menu.options().len(), 1);
-        assert_eq!(menu.options()[0].title, "Model");
+        let m = menu(&[opt]);
+        assert_eq!(m.options().len(), 1);
+        assert_eq!(m.options()[0].title, "Model");
     }
 
     #[tokio::test]
-    async fn handle_key_enter_requests_open_picker() {
-        let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
-        let mut menu = SettingsMenu::from_config_options(&opts);
-
-        let outcome = menu
-            .on_event(&Event::Key(KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE,
-            )))
-            .await;
-
-        assert!(outcome.is_some());
-
-        let messages = outcome.unwrap();
-        assert!(matches!(
-            messages.as_slice(),
-            [SettingMenuMessage::OpenSelectedPicker]
-        ));
-    }
-
-    #[tokio::test]
-    async fn handle_key_escape_requests_close() {
-        let opts = vec![make_select_option("model", "Model", "a", &[("a", "A")])];
-        let mut menu = SettingsMenu::from_config_options(&opts);
-
-        let outcome = menu
-            .on_event(&Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)))
-            .await;
-
-        assert!(outcome.is_some());
-
-        let messages = outcome.unwrap();
-        assert!(matches!(
-            messages.as_slice(),
-            [SettingMenuMessage::CloseAll]
-        ));
+    async fn key_enter_opens_picker_and_escape_closes() {
+        for (code, expected) in [
+            (KeyCode::Enter, "OpenSelectedPicker"),
+            (KeyCode::Esc, "CloseAll"),
+        ] {
+            let mut m = menu(&[sel("model", "Model", "a", &[("a", "A")])]);
+            let msgs = press(&mut m, code).await.unwrap();
+            let tag = match &msgs[..] {
+                [SettingMenuMessage::OpenSelectedPicker] => "OpenSelectedPicker",
+                [SettingMenuMessage::CloseAll] => "CloseAll",
+                _ => "other",
+            };
+            assert_eq!(tag, expected, "key {code:?} should produce {expected}");
+        }
     }
 
     #[test]
     fn multi_select_detected_from_meta() {
-        let meta = ConfigOptionMeta { multi_select: true };
-        let opt = make_select_option("model", "Model", "a", &[("a", "A"), ("b", "B")])
-            .meta(meta.into_meta());
-        let menu = SettingsMenu::from_config_options(&[opt]);
-        assert!(menu.options()[0].multi_select);
-    }
-
-    #[test]
-    fn multi_select_false_when_no_meta() {
-        let opt = make_select_option("model", "Model", "a", &[("a", "A")]);
-        let menu = SettingsMenu::from_config_options(&[opt]);
-        assert!(!menu.options()[0].multi_select);
+        for (has_meta, expected) in [(true, true), (false, false)] {
+            let mut opt = sel("model", "Model", "a", &[("a", "A"), ("b", "B")]);
+            if has_meta {
+                opt = opt.meta(ConfigOptionMeta { multi_select: true }.into_meta());
+            }
+            let m = menu(&[opt]);
+            assert_eq!(m.options()[0].multi_select, expected, "meta={has_meta}");
+        }
     }
 
     #[tokio::test]
     async fn multi_select_entry_opens_model_selector() {
-        let meta = ConfigOptionMeta { multi_select: true };
-        let opt = make_select_option("model", "Model", "a", &[("a", "A"), ("b", "B")])
-            .meta(meta.into_meta());
-        let mut menu = SettingsMenu::from_config_options(&[opt]);
-
-        let outcome = menu
-            .on_event(&Event::Key(KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE,
-            )))
-            .await;
-        let messages = outcome.unwrap();
+        let opt = sel("model", "Model", "a", &[("a", "A"), ("b", "B")])
+            .meta(ConfigOptionMeta { multi_select: true }.into_meta());
+        let mut m = menu(&[opt]);
+        let msgs = press(&mut m, KeyCode::Enter).await.unwrap();
         assert!(matches!(
-            messages.as_slice(),
+            msgs.as_slice(),
             [SettingMenuMessage::OpenModelSelector]
         ));
     }
 
     #[test]
     fn multi_select_with_comma_value_shows_model_names() {
-        let meta = ConfigOptionMeta { multi_select: true };
-        let opt = make_select_option("model", "Model", "a,b", &[("a", "Alpha"), ("b", "Beta")])
-            .meta(meta.into_meta());
-        let menu = SettingsMenu::from_config_options(&[opt]);
-        let display = menu.options()[0].display_name.as_deref().unwrap();
+        let opt = sel("model", "Model", "a,b", &[("a", "Alpha"), ("b", "Beta")])
+            .meta(ConfigOptionMeta { multi_select: true }.into_meta());
+        let display = menu(&[opt]).options()[0]
+            .display_name
+            .as_deref()
+            .unwrap()
+            .to_string();
         assert!(display.contains("Alpha"), "display: {display}");
         assert!(display.contains("Beta"), "display: {display}");
     }
 
     #[test]
     fn apply_change_updates_matching_entry_value_and_index() {
-        let mut menu = SettingsMenu::from_config_options(&[]);
-        let files = vec!["catppuccin.tmTheme".to_string(), "nord.tmTheme".to_string()];
-        menu.add_theme_entry(None, &files);
-
-        menu.apply_change(&SettingsChange {
+        let mut m = theme_menu(None);
+        m.apply_change(&SettingsChange {
             config_id: THEME_CONFIG_ID.to_string(),
             new_value: "nord.tmTheme".to_string(),
         });
-
-        let theme = &menu.options()[0];
-        assert_eq!(theme.current_raw_value, "nord.tmTheme");
-        assert_eq!(theme.current_value_index, 2);
+        assert_eq!(m.options()[0].current_raw_value, "nord.tmTheme");
+        assert_eq!(m.options()[0].current_value_index, 2);
     }
 
     #[test]
     fn add_theme_entry_inserts_theme_row() {
-        let mut menu = SettingsMenu::from_config_options(&[]);
-        let files = vec!["catppuccin.tmTheme".to_string(), "nord.tmTheme".to_string()];
-
-        menu.add_theme_entry(None, &files);
-
-        assert_eq!(menu.options().len(), 1);
-        let theme = &menu.options()[0];
-        assert_eq!(theme.config_id, THEME_CONFIG_ID);
-        assert_eq!(theme.title, "Theme");
-        assert_eq!(theme.entry_kind, SettingsMenuEntryKind::Select);
-        assert!(!theme.multi_select);
-        assert_eq!(theme.values.len(), 3);
-        assert_eq!(theme.values[0].name, "Default");
-        assert_eq!(theme.values[0].value, "");
-        assert_eq!(theme.values[1].value, "catppuccin.tmTheme");
-        assert_eq!(theme.values[2].value, "nord.tmTheme");
+        let m = theme_menu(None);
+        assert_eq!(m.options().len(), 1);
+        let t = &m.options()[0];
+        assert_eq!(t.config_id, THEME_CONFIG_ID);
+        assert_eq!(t.title, "Theme");
+        assert_eq!(t.entry_kind, SettingsMenuEntryKind::Select);
+        assert!(!t.multi_select);
+        assert_eq!(t.values.len(), 3);
+        assert_eq!(t.values[0].name, "Default");
+        assert_eq!(t.values[0].value, "");
+        assert_eq!(t.values[1].value, "catppuccin.tmTheme");
+        assert_eq!(t.values[2].value, "nord.tmTheme");
     }
 
     #[test]
-    fn add_theme_entry_selects_default_when_current_none() {
-        let mut menu = SettingsMenu::from_config_options(&[]);
-        let files = vec!["catppuccin.tmTheme".to_string()];
-
-        menu.add_theme_entry(None, &files);
-
-        let theme = &menu.options()[0];
-        assert_eq!(theme.current_value_index, 0);
-        assert_eq!(theme.current_raw_value, "");
-    }
-
-    #[test]
-    fn add_theme_entry_selects_matching_theme_file() {
-        let mut menu = SettingsMenu::from_config_options(&[]);
-        let files = vec!["catppuccin.tmTheme".to_string(), "nord.tmTheme".to_string()];
-
-        menu.add_theme_entry(Some("nord.tmTheme"), &files);
-
-        let theme = &menu.options()[0];
-        assert_eq!(theme.current_value_index, 2);
-        assert_eq!(theme.current_raw_value, "nord.tmTheme");
-    }
-
-    #[test]
-    fn add_theme_entry_falls_back_to_default_when_current_missing() {
-        let mut menu = SettingsMenu::from_config_options(&[]);
-        let files = vec!["catppuccin.tmTheme".to_string()];
-
-        menu.add_theme_entry(Some("missing.tmTheme"), &files);
-
-        let theme = &menu.options()[0];
-        assert_eq!(theme.current_value_index, 0);
-        assert_eq!(theme.current_raw_value, "");
-    }
-
-    #[test]
-    fn non_multi_select_has_no_display_name() {
-        let opt = make_select_option("model", "Model", "a", &[("a", "A")]);
-        let menu = SettingsMenu::from_config_options(&[opt]);
-        assert!(menu.options()[0].display_name.is_none());
+    fn add_theme_entry_selects_correct_index() {
+        let cases: &[(Option<&str>, usize, &str)] = &[
+            (None, 0, ""),
+            (Some("nord.tmTheme"), 2, "nord.tmTheme"),
+            (Some("missing.tmTheme"), 0, ""),
+        ];
+        for &(current, expected_idx, expected_raw) in cases {
+            let m = theme_menu(current);
+            let t = &m.options()[0];
+            assert_eq!(t.current_value_index, expected_idx, "current={current:?}");
+            assert_eq!(t.current_raw_value, expected_raw, "current={current:?}");
+        }
     }
 
     #[test]
     fn from_config_options_excludes_reasoning_effort_entry() {
-        let opts = vec![
-            make_select_option(
+        let m = menu(&[
+            sel(
                 "model",
                 "Model",
                 "gpt-4o",
                 &[("gpt-4o", "GPT-4o"), ("claude", "Claude")],
             ),
-            make_select_option(
+            sel(
                 "reasoning_effort",
                 "Reasoning Effort",
                 "high",
@@ -626,20 +545,12 @@ mod tests {
                     ("high", "High"),
                 ],
             ),
-        ];
-        let menu = SettingsMenu::from_config_options(&opts);
-
+        ]);
+        assert!(m.options().iter().any(|e| e.config_id == "model"));
         assert!(
-            menu.options().iter().any(|e| e.config_id == "model"),
-            "menu should contain model entry"
-        );
-
-        assert!(
-            !menu
-                .options()
+            !m.options()
                 .iter()
-                .any(|e| e.config_id == "reasoning_effort"),
-            "menu should NOT contain reasoning_effort entry"
+                .any(|e| e.config_id == "reasoning_effort")
         );
     }
 }

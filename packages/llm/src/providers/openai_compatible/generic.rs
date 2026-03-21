@@ -1,7 +1,7 @@
 use async_openai::{Client, config::OpenAIConfig};
 
 use crate::provider::get_context_window;
-use crate::{Context, LlmError, LlmResponseStream, StreamingModelProvider};
+use crate::{Context, LlmError, LlmModel, LlmResponseStream, Result, StreamingModelProvider};
 
 use super::{build_chat_request, create_custom_stream_generic};
 
@@ -42,10 +42,6 @@ pub const ZAI: ProviderConfig = ProviderConfig {
 };
 
 /// A generic provider for APIs that are fully OpenAI-compatible.
-///
-/// Providers like DeepSeek, Moonshot, and Z.ai differ only in their API base URL,
-/// environment variable name, default model, and display prefix. This struct
-/// captures that pattern once instead of duplicating the same impl three times.
 pub struct GenericOpenAiProvider {
     client: Client<OpenAIConfig>,
     model: String,
@@ -53,7 +49,7 @@ pub struct GenericOpenAiProvider {
 }
 
 impl GenericOpenAiProvider {
-    pub fn from_env(config: &'static ProviderConfig) -> crate::Result<Self> {
+    pub fn from_env(config: &'static ProviderConfig) -> Result<Self> {
         let api_key = std::env::var(config.env_var)
             .map_err(|_| LlmError::MissingApiKey(config.env_var.to_string()))?;
         Ok(Self::new(api_key, config))
@@ -78,7 +74,7 @@ impl GenericOpenAiProvider {
 }
 
 impl StreamingModelProvider for GenericOpenAiProvider {
-    fn model(&self) -> Option<crate::LlmModel> {
+    fn model(&self) -> Option<LlmModel> {
         format!("{}:{}", self.config.prefix, self.model)
             .parse()
             .ok()

@@ -166,45 +166,85 @@ pub fn basename(path: &str) -> String {
 mod tests {
     use super::*;
 
+    fn display(title: &str, value: &str) -> ToolDisplayMeta {
+        ToolDisplayMeta::new(title, value)
+    }
+
+    fn assert_serde_roundtrip<T: Serialize + for<'de> Deserialize<'de> + PartialEq + std::fmt::Debug>(val: &T) {
+        let json = serde_json::to_string(val).unwrap();
+        let parsed: T = serde_json::from_str(&json).unwrap();
+        assert_eq!(&parsed, val);
+    }
+
+    fn assert_map_roundtrip(meta: &ToolResultMeta) {
+        let map = meta.clone().into_map();
+        let parsed = ToolResultMeta::from_map(&map).expect("should deserialize");
+        assert_eq!(&parsed, meta);
+    }
+
+    fn sample_diff(old_text: Option<&str>) -> FileDiff {
+        FileDiff {
+            path: "/tmp/main.rs".to_string(),
+            old_text: old_text.map(str::to_string),
+            new_text: "new content".to_string(),
+        }
+    }
+
+    fn sample_plan() -> PlanMeta {
+        PlanMeta {
+            entries: vec![
+                PlanMetaEntry { content: "Research AI agents".into(), status: PlanMetaStatus::Completed },
+                PlanMetaEntry { content: "Implement tracking".into(), status: PlanMetaStatus::InProgress },
+                PlanMetaEntry { content: "Write tests".into(), status: PlanMetaStatus::Pending },
+            ],
+        }
+    }
+
     #[test]
     fn test_new_sets_title_and_value() {
-        let meta = ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines");
+        let meta = display("Read file", "Cargo.toml, 156 lines");
         assert_eq!(meta.title, "Read file");
         assert_eq!(meta.value, "Cargo.toml, 156 lines");
     }
 
     #[test]
-    fn test_serde_roundtrip() {
-        let meta = ToolDisplayMeta::new("Grep", "'TODO' in src (42 matches)");
-        let json = serde_json::to_string(&meta).unwrap();
-        let parsed: ToolDisplayMeta = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, meta);
-    }
-
-    #[test]
     fn test_serde_json_shape() {
-        let meta = ToolDisplayMeta::new("Read file", "Cargo.toml");
-        let json = serde_json::to_value(&meta).unwrap();
+        let json = serde_json::to_value(display("Read file", "Cargo.toml")).unwrap();
         assert_eq!(json["title"], "Read file");
         assert_eq!(json["value"], "Cargo.toml");
     }
 
     #[test]
-    fn test_tool_result_meta_roundtrip() {
-        let meta: ToolResultMeta =
-            ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines").into();
-        let json = serde_json::to_string(&meta).unwrap();
-        let parsed: ToolResultMeta = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, meta);
+    fn test_serde_roundtrips() {
+        assert_serde_roundtrip(&display("Grep", "'TODO' in src (42 matches)"));
+        assert_serde_roundtrip(&sample_diff(Some("old content")));
+        assert_serde_roundtrip(&sample_plan());
+
+        let result_meta: ToolResultMeta = display("Read file", "Cargo.toml, 156 lines").into();
+        assert_serde_roundtrip(&result_meta);
     }
 
     #[test]
-    fn test_tool_result_meta_map_roundtrip() {
-        let meta: ToolResultMeta =
-            ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines").into();
-        let map = meta.clone().into_map();
-        let parsed = ToolResultMeta::from_map(&map).expect("should deserialize ToolResultMeta");
-        assert_eq!(parsed, meta);
+    fn test_tool_result_meta_map_roundtrips() {
+        let plain: ToolResultMeta = display("Read file", "Cargo.toml, 156 lines").into();
+        assert_map_roundtrip(&plain);
+
+        let with_diff = ToolResultMeta::with_file_diff(
+            display("Edit file", "main.rs"),
+            sample_diff(Some("old")),
+        );
+        assert_map_roundtrip(&with_diff);
+
+        let with_plan = ToolResultMeta::with_plan(
+            display("Todo", "Research AI agents"),
+            PlanMeta {
+                entries: vec![PlanMetaEntry {
+                    content: "Research AI agents".into(),
+                    status: PlanMetaStatus::InProgress,
+                }],
+            },
+        );
+        assert_map_roundtrip(&with_plan);
     }
 
     #[test]
@@ -218,172 +258,66 @@ mod tests {
 
     #[test]
     fn test_into_result_meta() {
-        let display = ToolDisplayMeta::new("Write file", "main.rs");
-        let meta: ToolResultMeta = display.clone().into();
-        assert_eq!(
-            meta,
-            ToolResultMeta {
-                display,
-                file_diff: None,
-                plan: None,
-            }
-        );
+        let d = display("Write file", "main.rs");
+        let meta: ToolResultMeta = d.clone().into();
+        assert_eq!(meta, ToolResultMeta { display: d, file_diff: None, plan: None });
     }
 
     #[test]
-    fn test_file_diff_serde_roundtrip() {
-        let diff = FileDiff {
-            path: "/tmp/main.rs".to_string(),
-            old_text: Some("old content".to_string()),
-            new_text: "new content".to_string(),
-        };
-        let json = serde_json::to_string(&diff).unwrap();
-        let parsed: FileDiff = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, diff);
+    fn test_optional_fields_omitted_when_none() {
+        let diff_json = serde_json::to_value(sample_diff(None)).unwrap();
+        assert!(diff_json.get("old_text").is_none());
+
+        let meta_json = serde_json::to_value::<ToolResultMeta>(display("Read", "f.rs").into()).unwrap();
+        assert!(meta_json.get("plan").is_none());
+        assert!(meta_json.get("file_diff").is_none());
     }
 
     #[test]
-    fn test_file_diff_new_file_omits_old_text() {
-        let diff = FileDiff {
-            path: "/tmp/new.rs".to_string(),
-            old_text: None,
-            new_text: "content".to_string(),
-        };
-        let json = serde_json::to_value(&diff).unwrap();
-        assert!(json.get("old_text").is_none());
+    fn test_file_diff_missing_old_text_defaults_to_none() {
+        let parsed: FileDiff = serde_json::from_str(r#"{"path":"/tmp/f.rs","new_text":"content"}"#).unwrap();
+        assert_eq!(parsed.old_text, None);
     }
 
     #[test]
-    fn test_tool_result_meta_with_file_diff() {
-        let meta = ToolResultMeta::with_file_diff(
-            ToolDisplayMeta::new("Edit file", "main.rs"),
-            FileDiff {
-                path: "/tmp/main.rs".to_string(),
-                old_text: Some("old".to_string()),
-                new_text: "new".to_string(),
-            },
-        );
-        let map = meta.clone().into_map();
-        let parsed = ToolResultMeta::from_map(&map).expect("should deserialize");
-        assert_eq!(parsed, meta);
+    fn test_extension_hint() {
+        for (path, expected) in [
+            ("/path/to/main.rs", "rs"),
+            ("README.MD", "md"),
+            ("Makefile", ""),
+            ("/foo/bar/baz.tsx", "tsx"),
+        ] {
+            assert_eq!(extension_hint(path), expected, "path: {path}");
+        }
     }
 
     #[test]
-    fn test_extension_hint_rs() {
-        assert_eq!(extension_hint("/path/to/main.rs"), "rs");
-    }
-
-    #[test]
-    fn test_extension_hint_uppercase() {
-        assert_eq!(extension_hint("README.MD"), "md");
-    }
-
-    #[test]
-    fn test_extension_hint_no_extension() {
-        assert_eq!(extension_hint("Makefile"), "");
-    }
-
-    #[test]
-    fn test_extension_hint_nested_path() {
-        assert_eq!(extension_hint("/foo/bar/baz.tsx"), "tsx");
-    }
-
-    #[test]
-    fn test_truncate_short() {
+    fn test_truncate() {
         assert_eq!(truncate("short", 10), "short");
+
+        let long = truncate("cargo check --message-format=json --locked", 20);
+        assert!(long.chars().count() <= 20);
+        assert!(long.ends_with("..."));
+
+        let multibyte = truncate("こんにちは世界テスト文字列", 8);
+        assert_eq!(multibyte.chars().count(), 8);
+        assert!(multibyte.ends_with("..."));
     }
 
     #[test]
-    fn test_truncate_long() {
-        let long = "cargo check --message-format=json --locked";
-        let truncated = truncate(long, 20);
-        assert!(truncated.chars().count() <= 20);
-        assert!(truncated.ends_with("..."));
-    }
-
-    #[test]
-    fn test_truncate_multibyte() {
-        let s = "こんにちは世界テスト文字列"; // 12 chars, each 3 bytes
-        let truncated = truncate(s, 8);
-        assert!(truncated.chars().count() <= 8);
-        assert!(truncated.ends_with("..."));
-        assert_eq!(truncated.chars().count(), 8);
-    }
-
-    #[test]
-    fn test_basename_unix() {
-        assert_eq!(basename("/Users/josh/code/aether/Cargo.toml"), "Cargo.toml");
-    }
-
-    #[test]
-    fn test_basename_windows() {
-        assert_eq!(
-            basename(r"C:\Users\josh\code\aether\Cargo.toml"),
-            "Cargo.toml"
-        );
-    }
-
-    #[test]
-    fn test_basename_bare_name() {
-        assert_eq!(basename("Cargo.toml"), "Cargo.toml");
-    }
-
-    #[test]
-    fn test_plan_meta_serde_roundtrip() {
-        let plan = PlanMeta {
-            entries: vec![
-                PlanMetaEntry {
-                    content: "Research AI agents".to_string(),
-                    status: PlanMetaStatus::Completed,
-                },
-                PlanMetaEntry {
-                    content: "Implement tracking".to_string(),
-                    status: PlanMetaStatus::InProgress,
-                },
-                PlanMetaEntry {
-                    content: "Write tests".to_string(),
-                    status: PlanMetaStatus::Pending,
-                },
-            ],
-        };
-        let json = serde_json::to_string(&plan).unwrap();
-        let parsed: PlanMeta = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, plan);
+    fn test_basename() {
+        for (path, expected) in [
+            ("/Users/josh/code/aether/Cargo.toml", "Cargo.toml"),
+            (r"C:\Users\josh\code\aether\Cargo.toml", "Cargo.toml"),
+            ("Cargo.toml", "Cargo.toml"),
+        ] {
+            assert_eq!(basename(path), expected, "path: {path}");
+        }
     }
 
     #[test]
     fn test_plan_meta_status_serde_snake_case() {
         let json = serde_json::to_value(PlanMetaStatus::InProgress).unwrap();
         assert_eq!(json, serde_json::Value::String("in_progress".to_string()));
-    }
-
-    #[test]
-    fn test_tool_result_meta_with_plan() {
-        let meta = ToolResultMeta::with_plan(
-            ToolDisplayMeta::new("Todo", "Research AI agents"),
-            PlanMeta {
-                entries: vec![PlanMetaEntry {
-                    content: "Research AI agents".to_string(),
-                    status: PlanMetaStatus::InProgress,
-                }],
-            },
-        );
-        let map = meta.clone().into_map();
-        let parsed = ToolResultMeta::from_map(&map).expect("should deserialize");
-        assert_eq!(parsed, meta);
-    }
-
-    #[test]
-    fn test_tool_result_meta_plan_omitted_when_none() {
-        let meta: ToolResultMeta = ToolDisplayMeta::new("Read file", "main.rs").into();
-        let json = serde_json::to_value(&meta).unwrap();
-        assert!(json.get("plan").is_none());
-    }
-
-    #[test]
-    fn test_file_diff_missing_old_text_defaults_to_none() {
-        let json = r#"{"path":"/tmp/f.rs","new_text":"content"}"#;
-        let parsed: FileDiff = serde_json::from_str(json).unwrap();
-        assert_eq!(parsed.old_text, None);
     }
 }

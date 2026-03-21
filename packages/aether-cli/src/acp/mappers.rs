@@ -663,62 +663,47 @@ mod tests {
     }
 
     #[test]
-    fn test_live_mapping_skips_completed_text_but_replay_keeps_it() {
-        let session_id = acp::SessionId::new("test-session");
-        let message = AgentMessage::Text {
-            message_id: "msg_1".to_string(),
-            chunk: "done".to_string(),
-            is_complete: true,
-            model_name: "TestModel".to_string(),
-        };
+    fn test_live_mapping_skips_completed_chunks_but_replay_keeps_them() {
+        let cases: Vec<(AgentMessage, &str)> = vec![
+            (
+                AgentMessage::Text {
+                    message_id: "msg_1".to_string(),
+                    chunk: "done".to_string(),
+                    is_complete: true,
+                    model_name: "TestModel".to_string(),
+                },
+                "done",
+            ),
+            (
+                AgentMessage::Thought {
+                    message_id: "msg_1".to_string(),
+                    chunk: "final reasoning".to_string(),
+                    is_complete: true,
+                    model_name: "TestModel".to_string(),
+                },
+                "final reasoning",
+            ),
+        ];
 
-        assert!(map_agent_message_to_notification(
-            session_id.clone(),
-            &message,
-            NotificationMode::Live,
-        )
-        .is_none());
+        for (message, expected_text) in cases {
+            let session_id = acp::SessionId::new("test-session");
+            assert!(
+                map_agent_message_to_notification(session_id.clone(), &message, NotificationMode::Live).is_none(),
+                "live mode should skip completed chunk"
+            );
 
-        let notification =
-            map_agent_message_to_notification(session_id, &message, NotificationMode::Replay)
+            let notification = map_agent_message_to_notification(session_id, &message, NotificationMode::Replay)
                 .expect("replay notification");
 
-        match notification.update {
-            acp::SessionUpdate::AgentMessageChunk(chunk) => match chunk.content {
-                acp::ContentBlock::Text(text) => assert_eq!(text.text, "done"),
-                other => panic!("Expected text content, got {other:?}"),
-            },
-            other => panic!("Expected AgentMessageChunk, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_live_mapping_skips_completed_thought_but_replay_keeps_it() {
-        let session_id = acp::SessionId::new("test-session");
-        let message = AgentMessage::Thought {
-            message_id: "msg_1".to_string(),
-            chunk: "final reasoning".to_string(),
-            is_complete: true,
-            model_name: "TestModel".to_string(),
-        };
-
-        assert!(map_agent_message_to_notification(
-            session_id.clone(),
-            &message,
-            NotificationMode::Live,
-        )
-        .is_none());
-
-        let notification =
-            map_agent_message_to_notification(session_id, &message, NotificationMode::Replay)
-                .expect("replay notification");
-
-        match notification.update {
-            acp::SessionUpdate::AgentThoughtChunk(chunk) => match chunk.content {
-                acp::ContentBlock::Text(text) => assert_eq!(text.text, "final reasoning"),
-                other => panic!("Expected text content, got {other:?}"),
-            },
-            other => panic!("Expected AgentThoughtChunk, got {other:?}"),
+            match notification.update {
+                acp::SessionUpdate::AgentMessageChunk(chunk) | acp::SessionUpdate::AgentThoughtChunk(chunk) => {
+                    match chunk.content {
+                        acp::ContentBlock::Text(text) => assert_eq!(text.text, expected_text),
+                        other => panic!("Expected text content, got {other:?}"),
+                    }
+                }
+                other => panic!("Expected chunk update, got {other:?}"),
+            }
         }
     }
 
@@ -845,26 +830,11 @@ mod tests {
     }
 
     #[test]
-    fn test_humanize_tool_name_strips_namespace() {
+    fn test_humanize_tool_name() {
         assert_eq!(humanize_tool_name("coding__read_file"), "Read file");
-    }
-
-    #[test]
-    fn test_humanize_tool_name_no_namespace() {
         assert_eq!(humanize_tool_name("read_file"), "Read file");
-    }
-
-    #[test]
-    fn test_humanize_tool_name_single_word() {
         assert_eq!(humanize_tool_name("bash"), "Bash");
-    }
-
-    #[test]
-    fn test_humanize_tool_name_deeply_nested() {
-        assert_eq!(
-            humanize_tool_name("plugins__coding__read_file"),
-            "Read file"
-        );
+        assert_eq!(humanize_tool_name("plugins__coding__read_file"), "Read file");
     }
 
     #[test]
@@ -959,18 +929,13 @@ mod tests {
     }
 
     #[test]
-    fn test_plan_notification_none_when_no_plan() {
+    fn test_plan_notification_none_when_no_plan_or_no_meta() {
         use mcp_utils::display_meta::ToolDisplayMeta;
 
-        let session_id = acp::SessionId::new("test-session");
+        let sid = acp::SessionId::new("test-session");
         let meta: ToolResultMeta = ToolDisplayMeta::new("Read file", "main.rs").into();
-        assert!(try_extract_plan_notification(session_id, Some(&meta)).is_none());
-    }
-
-    #[test]
-    fn test_plan_notification_none_when_no_meta() {
-        let session_id = acp::SessionId::new("test-session");
-        assert!(try_extract_plan_notification(session_id, None).is_none());
+        assert!(try_extract_plan_notification(sid.clone(), Some(&meta)).is_none());
+        assert!(try_extract_plan_notification(sid, None).is_none());
     }
 
     #[test]

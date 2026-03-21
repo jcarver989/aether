@@ -33,13 +33,13 @@ impl Default for ModelProviderParser {
     fn default() -> Self {
         let parser = Self::new(HashMap::new())
             .with_provider::<AnthropicProvider>("anthropic")
-            .with_generic_provider("deepseek", &generic::DEEPSEEK)
             .with_provider::<GeminiProvider>("gemini")
-            .with_generic_provider("moonshot", &generic::MOONSHOT)
             .with_provider::<OpenRouterProvider>("openrouter")
             .with_provider::<OllamaProvider>("ollama")
-            .with_generic_provider("zai", &generic::ZAI)
-            .with_provider::<LlamaCppProvider>("llamacpp");
+            .with_provider::<LlamaCppProvider>("llamacpp")
+            .with_openai_provider("deepseek", &generic::DEEPSEEK)
+            .with_openai_provider("moonshot", &generic::MOONSHOT)
+            .with_openai_provider("zai", &generic::ZAI);
 
         #[cfg(feature = "bedrock")]
         let parser = parser.with_provider::<BedrockProvider>("bedrock");
@@ -63,7 +63,7 @@ impl ModelProviderParser {
         self
     }
 
-    pub fn with_generic_provider(
+    pub fn with_openai_provider(
         mut self,
         name: impl Into<String>,
         config: &'static generic::ProviderConfig,
