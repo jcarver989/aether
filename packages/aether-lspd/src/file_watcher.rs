@@ -382,10 +382,37 @@ fn should_track_implicit_path(
 mod tests {
     use super::*;
 
-    fn make_watcher(pattern: &str, kind: Option<WatchKind>) -> FileSystemWatcher {
+    const MODIFY_CONTENT: EventKind = EventKind::Modify(notify::event::ModifyKind::Data(
+        notify::event::DataChange::Content,
+    ));
+    const CREATE_FILE: EventKind = EventKind::Create(notify::event::CreateKind::File);
+    const REMOVE_FILE: EventKind = EventKind::Remove(notify::event::RemoveKind::File);
+    const ALL_KINDS: WatchKind =
+        WatchKind::from_bits_truncate(WatchKind::Create.bits() | WatchKind::Change.bits() | WatchKind::Delete.bits());
+
+    fn watcher(pattern: &str, kind: Option<WatchKind>) -> FileSystemWatcher {
         FileSystemWatcher {
             glob_pattern: lsp_types::GlobPattern::String(pattern.into()),
             kind,
+        }
+    }
+
+    fn build(watchers: &[FileSystemWatcher]) -> Option<(GlobSet, Vec<WatchKind>)> {
+        let refs: Vec<&FileSystemWatcher> = watchers.iter().collect();
+        build_glob_set(&refs)
+    }
+
+    fn matched_kind(gs: &GlobSet, kinds: &[WatchKind], path: &str) -> WatchKind {
+        gs.matches(path)
+            .iter()
+            .fold(WatchKind::empty(), |acc, &i| acc | kinds[i])
+    }
+
+    fn notify_event(kind: EventKind, paths: Vec<&str>) -> Event {
+        Event {
+            kind,
+            paths: paths.into_iter().map(PathBuf::from).collect(),
+            attrs: notify::event::EventAttributes::new(),
         }
     }
 
@@ -393,7 +420,6 @@ mod tests {
         let (event_tx, event_rx) = mpsc::channel(8);
         let (_, msg_rx) = mpsc::channel(8);
         let (_, bridge_rx) = mpsc::channel(8);
-
         (
             FileWatcherActor {
                 _watcher: None,
@@ -412,196 +438,96 @@ mod tests {
         )
     }
 
+    fn actor_with_globs(root: &str, globs: &[(&str, WatchKind)]) -> FileWatcherActor {
+        let (mut actor, _) = test_actor(root);
+        for (i, (pattern, kind)) in globs.iter().enumerate() {
+            actor.registrations.insert(
+                format!("reg{i}"),
+                vec![watcher(pattern, Some(*kind))],
+            );
+        }
+        actor.rebuild_glob_state();
+        actor
+    }
+
     #[test]
     fn test_build_glob_set() {
-        let watchers = [make_watcher(
-            "**/*.rs",
-            Some(WatchKind::Create | WatchKind::Change | WatchKind::Delete),
-        )];
-        let refs: Vec<&FileSystemWatcher> = watchers.iter().collect();
-
-        let (gs, kinds) = build_glob_set(&refs).unwrap();
+        let (gs, kinds) = build(&[watcher("**/*.rs", Some(ALL_KINDS))]).unwrap();
         assert!(gs.is_match("src/main.rs"));
         assert!(!gs.is_match("src/main.py"));
-        assert_eq!(kinds.len(), 1);
-        assert_eq!(
-            kinds[0],
-            WatchKind::Create | WatchKind::Change | WatchKind::Delete
-        );
+        assert_eq!(kinds, [ALL_KINDS]);
     }
 
     #[test]
-    fn test_build_glob_set_no_valid_patterns() {
-        let watchers = [make_watcher("[invalid", None)];
-        let refs: Vec<&FileSystemWatcher> = watchers.iter().collect();
-
-        assert!(build_glob_set(&refs).is_none());
-    }
-
-    #[test]
-    fn test_build_glob_set_empty() {
-        assert!(build_glob_set(&[]).is_none());
+    fn test_build_glob_set_none_cases() {
+        assert!(build(&[watcher("[invalid", None)]).is_none());
+        assert!(build(&[]).is_none());
     }
 
     #[test]
     fn test_build_glob_set_preserves_per_watcher_kinds() {
-        let watchers = [
-            make_watcher("**/*.rs", Some(WatchKind::Create)),
-            make_watcher("**/*.json", Some(WatchKind::Delete)),
-        ];
-        let refs: Vec<&FileSystemWatcher> = watchers.iter().collect();
+        let (gs, kinds) = build(&[
+            watcher("**/*.rs", Some(WatchKind::Create)),
+            watcher("**/*.json", Some(WatchKind::Delete)),
+        ]).unwrap();
 
-        let (gs, kinds) = build_glob_set(&refs).unwrap();
+        assert_eq!(matched_kind(&gs, &kinds, "src/main.rs"), WatchKind::Create);
+        assert_eq!(matched_kind(&gs, &kinds, "config.json"), WatchKind::Delete);
 
-        // .rs matches index 0 only → Create
-        let rs_matches = gs.matches("src/main.rs");
-        let rs_kind = rs_matches
-            .iter()
-            .fold(WatchKind::empty(), |acc, &i| acc | kinds[i]);
-        assert_eq!(rs_kind, WatchKind::Create);
-
-        // .json matches index 1 only → Delete
-        let json_matches = gs.matches("config.json");
-        let json_kind = json_matches
-            .iter()
-            .fold(WatchKind::empty(), |acc, &i| acc | kinds[i]);
-        assert_eq!(json_kind, WatchKind::Delete);
-
-        // A Delete event on a .rs file should NOT pass the kind filter
-        assert!(
-            map_event_kind(EventKind::Remove(notify::event::RemoveKind::File), rs_kind).is_none()
-        );
-
-        // A Create event on a .json file should NOT pass the kind filter
-        assert!(
-            map_event_kind(
-                EventKind::Create(notify::event::CreateKind::File),
-                json_kind
-            )
-            .is_none()
-        );
+        // Wrong event kind for each pattern should not pass the filter
+        assert!(map_event_kind(REMOVE_FILE, WatchKind::Create).is_none());
+        assert!(map_event_kind(CREATE_FILE, WatchKind::Delete).is_none());
     }
 
     #[test]
     fn test_build_glob_set_skips_invalid_keeps_indices_aligned() {
-        let watchers = [
-            make_watcher("**/*.rs", Some(WatchKind::Create)),
-            make_watcher("[invalid", Some(WatchKind::Change)),
-            make_watcher("**/*.json", Some(WatchKind::Delete)),
-        ];
-        let refs: Vec<&FileSystemWatcher> = watchers.iter().collect();
+        let (gs, kinds) = build(&[
+            watcher("**/*.rs", Some(WatchKind::Create)),
+            watcher("[invalid", Some(WatchKind::Change)),
+            watcher("**/*.json", Some(WatchKind::Delete)),
+        ]).unwrap();
 
-        let (gs, kinds) = build_glob_set(&refs).unwrap();
-
-        // Invalid glob was skipped, so we should have exactly 2 entries
-        assert_eq!(kinds.len(), 2);
-        assert_eq!(kinds[0], WatchKind::Create);
-        assert_eq!(kinds[1], WatchKind::Delete);
-
-        // .rs matches index 0 → Create
-        let rs_matches = gs.matches("lib.rs");
-        assert_eq!(rs_matches, vec![0]);
-
-        // .json matches index 1 → Delete
-        let json_matches = gs.matches("data.json");
-        assert_eq!(json_matches, vec![1]);
+        assert_eq!(kinds, [WatchKind::Create, WatchKind::Delete]);
+        assert_eq!(gs.matches("lib.rs"), vec![0]);
+        assert_eq!(gs.matches("data.json"), vec![1]);
     }
 
     #[test]
     fn test_map_event_kind() {
-        let all_kinds = WatchKind::Create | WatchKind::Change | WatchKind::Delete;
-
-        assert_eq!(
-            map_event_kind(
-                EventKind::Create(notify::event::CreateKind::File),
-                all_kinds
-            ),
-            Some(FileChangeType::CREATED)
-        );
-        assert_eq!(
-            map_event_kind(
-                EventKind::Modify(notify::event::ModifyKind::Data(
-                    notify::event::DataChange::Content
-                )),
-                all_kinds
-            ),
-            Some(FileChangeType::CHANGED)
-        );
-        assert_eq!(
-            map_event_kind(
-                EventKind::Remove(notify::event::RemoveKind::File),
-                all_kinds
-            ),
-            Some(FileChangeType::DELETED)
-        );
-
-        // When change kind not requested, should return None
-        assert_eq!(
-            map_event_kind(
-                EventKind::Create(notify::event::CreateKind::File),
-                WatchKind::Change
-            ),
-            None
-        );
+        for (kind, watch, expected) in [
+            (CREATE_FILE, ALL_KINDS, Some(FileChangeType::CREATED)),
+            (MODIFY_CONTENT, ALL_KINDS, Some(FileChangeType::CHANGED)),
+            (REMOVE_FILE, ALL_KINDS, Some(FileChangeType::DELETED)),
+            (CREATE_FILE, WatchKind::Change, None),
+        ] {
+            assert_eq!(map_event_kind(kind, watch), expected, "kind={kind:?} watch={watch:?}");
+        }
     }
 
     #[test]
     fn test_path_to_uri() {
-        let uri = path_to_uri(std::path::Path::new("/home/user/project/src/main.rs")).unwrap();
+        let uri = path_to_uri(Path::new("/home/user/project/src/main.rs")).unwrap();
         assert_eq!(uri.to_string(), "file:///home/user/project/src/main.rs");
     }
 
     #[test]
-    fn test_should_track_implicit_path_skips_target_tree() {
-        assert!(!should_track_implicit_path(
-            EventKind::Modify(notify::event::ModifyKind::Data(
-                notify::event::DataChange::Content
-            )),
-            true,
-            Path::new("target/debug/incremental/foo.bin"),
-            Path::new("/tmp/project/target/debug/incremental/foo.bin")
-        ));
-    }
-
-    #[test]
-    fn test_should_track_implicit_path_allows_targeting_directory() {
-        assert!(should_track_implicit_path(
-            EventKind::Modify(notify::event::ModifyKind::Data(
-                notify::event::DataChange::Content
-            )),
-            true,
-            Path::new("targeting/main.rs"),
-            Path::new("/tmp/project/targeting/main.rs")
-        ));
-    }
-
-    #[test]
-    fn test_should_track_implicit_path_rejects_outside_workspace() {
-        assert!(!should_track_implicit_path(
-            EventKind::Modify(notify::event::ModifyKind::Data(
-                notify::event::DataChange::Content
-            )),
-            false,
-            Path::new("/tmp/other/main.rs"),
-            Path::new("/tmp/other/main.rs")
-        ));
+    fn test_should_track_implicit_path() {
+        for (label, expected, within, rel, abs) in [
+            ("skips target tree", false, true, "target/debug/incremental/foo.bin", "/tmp/project/target/debug/incremental/foo.bin"),
+            ("allows targeting dir name", true, true, "targeting/main.rs", "/tmp/project/targeting/main.rs"),
+            ("rejects outside workspace", false, false, "/tmp/other/main.rs", "/tmp/other/main.rs"),
+        ] {
+            assert_eq!(
+                should_track_implicit_path(MODIFY_CONTENT, within, Path::new(rel), Path::new(abs)),
+                expected,
+                "{label}"
+            );
+        }
     }
 
     #[test]
     fn test_rebuild_glob_state_combines_registrations() {
-        let (mut actor, _) = test_actor("/tmp");
-
-        actor.registrations.insert(
-            "reg1".to_owned(),
-            vec![make_watcher("**/*.rs", Some(WatchKind::Create))],
-        );
-        actor.registrations.insert(
-            "reg2".to_owned(),
-            vec![make_watcher("**/*.json", Some(WatchKind::Delete))],
-        );
-
-        actor.rebuild_glob_state();
-
+        let actor = actor_with_globs("/tmp", &[("**/*.rs", WatchKind::Create), ("**/*.json", WatchKind::Delete)]);
         assert!(actor.glob_set.is_match("src/main.rs"));
         assert!(actor.glob_set.is_match("config.json"));
         assert!(!actor.glob_set.is_match("readme.md"));
@@ -609,124 +535,49 @@ mod tests {
     }
 
     #[test]
-    fn test_accumulate_event_uses_implicit_mode_without_globs() {
+    fn test_accumulate_event_implicit_mode_without_globs() {
         let (mut actor, _) = test_actor("/tmp/project");
-
-        let ev = Event {
-            kind: EventKind::Modify(notify::event::ModifyKind::Data(
-                notify::event::DataChange::Content,
-            )),
-            paths: vec![PathBuf::from("/tmp/project/src/main.rs")],
-            attrs: notify::event::EventAttributes::new(),
-        };
-
-        actor.accumulate_event(&ev);
-
+        actor.accumulate_event(&notify_event(MODIFY_CONTENT, vec!["/tmp/project/src/main.rs"]));
         assert!(actor.forwarded_pending.is_empty());
         assert_eq!(actor.discovered_pending.len(), 1);
     }
 
     #[test]
     fn test_accumulate_event_matching_glob_forwards_changes() {
-        let (mut actor, _) = test_actor("/tmp/project");
-        actor.registrations.insert(
-            "reg1".to_owned(),
-            vec![make_watcher("**/*.rs", Some(WatchKind::Change))],
-        );
-        actor.rebuild_glob_state();
-
-        let ev = Event {
-            kind: EventKind::Modify(notify::event::ModifyKind::Data(
-                notify::event::DataChange::Content,
-            )),
-            paths: vec![PathBuf::from("/tmp/project/src/main.rs")],
-            attrs: notify::event::EventAttributes::new(),
-        };
-
-        actor.accumulate_event(&ev);
-
+        let mut actor = actor_with_globs("/tmp/project", &[("**/*.rs", WatchKind::Change)]);
+        actor.accumulate_event(&notify_event(MODIFY_CONTENT, vec!["/tmp/project/src/main.rs"]));
         assert_eq!(actor.forwarded_pending.len(), 1);
         assert!(actor.discovered_pending.is_empty());
-        let (_, (_, change_type)) = actor.forwarded_pending.iter().next().unwrap();
+        let (_, change_type) = actor.forwarded_pending.values().next().unwrap();
         assert_eq!(*change_type, FileChangeType::CHANGED);
     }
 
     #[test]
     fn test_accumulate_event_tracks_non_matching_paths() {
-        let (mut actor, _) = test_actor("/tmp/project");
-        actor.registrations.insert(
-            "reg1".to_owned(),
-            vec![make_watcher("**/*.rs", Some(WatchKind::Change))],
-        );
-        actor.rebuild_glob_state();
-
-        let ev = Event {
-            kind: EventKind::Modify(notify::event::ModifyKind::Data(
-                notify::event::DataChange::Content,
-            )),
-            paths: vec![PathBuf::from("/tmp/project/src/main.py")],
-            attrs: notify::event::EventAttributes::new(),
-        };
-
-        actor.accumulate_event(&ev);
-
+        let mut actor = actor_with_globs("/tmp/project", &[("**/*.rs", WatchKind::Change)]);
+        actor.accumulate_event(&notify_event(MODIFY_CONTENT, vec!["/tmp/project/src/main.py"]));
         assert!(actor.forwarded_pending.is_empty());
         assert_eq!(actor.discovered_pending.len(), 1);
     }
 
     #[test]
-    fn test_accumulate_event_ignores_target_noise_in_implicit_mode() {
-        let (mut actor, _) = test_actor("/tmp/project");
-
-        let ev = Event {
-            kind: EventKind::Modify(notify::event::ModifyKind::Data(
-                notify::event::DataChange::Content,
-            )),
-            paths: vec![PathBuf::from(
-                "/tmp/project/target/debug/incremental/foo/dep-graph.bin",
-            )],
-            attrs: notify::event::EventAttributes::new(),
-        };
-
-        actor.accumulate_event(&ev);
-
-        assert!(actor.forwarded_pending.is_empty());
-        assert!(actor.discovered_pending.is_empty());
-    }
-
-    #[test]
-    fn test_accumulate_event_ignores_outside_workspace_in_implicit_mode() {
-        let (mut actor, _) = test_actor("/tmp/project");
-
-        let ev = Event {
-            kind: EventKind::Modify(notify::event::ModifyKind::Data(
-                notify::event::DataChange::Content,
-            )),
-            paths: vec![PathBuf::from("/tmp/other/outside.rs")],
-            attrs: notify::event::EventAttributes::new(),
-        };
-
-        actor.accumulate_event(&ev);
-
-        assert!(actor.forwarded_pending.is_empty());
-        assert!(actor.discovered_pending.is_empty());
+    fn test_accumulate_event_ignores_noise_in_implicit_mode() {
+        for path in [
+            "/tmp/project/target/debug/incremental/foo/dep-graph.bin",
+            "/tmp/other/outside.rs",
+        ] {
+            let (mut actor, _) = test_actor("/tmp/project");
+            actor.accumulate_event(&notify_event(MODIFY_CONTENT, vec![path]));
+            assert!(actor.forwarded_pending.is_empty(), "forwarded should be empty for {path}");
+            assert!(actor.discovered_pending.is_empty(), "discovered should be empty for {path}");
+        }
     }
 
     #[tokio::test]
     async fn test_flush_pending_only_discovered_emits_track_only_batch() {
         let (mut actor, mut event_rx) = test_actor("/tmp/project");
-
-        let ev = Event {
-            kind: EventKind::Modify(notify::event::ModifyKind::Data(
-                notify::event::DataChange::Content,
-            )),
-            paths: vec![PathBuf::from("/tmp/project/src/main.rs")],
-            attrs: notify::event::EventAttributes::new(),
-        };
-        actor.accumulate_event(&ev);
-
+        actor.accumulate_event(&notify_event(MODIFY_CONTENT, vec!["/tmp/project/src/main.rs"]));
         actor.flush_pending().await;
-
         let batch = event_rx.recv().await.expect("expected file watcher batch");
         assert!(batch.forwarded_changes.is_empty());
         assert_eq!(batch.discovered_uris.len(), 1);
@@ -734,29 +585,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_register_and_unregister_via_handle() {
-        let (event_tx, _event_rx) = mpsc::channel(64);
+        let (event_tx, _) = mpsc::channel(64);
         let handle = FileWatcherHandle::spawn(PathBuf::from("/tmp/test"), event_tx);
-
-        // Register two sets
-        handle.register_watchers(
-            "reg1".to_owned(),
-            vec![make_watcher("**/*.rs", Some(WatchKind::Create))],
-        );
-        handle.register_watchers(
-            "reg2".to_owned(),
-            vec![make_watcher("**/*.json", Some(WatchKind::Delete))],
-        );
-
-        // Unregister one
-        handle.unregister("reg1".to_owned());
-
-        // Unregister the other
-        handle.unregister("reg2".to_owned());
-
-        // Drop the handle — actor should exit cleanly
+        handle.register_watchers("reg1".into(), vec![watcher("**/*.rs", Some(WatchKind::Create))]);
+        handle.register_watchers("reg2".into(), vec![watcher("**/*.json", Some(WatchKind::Delete))]);
+        handle.unregister("reg1".into());
+        handle.unregister("reg2".into());
         drop(handle);
-
-        // Give the actor time to process and shut down
         tokio::task::yield_now().await;
     }
 }

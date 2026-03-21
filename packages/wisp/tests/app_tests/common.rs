@@ -408,3 +408,44 @@ pub(super) fn make_settings_options() -> Vec<acp::SessionConfigOption> {
         .category(acp::SessionConfigOptionCategory::Model),
     ]
 }
+
+/// Create a renderer with settings options and open the settings menu.
+pub(super) async fn open_settings(
+    config_options: &[acp::SessionConfigOption],
+    size: (u16, u16),
+) -> Renderer {
+    let terminal = TestTerminal::new(size.0, size.1);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), config_options, size);
+    renderer.initial_render().unwrap();
+    type_string(&mut renderer, "/settings").await;
+    press_enter(&mut renderer).await;
+    renderer
+}
+
+pub(super) async fn press_down(renderer: &mut Renderer) {
+    send_key(renderer, KeyCode::Down, KeyModifiers::empty()).await;
+}
+
+pub(super) async fn press_esc(renderer: &mut Renderer) {
+    send_key(renderer, KeyCode::Esc, KeyModifiers::empty()).await;
+}
+
+/// Assert that any terminal line contains the given text, panicking with a buffer dump.
+pub(super) fn assert_buffer_contains(terminal: &TestTerminal, text: &str) {
+    let lines = terminal.get_lines();
+    assert!(
+        lines.iter().any(|l| l.contains(text)),
+        "Expected to find '{text}' in buffer.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}
+
+/// Assert that no terminal line contains the given text.
+pub(super) fn assert_buffer_not_contains(terminal: &TestTerminal, text: &str) {
+    let lines = terminal.get_lines();
+    assert!(
+        !lines.iter().any(|l| l.contains(text)),
+        "Expected NOT to find '{text}' in buffer.\nBuffer:\n{}",
+        lines.join("\n")
+    );
+}

@@ -337,6 +337,28 @@ mod tests {
         fs::write(full_path, content).unwrap();
     }
 
+    /// Standard agent JSON with customizable fields. `extra` is injected into the agent object.
+    fn agent_settings(extra: &str) -> String {
+        let comma = if extra.is_empty() { "" } else { "," };
+        format!(
+            r#"{{"agents": [{{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]{comma} {extra}}}]}}"#
+        )
+    }
+
+    /// Setup a project with AGENTS.md, write settings JSON, and load the catalog.
+    fn setup_and_load(json: &str) -> (tempfile::TempDir, Result<super::super::catalog::AgentCatalog, SettingsError>) {
+        let dir = create_temp_project();
+        write_file(dir.path(), "AGENTS.md", "Be helpful");
+        write_settings(dir.path(), json);
+        let result = load_agent_catalog(dir.path());
+        (dir, result)
+    }
+
+    fn setup_and_load_ok(json: &str) -> (tempfile::TempDir, super::super::catalog::AgentCatalog) {
+        let (dir, result) = setup_and_load(json);
+        (dir, result.unwrap())
+    }
+
     #[test]
     fn missing_settings_yields_empty_catalog() {
         let dir = create_temp_project();
@@ -345,201 +367,64 @@ mod tests {
     }
 
     #[test]
-    fn valid_agent_with_both_exposure_flags() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "planner",
-                    "description": "Planner agent",
+    fn exposure_flags_parsed_correctly() {
+        for (user, agent) in [(true, true), (true, false), (false, true)] {
+            let json = format!(
+                r#"{{"agents": [{{
+                    "name": "planner", "description": "Planner agent",
                     "model": "anthropic:claude-sonnet-4-5",
-                    "userInvocable": true,
-                    "agentInvocable": true,
+                    "userInvocable": {user}, "agentInvocable": {agent},
                     "prompts": ["AGENTS.md"]
-                }]
-            }"#,
-        );
-
-        let catalog = load_agent_catalog(dir.path()).unwrap();
-        assert_eq!(catalog.all().len(), 1);
-        let spec = catalog.get("planner").unwrap();
-        assert!(spec.exposure.user_invocable);
-        assert!(spec.exposure.agent_invocable);
-    }
-
-    #[test]
-    fn valid_user_only_spec() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "planner",
-                    "description": "Planner agent",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "userInvocable": true,
-                    "agentInvocable": false,
-                    "prompts": ["AGENTS.md"]
-                }]
-            }"#,
-        );
-
-        let catalog = load_agent_catalog(dir.path()).unwrap();
-        let spec = catalog.get("planner").unwrap();
-        assert!(spec.exposure.user_invocable);
-        assert!(!spec.exposure.agent_invocable);
-    }
-
-    #[test]
-    fn valid_agent_only_spec() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "planner",
-                    "description": "Planner agent",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "userInvocable": false,
-                    "agentInvocable": true,
-                    "prompts": ["AGENTS.md"]
-                }]
-            }"#,
-        );
-
-        let catalog = load_agent_catalog(dir.path()).unwrap();
-        let spec = catalog.get("planner").unwrap();
-        assert!(!spec.exposure.user_invocable);
-        assert!(spec.exposure.agent_invocable);
+                }}]}}"#
+            );
+            let (_, catalog) = setup_and_load_ok(&json);
+            let spec = catalog.get("planner").unwrap();
+            assert_eq!(spec.exposure.user_invocable, user);
+            assert_eq!(spec.exposure.agent_invocable, agent);
+        }
     }
 
     #[test]
     fn invalid_model_string_rejected() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "planner",
-                    "description": "Planner agent",
-                    "model": "invalid:model",
-                    "userInvocable": true,
-                    "prompts": ["AGENTS.md"]
-                }]
-            }"#,
+        let (_, result) = setup_and_load(
+            r#"{"agents": [{"name": "planner", "description": "Planner agent", "model": "invalid:model", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
         );
-
-        let result = load_agent_catalog(dir.path());
         assert!(matches!(result, Err(SettingsError::InvalidModel { .. })));
     }
 
     #[test]
     fn alloy_model_string_is_accepted() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "alloy",
-                    "description": "Alloy agent",
-                    "model": "anthropic:claude-sonnet-4-5,deepseek:deepseek-chat",
-                    "userInvocable": true,
-                    "prompts": ["AGENTS.md"]
-                }]
-            }"#,
-        );
-
-        let catalog = load_agent_catalog(dir.path()).unwrap();
-        let spec = catalog.get("alloy").unwrap();
+        let json = r#"{"agents": [{"name": "alloy", "description": "Alloy agent", "model": "anthropic:claude-sonnet-4-5,deepseek:deepseek-chat", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#;
+        let (_, catalog) = setup_and_load_ok(json);
         assert_eq!(
-            spec.model.to_string(),
+            catalog.get("alloy").unwrap().model.to_string(),
             "anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"
         );
     }
 
     #[test]
     fn alloy_model_string_with_unknown_member_is_rejected() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "alloy",
-                    "description": "Alloy agent",
-                    "model": "anthropic:claude-sonnet-4-5,mystery:nope",
-                    "userInvocable": true,
-                    "prompts": ["AGENTS.md"]
-                }]
-            }"#,
+        let (_, result) = setup_and_load(
+            r#"{"agents": [{"name": "alloy", "description": "Alloy agent", "model": "anthropic:claude-sonnet-4-5,mystery:nope", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
         );
-
-        let result = load_agent_catalog(dir.path());
         assert!(matches!(result, Err(SettingsError::InvalidModel { .. })));
     }
 
     #[test]
     fn invalid_reasoning_effort_rejected() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "planner",
-                    "description": "Planner agent",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "reasoningEffort": "invalid",
-                    "userInvocable": true,
-                    "prompts": ["AGENTS.md"]
-                }]
-            }"#,
-        );
-
-        let result = load_agent_catalog(dir.path());
-        assert!(matches!(
-            result,
-            Err(SettingsError::InvalidReasoningEffort { .. })
-        ));
+        let (_, result) = setup_and_load(&agent_settings(r#""reasoningEffort": "invalid""#));
+        assert!(matches!(result, Err(SettingsError::InvalidReasoningEffort { .. })));
     }
 
     #[test]
     fn duplicate_agent_names_rejected() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [
-                    {
-                        "name": "planner",
-                        "description": "First planner",
-                        "model": "anthropic:claude-sonnet-4-5",
-                        "userInvocable": true,
-                        "prompts": ["AGENTS.md"]
-                    },
-                    {
-                        "name": "planner",
-                        "description": "Second planner",
-                        "model": "anthropic:claude-sonnet-4-5",
-                        "userInvocable": true,
-                        "prompts": ["AGENTS.md"]
-                    }
-                ]
-            }"#,
+        let (_, result) = setup_and_load(
+            r#"{"agents": [
+                {"name": "planner", "description": "First", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]},
+                {"name": "planner", "description": "Second", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}
+            ]}"#,
         );
-
-        let result = load_agent_catalog(dir.path());
-        assert!(matches!(
-            result,
-            Err(SettingsError::DuplicateAgentName { .. })
-        ));
+        assert!(matches!(result, Err(SettingsError::DuplicateAgentName { .. })));
     }
 
     #[test]
@@ -547,25 +432,11 @@ mod tests {
         let dir = create_temp_project();
         write_file(dir.path(), "BASE.md", "Base instructions");
         write_file(dir.path(), "AGENTS.md", "Agent instructions");
-        write_settings(
-            dir.path(),
-            r#"{
-                "prompts": ["BASE.md"],
-                "agents": [{
-                    "name": "planner",
-                    "description": "Planner agent",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "userInvocable": true,
-                    "agentInvocable": true,
-                    "prompts": ["AGENTS.md"]
-                }]
-            }"#,
-        );
+        write_settings(dir.path(), r#"{"prompts": ["BASE.md"], "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "agentInvocable": true, "prompts": ["AGENTS.md"]}]}"#);
 
         let catalog = load_agent_catalog(dir.path()).unwrap();
-        let spec = catalog.get("planner").unwrap();
         // Should have 2 prompts: 1 inherited + 1 local
-        assert_eq!(spec.prompts.len(), 2);
+        assert_eq!(catalog.get("planner").unwrap().prompts.len(), 2);
     }
 
     #[test]
@@ -573,226 +444,75 @@ mod tests {
         let dir = create_temp_project();
         write_file(dir.path(), "a.md", "A");
         write_file(dir.path(), "b.md", "B");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "planner",
-                    "description": "Planner agent",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "userInvocable": true,
-                    "prompts": ["a.md", "b.md"]
-                }]
-            }"#,
-        );
+        write_settings(dir.path(), r#"{"agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["a.md", "b.md"]}]}"#);
 
         let catalog = load_agent_catalog(dir.path()).unwrap();
-        let spec = catalog.get("planner").unwrap();
         // Should have 2 PromptGlobs entries, not 1 combined
-        assert_eq!(spec.prompts.len(), 2);
+        assert_eq!(catalog.get("planner").unwrap().prompts.len(), 2);
     }
 
     #[test]
     fn zero_match_prompt_rejected() {
         let dir = create_temp_project();
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "planner",
-                    "description": "Planner agent",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "userInvocable": true,
-                    "prompts": ["nonexistent.md"]
-                }]
-            }"#,
-        );
-
-        let result = load_agent_catalog(dir.path());
-        assert!(matches!(result, Err(SettingsError::ZeroMatchPrompt { .. })));
+        // No AGENTS.md created — prompt won't match
+        write_settings(dir.path(), r#"{"agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["nonexistent.md"]}]}"#);
+        assert!(matches!(load_agent_catalog(dir.path()), Err(SettingsError::ZeroMatchPrompt { .. })));
     }
 
     #[test]
     fn prompt_matching_only_directories_is_rejected() {
         let dir = create_temp_project();
         std::fs::create_dir_all(dir.path().join("prompts")).unwrap();
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "planner",
-                    "description": "Planner agent",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "userInvocable": true,
-                    "prompts": ["prompts/*"]
-                }]
-            }"#,
-        );
-
-        let result = load_agent_catalog(dir.path());
-        assert!(matches!(result, Err(SettingsError::ZeroMatchPrompt { .. })));
+        write_settings(dir.path(), r#"{"agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["prompts/*"]}]}"#);
+        assert!(matches!(load_agent_catalog(dir.path()), Err(SettingsError::ZeroMatchPrompt { .. })));
     }
 
     #[test]
     fn no_invocation_surface_rejected() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "planner",
-                    "description": "Planner agent",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "userInvocable": false,
-                    "agentInvocable": false,
-                    "prompts": ["AGENTS.md"]
-                }]
-            }"#,
+        let (_, result) = setup_and_load(
+            r#"{"agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": false, "agentInvocable": false, "prompts": ["AGENTS.md"]}]}"#,
         );
-
-        let result = load_agent_catalog(dir.path());
-        assert!(matches!(
-            result,
-            Err(SettingsError::NoInvocationSurface { .. })
-        ));
+        assert!(matches!(result, Err(SettingsError::NoInvocationSurface { .. })));
     }
 
     #[test]
-    fn empty_agent_name_rejected() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "",
-                    "description": "No name",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "userInvocable": true,
-                    "prompts": ["AGENTS.md"]
-                }]
-            }"#,
-        );
-
-        let result = load_agent_catalog(dir.path());
-        assert!(matches!(result, Err(SettingsError::EmptyAgentName { .. })));
+    fn empty_and_whitespace_names_rejected() {
+        for name in ["", "   "] {
+            let json = format!(
+                r#"{{"agents": [{{"name": "{name}", "description": "Agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}}]}}"#
+            );
+            let (_, result) = setup_and_load(&json);
+            assert!(matches!(result, Err(SettingsError::EmptyAgentName { .. })), "expected EmptyAgentName for name={name:?}");
+        }
     }
 
     #[test]
-    fn empty_description_rejected() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "planner",
-                    "description": "",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "userInvocable": true,
-                    "prompts": ["AGENTS.md"]
-                }]
-            }"#,
-        );
-
-        let result = load_agent_catalog(dir.path());
-        assert!(matches!(result, Err(SettingsError::MissingField { .. })));
-    }
-
-    #[test]
-    fn whitespace_only_agent_name_rejected() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "   ",
-                    "description": "Has spaces only",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "userInvocable": true,
-                    "prompts": ["AGENTS.md"]
-                }]
-            }"#,
-        );
-
-        let result = load_agent_catalog(dir.path());
-        assert!(matches!(result, Err(SettingsError::EmptyAgentName { .. })));
-    }
-
-    #[test]
-    fn whitespace_only_description_rejected() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "planner",
-                    "description": "   ",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "userInvocable": true,
-                    "prompts": ["AGENTS.md"]
-                }]
-            }"#,
-        );
-
-        let result = load_agent_catalog(dir.path());
-        assert!(matches!(result, Err(SettingsError::MissingField { .. })));
+    fn empty_and_whitespace_descriptions_rejected() {
+        for desc in ["", "   "] {
+            let json = format!(
+                r#"{{"agents": [{{"name": "planner", "description": "{desc}", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}}]}}"#
+            );
+            let (_, result) = setup_and_load(&json);
+            assert!(matches!(result, Err(SettingsError::MissingField { .. })), "expected MissingField for desc={desc:?}");
+        }
     }
 
     #[test]
     fn duplicate_agent_names_after_trim_rejected() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [
-                    {
-                        "name": "planner",
-                        "description": "First",
-                        "model": "anthropic:claude-sonnet-4-5",
-                        "userInvocable": true,
-                        "prompts": ["AGENTS.md"]
-                    },
-                    {
-                        "name": " planner ",
-                        "description": "Second",
-                        "model": "anthropic:claude-sonnet-4-5",
-                        "userInvocable": true,
-                        "prompts": ["AGENTS.md"]
-                    }
-                ]
-            }"#,
+        let (_, result) = setup_and_load(
+            r#"{"agents": [
+                {"name": "planner", "description": "First", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]},
+                {"name": " planner ", "description": "Second", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}
+            ]}"#,
         );
-
-        let result = load_agent_catalog(dir.path());
-        assert!(matches!(
-            result,
-            Err(SettingsError::DuplicateAgentName { .. })
-        ));
+        assert!(matches!(result, Err(SettingsError::DuplicateAgentName { .. })));
     }
 
     #[test]
     fn agent_name_and_description_are_trimmed() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": " planner ",
-                    "description": " Planner agent ",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "userInvocable": true,
-                    "prompts": ["AGENTS.md"]
-                }]
-            }"#,
+        let (_, catalog) = setup_and_load_ok(
+            r#"{"agents": [{"name": " planner ", "description": " Planner agent ", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
         );
-
-        let catalog = load_agent_catalog(dir.path()).unwrap();
         let spec = catalog.get("planner").unwrap();
         assert_eq!(spec.name, "planner");
         assert_eq!(spec.description, "Planner agent");
@@ -801,79 +521,29 @@ mod tests {
     #[test]
     fn no_prompts_rejected() {
         let dir = create_temp_project();
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "planner",
-                    "description": "Planner agent",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "userInvocable": true
-                }]
-            }"#,
-        );
-
-        let result = load_agent_catalog(dir.path());
-        assert!(matches!(result, Err(SettingsError::NoPrompts { .. })));
+        write_settings(dir.path(), r#"{"agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true}]}"#);
+        assert!(matches!(load_agent_catalog(dir.path()), Err(SettingsError::NoPrompts { .. })));
     }
 
     #[test]
     fn malformed_json_rejected() {
         let dir = create_temp_project();
         write_settings(dir.path(), "not valid json");
-
-        let result = load_agent_catalog(dir.path());
-        assert!(matches!(result, Err(SettingsError::ParseError(_))));
+        assert!(matches!(load_agent_catalog(dir.path()), Err(SettingsError::ParseError(_))));
     }
 
     #[test]
     fn invalid_mcp_servers_path_rejected() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "mcpServers": "nonexistent.json",
-                "agents": [{
-                    "name": "planner",
-                    "description": "Planner agent",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "userInvocable": true,
-                    "prompts": ["AGENTS.md"]
-                }]
-            }"#,
+        let (_, result) = setup_and_load(
+            r#"{"mcpServers": "nonexistent.json", "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
         );
-
-        let result = load_agent_catalog(dir.path());
-        assert!(matches!(
-            result,
-            Err(SettingsError::InvalidMcpConfigPath { .. })
-        ));
+        assert!(matches!(result, Err(SettingsError::InvalidMcpConfigPath { .. })));
     }
 
     #[test]
     fn invalid_agent_mcp_servers_path_rejected() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "planner",
-                    "description": "Planner agent",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "userInvocable": true,
-                    "prompts": ["AGENTS.md"],
-                    "mcpServers": "nonexistent.json"
-                }]
-            }"#,
-        );
-
-        let result = load_agent_catalog(dir.path());
-        assert!(matches!(
-            result,
-            Err(SettingsError::InvalidMcpConfigPath { .. })
-        ));
+        let (_, result) = setup_and_load(&agent_settings(r#""mcpServers": "nonexistent.json""#));
+        assert!(matches!(result, Err(SettingsError::InvalidMcpConfigPath { .. })));
     }
 
     #[test]
@@ -881,170 +551,44 @@ mod tests {
         let dir = create_temp_project();
         write_file(dir.path(), "AGENTS.md", "Be helpful");
         write_file(dir.path(), ".aether/mcp/default.json", "{}");
-        write_settings(
-            dir.path(),
-            r#"{
-                "mcpServers": ".aether/mcp/default.json",
-                "agents": [{
-                    "name": "planner",
-                    "description": "Planner agent",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "userInvocable": true,
-                    "prompts": ["AGENTS.md"]
-                }]
-            }"#,
-        );
+        write_settings(dir.path(), r#"{"mcpServers": ".aether/mcp/default.json", "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#);
 
         let catalog = load_agent_catalog(dir.path()).unwrap();
-        let spec = catalog.resolve("planner", dir.path()).unwrap();
-        assert!(spec.mcp_config_path.is_some());
+        assert!(catalog.resolve("planner", dir.path()).unwrap().mcp_config_path.is_some());
     }
 
     #[test]
     fn any_invalid_agent_entry_fails_catalog_load() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [
-                    {
-                        "name": "valid",
-                        "description": "Valid agent",
-                        "model": "anthropic:claude-sonnet-4-5",
-                        "userInvocable": true,
-                        "prompts": ["AGENTS.md"]
-                    },
-                    {
-                        "name": "invalid",
-                        "description": "Invalid agent",
-                        "model": "invalid:model",
-                        "userInvocable": true,
-                        "prompts": ["AGENTS.md"]
-                    }
-                ]
-            }"#,
+        let (_, result) = setup_and_load(
+            r#"{"agents": [
+                {"name": "valid", "description": "Valid agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]},
+                {"name": "invalid", "description": "Invalid agent", "model": "invalid:model", "userInvocable": true, "prompts": ["AGENTS.md"]}
+            ]}"#,
         );
-
-        let result = load_agent_catalog(dir.path());
         assert!(matches!(result, Err(SettingsError::InvalidModel { .. })));
     }
 
-    #[test]
-    fn preserves_authored_agent_order() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [
-                    {
-                        "name": "zebra",
-                        "description": "Z agent",
-                        "model": "anthropic:claude-sonnet-4-5",
-                        "userInvocable": true,
-                        "prompts": ["AGENTS.md"]
-                    },
-                    {
-                        "name": "alpha",
-                        "description": "A agent",
-                        "model": "anthropic:claude-sonnet-4-5",
-                        "userInvocable": true,
-                        "prompts": ["AGENTS.md"]
-                    }
-                ]
-            }"#,
-        );
-
-        let catalog = load_agent_catalog(dir.path()).unwrap();
-        let names: Vec<_> = catalog.all().iter().map(|s| s.name.as_str()).collect();
-        assert_eq!(names, vec!["zebra", "alpha"]);
+    fn two_agent_json() -> &'static str {
+        r#"{"agents": [
+            {"name": "zebra", "description": "Z agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]},
+            {"name": "alpha", "description": "A agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}
+        ]}"#
     }
 
     #[test]
-    fn get_uses_exact_name_lookup_independent_of_authored_order() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [
-                    {
-                        "name": "zebra",
-                        "description": "Z agent",
-                        "model": "anthropic:claude-sonnet-4-5",
-                        "userInvocable": true,
-                        "prompts": ["AGENTS.md"]
-                    },
-                    {
-                        "name": "alpha",
-                        "description": "A agent",
-                        "model": "anthropic:claude-sonnet-4-5",
-                        "userInvocable": true,
-                        "prompts": ["AGENTS.md"]
-                    }
-                ]
-            }"#,
-        );
-
-        let catalog = load_agent_catalog(dir.path()).unwrap();
+    fn preserves_authored_agent_order_and_lookup() {
+        let (_, catalog) = setup_and_load_ok(two_agent_json());
+        let names: Vec<_> = catalog.all().iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, vec!["zebra", "alpha"]); // not alphabetized
         assert_eq!(catalog.get("alpha").unwrap().name, "alpha");
         assert_eq!(catalog.get("zebra").unwrap().name, "zebra");
     }
 
     #[test]
-    fn authored_order_is_not_alphabetized() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [
-                    {
-                        "name": "zebra",
-                        "description": "Z agent",
-                        "model": "anthropic:claude-sonnet-4-5",
-                        "userInvocable": true,
-                        "prompts": ["AGENTS.md"]
-                    },
-                    {
-                        "name": "alpha",
-                        "description": "A agent",
-                        "model": "anthropic:claude-sonnet-4-5",
-                        "userInvocable": true,
-                        "prompts": ["AGENTS.md"]
-                    }
-                ]
-            }"#,
-        );
-
-        let catalog = load_agent_catalog(dir.path()).unwrap();
-        let names: Vec<_> = catalog.all().iter().map(|s| s.name.as_str()).collect();
-        assert_ne!(names, vec!["alpha", "zebra"]);
-    }
-
-    #[test]
     fn tools_filter_parsed_from_settings() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "researcher",
-                    "description": "Read-only agent",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "agentInvocable": true,
-                    "prompts": ["AGENTS.md"],
-                    "tools": {
-                        "allow": ["coding__grep", "coding__read_file"],
-                        "deny": ["coding__write*"]
-                    }
-                }]
-            }"#,
+        let (_, catalog) = setup_and_load_ok(
+            r#"{"agents": [{"name": "researcher", "description": "Read-only agent", "model": "anthropic:claude-sonnet-4-5", "agentInvocable": true, "prompts": ["AGENTS.md"], "tools": {"allow": ["coding__grep", "coding__read_file"], "deny": ["coding__write*"]}}]}"#,
         );
-
-        let catalog = load_agent_catalog(dir.path()).unwrap();
         let spec = catalog.get("researcher").unwrap();
         assert_eq!(spec.tools.allow, vec!["coding__grep", "coding__read_file"]);
         assert_eq!(spec.tools.deny, vec!["coding__write*"]);
@@ -1052,22 +596,7 @@ mod tests {
 
     #[test]
     fn absent_tools_field_yields_default_filter() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "planner",
-                    "description": "Planner agent",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "userInvocable": true,
-                    "prompts": ["AGENTS.md"]
-                }]
-            }"#,
-        );
-
-        let catalog = load_agent_catalog(dir.path()).unwrap();
+        let (_, catalog) = setup_and_load_ok(&agent_settings(""));
         let spec = catalog.get("planner").unwrap();
         assert!(spec.tools.allow.is_empty());
         assert!(spec.tools.deny.is_empty());
@@ -1075,25 +604,9 @@ mod tests {
 
     #[test]
     fn reserved_agent_name_rejected() {
-        let dir = create_temp_project();
-        write_file(dir.path(), "AGENTS.md", "Be helpful");
-        write_settings(
-            dir.path(),
-            r#"{
-                "agents": [{
-                    "name": "__default__",
-                    "description": "Sneaky agent",
-                    "model": "anthropic:claude-sonnet-4-5",
-                    "userInvocable": true,
-                    "prompts": ["AGENTS.md"]
-                }]
-            }"#,
+        let (_, result) = setup_and_load(
+            r#"{"agents": [{"name": "__default__", "description": "Sneaky agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
         );
-
-        let result = load_agent_catalog(dir.path());
-        assert!(matches!(
-            result,
-            Err(SettingsError::ReservedAgentName { .. })
-        ));
+        assert!(matches!(result, Err(SettingsError::ReservedAgentName { .. })));
     }
 }

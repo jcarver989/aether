@@ -172,218 +172,167 @@ mod tests {
     use aether_core::context::ext::UserEvent;
     use llm::ToolCallResult;
 
-    fn test_meta() -> SessionMeta {
+    fn meta(id: &str, created_at: &str, mode: Option<&str>) -> SessionMeta {
         SessionMeta {
-            session_id: "s1".to_string(),
+            session_id: id.to_string(),
             cwd: PathBuf::from("/tmp"),
             model: "test-model".to_string(),
-            selected_mode: Some("planner".to_string()),
-            created_at: "2026-01-01T00:00:00Z".to_string(),
+            selected_mode: mode.map(str::to_string),
+            created_at: created_at.to_string(),
         }
+    }
+
+    fn default_meta() -> SessionMeta {
+        meta("s1", "2026-01-01T00:00:00Z", Some("planner"))
+    }
+
+    fn user_msg(content: &str) -> SessionEvent {
+        SessionEvent::User(UserEvent::Message {
+            content: content.to_string(),
+        })
+    }
+
+    fn agent_text(msg_id: &str, chunk: &str, complete: bool) -> SessionEvent {
+        SessionEvent::Agent(AgentMessage::Text {
+            message_id: msg_id.to_string(),
+            chunk: chunk.to_string(),
+            is_complete: complete,
+            model_name: "test".to_string(),
+        })
+    }
+
+    /// Create a temp dir and store; returns both so the dir lives long enough.
+    fn temp_store() -> (tempfile::TempDir, SessionStore) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::from_path(dir.path().to_path_buf());
+        (dir, store)
+    }
+
+    /// Append default meta + an optional user message, return listed title.
+    fn listed_title(content: Option<&str>) -> Option<String> {
+        let (_dir, store) = temp_store();
+        store.append_meta("s1", &default_meta()).unwrap();
+        if let Some(c) = content {
+            store.append_event("s1", &user_msg(c)).unwrap();
+        }
+        store.list().into_iter().next().unwrap().title
     }
 
     #[test]
     fn append_meta_persists_selected_mode_field() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = SessionStore::from_path(dir.path().to_path_buf());
-
-        let meta = test_meta();
-        store.append_meta("s1", &meta).unwrap();
-
+        let (dir, store) = temp_store();
+        store.append_meta("s1", &default_meta()).unwrap();
         let raw = std::fs::read_to_string(dir.path().join("s1.jsonl")).unwrap();
-        assert!(
-            raw.contains("\"selectedMode\""),
-            "expected selectedMode field in serialized session meta: {raw}"
-        );
+        assert!(raw.contains("\"selectedMode\""), "missing selectedMode: {raw}");
     }
 
     #[test]
     fn append_and_load_roundtrip() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = SessionStore::from_path(dir.path().to_path_buf());
+        let (_dir, store) = temp_store();
+        let m = default_meta();
+        let user = user_msg("Hello");
+        let agent = agent_text("msg_1", "Hi there!", true);
 
-        let meta = test_meta();
-        let user = SessionEvent::User(UserEvent::Message {
-            content: "Hello".to_string(),
-        });
-        let agent = SessionEvent::Agent(AgentMessage::Text {
-            message_id: "msg_1".to_string(),
-            chunk: "Hi there!".to_string(),
-            is_complete: true,
-            model_name: "test".to_string(),
-        });
-
-        store.append_meta("s1", &meta).unwrap();
+        store.append_meta("s1", &m).unwrap();
         store.append_event("s1", &user).unwrap();
         store.append_event("s1", &agent).unwrap();
 
-        let (loaded_meta, events) = store.load("s1").unwrap();
-        assert_eq!(loaded_meta, meta);
-        assert_eq!(events.len(), 2);
-        assert_eq!(events[0], user);
-        assert_eq!(events[1], agent);
+        let (loaded, events) = store.load("s1").unwrap();
+        assert_eq!(loaded, m);
+        assert_eq!(events, vec![user, agent]);
     }
 
     #[test]
     fn load_skips_malformed_trailing_line() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = SessionStore::from_path(dir.path().to_path_buf());
-        let path = dir.path().join("s2.jsonl");
-
-        let meta = test_meta();
-        let mut file = File::create(&path).unwrap();
-        writeln!(file, "{}", serde_json::to_string(&meta).unwrap()).unwrap();
+        let (dir, store) = temp_store();
+        let m = default_meta();
+        let mut file = File::create(dir.path().join("s2.jsonl")).unwrap();
+        writeln!(file, "{}", serde_json::to_string(&m).unwrap()).unwrap();
         writeln!(file, "{{truncated garbage").unwrap();
 
-        let (loaded_meta, events) = store.load("s2").unwrap();
-        assert_eq!(loaded_meta, meta);
+        let (loaded, events) = store.load("s2").unwrap();
+        assert_eq!(loaded, m);
         assert!(events.is_empty());
     }
 
     #[test]
     fn load_nonexistent_returns_none() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = SessionStore::from_path(dir.path().to_path_buf());
+        let (_dir, store) = temp_store();
         assert!(store.load("nonexistent").is_none());
     }
 
     #[test]
     fn append_drops_streaming_chunks_and_persists_everything_else() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = SessionStore::from_path(dir.path().to_path_buf());
+        let (_dir, store) = temp_store();
+        store.append_meta("s1", &default_meta()).unwrap();
 
-        store.append_meta("s1", &test_meta()).unwrap();
+        let dropped = [
+            agent_text("m", "partial", false),
+            SessionEvent::Agent(AgentMessage::Thought {
+                message_id: "m".to_string(),
+                chunk: "thinking".to_string(),
+                is_complete: false,
+                model_name: "test".to_string(),
+            }),
+        ];
+        let kept = vec![
+            agent_text("m", "full", true),
+            SessionEvent::Agent(AgentMessage::Error { message: "oops".to_string() }),
+            SessionEvent::Agent(AgentMessage::Done),
+            SessionEvent::Agent(AgentMessage::ToolResult {
+                result: ToolCallResult {
+                    id: "1".to_string(),
+                    name: "t".to_string(),
+                    arguments: "{}".to_string(),
+                    result: "ok".to_string(),
+                },
+                result_meta: None,
+                model_name: "test".to_string(),
+            }),
+            SessionEvent::Agent(AgentMessage::ToolCallUpdate {
+                tool_call_id: "1".to_string(),
+                chunk: r#"{"filePath":"Cargo.toml"}"#.to_string(),
+                model_name: "test".to_string(),
+            }),
+        ];
 
-        let streaming_text = SessionEvent::Agent(AgentMessage::Text {
-            message_id: "m".to_string(),
-            chunk: "partial".to_string(),
-            is_complete: false,
-            model_name: "test".to_string(),
-        });
-        let streaming_thought = SessionEvent::Agent(AgentMessage::Thought {
-            message_id: "m".to_string(),
-            chunk: "thinking".to_string(),
-            is_complete: false,
-            model_name: "test".to_string(),
-        });
-        let complete_text = SessionEvent::Agent(AgentMessage::Text {
-            message_id: "m".to_string(),
-            chunk: "full".to_string(),
-            is_complete: true,
-            model_name: "test".to_string(),
-        });
-        let error = SessionEvent::Agent(AgentMessage::Error {
-            message: "oops".to_string(),
-        });
-        let done = SessionEvent::Agent(AgentMessage::Done);
-        let tool_result = SessionEvent::Agent(AgentMessage::ToolResult {
-            result: ToolCallResult {
-                id: "1".to_string(),
-                name: "t".to_string(),
-                arguments: "{}".to_string(),
-                result: "ok".to_string(),
-            },
-            result_meta: None,
-            model_name: "test".to_string(),
-        });
-        let tool_call_update = SessionEvent::Agent(AgentMessage::ToolCallUpdate {
-            tool_call_id: "1".to_string(),
-            chunk: r#"{"filePath":"Cargo.toml"}"#.to_string(),
-            model_name: "test".to_string(),
-        });
-
-        // Streaming chunks should be silently dropped
-        store.append_event("s1", &streaming_text).unwrap();
-        store.append_event("s1", &streaming_thought).unwrap();
-
-        // Everything else should persist
-        store.append_event("s1", &complete_text).unwrap();
-        store.append_event("s1", &error).unwrap();
-        store.append_event("s1", &done).unwrap();
-        store.append_event("s1", &tool_result).unwrap();
-        store.append_event("s1", &tool_call_update).unwrap();
+        for e in &dropped {
+            store.append_event("s1", e).unwrap();
+        }
+        for e in &kept {
+            store.append_event("s1", e).unwrap();
+        }
 
         let (_, events) = store.load("s1").unwrap();
-        assert_eq!(events.len(), 5);
-        assert_eq!(events[0], complete_text);
-        assert_eq!(events[1], error);
-        assert_eq!(events[2], done);
-        assert_eq!(events[3], tool_result);
-        assert_eq!(events[4], tool_call_update);
+        assert_eq!(events, kept);
     }
 
     #[test]
-    fn append_persists_tool_call_updates() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = SessionStore::from_path(dir.path().to_path_buf());
-
-        store.append_meta("s1", &test_meta()).unwrap();
-
-        let update = SessionEvent::Agent(AgentMessage::ToolCallUpdate {
-            tool_call_id: "call_1".to_string(),
-            chunk: r#"{"filePath":"Cargo.toml"}"#.to_string(),
-            model_name: "test".to_string(),
-        });
-
-        store.append_event("s1", &update).unwrap();
-
-        let (_, events) = store.load("s1").unwrap();
-        assert_eq!(events, vec![update]);
-    }
-
-    #[test]
-    fn list_empty_dir_returns_empty() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = SessionStore::from_path(dir.path().to_path_buf());
+    fn list_empty_and_nonexistent_dirs_return_empty() {
+        let (_dir, store) = temp_store();
         assert!(store.list().is_empty());
-    }
 
-    #[test]
-    fn list_nonexistent_dir_returns_empty() {
-        let store = SessionStore::from_path(PathBuf::from("/nonexistent/path"));
-        assert!(store.list().is_empty());
+        let missing = SessionStore::from_path(PathBuf::from("/nonexistent/path"));
+        assert!(missing.list().is_empty());
     }
 
     #[test]
     fn list_returns_sessions_sorted_by_created_at_descending() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = SessionStore::from_path(dir.path().to_path_buf());
+        let (_dir, store) = temp_store();
+        let old = meta("s-old", "2026-01-01T00:00:00Z", None);
+        let new = meta("s-new", "2026-02-01T00:00:00Z", None);
+        store.append_meta("s-old", &old).unwrap();
+        store.append_meta("s-new", &new).unwrap();
 
-        let meta_old = SessionMeta {
-            session_id: "s-old".to_string(),
-            cwd: PathBuf::from("/tmp"),
-            model: "test-model".to_string(),
-            selected_mode: None,
-            created_at: "2026-01-01T00:00:00Z".to_string(),
-        };
-        let meta_new = SessionMeta {
-            session_id: "s-new".to_string(),
-            cwd: PathBuf::from("/tmp"),
-            model: "test-model".to_string(),
-            selected_mode: None,
-            created_at: "2026-02-01T00:00:00Z".to_string(),
-        };
-
-        store.append_meta("s-old", &meta_old).unwrap();
-        store.append_meta("s-new", &meta_new).unwrap();
-
-        let listed = store.list();
-        assert_eq!(listed.len(), 2);
-        assert_eq!(listed[0].meta.session_id, "s-new");
-        assert_eq!(listed[1].meta.session_id, "s-old");
+        let ids: Vec<_> = store.list().iter().map(|s| s.meta.session_id.clone()).collect();
+        assert_eq!(ids, vec!["s-new", "s-old"]);
     }
 
     #[test]
     fn list_skips_malformed_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = SessionStore::from_path(dir.path().to_path_buf());
-
-        store.append_meta("s1", &test_meta()).unwrap();
-
-        // Write a malformed JSONL file
+        let (dir, store) = temp_store();
+        store.append_meta("s1", &default_meta()).unwrap();
         std::fs::write(dir.path().join("bad.jsonl"), "not valid json\n").unwrap();
-
-        // Write a non-jsonl file
         std::fs::write(dir.path().join("readme.txt"), "ignore me").unwrap();
 
         let listed = store.list();
@@ -392,77 +341,25 @@ mod tests {
     }
 
     #[test]
-    fn list_extracts_title_from_first_user_message() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = SessionStore::from_path(dir.path().to_path_buf());
-
-        store.append_meta("s1", &test_meta()).unwrap();
-        store
-            .append_event(
-                "s1",
-                &SessionEvent::User(UserEvent::Message {
-                    content: "Fix the login page redirect bug".to_string(),
-                }),
-            )
-            .unwrap();
-
-        let listed = store.list();
-        assert_eq!(listed.len(), 1);
-        assert_eq!(
-            listed[0].title.as_deref(),
-            Some("Fix the login page redirect bug")
-        );
+    fn list_title_extraction() {
+        let cases: &[(&str, Option<&str>)] = &[
+            ("Fix the login bug", Some("Fix the login bug")),
+            ("First line\nSecond\nThird", Some("First line")),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(listed_title(Some(input)).as_deref(), *expected, "input: {input}");
+        }
     }
 
     #[test]
     fn list_returns_none_title_when_no_user_message() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = SessionStore::from_path(dir.path().to_path_buf());
-
-        store.append_meta("s1", &test_meta()).unwrap();
-        // No events appended — only meta line exists
-
-        let listed = store.list();
-        assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].title, None);
+        assert_eq!(listed_title(None), None);
     }
 
     #[test]
     fn list_truncates_long_title() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = SessionStore::from_path(dir.path().to_path_buf());
-
-        let long_msg = "a".repeat(120);
-        store.append_meta("s1", &test_meta()).unwrap();
-        store
-            .append_event(
-                "s1",
-                &SessionEvent::User(UserEvent::Message { content: long_msg }),
-            )
-            .unwrap();
-
-        let listed = store.list();
-        let title = listed[0].title.as_deref().unwrap();
+        let title = listed_title(Some(&"a".repeat(120))).unwrap();
         assert!(title.len() <= 84); // 80 chars + "…" (3 bytes)
         assert!(title.ends_with('…'));
-    }
-
-    #[test]
-    fn list_uses_first_line_of_multiline_message() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = SessionStore::from_path(dir.path().to_path_buf());
-
-        store.append_meta("s1", &test_meta()).unwrap();
-        store
-            .append_event(
-                "s1",
-                &SessionEvent::User(UserEvent::Message {
-                    content: "First line\nSecond line\nThird line".to_string(),
-                }),
-            )
-            .unwrap();
-
-        let listed = store.list();
-        assert_eq!(listed[0].title.as_deref(), Some("First line"));
     }
 }

@@ -128,70 +128,51 @@ fn truncate_str(content: &str, max_len: usize) -> String {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_normalize_url_adds_https() {
-        assert_eq!(
-            normalize_url("example.com").unwrap(),
-            "https://example.com/"
-        );
+    fn input(url: &str) -> WebFetchInput {
+        WebFetchInput {
+            url: url.to_string(),
+            prompt: None,
+            timeout: None,
+        }
     }
 
     #[test]
-    fn test_normalize_url_upgrades_http() {
-        assert_eq!(
-            normalize_url("http://example.com").unwrap(),
-            "https://example.com/"
-        );
-    }
-
-    #[test]
-    fn test_normalize_url_preserves_https() {
-        assert_eq!(
-            normalize_url("https://example.com").unwrap(),
-            "https://example.com/"
-        );
-    }
-
-    #[test]
-    fn test_normalize_url_invalid() {
+    fn test_normalize_url() {
+        let cases = [
+            ("example.com", "https://example.com/"),
+            ("http://example.com", "https://example.com/"),
+            ("https://example.com", "https://example.com/"),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(normalize_url(input).unwrap(), expected, "input: {input}");
+        }
         assert!(normalize_url("not a valid url!!!").is_err());
     }
 
     #[test]
-    fn test_html_to_markdown_with_title() {
-        let html = "<html><head><title>Test Page</title></head><body></body></html>";
-        let (title, _) = html_to_markdown(html);
+    fn test_html_to_markdown() {
+        let (title, _) = html_to_markdown(
+            "<html><head><title>Test Page</title></head><body></body></html>",
+        );
         assert_eq!(title, Some("Test Page".to_string()));
-    }
 
-    #[test]
-    fn test_html_to_markdown_missing_title() {
-        let html = "<html><head></head><body></body></html>";
-        let (title, _) = html_to_markdown(html);
+        let (title, _) = html_to_markdown("<html><head></head><body></body></html>");
         assert_eq!(title, None);
+
+        let (_, md) = html_to_markdown("<h1>Title</h1><p>Content paragraph.</p>");
+        assert!(md.contains("Title"));
+        assert!(md.contains("Content paragraph"));
     }
 
     #[test]
-    fn test_truncate_markdown_short() {
-        let content = "Short content";
-        assert_eq!(truncate_str(content, 100), "Short content");
-    }
+    fn test_truncate_str() {
+        assert_eq!(truncate_str("Short content", 100), "Short content");
 
-    #[test]
-    fn test_truncate_markdown_at_paragraph() {
         let content = "First paragraph.\n\nSecond paragraph.\n\nThird paragraph.";
         let result = truncate_str(content, 35);
         assert!(result.contains("First paragraph."));
         assert!(result.contains("[Content truncated...]"));
         assert!(!result.contains("Third paragraph"));
-    }
-
-    #[test]
-    fn test_html_to_markdown_basic() {
-        let html = "<h1>Title</h1><p>Content paragraph.</p>";
-        let (_, markdown) = html_to_markdown(html);
-        assert!(markdown.contains("Title"));
-        assert!(markdown.contains("Content paragraph"));
     }
 
     #[tokio::test]
@@ -200,16 +181,8 @@ mod tests {
             "https://example.com/",
             "<html><head><title>Example</title></head><body><h1>Hello</h1></body></html>",
         );
-
         let fetcher = WebFetcher::with_client(fake.clone());
-        let result = fetcher
-            .fetch(WebFetchInput {
-                url: "example.com".to_string(),
-                prompt: None,
-                timeout: None,
-            })
-            .await
-            .unwrap();
+        let result = fetcher.fetch(input("example.com")).await.unwrap();
 
         assert_eq!(result.status_code, 200);
         assert_eq!(result.title, Some("Example".to_string()));
@@ -222,51 +195,22 @@ mod tests {
         let fake = FakeHttpClient::new()
             .with_html("https://example.com/page1", "<h1>Page 1</h1>")
             .with_html("https://example.com/page2", "<h1>Page 2</h1>");
-
         let fetcher = WebFetcher::with_client(fake.clone());
 
-        fetcher
-            .fetch(WebFetchInput {
-                url: "https://example.com/page1".to_string(),
-                prompt: None,
-                timeout: None,
-            })
-            .await
-            .unwrap();
-
-        fetcher
-            .fetch(WebFetchInput {
-                url: "https://example.com/page2".to_string(),
-                prompt: None,
-                timeout: None,
-            })
-            .await
-            .unwrap();
+        fetcher.fetch(input("https://example.com/page1")).await.unwrap();
+        fetcher.fetch(input("https://example.com/page2")).await.unwrap();
 
         assert_eq!(fake.fetch_count(), 2);
         assert_eq!(
             fake.fetched_urls(),
-            vec![
-                "https://example.com/page1".to_string(),
-                "https://example.com/page2".to_string()
-            ]
+            vec!["https://example.com/page1", "https://example.com/page2"]
         );
     }
 
     #[tokio::test]
     async fn test_fake_client_missing_url_returns_error() {
-        let fake = FakeHttpClient::new();
-        let fetcher = WebFetcher::with_client(fake);
-
-        let result = fetcher
-            .fetch(WebFetchInput {
-                url: "https://not-configured.com/".to_string(),
-                prompt: None,
-                timeout: None,
-            })
-            .await;
-
-        assert!(result.is_err());
+        let fetcher = WebFetcher::with_client(FakeHttpClient::new());
+        assert!(fetcher.fetch(input("https://not-configured.com/")).await.is_err());
     }
 
     #[tokio::test]
@@ -276,17 +220,10 @@ mod tests {
             status_code: 404,
             body: "<h1>Not Found</h1>".to_string(),
         });
-
-        let fetcher = WebFetcher::with_client(fake);
-        let result = fetcher
-            .fetch(WebFetchInput {
-                url: "https://any-url.com/".to_string(),
-                prompt: None,
-                timeout: None,
-            })
+        let result = WebFetcher::with_client(fake)
+            .fetch(input("https://any-url.com/"))
             .await
             .unwrap();
-
         assert_eq!(result.status_code, 404);
     }
 }

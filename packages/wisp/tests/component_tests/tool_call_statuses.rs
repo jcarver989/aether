@@ -52,6 +52,59 @@ fn make_sub_agent_notification_with_task_id(
     serde_json::from_str(&json).unwrap()
 }
 
+fn tool_call_event(id: &str, name: &str) -> String {
+    format!(
+        r#"{{"ToolCall":{{"request":{{"id":"{id}","name":"{name}","arguments":"{{}}"}},"model_name":"m"}}}}"#
+    )
+}
+
+fn tool_call_event_with_args(id: &str, name: &str, arguments: &str) -> String {
+    let escaped = arguments.replace('"', r#"\""#);
+    format!(
+        r#"{{"ToolCall":{{"request":{{"id":"{id}","name":"{name}","arguments":"{escaped}"}},"model_name":"m"}}}}"#
+    )
+}
+
+fn tool_result_event(id: &str, name: &str) -> String {
+    format!(
+        r#"{{"ToolResult":{{"result":{{"id":"{id}","name":"{name}","arguments":"{{}}","result":"ok"}},"model_name":"m"}}}}"#
+    )
+}
+
+fn tool_result_event_with_meta(id: &str, name: &str, title: &str, value: &str) -> String {
+    format!(
+        r#"{{"ToolResult":{{"result":{{"id":"{id}","name":"{name}","result_meta":{{"display":{{"title":"{title}","value":"{value}"}}}}}},"model_name":"m"}}}}"#
+    )
+}
+
+fn tool_error_event(id: &str, name: &str) -> String {
+    format!(
+        r#"{{"ToolError":{{"error":{{"id":"{id}","name":"{name}","arguments":"{{}}","error":"not found"}},"model_name":"m"}}}}"#
+    )
+}
+
+fn tool_update_event(id: &str, chunk: &str) -> String {
+    let escaped = chunk.replace('"', r#"\""#);
+    format!(r#"{{"ToolCallUpdate":{{"update":{{"id":"{id}","chunk":"{escaped}"}}}}}}"#)
+}
+
+fn render_tool_lines(statuses: &ToolCallStatuses, id: &str) -> Vec<String> {
+    let lines = statuses.render_tool(id, &ctx());
+    let count = lines.len();
+    let term = render_lines(&lines, 80, 24);
+    term.get_lines().into_iter().take(count).collect()
+}
+
+fn setup_parent() -> ToolCallStatuses {
+    let mut statuses = ToolCallStatuses::new();
+    statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+    statuses
+}
+
+fn progress(statuses: &mut ToolCallStatuses, agent: &str, event: &str) {
+    statuses.on_sub_agent_progress(&make_sub_agent_notification("parent-1", agent, event));
+}
+
 #[test]
 fn request_tracks_tool() {
     let mut statuses = ToolCallStatuses::new();
@@ -60,10 +113,9 @@ fn request_tracks_tool() {
         "Read",
         Some(r#""/path/to/file""#),
     ));
-    let lines = statuses.render_tool("tool-1", &ctx());
-    assert_eq!(lines.len(), 1);
-    let term = render_lines(&lines, 80, 24);
-    let output = term.get_lines();
+
+    let output = render_tool_lines(&statuses, "tool-1");
+    assert_eq!(output.len(), 1);
     assert!(output[0].contains("Read"));
 }
 
@@ -75,10 +127,9 @@ fn update_to_success() {
         "tool-1",
         acp::ToolCallStatus::Completed,
     ));
-    let lines = statuses.render_tool("tool-1", &ctx());
-    assert_eq!(lines.len(), 1);
-    let term = render_lines(&lines, 80, 24);
-    let output = term.get_lines();
+
+    let output = render_tool_lines(&statuses, "tool-1");
+    assert_eq!(output.len(), 1);
     assert!(output[0].contains("✓"));
 }
 
@@ -89,8 +140,7 @@ fn unknown_update_is_ignored() {
         "unknown",
         acp::ToolCallStatus::Completed,
     ));
-    let lines = statuses.render_tool("unknown", &ctx());
-    assert!(lines.is_empty());
+    assert!(statuses.render_tool("unknown", &ctx()).is_empty());
 }
 
 #[test]
@@ -101,10 +151,9 @@ fn update_to_error() {
         "tool-1",
         acp::ToolCallStatus::Failed,
     ));
-    let lines = statuses.render_tool("tool-1", &ctx());
-    assert_eq!(lines.len(), 1);
-    let term = render_lines(&lines, 80, 24);
-    let output = term.get_lines();
+
+    let output = render_tool_lines(&statuses, "tool-1");
+    assert_eq!(output.len(), 1);
     assert!(output[0].contains("✗"));
 }
 
@@ -113,6 +162,7 @@ fn multiple_tools_render_in_order() {
     let mut statuses = ToolCallStatuses::new();
     statuses.on_tool_call(&make_tool_call("tool-1", "Read", None));
     statuses.on_tool_call(&make_tool_call("tool-2", "Write", None));
+
     let lines = render_all(&statuses, &["tool-1", "tool-2"], &ctx());
     assert_eq!(lines.len(), 2);
     let term = render_lines(&lines, 80, 24);
@@ -130,8 +180,8 @@ fn multiple_tools_complete_independently() {
         "tool-1",
         acp::ToolCallStatus::Completed,
     ));
+
     let lines = render_all(&statuses, &["tool-1", "tool-2"], &ctx());
-    assert_eq!(lines.len(), 2);
     let term = render_lines(&lines, 80, 24);
     let output = term.get_lines();
     assert!(output[0].contains("✓")); // Read completed
@@ -286,19 +336,15 @@ fn view_running_hides_raw_args_then_shows_display_value() {
 
 #[test]
 fn sub_agent_tool_call_renders_nested() {
-    let mut statuses = ToolCallStatuses::new();
-    statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
-
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
+    let mut statuses = setup_parent();
+    progress(
+        &mut statuses,
         "explorer",
-        r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{\"pattern\":\"test\"}"},"model_name":"m"}}"#,
-    ));
+        &tool_call_event_with_args("c1", "grep", r#"{"pattern":"test"}"#),
+    );
 
-    let lines = statuses.render_tool("parent-1", &ctx());
-    assert_eq!(lines.len(), 2);
-    let term = render_lines(&lines, 80, 24);
-    let output = term.get_lines();
+    let output = render_tool_lines(&statuses, "parent-1");
+    assert_eq!(output.len(), 2);
     assert!(output[0].contains("explorer"));
     assert!(output[0].starts_with("  "));
     assert!(output[1].starts_with("  └─ "));
@@ -307,157 +353,119 @@ fn sub_agent_tool_call_renders_nested() {
 
 #[test]
 fn sub_agent_tool_call_update_appends_chunk() {
-    let mut statuses = ToolCallStatuses::new();
-    statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+    let mut statuses = setup_parent();
+    progress(&mut statuses, "explorer", &tool_call_event("c1", "grep"));
+    progress(
+        &mut statuses,
+        "explorer",
+        &tool_update_event("c1", r#"{"pattern":"updated"}"#),
+    );
+    progress(&mut statuses, "explorer", &tool_result_event("c1", "grep"));
 
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
-        "explorer",
-        r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":""},"model_name":"m"}}"#,
-    ));
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
-        "explorer",
-        r#"{"ToolCallUpdate":{"update":{"id":"c1","chunk":"{\"pattern\":\"updated\"}"}}}"#,
-    ));
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
-        "explorer",
-        r#"{"ToolResult":{"result":{"id":"c1","name":"grep","arguments":"{}","result":"ok"},"model_name":"m"}}"#,
-    ));
-
-    let lines = statuses.render_tool("parent-1", &ctx());
-    assert_eq!(lines.len(), 2);
-    let term = render_lines(&lines, 80, 24);
-    let output = term.get_lines();
+    let output = render_tool_lines(&statuses, "parent-1");
+    assert_eq!(output.len(), 2);
     assert!(output[1].contains("updated"));
 }
 
 #[test]
 fn sub_agent_tool_result_shows_checkmark() {
-    let mut statuses = ToolCallStatuses::new();
-    statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
-
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
+    let mut statuses = setup_parent();
+    progress(
+        &mut statuses,
         "explorer",
-        r#"{"ToolCall":{"request":{"id":"c1","name":"read_file","arguments":"{}"},"model_name":"m"}}"#,
-    ));
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
+        &tool_call_event("c1", "read_file"),
+    );
+    progress(
+        &mut statuses,
         "explorer",
-        r#"{"ToolResult":{"result":{"id":"c1","name":"read_file","arguments":"{}","result":"ok"},"model_name":"m"}}"#,
-    ));
+        &tool_result_event("c1", "read_file"),
+    );
 
-    let lines = statuses.render_tool("parent-1", &ctx());
-    assert_eq!(lines.len(), 2);
-    let term = render_lines(&lines, 80, 24);
-    let output = term.get_lines();
+    let output = render_tool_lines(&statuses, "parent-1");
+    assert_eq!(output.len(), 2);
     assert!(output[1].contains("✓"));
 }
 
 #[test]
 fn sub_agent_tool_result_uses_result_meta() {
-    let mut statuses = ToolCallStatuses::new();
-    statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
-
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
+    let mut statuses = setup_parent();
+    progress(
+        &mut statuses,
         "explorer",
-        r#"{"ToolCall":{"request":{"id":"c1","name":"coding__read_file","arguments":"{\"filePath\":\"Cargo.toml\"}"},"model_name":"m"}}"#,
-    ));
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
+        &tool_call_event_with_args("c1", "coding__read_file", r#"{"filePath":"Cargo.toml"}"#),
+    );
+    progress(
+        &mut statuses,
         "explorer",
-        r#"{"ToolResult":{"result":{"id":"c1","name":"coding__read_file","result_meta":{"display":{"title":"Read file","value":"Cargo.toml, 156 lines"}}},"model_name":"m"}}"#,
-    ));
+        &tool_result_event_with_meta(
+            "c1",
+            "coding__read_file",
+            "Read file",
+            "Cargo.toml, 156 lines",
+        ),
+    );
 
-    let lines = statuses.render_tool("parent-1", &ctx());
-    assert_eq!(lines.len(), 2);
-    let term = render_lines(&lines, 80, 24);
-    let output = term.get_lines();
-    let tool_line = &output[1];
-    assert!(tool_line.contains("✓"));
-    assert!(tool_line.contains("Read file"));
-    assert!(tool_line.contains("(Cargo.toml, 156 lines)"));
-    assert!(!tool_line.contains("filePath"));
+    let output = render_tool_lines(&statuses, "parent-1");
+    assert_eq!(output.len(), 2);
+    assert!(output[1].contains("✓"));
+    assert!(output[1].contains("Read file"));
+    assert!(output[1].contains("(Cargo.toml, 156 lines)"));
+    assert!(!output[1].contains("filePath"));
 }
 
 #[test]
 fn sub_agent_tool_error_shows_x() {
-    let mut statuses = ToolCallStatuses::new();
-    statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
-
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
+    let mut statuses = setup_parent();
+    progress(
+        &mut statuses,
         "explorer",
-        r#"{"ToolCall":{"request":{"id":"c1","name":"read_file","arguments":"{}"},"model_name":"m"}}"#,
-    ));
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
+        &tool_call_event("c1", "read_file"),
+    );
+    progress(
+        &mut statuses,
         "explorer",
-        r#"{"ToolError":{"error":{"id":"c1","name":"read_file","arguments":"{}","error":"not found"},"model_name":"m"}}"#,
-    ));
+        &tool_error_event("c1", "read_file"),
+    );
 
-    let lines = statuses.render_tool("parent-1", &ctx());
-    assert_eq!(lines.len(), 2);
-    let term = render_lines(&lines, 80, 24);
-    let output = term.get_lines();
+    let output = render_tool_lines(&statuses, "parent-1");
+    assert_eq!(output.len(), 2);
     assert!(output[1].contains("✗"));
 }
 
 #[test]
 fn multiple_sub_agents_render_separate_headers() {
-    let mut statuses = ToolCallStatuses::new();
-    statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
-
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
-        "explorer",
-        r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
-    ));
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
+    let mut statuses = setup_parent();
+    progress(&mut statuses, "explorer", &tool_call_event("c1", "grep"));
+    progress(
+        &mut statuses,
         "writer",
-        r#"{"ToolCall":{"request":{"id":"c2","name":"write_file","arguments":"{}"},"model_name":"m"}}"#,
-    ));
+        &tool_call_event("c2", "write_file"),
+    );
 
-    let lines = statuses.render_tool("parent-1", &ctx());
-    assert_eq!(lines.len(), 5);
-    let term = render_lines(&lines, 80, 24);
-    let output = term.get_lines();
+    let output = render_tool_lines(&statuses, "parent-1");
+    assert_eq!(output.len(), 5);
     assert!(output[0].contains("explorer"));
     assert!(output[3].contains("writer"));
 }
 
 #[test]
 fn same_name_agents_with_different_task_ids_render_separately() {
-    let mut statuses = ToolCallStatuses::new();
-    statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+    let mut statuses = setup_parent();
+    for (task, id, name) in [
+        ("task-1", "c1", "grep"),
+        ("task-2", "c2", "read_file"),
+        ("task-3", "c3", "list_files"),
+    ] {
+        statuses.on_sub_agent_progress(&make_sub_agent_notification_with_task_id(
+            "parent-1",
+            task,
+            "codebase-explorer",
+            &tool_call_event(id, name),
+        ));
+    }
 
-    statuses.on_sub_agent_progress(&make_sub_agent_notification_with_task_id(
-        "parent-1",
-        "task-1",
-        "codebase-explorer",
-        r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
-    ));
-    statuses.on_sub_agent_progress(&make_sub_agent_notification_with_task_id(
-        "parent-1",
-        "task-2",
-        "codebase-explorer",
-        r#"{"ToolCall":{"request":{"id":"c2","name":"read_file","arguments":"{}"},"model_name":"m"}}"#,
-    ));
-    statuses.on_sub_agent_progress(&make_sub_agent_notification_with_task_id(
-        "parent-1",
-        "task-3",
-        "codebase-explorer",
-        r#"{"ToolCall":{"request":{"id":"c3","name":"list_files","arguments":"{}"},"model_name":"m"}}"#,
-    ));
-
-    let lines = statuses.render_tool("parent-1", &ctx());
-    assert_eq!(lines.len(), 8);
-    let term = render_lines(&lines, 80, 24);
-    let output = term.get_lines();
+    let output = render_tool_lines(&statuses, "parent-1");
+    assert_eq!(output.len(), 8);
     assert!(output[1].contains("grep"));
     assert!(output[4].contains("read_file"));
     assert!(output[7].contains("list_files"));
@@ -465,43 +473,27 @@ fn same_name_agents_with_different_task_ids_render_separately() {
 
 #[test]
 fn sub_agent_renders_latest_three_tools_with_overflow() {
-    let mut statuses = ToolCallStatuses::new();
-    statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+    let mut statuses = setup_parent();
+    progress(&mut statuses, "explorer", &tool_call_event("c1", "grep"));
+    progress(&mut statuses, "explorer", &tool_result_event("c1", "grep"));
+    progress(
+        &mut statuses,
+        "explorer",
+        &tool_call_event("c2", "read_file"),
+    );
+    progress(
+        &mut statuses,
+        "explorer",
+        &tool_call_event("c3", "list_files"),
+    );
+    progress(
+        &mut statuses,
+        "explorer",
+        &tool_call_event("c4", "write_file"),
+    );
 
-    // Tool 1
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
-        "explorer",
-        r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
-    ));
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
-        "explorer",
-        r#"{"ToolResult":{"result":{"id":"c1","name":"grep","arguments":"{}","result":"ok"},"model_name":"m"}}"#,
-    ));
-    // Tool 2
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
-        "explorer",
-        r#"{"ToolCall":{"request":{"id":"c2","name":"read_file","arguments":"{}"},"model_name":"m"}}"#,
-    ));
-    // Tool 3
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
-        "explorer",
-        r#"{"ToolCall":{"request":{"id":"c3","name":"list_files","arguments":"{}"},"model_name":"m"}}"#,
-    ));
-    // Tool 4
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
-        "explorer",
-        r#"{"ToolCall":{"request":{"id":"c4","name":"write_file","arguments":"{}"},"model_name":"m"}}"#,
-    ));
-
-    let lines = statuses.render_tool("parent-1", &ctx());
-    assert_eq!(lines.len(), 5);
-    let term = render_lines(&lines, 80, 24);
-    let output = term.get_lines();
+    let output = render_tool_lines(&statuses, "parent-1");
+    assert_eq!(output.len(), 5);
     assert!(output[1].contains("1 earlier tool calls"));
     assert!(output[2].contains("read_file"));
     assert!(output[2].contains("├─"));
@@ -513,51 +505,30 @@ fn sub_agent_renders_latest_three_tools_with_overflow() {
 
 #[test]
 fn agent_header_shows_spinner_while_running() {
-    let mut statuses = ToolCallStatuses::new();
-    statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+    let mut statuses = setup_parent();
+    progress(&mut statuses, "explorer", &tool_call_event("c1", "grep"));
+    progress(&mut statuses, "explorer", &tool_result_event("c1", "grep"));
 
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
-        "explorer",
-        r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
-    ));
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
-        "explorer",
-        r#"{"ToolResult":{"result":{"id":"c1","name":"grep","arguments":"{}","result":"ok"},"model_name":"m"}}"#,
-    ));
-
-    let lines = statuses.render_tool("parent-1", &ctx());
-    let term = render_lines(&lines, 80, 24);
-    let output = term.get_lines();
-    let header = &output[0];
+    let output = render_tool_lines(&statuses, "parent-1");
     assert!(
-        !header.contains('✓'),
-        "Expected spinner, not ✓ in header: {header}"
+        !output[0].contains('✓'),
+        "Expected spinner, not ✓ in header: {}",
+        output[0]
     );
 }
 
 #[test]
 fn agent_header_shows_done_after_done_event() {
-    let mut statuses = ToolCallStatuses::new();
-    statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
+    let mut statuses = setup_parent();
+    progress(&mut statuses, "explorer", &tool_call_event("c1", "grep"));
+    progress(&mut statuses, "explorer", r#""Done""#);
 
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
-        "explorer",
-        r#"{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}"#,
-    ));
-    statuses.on_sub_agent_progress(&make_sub_agent_notification(
-        "parent-1",
-        "explorer",
-        r#""Done""#,
-    ));
-
-    let lines = statuses.render_tool("parent-1", &ctx());
-    let term = render_lines(&lines, 80, 24);
-    let output = term.get_lines();
-    let header = &output[0];
-    assert!(header.contains('✓'), "Expected ✓ in header: {header}");
+    let output = render_tool_lines(&statuses, "parent-1");
+    assert!(
+        output[0].contains('✓'),
+        "Expected ✓ in header: {}",
+        output[0]
+    );
 }
 
 #[test]

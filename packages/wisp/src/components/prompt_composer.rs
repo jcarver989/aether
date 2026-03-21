@@ -343,22 +343,31 @@ mod tests {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
     }
 
+    fn cmd(name: &str, has_input: bool, builtin: bool) -> CommandEntry {
+        CommandEntry {
+            name: name.into(),
+            description: name.into(),
+            has_input,
+            hint: if has_input { Some("arg".into()) } else { None },
+            builtin,
+        }
+    }
+
+    async fn type_chars(composer: &mut PromptComposer, chars: &str) {
+        for c in chars.chars() {
+            composer.on_event(&key(KeyCode::Char(c))).await;
+        }
+    }
+
     #[tokio::test]
     async fn builtin_settings_command_emits_open_settings() {
         let mut composer = PromptComposer::default();
-
-        composer.on_event(&key(KeyCode::Char('/'))).await;
-
+        type_chars(&mut composer, "/").await;
         assert!(composer.has_command_picker());
 
-        // Navigate past "clear" to "settings"
         composer.on_event(&key(KeyCode::Down)).await;
-
-        let outcome = composer.on_event(&key(KeyCode::Enter)).await;
-        assert!(matches!(
-            outcome.unwrap().as_slice(),
-            [PromptComposerMessage::OpenSettings]
-        ));
+        let msgs = composer.on_event(&key(KeyCode::Enter)).await.unwrap();
+        assert!(matches!(msgs.as_slice(), [PromptComposerMessage::OpenSettings]));
         assert_eq!(composer.buffer(), "");
         assert!(!composer.has_active_picker());
     }
@@ -366,22 +375,13 @@ mod tests {
     #[tokio::test]
     async fn command_without_input_requests_submit_immediately() {
         let mut composer = PromptComposer::default();
-        composer.set_available_commands(vec![CommandEntry {
-            name: "status".into(),
-            description: "status".into(),
-            has_input: false,
-            hint: None,
-            builtin: false,
-        }]);
+        composer.set_available_commands(vec![cmd("status", false, false)]);
+        type_chars(&mut composer, "/s").await;
 
-        composer.on_event(&key(KeyCode::Char('/'))).await;
-        composer.on_event(&key(KeyCode::Char('s'))).await;
-
-        let outcome = composer.on_event(&key(KeyCode::Enter)).await;
+        let msgs = composer.on_event(&key(KeyCode::Enter)).await.unwrap();
         assert!(matches!(
-            outcome.unwrap().as_slice(),
-            [PromptComposerMessage::SubmitRequested { user_input, .. }]
-            if user_input == "/status"
+            msgs.as_slice(),
+            [PromptComposerMessage::SubmitRequested { user_input, .. }] if user_input == "/status"
         ));
         assert_eq!(composer.buffer(), "");
     }
@@ -389,20 +389,11 @@ mod tests {
     #[tokio::test]
     async fn command_with_input_populates_prompt_without_submit() {
         let mut composer = PromptComposer::default();
-        composer.set_available_commands(vec![CommandEntry {
-            name: "search".into(),
-            description: "Search code".into(),
-            has_input: true,
-            hint: Some("query".into()),
-            builtin: false,
-        }]);
+        composer.set_available_commands(vec![cmd("search", true, false)]);
+        type_chars(&mut composer, "/s").await;
 
-        composer.on_event(&key(KeyCode::Char('/'))).await;
-        composer.on_event(&key(KeyCode::Char('s'))).await;
-        let outcome = composer.on_event(&key(KeyCode::Enter)).await;
-
-        assert!(outcome.unwrap().is_empty());
-
+        let msgs = composer.on_event(&key(KeyCode::Enter)).await.unwrap();
+        assert!(msgs.is_empty());
         assert_eq!(composer.buffer(), "/search ");
         assert!(!composer.has_active_picker());
     }
@@ -416,12 +407,10 @@ mod tests {
         composer.apply_file_selection(PathBuf::from("/tmp/skip.rs"), "skip.rs".to_string());
         composer.set_input("inspect @keep.rs now".to_string());
 
-        let messages = composer.prepare_submit();
-        let [PromptComposerMessage::SubmitRequested { attachments, .. }] = messages.as_slice()
-        else {
+        let msgs = composer.prepare_submit();
+        let [PromptComposerMessage::SubmitRequested { attachments, .. }] = msgs.as_slice() else {
             panic!("expected submit request");
         };
-
         assert_eq!(attachments.len(), 1);
         assert_eq!(attachments[0].display_name, "keep.rs");
         assert_eq!(attachments[0].path, PathBuf::from("/tmp/keep.rs"));
@@ -430,14 +419,11 @@ mod tests {
     #[tokio::test]
     async fn paste_closes_picker_and_inserts_text() {
         let mut composer = PromptComposer::default();
-        composer.on_event(&key(KeyCode::Char('@'))).await;
+        type_chars(&mut composer, "@").await;
         assert!(composer.has_file_picker());
 
-        let outcome = composer
-            .on_event(&Event::Paste("pasted text".to_string()))
-            .await;
-        assert!(outcome.is_some());
-        assert!(outcome.unwrap().is_empty());
+        let msgs = composer.on_event(&Event::Paste("pasted text".into())).await.unwrap();
+        assert!(msgs.is_empty());
         assert!(!composer.has_active_picker());
         assert_eq!(composer.buffer(), "@pasted text");
     }
@@ -445,23 +431,14 @@ mod tests {
     #[tokio::test]
     async fn file_picker_cursor_tracks_query_length() {
         let mut composer = PromptComposer::default();
-        composer.on_event(&key(KeyCode::Char('@'))).await;
-        composer.on_event(&key(KeyCode::Char('f'))).await;
-        composer.on_event(&key(KeyCode::Char('o'))).await;
-
+        type_chars(&mut composer, "@fo").await;
         assert_eq!(composer.cursor_index(), 3);
     }
 
     #[test]
     fn command_picker_cursor_stays_in_prompt_row() {
         let mut composer = PromptComposer::default();
-        composer.open_command_picker_with_entries(vec![CommandEntry {
-            name: "settings".into(),
-            description: "Open settings".into(),
-            has_input: false,
-            hint: None,
-            builtin: true,
-        }]);
+        composer.open_command_picker_with_entries(vec![cmd("settings", false, true)]);
 
         let context = ViewContext::new((120, 40));
         let output = composer.render(&context);
@@ -471,7 +448,6 @@ mod tests {
             .iter()
             .position(|line| line.plain_text().contains("> "))
             .expect("input prompt should exist");
-
         assert_eq!(cursor.row, input_row);
     }
 }
