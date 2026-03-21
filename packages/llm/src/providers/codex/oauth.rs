@@ -2,7 +2,9 @@ use crate::LlmError;
 use crate::oauth::BrowserOAuthHandler;
 use crate::oauth::OAuthError;
 use crate::oauth::OAuthHandler;
-use crate::oauth::credential_store::{OAuthCredential, OAuthCredentialStore};
+use crate::oauth::credential_store::{
+    OAuthCredential, OAuthCredentialStorage, OAuthCredentialStore,
+};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use oauth2::TokenResponse;
@@ -131,17 +133,19 @@ impl CachedToken {
 
 /// Manages OAuth tokens for the Codex backend API.
 ///
-/// Wraps `OAuthCredentialStore` and provides `get_valid_token()` which returns
-/// the access token and extracted account ID from the JWT.
-pub struct CodexTokenManager {
-    store: OAuthCredentialStore,
+/// Generic over `OAuthCredentialStorage` so tests can inject an in-memory fake
+/// instead of hitting the OS keychain.
+pub struct CodexTokenManager<T: OAuthCredentialStorage> {
+    store: T,
+    server_id: String,
     cached: Mutex<Option<CachedToken>>,
 }
 
-impl CodexTokenManager {
-    pub fn new(store: OAuthCredentialStore) -> Self {
+impl<T: OAuthCredentialStorage> CodexTokenManager<T> {
+    pub fn new(store: T, server_id: &str) -> Self {
         Self {
             store,
+            server_id: server_id.to_string(),
             cached: Mutex::new(None),
         }
     }
@@ -163,7 +167,7 @@ impl CodexTokenManager {
 
         let credential = self
             .store
-            .load_credential()
+            .load_credential(&self.server_id)
             .await
             .map_err(|e| OAuthError::NoCredentials(e.to_string()))?
             .ok_or_else(|| {

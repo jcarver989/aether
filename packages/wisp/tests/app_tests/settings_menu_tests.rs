@@ -10,7 +10,7 @@ use super::common::*;
 
 #[tokio::test]
 async fn test_settings_command_opens_menu() {
-    let mut r = open_settings(&make_settings_options(), (80, 24)).await;
+    let r = open_settings(&make_settings_options(), (80, 24)).await;
     assert!(
         has_settings_menu(r.writer()),
         "Settings menu should be visible"
