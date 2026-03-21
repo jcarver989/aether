@@ -6,6 +6,7 @@
 //!
 //! Providers like `OpenRouter`, Z.ai, and others can use these utilities to avoid code duplication.
 
+pub mod generic;
 pub mod streaming;
 pub mod types;
 

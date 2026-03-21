@@ -132,11 +132,23 @@ fn map_agent_message_to_notification(
     match msg {
         AgentMessage::Text {
             chunk, is_complete, ..
-        } => map_text_to_notification(session_id, chunk, *is_complete, mode),
+        } => map_chunk_to_notification(
+            session_id,
+            chunk,
+            *is_complete,
+            mode,
+            SessionUpdate::AgentMessageChunk,
+        ),
 
         AgentMessage::Thought {
             chunk, is_complete, ..
-        } => map_thought_to_notification(session_id, chunk, *is_complete, mode),
+        } => map_chunk_to_notification(
+            session_id,
+            chunk,
+            *is_complete,
+            mode,
+            SessionUpdate::AgentThoughtChunk,
+        ),
 
         AgentMessage::ToolCall { request, .. } => {
             Some(map_tool_call_to_notification(session_id, request))
@@ -263,11 +275,12 @@ pub fn map_agent_message_to_stop_reason(msg: &AgentMessage) -> acp::StopReason {
     }
 }
 
-fn map_text_to_notification(
+fn map_chunk_to_notification(
     session_id: SessionId,
     chunk: &str,
     is_complete: bool,
     mode: NotificationMode,
+    wrap: fn(ContentChunk) -> SessionUpdate,
 ) -> Option<SessionNotification> {
     match mode {
         // Skip the final completion message to avoid sending duplicate content.
@@ -279,27 +292,7 @@ fn map_text_to_notification(
 
     Some(acp::SessionNotification::new(
         session_id,
-        SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(TextContent::new(
-            chunk.to_owned(),
-        )))),
-    ))
-}
-
-fn map_thought_to_notification(
-    session_id: SessionId,
-    chunk: &str,
-    is_complete: bool,
-    mode: NotificationMode,
-) -> Option<SessionNotification> {
-    match mode {
-        NotificationMode::Live if is_complete => return None,
-        NotificationMode::Replay if !is_complete => return None,
-        NotificationMode::Live | NotificationMode::Replay => {}
-    }
-
-    Some(acp::SessionNotification::new(
-        session_id,
-        SessionUpdate::AgentThoughtChunk(ContentChunk::new(ContentBlock::Text(TextContent::new(
+        wrap(ContentChunk::new(ContentBlock::Text(TextContent::new(
             chunk.to_owned(),
         )))),
     ))
