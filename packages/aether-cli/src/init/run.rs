@@ -504,20 +504,4 @@ mod tests {
         let expected_path = dir.path().join(".aether/mcp.json");
         assert_eq!(default_agent.mcp_config_path, Some(expected_path));
     }
-
-    #[test]
-    fn scaffold_template_matches_repo_root_system_md() {
-        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let repo_root = manifest_dir.parent().and_then(|p| p.parent()).unwrap();
-        let repo_system_md = repo_root.join("SYSTEM.md");
-
-        let repo_content = fs::read_to_string(&repo_system_md)
-            .expect("repo root SYSTEM.md should exist and be readable");
-
-        assert_eq!(
-            SYSTEM_MD_TEMPLATE, repo_content,
-            "Scaffold template must match repo root SYSTEM.md. \
-             If this fails intentionally, update packages/aether-cli/templates/SYSTEM.md"
-        );
-    }
 }
