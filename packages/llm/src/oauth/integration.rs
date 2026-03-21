@@ -4,7 +4,7 @@ use super::handler::OAuthHandler;
 use rmcp::transport::auth::{AuthClient, AuthorizationManager, OAuthState};
 
 fn create_credential_store(server_id: &str) -> Result<OAuthCredentialStore, OAuthError> {
-    OAuthCredentialStore::new(server_id)
+    Ok(OAuthCredentialStore::new(server_id))
 }
 
 /// Returns `Ok(Some(manager))` if credentials were found and initialized successfully,

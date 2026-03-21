@@ -240,7 +240,6 @@ fn get_all_models(discovered: &[LlmModel]) -> Vec<LlmModel> {
 }
 
 fn build_auth_methods() -> Vec<AuthMethod> {
-    let credential_ids = OAuthCredentialStore::credential_ids_sync();
     let mut seen = HashSet::new();
     LlmModel::all()
         .iter()
@@ -252,7 +251,7 @@ fn build_auth_methods() -> Vec<AuthMethod> {
                 .find(|m| m.oauth_provider_id() == Some(id))
                 .map_or(id, |m| m.provider_display_name());
             let mut method = acp::AuthMethodAgent::new(id, display);
-            if credential_ids.contains(id) {
+            if OAuthCredentialStore::has_credential(id) {
                 method = method.description("authenticated");
             }
             AuthMethod::Agent(method)

@@ -5,8 +5,11 @@ pub enum OAuthError {
     #[error("User cancelled authorization")]
     UserCancelled,
 
-    #[error("Credential storage error: {0}")]
+    #[error("OAuth credential storage error: {0}")]
     CredentialStore(String),
+
+    #[error("OS keychain error: {0}")]
+    Keychain(#[from] keyring::Error),
 
     #[error("rmcp auth error: {0}")]
     Rmcp(String),

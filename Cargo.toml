@@ -60,6 +60,7 @@ rmcp = { version = "^1.2.0", features = ["client", "server", "macros", "schemars
 async-openai = { version = "^0.33.0", features = ["byot", "chat-completion", "responses"] }
 reqwest = { version = "^0.13.0", default-features = false, features = ["json", "query", "rustls", "http2", "stream"] }
 oauth2 = "5.0"
+keyring = { version = "3.6.3", default-features = false, features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 url = "2.5"
 axum = "0.8.8"
 tower = "0.5.3"

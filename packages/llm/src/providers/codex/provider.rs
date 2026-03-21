@@ -155,7 +155,7 @@ impl CodexProvider {
 
 impl ProviderFactory for CodexProvider {
     fn from_env() -> Result<Self> {
-        let store = OAuthCredentialStore::new(super::PROVIDER_ID)?;
+        let store = OAuthCredentialStore::new(super::PROVIDER_ID);
         let token_manager = CodexTokenManager::new(store);
         Ok(Self::new(token_manager))
     }
@@ -236,12 +236,8 @@ mod tests {
     use crate::ChatMessage;
     use crate::ToolDefinition;
     use crate::types::IsoString;
-
     fn create_test_token_manager() -> CodexTokenManager {
-        let store = OAuthCredentialStore::with_path(
-            "codex-test",
-            std::path::PathBuf::from("/tmp/nonexistent_codex_test_creds.json"),
-        );
+        let store = OAuthCredentialStore::new("codex-test");
         CodexTokenManager::new(store)
     }
 
