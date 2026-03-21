@@ -205,6 +205,7 @@ fn options_from_strings(values: &[String]) -> Vec<SelectOption> {
         .map(|s| SelectOption {
             value: s.clone(),
             title: s.clone(),
+            description: None,
         })
         .collect()
 }
@@ -215,6 +216,7 @@ fn options_from_const_titles(items: &[ConstTitle]) -> Vec<SelectOption> {
         .map(|ct| SelectOption {
             value: ct.const_.clone(),
             title: ct.title.clone(),
+            description: None,
         })
         .collect()
 }

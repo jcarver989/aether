@@ -54,14 +54,17 @@ pub fn sample_options() -> Vec<SelectOption> {
         SelectOption {
             value: "a".into(),
             title: "Alpha".into(),
+            description: None,
         },
         SelectOption {
             value: "b".into(),
             title: "Beta".into(),
+            description: None,
         },
         SelectOption {
             value: "c".into(),
             title: "Gamma".into(),
+            description: None,
         },
     ]
 }

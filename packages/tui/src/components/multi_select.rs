@@ -63,7 +63,12 @@ impl MultiSelect {
                 } else {
                     Style::default()
                 };
-                Line::with_style(format!("{marker}{}", opt.title), style)
+                let desc = opt
+                    .description
+                    .as_deref()
+                    .map(|d| format!(" - {d}"))
+                    .unwrap_or_default();
+                Line::with_style(format!("{marker}{}{desc}", opt.title), style)
             })
             .collect()
     }
@@ -127,14 +132,17 @@ mod tests {
                 SelectOption {
                     value: "a".into(),
                     title: "Alpha".into(),
+                    description: None,
                 },
                 SelectOption {
                     value: "b".into(),
                     title: "Beta".into(),
+                    description: None,
                 },
                 SelectOption {
                     value: "c".into(),
                     title: "Gamma".into(),
+                    description: None,
                 },
             ],
             vec![false, false, false],

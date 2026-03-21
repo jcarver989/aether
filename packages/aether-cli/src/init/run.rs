@@ -111,27 +111,33 @@ fn build_form() -> Form {
     let server_options = vec![
         SelectOption {
             value: "coding".to_string(),
-            title: "coding".to_string(),
-        },
-        SelectOption {
-            value: "skills".to_string(),
-            title: "skills".to_string(),
-        },
-        SelectOption {
-            value: "tasks".to_string(),
-            title: "tasks".to_string(),
-        },
-        SelectOption {
-            value: "subagents".to_string(),
-            title: "subagents".to_string(),
-        },
-        SelectOption {
-            value: "survey".to_string(),
-            title: "survey".to_string(),
+            title: "Coding".to_string(),
+            description: Some("Filesystem, search, and bash tools".to_string()),
         },
         SelectOption {
             value: "lsp".to_string(),
-            title: "lsp".to_string(),
+            title: "Lsp".to_string(),
+            description: Some("Language Server Protocol integration".to_string()),
+        },
+        SelectOption {
+            value: "skills".to_string(),
+            title: "Skills".to_string(),
+            description: Some("Skills and slash-commands".to_string()),
+        },
+        SelectOption {
+            value: "subagents".to_string(),
+            title: "Subagents".to_string(),
+            description: Some("Spawn sub-agents in parallel".to_string()),
+        },
+        SelectOption {
+            value: "tasks".to_string(),
+            title: "Tasks".to_string(),
+            description: Some("Task management tools, backed by JSONL files".to_string()),
+        },
+        SelectOption {
+            value: "survey".to_string(),
+            title: "Survey".to_string(),
+            description: Some("Allow your agent to ask you structured questions".to_string()),
         },
     ];
 
