@@ -278,6 +278,7 @@ fn select_initial_mode(
 mod tests {
     use super::*;
     use crate::acp::config_setting::ConfigSetting;
+    use ReasoningEffort as RE;
     use agent_client_protocol::{InitializeRequest, ProtocolVersion};
 
     const SONNET: &str = "anthropic:claude-sonnet-4-5";
@@ -291,88 +292,78 @@ mod tests {
     }
 
     fn validated_modes() -> Vec<ValidatedMode> {
+        let m = |name: &str, model: &str, effort| ValidatedMode {
+            name: name.into(),
+            model: model.into(),
+            reasoning_effort: effort,
+        };
         vec![
-            ValidatedMode {
-                name: "Planner".to_string(),
-                model: SONNET.to_string(),
-                reasoning_effort: Some(ReasoningEffort::High),
-            },
-            ValidatedMode {
-                name: "Coder".to_string(),
-                model: DEEPSEEK.to_string(),
-                reasoning_effort: None,
-            },
+            m("Planner", SONNET, Some(RE::High)),
+            m("Coder", DEEPSEEK, None),
         ]
     }
 
-    /// Apply a config change to a fresh state and return (result, state).
-    fn apply(active: &str, setting: ConfigSetting) -> (Result<(), acp::Error>, SessionConfigState) {
-        let mut state = SessionConfigState::new(active.to_string());
+    fn apply(
+        active: &str,
+        effort: Option<RE>,
+        mode: Option<&str>,
+        setting: ConfigSetting,
+    ) -> (Result<(), acp::Error>, SessionConfigState) {
+        let mut state = SessionConfigState::new(active.into());
+        state.reasoning_effort = effort;
+        state.selected_mode = mode.map(Into::into);
         let result = state.apply_config_change(&validated_modes(), &available_models(), &setting);
         (result, state)
     }
 
     #[test]
-    fn session_config_state_new_initializes_defaults() {
-        let state = SessionConfigState::new(DEEPSEEK.to_string());
-        let expected = SessionConfigState {
-            active_model: DEEPSEEK.to_string(),
-            pending_model: None,
-            reasoning_effort: None,
-            selected_mode: None,
-        };
-        assert_eq!(state, expected);
+    fn new_state_has_no_pending_model_or_mode() {
+        let s = SessionConfigState::new(DEEPSEEK.into());
+        assert!(
+            (s.pending_model.is_none()
+                && s.reasoning_effort.is_none()
+                && s.selected_mode.is_none())
+        );
     }
 
     #[test]
     fn mode_selection_updates_pending_model_and_reasoning() {
-        let (result, state) = apply(DEEPSEEK, ConfigSetting::Mode("Planner".to_string()));
-        assert!(result.is_ok());
-        assert_eq!(state.pending_model.as_deref(), Some(SONNET));
-        assert_eq!(state.reasoning_effort, Some(ReasoningEffort::High));
-        assert_eq!(state.selected_mode.as_deref(), Some("Planner"));
+        let (res, s) = apply(DEEPSEEK, None, None, ConfigSetting::Mode("Planner".into()));
+        assert!(res.is_ok());
+        assert_eq!(s.pending_model.as_deref(), Some(SONNET));
+        assert_eq!(s.reasoning_effort, Some(RE::High));
+        assert_eq!(s.selected_mode.as_deref(), Some("Planner"));
     }
 
     #[test]
     fn unknown_mode_is_rejected() {
-        let (result, _) = apply(DEEPSEEK, ConfigSetting::Mode("Unknown".to_string()));
-        assert!(result.is_err());
+        let (res, _) = apply(DEEPSEEK, None, None, ConfigSetting::Mode("Unknown".into()));
+        assert!(res.is_err());
     }
 
     #[test]
-    fn reasoning_effort_change_preserves_selected_mode() {
-        let modes = validated_modes();
-        let available = available_models();
-        let mut state = SessionConfigState::new(SONNET.to_string());
-        state.reasoning_effort = Some(ReasoningEffort::High);
-        state.selected_mode = Some("Planner".to_string());
-
-        let result = state.apply_config_change(
-            &modes,
-            &available,
-            &ConfigSetting::ReasoningEffort(Some(ReasoningEffort::Low)),
+    fn effort_change_preserves_mode_and_model_change_clears_it() {
+        // Changing reasoning effort keeps the selected mode.
+        let (res, s) = apply(
+            SONNET,
+            Some(RE::High),
+            Some("Planner"),
+            ConfigSetting::ReasoningEffort(Some(RE::Low)),
         );
-        assert!(result.is_ok());
-        assert_eq!(state.reasoning_effort, Some(ReasoningEffort::Low));
-        assert_eq!(state.selected_mode.as_deref(), Some("Planner"));
-    }
+        assert!(res.is_ok());
+        assert_eq!(s.reasoning_effort, Some(RE::Low));
+        assert_eq!(s.selected_mode.as_deref(), Some("Planner"));
 
-    #[test]
-    fn manual_model_change_clears_mode_selection_when_no_tuple_match() {
-        let modes = validated_modes();
-        let available = available_models();
-        let mut state = SessionConfigState::new(SONNET.to_string());
-        state.reasoning_effort = Some(ReasoningEffort::Medium);
-        state.selected_mode = Some("Planner".to_string());
-
-        let result = state.apply_config_change(
-            &modes,
-            &available,
-            &ConfigSetting::Model(DEEPSEEK.to_string()),
+        // Changing the model to one that doesn't match any mode clears the mode.
+        let (res, s) = apply(
+            SONNET,
+            Some(RE::Medium),
+            Some("Planner"),
+            ConfigSetting::Model(DEEPSEEK.into()),
         );
-        assert!(result.is_ok());
-        assert_eq!(state.pending_model.as_deref(), Some(DEEPSEEK));
-        assert!(state.selected_mode.is_none());
+        assert!(res.is_ok());
+        assert_eq!(s.pending_model.as_deref(), Some(DEEPSEEK));
+        assert!(s.selected_mode.is_none());
     }
 
     #[tokio::test]

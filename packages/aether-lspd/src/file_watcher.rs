@@ -387,8 +387,9 @@ mod tests {
     ));
     const CREATE_FILE: EventKind = EventKind::Create(notify::event::CreateKind::File);
     const REMOVE_FILE: EventKind = EventKind::Remove(notify::event::RemoveKind::File);
-    const ALL_KINDS: WatchKind =
-        WatchKind::from_bits_truncate(WatchKind::Create.bits() | WatchKind::Change.bits() | WatchKind::Delete.bits());
+    const ALL_KINDS: WatchKind = WatchKind::from_bits_truncate(
+        WatchKind::Create.bits() | WatchKind::Change.bits() | WatchKind::Delete.bits(),
+    );
 
     fn watcher(pattern: &str, kind: Option<WatchKind>) -> FileSystemWatcher {
         FileSystemWatcher {
@@ -441,10 +442,9 @@ mod tests {
     fn actor_with_globs(root: &str, globs: &[(&str, WatchKind)]) -> FileWatcherActor {
         let (mut actor, _) = test_actor(root);
         for (i, (pattern, kind)) in globs.iter().enumerate() {
-            actor.registrations.insert(
-                format!("reg{i}"),
-                vec![watcher(pattern, Some(*kind))],
-            );
+            actor
+                .registrations
+                .insert(format!("reg{i}"), vec![watcher(pattern, Some(*kind))]);
         }
         actor.rebuild_glob_state();
         actor
@@ -469,7 +469,8 @@ mod tests {
         let (gs, kinds) = build(&[
             watcher("**/*.rs", Some(WatchKind::Create)),
             watcher("**/*.json", Some(WatchKind::Delete)),
-        ]).unwrap();
+        ])
+        .unwrap();
 
         assert_eq!(matched_kind(&gs, &kinds, "src/main.rs"), WatchKind::Create);
         assert_eq!(matched_kind(&gs, &kinds, "config.json"), WatchKind::Delete);
@@ -485,7 +486,8 @@ mod tests {
             watcher("**/*.rs", Some(WatchKind::Create)),
             watcher("[invalid", Some(WatchKind::Change)),
             watcher("**/*.json", Some(WatchKind::Delete)),
-        ]).unwrap();
+        ])
+        .unwrap();
 
         assert_eq!(kinds, [WatchKind::Create, WatchKind::Delete]);
         assert_eq!(gs.matches("lib.rs"), vec![0]);
@@ -500,7 +502,11 @@ mod tests {
             (REMOVE_FILE, ALL_KINDS, Some(FileChangeType::DELETED)),
             (CREATE_FILE, WatchKind::Change, None),
         ] {
-            assert_eq!(map_event_kind(kind, watch), expected, "kind={kind:?} watch={watch:?}");
+            assert_eq!(
+                map_event_kind(kind, watch),
+                expected,
+                "kind={kind:?} watch={watch:?}"
+            );
         }
     }
 
@@ -513,9 +519,27 @@ mod tests {
     #[test]
     fn test_should_track_implicit_path() {
         for (label, expected, within, rel, abs) in [
-            ("skips target tree", false, true, "target/debug/incremental/foo.bin", "/tmp/project/target/debug/incremental/foo.bin"),
-            ("allows targeting dir name", true, true, "targeting/main.rs", "/tmp/project/targeting/main.rs"),
-            ("rejects outside workspace", false, false, "/tmp/other/main.rs", "/tmp/other/main.rs"),
+            (
+                "skips target tree",
+                false,
+                true,
+                "target/debug/incremental/foo.bin",
+                "/tmp/project/target/debug/incremental/foo.bin",
+            ),
+            (
+                "allows targeting dir name",
+                true,
+                true,
+                "targeting/main.rs",
+                "/tmp/project/targeting/main.rs",
+            ),
+            (
+                "rejects outside workspace",
+                false,
+                false,
+                "/tmp/other/main.rs",
+                "/tmp/other/main.rs",
+            ),
         ] {
             assert_eq!(
                 should_track_implicit_path(MODIFY_CONTENT, within, Path::new(rel), Path::new(abs)),
@@ -527,7 +551,13 @@ mod tests {
 
     #[test]
     fn test_rebuild_glob_state_combines_registrations() {
-        let actor = actor_with_globs("/tmp", &[("**/*.rs", WatchKind::Create), ("**/*.json", WatchKind::Delete)]);
+        let actor = actor_with_globs(
+            "/tmp",
+            &[
+                ("**/*.rs", WatchKind::Create),
+                ("**/*.json", WatchKind::Delete),
+            ],
+        );
         assert!(actor.glob_set.is_match("src/main.rs"));
         assert!(actor.glob_set.is_match("config.json"));
         assert!(!actor.glob_set.is_match("readme.md"));
@@ -537,7 +567,10 @@ mod tests {
     #[test]
     fn test_accumulate_event_implicit_mode_without_globs() {
         let (mut actor, _) = test_actor("/tmp/project");
-        actor.accumulate_event(&notify_event(MODIFY_CONTENT, vec!["/tmp/project/src/main.rs"]));
+        actor.accumulate_event(&notify_event(
+            MODIFY_CONTENT,
+            vec!["/tmp/project/src/main.rs"],
+        ));
         assert!(actor.forwarded_pending.is_empty());
         assert_eq!(actor.discovered_pending.len(), 1);
     }
@@ -545,7 +578,10 @@ mod tests {
     #[test]
     fn test_accumulate_event_matching_glob_forwards_changes() {
         let mut actor = actor_with_globs("/tmp/project", &[("**/*.rs", WatchKind::Change)]);
-        actor.accumulate_event(&notify_event(MODIFY_CONTENT, vec!["/tmp/project/src/main.rs"]));
+        actor.accumulate_event(&notify_event(
+            MODIFY_CONTENT,
+            vec!["/tmp/project/src/main.rs"],
+        ));
         assert_eq!(actor.forwarded_pending.len(), 1);
         assert!(actor.discovered_pending.is_empty());
         let (_, change_type) = actor.forwarded_pending.values().next().unwrap();
@@ -555,7 +591,10 @@ mod tests {
     #[test]
     fn test_accumulate_event_tracks_non_matching_paths() {
         let mut actor = actor_with_globs("/tmp/project", &[("**/*.rs", WatchKind::Change)]);
-        actor.accumulate_event(&notify_event(MODIFY_CONTENT, vec!["/tmp/project/src/main.py"]));
+        actor.accumulate_event(&notify_event(
+            MODIFY_CONTENT,
+            vec!["/tmp/project/src/main.py"],
+        ));
         assert!(actor.forwarded_pending.is_empty());
         assert_eq!(actor.discovered_pending.len(), 1);
     }
@@ -568,15 +607,24 @@ mod tests {
         ] {
             let (mut actor, _) = test_actor("/tmp/project");
             actor.accumulate_event(&notify_event(MODIFY_CONTENT, vec![path]));
-            assert!(actor.forwarded_pending.is_empty(), "forwarded should be empty for {path}");
-            assert!(actor.discovered_pending.is_empty(), "discovered should be empty for {path}");
+            assert!(
+                actor.forwarded_pending.is_empty(),
+                "forwarded should be empty for {path}"
+            );
+            assert!(
+                actor.discovered_pending.is_empty(),
+                "discovered should be empty for {path}"
+            );
         }
     }
 
     #[tokio::test]
     async fn test_flush_pending_only_discovered_emits_track_only_batch() {
         let (mut actor, mut event_rx) = test_actor("/tmp/project");
-        actor.accumulate_event(&notify_event(MODIFY_CONTENT, vec!["/tmp/project/src/main.rs"]));
+        actor.accumulate_event(&notify_event(
+            MODIFY_CONTENT,
+            vec!["/tmp/project/src/main.rs"],
+        ));
         actor.flush_pending().await;
         let batch = event_rx.recv().await.expect("expected file watcher batch");
         assert!(batch.forwarded_changes.is_empty());
@@ -587,8 +635,14 @@ mod tests {
     async fn test_register_and_unregister_via_handle() {
         let (event_tx, _) = mpsc::channel(64);
         let handle = FileWatcherHandle::spawn(PathBuf::from("/tmp/test"), event_tx);
-        handle.register_watchers("reg1".into(), vec![watcher("**/*.rs", Some(WatchKind::Create))]);
-        handle.register_watchers("reg2".into(), vec![watcher("**/*.json", Some(WatchKind::Delete))]);
+        handle.register_watchers(
+            "reg1".into(),
+            vec![watcher("**/*.rs", Some(WatchKind::Create))],
+        );
+        handle.register_watchers(
+            "reg2".into(),
+            vec![watcher("**/*.json", Some(WatchKind::Delete))],
+        );
         handle.unregister("reg1".into());
         handle.unregister("reg2".into());
         drop(handle);

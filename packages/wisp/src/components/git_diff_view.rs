@@ -471,82 +471,83 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
+    fn patch_line(
+        kind: PatchLineKind,
+        text: &str,
+        old: Option<usize>,
+        new: Option<usize>,
+    ) -> PatchLine {
+        PatchLine {
+            kind,
+            text: text.to_string(),
+            old_line_no: old,
+            new_line_no: new,
+        }
+    }
+
+    fn hunk(header: &str, old: (usize, usize), new: (usize, usize), lines: Vec<PatchLine>) -> Hunk {
+        Hunk {
+            header: header.to_string(),
+            old_start: old.0,
+            old_count: old.1,
+            new_start: new.0,
+            new_count: new.1,
+            lines,
+        }
+    }
+
+    fn file_diff(
+        path: &str,
+        old_path: Option<&str>,
+        status: FileStatus,
+        hunks: Vec<Hunk>,
+    ) -> FileDiff {
+        FileDiff {
+            old_path: old_path.map(str::to_string),
+            path: path.to_string(),
+            status,
+            hunks,
+            binary: false,
+        }
+    }
+
     fn make_test_doc() -> GitDiffDocument {
+        use PatchLineKind::*;
+        let h = "@@ -1,3 +1,3 @@";
         GitDiffDocument {
             repo_root: PathBuf::from("/tmp/test"),
             files: vec![
-                FileDiff {
-                    old_path: Some("a.rs".to_string()),
-                    path: "a.rs".to_string(),
-                    status: FileStatus::Modified,
-                    hunks: vec![Hunk {
-                        header: "@@ -1,3 +1,3 @@".to_string(),
-                        old_start: 1,
-                        old_count: 3,
-                        new_start: 1,
-                        new_count: 3,
-                        lines: vec![
-                            PatchLine {
-                                kind: PatchLineKind::HunkHeader,
-                                text: "@@ -1,3 +1,3 @@".to_string(),
-                                old_line_no: None,
-                                new_line_no: None,
-                            },
-                            PatchLine {
-                                kind: PatchLineKind::Context,
-                                text: "fn main() {".to_string(),
-                                old_line_no: Some(1),
-                                new_line_no: Some(1),
-                            },
-                            PatchLine {
-                                kind: PatchLineKind::Removed,
-                                text: "    old();".to_string(),
-                                old_line_no: Some(2),
-                                new_line_no: None,
-                            },
-                            PatchLine {
-                                kind: PatchLineKind::Added,
-                                text: "    new();".to_string(),
-                                old_line_no: None,
-                                new_line_no: Some(2),
-                            },
-                            PatchLine {
-                                kind: PatchLineKind::Context,
-                                text: "}".to_string(),
-                                old_line_no: Some(3),
-                                new_line_no: Some(3),
-                            },
+                file_diff(
+                    "a.rs",
+                    Some("a.rs"),
+                    FileStatus::Modified,
+                    vec![hunk(
+                        h,
+                        (1, 3),
+                        (1, 3),
+                        vec![
+                            patch_line(HunkHeader, h, None, None),
+                            patch_line(Context, "fn main() {", Some(1), Some(1)),
+                            patch_line(Removed, "    old();", Some(2), None),
+                            patch_line(Added, "    new();", None, Some(2)),
+                            patch_line(Context, "}", Some(3), Some(3)),
                         ],
-                    }],
-                    binary: false,
-                },
-                FileDiff {
-                    old_path: None,
-                    path: "b.rs".to_string(),
-                    status: FileStatus::Added,
-                    hunks: vec![Hunk {
-                        header: "@@ -0,0 +1,1 @@".to_string(),
-                        old_start: 0,
-                        old_count: 0,
-                        new_start: 1,
-                        new_count: 1,
-                        lines: vec![
-                            PatchLine {
-                                kind: PatchLineKind::HunkHeader,
-                                text: "@@ -0,0 +1,1 @@".to_string(),
-                                old_line_no: None,
-                                new_line_no: None,
-                            },
-                            PatchLine {
-                                kind: PatchLineKind::Added,
-                                text: "new_content".to_string(),
-                                old_line_no: None,
-                                new_line_no: Some(1),
-                            },
+                    )],
+                ),
+                file_diff(
+                    "b.rs",
+                    None,
+                    FileStatus::Added,
+                    vec![hunk(
+                        "@@ -0,0 +1,1 @@",
+                        (0, 0),
+                        (1, 1),
+                        vec![
+                            patch_line(HunkHeader, "@@ -0,0 +1,1 @@", None, None),
+                            patch_line(Added, "new_content", None, Some(1)),
                         ],
-                    }],
-                    binary: false,
-                },
+                    )],
+                ),
             ],
         }
     }
@@ -555,156 +556,136 @@ mod tests {
         GitDiffViewState::new(GitDiffLoadState::Ready(doc))
     }
 
-    #[tokio::test]
-    async fn esc_emits_close() {
-        let doc = make_test_doc();
-        let mut state = make_view_state(doc);
-        let mut view = GitDiffView { state: &mut state };
-        let result = view.on_event(&Event::Key(key(KeyCode::Esc))).await;
-        assert!(
-            result
-                .unwrap_or_default()
-                .iter()
-                .any(|m| matches!(m, GitDiffViewMessage::Close))
-        );
+    fn make_state_with_cache() -> GitDiffViewState {
+        let mut state = make_view_state(make_test_doc());
+        state.ensure_patch_cache(&ViewContext::new((100, 24)));
+        state
+    }
+
+    fn queued_comment(line_text: &str, comment: &str, kind: PatchLineKind) -> QueuedComment {
+        QueuedComment {
+            file_path: "a.rs".to_string(),
+            hunk_index: 0,
+            hunk_text: "hunk".to_string(),
+            line_text: line_text.to_string(),
+            line_number: Some(1),
+            line_kind: kind,
+            comment: comment.to_string(),
+        }
+    }
+
+    async fn send_key(view: &mut GitDiffView<'_>, code: KeyCode) -> Vec<GitDiffViewMessage> {
+        view.on_event(&Event::Key(key(code)))
+            .await
+            .unwrap_or_default()
+    }
+
+    fn has_msg(msgs: &[GitDiffViewMessage], pred: fn(&GitDiffViewMessage) -> bool) -> bool {
+        msgs.iter().any(pred)
     }
 
     #[tokio::test]
-    async fn r_emits_refresh() {
-        let doc = make_test_doc();
-        let mut state = make_view_state(doc);
-        let mut view = GitDiffView { state: &mut state };
-        let result = view.on_event(&Event::Key(key(KeyCode::Char('r')))).await;
-        assert!(
-            result
-                .unwrap_or_default()
-                .iter()
-                .any(|m| matches!(m, GitDiffViewMessage::Refresh))
-        );
+    async fn key_emits_expected_message() {
+        let cases: Vec<(KeyCode, fn(&GitDiffViewMessage) -> bool)> = vec![
+            (KeyCode::Esc, |m| matches!(m, GitDiffViewMessage::Close)),
+            (KeyCode::Char('r'), |m| {
+                matches!(m, GitDiffViewMessage::Refresh)
+            }),
+        ];
+        for (code, pred) in cases {
+            let mut state = make_view_state(make_test_doc());
+            let mut view = GitDiffView { state: &mut state };
+            let msgs = send_key(&mut view, code).await;
+            assert!(has_msg(&msgs, pred), "failed for key: {code:?}");
+        }
     }
 
     #[tokio::test]
-    async fn j_moves_file_selection_down() {
-        let doc = make_test_doc();
-        let mut state = make_view_state(doc);
+    async fn j_and_k_move_file_selection() {
+        let mut state = make_view_state(make_test_doc());
         assert_eq!(state.selected_file, 0);
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Char('j')))).await;
+        send_key(&mut view, KeyCode::Char('j')).await;
         assert_eq!(view.state.selected_file, 1);
+
+        // k from 0 wraps to last
+        let mut state2 = make_view_state(make_test_doc());
+        let mut view2 = GitDiffView { state: &mut state2 };
+        send_key(&mut view2, KeyCode::Char('k')).await;
+        assert_eq!(view2.state.selected_file, 1);
     }
 
     #[tokio::test]
-    async fn k_moves_file_selection_up_with_wrap() {
-        let doc = make_test_doc();
-        let mut state = make_view_state(doc);
-        assert_eq!(state.selected_file, 0);
-
-        let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Char('k')))).await;
-        assert_eq!(view.state.selected_file, 1); // wraps from 0 to last
-    }
-
-    #[tokio::test]
-    async fn enter_switches_to_patch_focus() {
-        let doc = make_test_doc();
-        let mut state = make_view_state(doc);
+    async fn focus_switching() {
+        // Enter switches FileList -> Patch
+        let mut state = make_view_state(make_test_doc());
         assert_eq!(state.focus, PatchFocus::FileList);
-
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Enter))).await;
+        send_key(&mut view, KeyCode::Enter).await;
         assert_eq!(view.state.focus, PatchFocus::Patch);
-    }
 
-    #[tokio::test]
-    async fn h_switches_to_file_list_focus() {
-        let doc = make_test_doc();
-        let mut state = make_view_state(doc);
-        state.focus = PatchFocus::Patch;
-
-        let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Char('h')))).await;
-        assert_eq!(view.state.focus, PatchFocus::FileList);
+        // h switches Patch -> FileList
+        let mut state2 = make_view_state(make_test_doc());
+        state2.focus = PatchFocus::Patch;
+        let mut view2 = GitDiffView { state: &mut state2 };
+        send_key(&mut view2, KeyCode::Char('h')).await;
+        assert_eq!(view2.state.focus, PatchFocus::FileList);
     }
 
     #[tokio::test]
     async fn file_selection_resets_patch_scroll() {
-        let doc = make_test_doc();
-        let mut state = make_view_state(doc);
+        let mut state = make_view_state(make_test_doc());
         state.patch_scroll = 5;
-
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Char('j')))).await;
+        send_key(&mut view, KeyCode::Char('j')).await;
         assert_eq!(view.state.patch_scroll, 0);
-    }
-
-    fn make_state_with_cache() -> GitDiffViewState {
-        let doc = make_test_doc();
-        let mut state = make_view_state(doc);
-        let context = ViewContext::new((100, 24));
-        state.ensure_patch_cache(&context);
-        state
     }
 
     #[tokio::test]
     async fn c_enters_comment_mode() {
         let mut state = make_state_with_cache();
         state.focus = PatchFocus::Patch;
-        state.cursor_line = 1; // Context line (has a ref)
-
+        state.cursor_line = 1;
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Char('c')))).await;
+        send_key(&mut view, KeyCode::Char('c')).await;
         assert_eq!(view.state.focus, PatchFocus::CommentInput);
     }
 
     #[tokio::test]
     async fn c_on_spacer_is_noop() {
+        use PatchLineKind::HunkHeader;
+        let h1 = "@@ -1,1 +1,1 @@";
+        let h2 = "@@ -5,1 +5,1 @@";
         let doc = GitDiffDocument {
             repo_root: PathBuf::from("/tmp/test"),
-            files: vec![FileDiff {
-                old_path: None,
-                path: "a.rs".to_string(),
-                status: FileStatus::Modified,
-                hunks: vec![
-                    Hunk {
-                        header: "@@ -1,1 +1,1 @@".to_string(),
-                        old_start: 1,
-                        old_count: 1,
-                        new_start: 1,
-                        new_count: 1,
-                        lines: vec![PatchLine {
-                            kind: PatchLineKind::HunkHeader,
-                            text: "@@ -1,1 +1,1 @@".to_string(),
-                            old_line_no: None,
-                            new_line_no: None,
-                        }],
-                    },
-                    Hunk {
-                        header: "@@ -5,1 +5,1 @@".to_string(),
-                        old_start: 5,
-                        old_count: 1,
-                        new_start: 5,
-                        new_count: 1,
-                        lines: vec![PatchLine {
-                            kind: PatchLineKind::HunkHeader,
-                            text: "@@ -5,1 +5,1 @@".to_string(),
-                            old_line_no: None,
-                            new_line_no: None,
-                        }],
-                    },
+            files: vec![file_diff(
+                "a.rs",
+                None,
+                FileStatus::Modified,
+                vec![
+                    hunk(
+                        h1,
+                        (1, 1),
+                        (1, 1),
+                        vec![patch_line(HunkHeader, h1, None, None)],
+                    ),
+                    hunk(
+                        h2,
+                        (5, 1),
+                        (5, 1),
+                        vec![patch_line(HunkHeader, h2, None, None)],
+                    ),
                 ],
-                binary: false,
-            }],
+            )],
         };
         let mut state = make_view_state(doc);
-        let context = ViewContext::new((100, 24));
-        state.ensure_patch_cache(&context);
+        state.ensure_patch_cache(&ViewContext::new((100, 24)));
         state.focus = PatchFocus::Patch;
-        // The spacer line between hunks has None ref
         state.cursor_line = 1; // spacer between two hunks
 
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Char('c')))).await;
+        send_key(&mut view, KeyCode::Char('c')).await;
         assert_eq!(view.state.focus, PatchFocus::Patch);
     }
 
@@ -713,9 +694,8 @@ mod tests {
         let mut state = make_state_with_cache();
         state.focus = PatchFocus::CommentInput;
         state.comment_buffer = "partial".to_string();
-
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Esc))).await;
+        send_key(&mut view, KeyCode::Esc).await;
         assert_eq!(view.state.focus, PatchFocus::Patch);
         assert!(view.state.comment_buffer.is_empty());
     }
@@ -724,20 +704,17 @@ mod tests {
     async fn enter_queues_comment() {
         let mut state = make_state_with_cache();
         state.focus = PatchFocus::Patch;
-        state.cursor_line = 1; // Context line
-        // Enter comment mode
+        state.cursor_line = 1;
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Char('c')))).await;
+        send_key(&mut view, KeyCode::Char('c')).await;
         assert_eq!(view.state.focus, PatchFocus::CommentInput);
 
-        // Type some text
         for ch in "test comment".chars() {
-            view.on_event(&Event::Key(key(KeyCode::Char(ch)))).await;
+            send_key(&mut view, KeyCode::Char(ch)).await;
         }
         assert_eq!(view.state.comment_buffer, "test comment");
 
-        // Submit with Enter
-        view.on_event(&Event::Key(key(KeyCode::Enter))).await;
+        send_key(&mut view, KeyCode::Enter).await;
         assert_eq!(view.state.focus, PatchFocus::Patch);
         assert_eq!(view.state.queued_comments.len(), 1);
         assert_eq!(view.state.queued_comments[0].comment, "test comment");
@@ -748,61 +725,38 @@ mod tests {
     async fn s_submits_review() {
         let mut state = make_state_with_cache();
         state.focus = PatchFocus::Patch;
-        state.queued_comments.push(QueuedComment {
-            file_path: "a.rs".to_string(),
-            hunk_index: 0,
-            hunk_text: "hunk".to_string(),
-            line_text: "line".to_string(),
-            line_number: Some(1),
-            line_kind: PatchLineKind::Context,
-            comment: "looks good".to_string(),
-        });
-
+        state
+            .queued_comments
+            .push(queued_comment("line", "looks good", PatchLineKind::Context));
         let mut view = GitDiffView { state: &mut state };
-        let result = view.on_event(&Event::Key(key(KeyCode::Char('s')))).await;
-        assert!(
-            result
-                .unwrap_or_default()
-                .iter()
-                .any(|m| matches!(m, GitDiffViewMessage::SubmitPrompt(_)))
-        );
+        let msgs = send_key(&mut view, KeyCode::Char('s')).await;
+        assert!(has_msg(&msgs, |m| matches!(
+            m,
+            GitDiffViewMessage::SubmitPrompt(_)
+        )));
     }
 
     #[tokio::test]
     async fn s_without_comments_is_noop() {
         let mut state = make_state_with_cache();
         state.focus = PatchFocus::Patch;
-
         let mut view = GitDiffView { state: &mut state };
-        let result = view.on_event(&Event::Key(key(KeyCode::Char('s')))).await;
-        assert!(result.unwrap_or_default().is_empty());
+        let msgs = send_key(&mut view, KeyCode::Char('s')).await;
+        assert!(msgs.is_empty());
     }
 
     #[tokio::test]
     async fn u_removes_last_comment() {
         let mut state = make_state_with_cache();
         state.focus = PatchFocus::Patch;
-        state.queued_comments.push(QueuedComment {
-            file_path: "a.rs".to_string(),
-            hunk_index: 0,
-            hunk_text: "hunk".to_string(),
-            line_text: "line1".to_string(),
-            line_number: Some(1),
-            line_kind: PatchLineKind::Context,
-            comment: "first".to_string(),
-        });
-        state.queued_comments.push(QueuedComment {
-            file_path: "a.rs".to_string(),
-            hunk_index: 0,
-            hunk_text: "hunk".to_string(),
-            line_text: "line2".to_string(),
-            line_number: Some(2),
-            line_kind: PatchLineKind::Added,
-            comment: "second".to_string(),
-        });
-
+        state
+            .queued_comments
+            .push(queued_comment("line1", "first", PatchLineKind::Context));
+        state
+            .queued_comments
+            .push(queued_comment("line2", "second", PatchLineKind::Added));
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Char('u')))).await;
+        send_key(&mut view, KeyCode::Char('u')).await;
         assert_eq!(view.state.queued_comments.len(), 1);
         assert_eq!(view.state.queued_comments[0].comment, "first");
     }
@@ -813,11 +767,9 @@ mod tests {
         state.focus = PatchFocus::Patch;
         state.cursor_line = 0;
 
-        // k at 0 stays at 0
         state.move_cursor(-1);
         assert_eq!(state.cursor_line, 0);
 
-        // Move to end
         let max = state.max_patch_scroll();
         state.cursor_line = max;
         state.move_cursor(1);
@@ -829,12 +781,10 @@ mod tests {
         let mut state = make_state_with_cache();
         state.focus = PatchFocus::Patch;
         state.cursor_line = 0;
-
         let mut view = GitDiffView { state: &mut state };
-        view.on_event(&Event::Key(key(KeyCode::Char('j')))).await;
+        send_key(&mut view, KeyCode::Char('j')).await;
         assert_eq!(view.state.cursor_line, 1);
-
-        view.on_event(&Event::Key(key(KeyCode::Char('k')))).await;
+        send_key(&mut view, KeyCode::Char('k')).await;
         assert_eq!(view.state.cursor_line, 0);
     }
 

@@ -266,6 +266,14 @@ mod tests {
         }
     }
 
+    fn renderer(size: (u16, u16)) -> Renderer<FakeWriter> {
+        Renderer::new(FakeWriter::new(), Theme::default(), size)
+    }
+
+    fn output(r: &Renderer<FakeWriter>) -> String {
+        String::from_utf8_lossy(&r.terminal.writer.bytes).into_owned()
+    }
+
     fn frame(lines: &[&str]) -> Frame {
         Frame::new(lines.iter().map(|line| Line::new(*line)).collect()).with_cursor(Cursor {
             row: lines.len().saturating_sub(1),
@@ -274,19 +282,43 @@ mod tests {
         })
     }
 
+    fn frame_with_cursor(lines: &[&str], row: usize, col: usize) -> Frame {
+        Frame::new(lines.iter().map(|line| Line::new(*line)).collect()).with_cursor(Cursor {
+            row,
+            col,
+            is_visible: true,
+        })
+    }
+
+    /// Render `first`, clear output buffer, render `second`, return the output.
+    fn diff_output(r: &mut Renderer<FakeWriter>, first: &Frame, second: &Frame) -> String {
+        r.render_frame_internal(first).unwrap();
+        r.terminal.writer.bytes.clear();
+        r.render_frame_internal(second).unwrap();
+        output(r)
+    }
+
+    fn assert_has(output: &str, needle: &str, msg: &str) {
+        assert!(output.contains(needle), "{msg}: {output:?}");
+    }
+
+    fn assert_missing(output: &str, needle: &str, msg: &str) {
+        assert!(!output.contains(needle), "{msg}: {output:?}");
+    }
+
     #[test]
     fn set_theme_replaces_render_context_theme() {
-        let mut renderer = Renderer::new(Vec::new(), Theme::default(), (80, 24));
+        let mut r = Renderer::new(Vec::new(), Theme::default(), (80, 24));
         let new_theme = Theme::default();
         let expected = new_theme.text_primary();
-        renderer.set_theme(new_theme);
-        assert_eq!(renderer.context().theme.text_primary(), expected);
+        r.set_theme(new_theme);
+        assert_eq!(r.context().theme.text_primary(), expected);
     }
 
     #[cfg(feature = "syntax")]
     #[test]
     fn set_theme_replaces_render_context_theme_from_file() {
-        let mut renderer = Renderer::new(Vec::new(), Theme::default(), (80, 24));
+        let mut r = Renderer::new(Vec::new(), Theme::default(), (80, 24));
         let custom_tmtheme = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -307,16 +339,12 @@ mod tests {
     </array>
 </dict>
 </plist>"#;
-
         let temp_dir = tempfile::TempDir::new().unwrap();
         let theme_path = temp_dir.path().join("custom.tmTheme");
         std::fs::write(&theme_path, custom_tmtheme).unwrap();
-
-        let loaded = Theme::load_from_path(&theme_path);
-        renderer.set_theme(loaded);
-
+        r.set_theme(Theme::load_from_path(&theme_path));
         assert_eq!(
-            renderer.context().theme.text_primary(),
+            r.context().theme.text_primary(),
             crossterm::style::Color::Rgb {
                 r: 0x11,
                 g: 0x22,
@@ -326,235 +354,170 @@ mod tests {
     }
 
     #[test]
-    fn empty_to_empty_is_noop() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
-        let empty_frame = Frame::new(vec![]);
-        renderer.render_frame_internal(&empty_frame).unwrap();
-        renderer.terminal.writer.bytes.clear();
-        renderer.render_frame_internal(&empty_frame).unwrap();
-        let output = String::from_utf8_lossy(&renderer.terminal.writer.bytes);
-        assert!(
-            !output.contains("\x1b[J"),
-            "should not clear from cursor down on identical empty frames"
-        );
+    fn identical_rerender_produces_no_content_output() {
+        for lines in [vec![], vec!["hello", "world"]] {
+            let mut r = renderer((80, 24));
+            let f = frame(&lines);
+            let out = diff_output(&mut r, &f, &f);
+            for word in &lines {
+                assert_missing(&out, word, "identical re-render should not rewrite content");
+            }
+            assert_missing(&out, "\x1b[J", "should not clear from cursor down");
+        }
     }
 
     #[test]
     fn first_render_writes_all_lines() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
+        let mut r = renderer((80, 24));
         let f = frame(&["hello", "world"]);
-        renderer.render_frame_internal(&f).unwrap();
-        let output = String::from_utf8_lossy(&renderer.terminal.writer.bytes);
-        assert!(output.contains("hello"));
-        assert!(output.contains("world"));
-    }
-
-    #[test]
-    fn identical_frames_produce_no_visible_rewrites() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
-        let f = frame(&["hello", "world"]);
-        renderer.render_frame_internal(&f).unwrap();
-
-        renderer.terminal.writer.bytes.clear();
-        renderer.render_frame_internal(&f).unwrap();
-        let output = String::from_utf8_lossy(&renderer.terminal.writer.bytes);
-        assert!(!output.contains("hello"));
-        assert!(!output.contains("world"));
+        r.render_frame_internal(&f).unwrap();
+        let out = output(&r);
+        for word in ["hello", "world"] {
+            assert_has(&out, word, "first render should contain line");
+        }
     }
 
     #[test]
     fn changing_middle_line_rewrites_from_diff() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
-        let frame1 = frame(&["aaa", "bbb", "ccc"]);
-        renderer.render_frame_internal(&frame1).unwrap();
-
-        renderer.terminal.writer.bytes.clear();
-        let frame2 = frame(&["aaa", "BBB", "ccc"]);
-        renderer.render_frame_internal(&frame2).unwrap();
-        let output = String::from_utf8_lossy(&renderer.terminal.writer.bytes);
-        assert!(output.contains("BBB"));
-        assert!(output.contains("ccc"));
+        let mut r = renderer((80, 24));
+        let out = diff_output(
+            &mut r,
+            &frame(&["aaa", "bbb", "ccc"]),
+            &frame(&["aaa", "BBB", "ccc"]),
+        );
+        for word in ["BBB", "ccc"] {
+            assert_has(&out, word, "changed/subsequent lines should be rewritten");
+        }
     }
 
     #[test]
     fn appending_line_moves_to_next_row_before_writing() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
-        let frame1 = frame(&["aaa", "bbb"]);
-        renderer.render_frame_internal(&frame1).unwrap();
-
-        renderer.terminal.writer.bytes.clear();
-        let frame2 = frame(&["aaa", "bbb", "ccc"]);
-        renderer.render_frame_internal(&frame2).unwrap();
-
-        let output = String::from_utf8_lossy(&renderer.terminal.writer.bytes);
-        let ccc_index = output.find("ccc").expect("missing appended line");
+        let mut r = renderer((80, 24));
+        let out = diff_output(
+            &mut r,
+            &frame(&["aaa", "bbb"]),
+            &frame(&["aaa", "bbb", "ccc"]),
+        );
+        let ccc_pos = out.find("ccc").expect("missing appended line");
         assert!(
-            output[..ccc_index].contains("\r\n"),
-            "append rewrite should move to the next row before writing, got: {:?}",
-            output
+            out[..ccc_pos].contains("\r\n"),
+            "should move to next row before appending: {out:?}"
         );
     }
 
     #[test]
     fn push_to_scrollback_restores_cursor_even_when_nothing_new_is_flushed() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 2));
-        let frame = Frame::new(vec![
-            Line::new("L1"),
-            Line::new("L2"),
-            Line::new("L3"),
-            Line::new("L4"),
+        let mut r = renderer((80, 2));
+        let f = frame_with_cursor(&["L1", "L2", "L3", "L4"], 2, 0);
+        r.render_frame_internal(&f).unwrap();
+        r.terminal.writer.bytes.clear();
+        r.push_to_scrollback(&[
+            Line::new("already flushed 1"),
+            Line::new("already flushed 2"),
         ])
-        .with_cursor(Cursor {
-            row: 2,
-            col: 0,
-            is_visible: true,
-        });
-        renderer.render_frame_internal(&frame).unwrap();
-        renderer.terminal.writer.bytes.clear();
-
-        renderer
-            .push_to_scrollback(&[
-                Line::new("already flushed 1"),
-                Line::new("already flushed 2"),
-            ])
-            .unwrap();
-
-        let output = String::from_utf8_lossy(&renderer.terminal.writer.bytes);
-        assert!(
-            output.contains("\x1b[1B"),
-            "push_to_scrollback should restore cursor before early return, got: {:?}",
-            output
+        .unwrap();
+        assert_has(
+            &output(&r),
+            "\x1b[1B",
+            "should restore cursor before early return",
         );
     }
 
     #[test]
     fn push_to_scrollback_clears_prev_visible_lines() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
-
+        let mut r = renderer((80, 24));
         let f = frame(&["managed line"]);
-        renderer.render_frame_internal(&f).unwrap();
-
-        renderer
-            .push_to_scrollback(&[Line::new("scrolled")])
-            .unwrap();
-
-        renderer.terminal.writer.bytes.clear();
-        renderer.render_frame_internal(&f).unwrap();
-        let output = String::from_utf8_lossy(&renderer.terminal.writer.bytes);
-        assert!(output.contains("managed line"));
-    }
-
-    #[test]
-    fn push_to_scrollback_empty_is_noop() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
-        renderer.push_to_scrollback(&[]).unwrap();
-        assert!(renderer.terminal.writer.bytes.is_empty());
-    }
-
-    #[test]
-    fn clear_screen_emits_clear_all_and_purge() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
-        renderer.clear_screen().unwrap();
-        let output = String::from_utf8_lossy(&renderer.terminal.writer.bytes);
-        assert!(output.contains("\x1b[2J"), "missing ClearType::All");
-        assert!(output.contains("\x1b[3J"), "missing ClearType::Purge");
-        assert!(
-            output.contains("\x1b[1;1H"),
-            "missing cursor home (MoveTo(0,0))"
+        r.render_frame_internal(&f).unwrap();
+        r.push_to_scrollback(&[Line::new("scrolled")]).unwrap();
+        r.terminal.writer.bytes.clear();
+        r.render_frame_internal(&f).unwrap();
+        assert_has(
+            &output(&r),
+            "managed line",
+            "should re-render managed content after scrollback",
         );
     }
 
     #[test]
+    fn push_to_scrollback_empty_is_noop() {
+        let mut r = renderer((80, 24));
+        r.push_to_scrollback(&[]).unwrap();
+        assert!(r.terminal.writer.bytes.is_empty());
+    }
+
+    #[test]
+    fn clear_screen_emits_clear_all_and_purge() {
+        let mut r = renderer((80, 24));
+        r.clear_screen().unwrap();
+        let out = output(&r);
+        for (seq, label) in [
+            ("\x1b[2J", "ClearAll"),
+            ("\x1b[3J", "Purge"),
+            ("\x1b[1;1H", "cursor home"),
+        ] {
+            assert_has(&out, seq, &format!("missing {label}"));
+        }
+    }
+
+    #[test]
     fn clear_screen_resets_resize_state() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
-        renderer.clear_screen().unwrap();
-
-        renderer.terminal.writer.bytes.clear();
-        renderer.render_frame_internal(&frame(&["hello"])).unwrap();
-
-        let output = String::from_utf8_lossy(&renderer.terminal.writer.bytes);
-        assert!(output.contains("hello"));
-        assert!(
-            !output.contains("\x1b[2J"),
-            "render after clear_screen should not still clear viewport, got: {:?}",
-            output
+        let mut r = renderer((80, 24));
+        r.clear_screen().unwrap();
+        r.terminal.writer.bytes.clear();
+        r.render_frame_internal(&frame(&["hello"])).unwrap();
+        let out = output(&r);
+        assert_has(&out, "hello", "should render content");
+        assert_missing(
+            &out,
+            "\x1b[2J",
+            "render after clear_screen should not re-clear viewport",
         );
     }
 
     #[test]
     fn resize_marks_terminal_for_full_clear_and_redraw() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (10, 4));
-        let wide = frame(&["abcdefghij"]);
-        renderer.render_frame_internal(&wide).unwrap();
-
-        renderer.terminal.writer.bytes.clear();
-        renderer.on_resize((5, 4));
-        let narrow = frame(&["abcdefghij"]);
-        renderer.render_frame_internal(&narrow).unwrap();
-
-        let output = String::from_utf8_lossy(&renderer.terminal.writer.bytes);
-        assert!(
-            output.contains("\x1b[2J"),
-            "resize should emit ClearAll (ClearType::All)"
-        );
-        assert!(
-            output.contains("\x1b[3J"),
-            "resize should emit ClearAll (ClearType::Purge)"
-        );
-        assert!(output.contains("abcde"));
-        assert!(output.contains("fghij"));
+        let mut r = renderer((10, 4));
+        r.render_frame_internal(&frame(&["abcdefghij"])).unwrap();
+        r.terminal.writer.bytes.clear();
+        r.on_resize((5, 4));
+        r.render_frame_internal(&frame(&["abcdefghij"])).unwrap();
+        let out = output(&r);
+        for (seq, label) in [
+            ("\x1b[2J", "ClearAll"),
+            ("\x1b[3J", "Purge"),
+            ("abcde", "wrapped-1"),
+            ("fghij", "wrapped-2"),
+        ] {
+            assert_has(&out, seq, &format!("resize should emit {label}"));
+        }
     }
 
     #[test]
     fn on_resize_resets_prev_frame() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 24));
-        let f = frame(&["hello"]);
-        renderer.render_frame_internal(&f).unwrap();
-
-        assert!(renderer.prev_frame.is_some());
-        renderer.on_resize((40, 12));
-        assert!(
-            renderer.prev_frame.is_none(),
-            "on_resize should reset prev_frame"
-        );
+        let mut r = renderer((80, 24));
+        r.render_frame_internal(&frame(&["hello"])).unwrap();
+        assert!(r.prev_frame.is_some());
+        r.on_resize((40, 12));
+        assert!(r.prev_frame.is_none(), "on_resize should reset prev_frame");
     }
 
     #[test]
     fn visual_frame_splits_overflow_from_visible_lines() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (80, 2));
-
-        let f = Frame::new(vec![
-            Line::new("L1"),
-            Line::new("L2"),
-            Line::new("L3"),
-            Line::new("L4"),
-        ])
-        .with_cursor(Cursor {
-            row: 3,
-            col: 0,
-            is_visible: true,
-        });
-        renderer.render_frame_internal(&f).unwrap();
-
-        assert_eq!(renderer.flushed_visual_count(), 2);
+        let mut r = renderer((80, 2));
+        let f = frame_with_cursor(&["L1", "L2", "L3", "L4"], 3, 0);
+        r.render_frame_internal(&f).unwrap();
+        assert_eq!(r.flushed_visual_count(), 2);
     }
 
     #[test]
     fn cursor_remapped_after_wrap() {
-        let mut renderer = Renderer::new(FakeWriter::new(), Theme::default(), (3, 24));
-
-        let f = Frame::new(vec![Line::new("abcdef")]).with_cursor(Cursor {
-            row: 0,
-            col: 5,
-            is_visible: true,
-        });
-        renderer.render_frame_internal(&f).unwrap();
-
-        let output = String::from_utf8_lossy(&renderer.terminal.writer.bytes);
-        assert!(
-            output.contains("\x1b[2C"),
-            "cursor should be at col 2 (MoveRight(2)), got: {:?}",
-            output
+        let mut r = renderer((3, 24));
+        let f = frame_with_cursor(&["abcdef"], 0, 5);
+        r.render_frame_internal(&f).unwrap();
+        assert_has(
+            &output(&r),
+            "\x1b[2C",
+            "cursor should be at col 2 (MoveRight(2))",
         );
     }
 }

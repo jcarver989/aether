@@ -151,9 +151,8 @@ mod tests {
 
     #[test]
     fn test_html_to_markdown() {
-        let (title, _) = html_to_markdown(
-            "<html><head><title>Test Page</title></head><body></body></html>",
-        );
+        let (title, _) =
+            html_to_markdown("<html><head><title>Test Page</title></head><body></body></html>");
         assert_eq!(title, Some("Test Page".to_string()));
 
         let (title, _) = html_to_markdown("<html><head></head><body></body></html>");
@@ -197,8 +196,14 @@ mod tests {
             .with_html("https://example.com/page2", "<h1>Page 2</h1>");
         let fetcher = WebFetcher::with_client(fake.clone());
 
-        fetcher.fetch(input("https://example.com/page1")).await.unwrap();
-        fetcher.fetch(input("https://example.com/page2")).await.unwrap();
+        fetcher
+            .fetch(input("https://example.com/page1"))
+            .await
+            .unwrap();
+        fetcher
+            .fetch(input("https://example.com/page2"))
+            .await
+            .unwrap();
 
         assert_eq!(fake.fetch_count(), 2);
         assert_eq!(
@@ -210,7 +215,12 @@ mod tests {
     #[tokio::test]
     async fn test_fake_client_missing_url_returns_error() {
         let fetcher = WebFetcher::with_client(FakeHttpClient::new());
-        assert!(fetcher.fetch(input("https://not-configured.com/")).await.is_err());
+        assert!(
+            fetcher
+                .fetch(input("https://not-configured.com/"))
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]

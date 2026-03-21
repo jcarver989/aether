@@ -77,8 +77,16 @@ async fn collect_events(items: Vec<StreamItem>) -> Vec<LlmResponse> {
 #[tokio::test]
 async fn test_parallel_tool_calls() {
     let events = collect_events(vec![
-        chunk(Some(vec![tool_start(0, "call_1", "function_a")]), None, None),
-        chunk(Some(vec![tool_start(1, "call_2", "function_b")]), None, None),
+        chunk(
+            Some(vec![tool_start(0, "call_1", "function_a")]),
+            None,
+            None,
+        ),
+        chunk(
+            Some(vec![tool_start(1, "call_2", "function_b")]),
+            None,
+            None,
+        ),
         chunk(Some(vec![tool_args(0, r#"{"param":"#)]), None, None),
         chunk(Some(vec![tool_args(1, r#"{"value":"#)]), None, None),
         chunk(Some(vec![tool_args(0, r#""test"}"#)]), None, None),

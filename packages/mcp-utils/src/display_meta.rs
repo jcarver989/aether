@@ -170,7 +170,11 @@ mod tests {
         ToolDisplayMeta::new(title, value)
     }
 
-    fn assert_serde_roundtrip<T: Serialize + for<'de> Deserialize<'de> + PartialEq + std::fmt::Debug>(val: &T) {
+    fn assert_serde_roundtrip<
+        T: Serialize + for<'de> Deserialize<'de> + PartialEq + std::fmt::Debug,
+    >(
+        val: &T,
+    ) {
         let json = serde_json::to_string(val).unwrap();
         let parsed: T = serde_json::from_str(&json).unwrap();
         assert_eq!(&parsed, val);
@@ -193,9 +197,18 @@ mod tests {
     fn sample_plan() -> PlanMeta {
         PlanMeta {
             entries: vec![
-                PlanMetaEntry { content: "Research AI agents".into(), status: PlanMetaStatus::Completed },
-                PlanMetaEntry { content: "Implement tracking".into(), status: PlanMetaStatus::InProgress },
-                PlanMetaEntry { content: "Write tests".into(), status: PlanMetaStatus::Pending },
+                PlanMetaEntry {
+                    content: "Research AI agents".into(),
+                    status: PlanMetaStatus::Completed,
+                },
+                PlanMetaEntry {
+                    content: "Implement tracking".into(),
+                    status: PlanMetaStatus::InProgress,
+                },
+                PlanMetaEntry {
+                    content: "Write tests".into(),
+                    status: PlanMetaStatus::Pending,
+                },
             ],
         }
     }
@@ -260,7 +273,14 @@ mod tests {
     fn test_into_result_meta() {
         let d = display("Write file", "main.rs");
         let meta: ToolResultMeta = d.clone().into();
-        assert_eq!(meta, ToolResultMeta { display: d, file_diff: None, plan: None });
+        assert_eq!(
+            meta,
+            ToolResultMeta {
+                display: d,
+                file_diff: None,
+                plan: None
+            }
+        );
     }
 
     #[test]
@@ -268,14 +288,16 @@ mod tests {
         let diff_json = serde_json::to_value(sample_diff(None)).unwrap();
         assert!(diff_json.get("old_text").is_none());
 
-        let meta_json = serde_json::to_value::<ToolResultMeta>(display("Read", "f.rs").into()).unwrap();
+        let meta_json =
+            serde_json::to_value::<ToolResultMeta>(display("Read", "f.rs").into()).unwrap();
         assert!(meta_json.get("plan").is_none());
         assert!(meta_json.get("file_diff").is_none());
     }
 
     #[test]
     fn test_file_diff_missing_old_text_defaults_to_none() {
-        let parsed: FileDiff = serde_json::from_str(r#"{"path":"/tmp/f.rs","new_text":"content"}"#).unwrap();
+        let parsed: FileDiff =
+            serde_json::from_str(r#"{"path":"/tmp/f.rs","new_text":"content"}"#).unwrap();
         assert_eq!(parsed.old_text, None);
     }
 

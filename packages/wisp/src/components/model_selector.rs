@@ -353,25 +353,25 @@ fn count_provider_groups(items: &[(&ModelEntry, bool)]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tui::{KeyCode, KeyEvent, KeyModifiers};
+    use tui::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
+
+    fn entry(value: &str, name: &str, levels: Vec<ReasoningEffort>) -> ModelEntry {
+        ModelEntry {
+            value: value.to_string(),
+            name: name.to_string(),
+            reasoning_levels: levels,
+        }
+    }
 
     fn make_items() -> Vec<ModelEntry> {
         vec![
-            ModelEntry {
-                value: "anthropic:claude-sonnet-4-5".to_string(),
-                name: "Anthropic / Claude Sonnet 4.5".to_string(),
-                reasoning_levels: vec![],
-            },
-            ModelEntry {
-                value: "deepseek:deepseek-chat".to_string(),
-                name: "DeepSeek / DeepSeek Chat".to_string(),
-                reasoning_levels: vec![],
-            },
-            ModelEntry {
-                value: "gemini:gemini-2.5-pro".to_string(),
-                name: "Google / Gemini 2.5 Pro".to_string(),
-                reasoning_levels: vec![],
-            },
+            entry(
+                "anthropic:claude-sonnet-4-5",
+                "Anthropic / Claude Sonnet 4.5",
+                vec![],
+            ),
+            entry("deepseek:deepseek-chat", "DeepSeek / DeepSeek Chat", vec![]),
+            entry("gemini:gemini-2.5-pro", "Google / Gemini 2.5 Pro", vec![]),
         ]
     }
 
@@ -379,36 +379,117 @@ mod tests {
         ModelSelector::new(make_items(), "model".to_string(), None, None)
     }
 
-    fn key(code: KeyCode) -> KeyEvent {
+    fn sel(
+        items: Vec<ModelEntry>,
+        selected: Option<&str>,
+        reasoning: Option<&str>,
+    ) -> ModelSelector {
+        ModelSelector::new(items, "model".to_string(), selected, reasoning)
+    }
+
+    async fn send(s: &mut ModelSelector, k: KeyEvent) -> Option<Vec<ModelSelectorMessage>> {
+        s.on_event(&Event::Key(k)).await
+    }
+
+    fn k(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
-    fn space() -> KeyEvent {
-        KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE)
+    fn assert_confirm_models(changes: &[SettingsChange], expected: &[&str]) {
+        let model_change = changes.iter().find(|c| c.config_id == "model").unwrap();
+        let parts: HashSet<&str> = model_change.new_value.split(',').collect();
+        for val in expected {
+            assert!(parts.contains(val), "expected {val} in {:?}", parts);
+        }
+        assert_eq!(parts.len(), expected.len());
+    }
+
+    use ReasoningEffort::*;
+
+    fn reasoning_3() -> Vec<ReasoningEffort> {
+        vec![Low, Medium, High]
+    }
+
+    fn reasoning_4() -> Vec<ReasoningEffort> {
+        vec![Low, Medium, High, Xhigh]
+    }
+
+    fn make_reasoning_items() -> Vec<ModelEntry> {
+        vec![
+            entry(
+                "anthropic:claude-opus-4-6",
+                "Anthropic / Claude Opus 4.6",
+                reasoning_3(),
+            ),
+            entry("deepseek:deepseek-chat", "DeepSeek / DeepSeek Chat", vec![]),
+        ]
+    }
+
+    fn make_mixed_reasoning_items() -> Vec<ModelEntry> {
+        vec![
+            entry(
+                "codex:gpt-5.4-codex",
+                "Codex / GPT-5.4 Codex",
+                reasoning_4(),
+            ),
+            entry(
+                "anthropic:claude-opus-4-6",
+                "Anthropic / Claude Opus 4.6",
+                reasoning_3(),
+            ),
+        ]
+    }
+
+    fn many_provider_items() -> Vec<ModelEntry> {
+        ["a:m1", "b:m2", "c:m3", "d:m4", "e:m5", "f:m6"]
+            .into_iter()
+            .map(|v| {
+                let (prov, model) = v.split_once(':').unwrap();
+                entry(
+                    v,
+                    &format!("{} / {}", prov.to_uppercase(), model.to_uppercase()),
+                    vec![],
+                )
+            })
+            .collect()
     }
 
     #[tokio::test]
-    async fn toggle_adds_and_removes_model() {
-        let mut s = make_selector();
-        assert_eq!(s.selected_count(), 0);
-
-        s.on_event(&Event::Key(space())).await;
-        assert_eq!(s.selected_count(), 1);
-
-        s.on_event(&Event::Key(space())).await;
-        assert_eq!(s.selected_count(), 0);
+    async fn space_and_enter_both_toggle_focused_model() {
+        for toggle_key in [k(KeyCode::Char(' ')), k(KeyCode::Enter)] {
+            let mut s = make_selector();
+            assert_eq!(s.selected_count(), 0);
+            send(&mut s, toggle_key).await;
+            assert_eq!(s.selected_count(), 1);
+            send(&mut s, toggle_key).await;
+            assert_eq!(s.selected_count(), 0);
+        }
     }
 
     #[test]
-    fn confirm_with_zero_returns_empty() {
-        let s = make_selector();
-        assert!(s.confirm().is_empty());
+    fn confirm_returns_empty_when_nothing_changed() {
+        for (items, selected, reasoning) in [
+            (make_items(), None, None),
+            (
+                make_items(),
+                Some("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"),
+                None,
+            ),
+            (
+                make_reasoning_items(),
+                Some("anthropic:claude-opus-4-6"),
+                Some("high"),
+            ),
+        ] {
+            let s = sel(items, selected, reasoning);
+            assert!(s.confirm().is_empty());
+        }
     }
 
     #[tokio::test]
     async fn confirm_with_one_returns_single_model() {
         let mut s = make_selector();
-        s.on_event(&Event::Key(space())).await;
+        send(&mut s, k(KeyCode::Char(' '))).await;
         let changes = s.confirm();
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].config_id, "model");
@@ -418,22 +499,19 @@ mod tests {
     #[tokio::test]
     async fn confirm_with_two_returns_comma_joined() {
         let mut s = make_selector();
-        s.on_event(&Event::Key(space())).await;
-        s.on_event(&Event::Key(key(KeyCode::Down))).await;
-        s.on_event(&Event::Key(space())).await;
-
-        let changes = s.confirm();
-        assert_eq!(changes.len(), 1);
-        let parts: HashSet<&str> = changes[0].new_value.split(',').collect();
-        assert!(parts.contains("anthropic:claude-sonnet-4-5"));
-        assert!(parts.contains("deepseek:deepseek-chat"));
+        send(&mut s, k(KeyCode::Char(' '))).await;
+        send(&mut s, k(KeyCode::Down)).await;
+        send(&mut s, k(KeyCode::Char(' '))).await;
+        assert_confirm_models(
+            &s.confirm(),
+            &["anthropic:claude-sonnet-4-5", "deepseek:deepseek-chat"],
+        );
     }
 
     #[test]
     fn pre_selected_values_from_current_selection() {
-        let s = ModelSelector::new(
+        let s = sel(
             make_items(),
-            "model".to_string(),
             Some("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"),
             None,
         );
@@ -443,142 +521,100 @@ mod tests {
     #[tokio::test]
     async fn escape_returns_done_action() {
         let mut s = make_selector();
-        let outcome = s.on_event(&Event::Key(key(KeyCode::Esc))).await;
-        let messages = outcome.unwrap();
-        match messages.as_slice() {
+        let msgs = send(&mut s, k(KeyCode::Esc)).await.unwrap();
+        match msgs.as_slice() {
             [ModelSelectorMessage::Done(changes)] => assert!(changes.is_empty()),
             other => panic!("expected Done([]), got: {other:?}"),
         }
     }
 
     #[tokio::test]
-    async fn enter_toggles_focused_model() {
-        let mut s = make_selector();
-        assert_eq!(s.selected_count(), 0);
-
-        s.on_event(&Event::Key(key(KeyCode::Enter))).await;
-        assert_eq!(s.selected_count(), 1);
-
-        s.on_event(&Event::Key(key(KeyCode::Enter))).await;
-        assert_eq!(s.selected_count(), 0);
-    }
-
-    #[tokio::test]
     async fn escape_with_selections_returns_done_with_change() {
         let mut s = make_selector();
-        s.on_event(&Event::Key(space())).await;
-        s.on_event(&Event::Key(key(KeyCode::Down))).await;
-        s.on_event(&Event::Key(space())).await;
+        send(&mut s, k(KeyCode::Char(' '))).await;
+        send(&mut s, k(KeyCode::Down)).await;
+        send(&mut s, k(KeyCode::Char(' '))).await;
 
-        let outcome = s.on_event(&Event::Key(key(KeyCode::Esc))).await;
-        let messages = outcome.unwrap();
-        match messages.as_slice() {
+        let msgs = send(&mut s, k(KeyCode::Esc)).await.unwrap();
+        match msgs.as_slice() {
             [ModelSelectorMessage::Done(changes)] => {
-                assert_eq!(changes.len(), 1);
-                let parts: HashSet<&str> = changes[0].new_value.split(',').collect();
-                assert!(parts.contains("anthropic:claude-sonnet-4-5"));
-                assert!(parts.contains("deepseek:deepseek-chat"));
+                assert_confirm_models(
+                    changes,
+                    &["anthropic:claude-sonnet-4-5", "deepseek:deepseek-chat"],
+                );
             }
             other => panic!("expected Done with model change, got: {other:?}"),
         }
     }
 
-    #[test]
-    fn escape_without_toggle_returns_no_change() {
-        let s = ModelSelector::new(
-            make_items(),
-            "model".to_string(),
-            Some("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"),
-            None,
-        );
-        assert!(s.confirm().is_empty());
-    }
-
     #[tokio::test]
     async fn escape_after_toggle_returns_change() {
-        let mut s = ModelSelector::new(
-            make_items(),
-            "model".to_string(),
-            Some("anthropic:claude-sonnet-4-5"),
-            None,
+        let mut s = sel(make_items(), Some("anthropic:claude-sonnet-4-5"), None);
+        send(&mut s, k(KeyCode::Down)).await;
+        send(&mut s, k(KeyCode::Char(' '))).await;
+        assert_confirm_models(
+            &s.confirm(),
+            &["anthropic:claude-sonnet-4-5", "deepseek:deepseek-chat"],
         );
-        s.on_event(&Event::Key(key(KeyCode::Down))).await;
-        s.on_event(&Event::Key(space())).await;
-        let changes = s.confirm();
-        assert_eq!(changes.len(), 1);
-        let parts: HashSet<&str> = changes[0].new_value.split(',').collect();
-        assert!(parts.contains("anthropic:claude-sonnet-4-5"));
-        assert!(parts.contains("deepseek:deepseek-chat"));
-    }
-
-    fn make_reasoning_items() -> Vec<ModelEntry> {
-        vec![
-            ModelEntry {
-                value: "anthropic:claude-opus-4-6".to_string(),
-                name: "Anthropic / Claude Opus 4.6".to_string(),
-                reasoning_levels: vec![
-                    ReasoningEffort::Low,
-                    ReasoningEffort::Medium,
-                    ReasoningEffort::High,
-                ],
-            },
-            ModelEntry {
-                value: "deepseek:deepseek-chat".to_string(),
-                name: "DeepSeek / DeepSeek Chat".to_string(),
-                reasoning_levels: vec![],
-            },
-        ]
     }
 
     #[test]
     fn reasoning_cycle_within_wraps() {
-        use ReasoningEffort::*;
         let levels = &[Low, Medium, High];
-        assert_eq!(ReasoningEffort::cycle_within(None, levels), Some(Low));
-        assert_eq!(
-            ReasoningEffort::cycle_within(Some(Low), levels),
-            Some(Medium)
-        );
-        assert_eq!(
-            ReasoningEffort::cycle_within(Some(Medium), levels),
-            Some(High)
-        );
-        assert_eq!(ReasoningEffort::cycle_within(Some(High), levels), None);
+        let expected = [
+            (None, Some(Low)),
+            (Some(Low), Some(Medium)),
+            (Some(Medium), Some(High)),
+            (Some(High), None),
+        ];
+        for (input, output) in expected {
+            assert_eq!(ReasoningEffort::cycle_within(input, levels), output);
+        }
     }
 
     #[tokio::test]
-    async fn tab_on_reasoning_model_cycles_level() {
-        let mut s = ModelSelector::new(make_reasoning_items(), "model".to_string(), None, None);
-        assert_eq!(s.reasoning_effort, None);
-
-        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
-        assert_eq!(s.reasoning_effort, Some(ReasoningEffort::Low));
-
-        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
-        assert_eq!(s.reasoning_effort, Some(ReasoningEffort::Medium));
-
-        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
-        assert_eq!(s.reasoning_effort, Some(ReasoningEffort::High));
-
-        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
-        assert_eq!(s.reasoning_effort, None);
+    async fn tab_cycles_reasoning_levels() {
+        let cases: Vec<(Vec<ModelEntry>, usize, Vec<Option<ReasoningEffort>>)> = vec![
+            // 3-level model (first item, no Down needed)
+            (
+                make_reasoning_items(),
+                0,
+                vec![None, Some(Low), Some(Medium), Some(High), None],
+            ),
+            // 4-level model (Anthropic first, Codex second, need 1 Down)
+            (
+                make_mixed_reasoning_items(),
+                1,
+                vec![None, Some(Low), Some(Medium), Some(High), Some(Xhigh), None],
+            ),
+        ];
+        for (items, downs, expected_sequence) in cases {
+            let mut s = sel(items, None, None);
+            for _ in 0..downs {
+                send(&mut s, k(KeyCode::Down)).await;
+            }
+            assert_eq!(s.reasoning_effort, expected_sequence[0]);
+            for expected in &expected_sequence[1..] {
+                send(&mut s, k(KeyCode::Tab)).await;
+                assert_eq!(s.reasoning_effort, *expected);
+            }
+        }
     }
 
     #[tokio::test]
     async fn tab_on_non_reasoning_model_is_noop() {
-        let mut s = ModelSelector::new(make_reasoning_items(), "model".to_string(), None, None);
-        s.on_event(&Event::Key(key(KeyCode::Down))).await;
+        let mut s = sel(make_reasoning_items(), None, None);
+        send(&mut s, k(KeyCode::Down)).await;
         assert!(s.combobox.selected().unwrap().reasoning_levels.is_empty());
-
-        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        send(&mut s, k(KeyCode::Tab)).await;
         assert_eq!(s.reasoning_effort, None);
     }
 
     #[tokio::test]
     async fn confirm_returns_both_model_and_reasoning_changes() {
-        let mut s = ModelSelector::new(make_reasoning_items(), "model".to_string(), None, None);
-        s.on_event(&Event::Key(space())).await;
-        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        let mut s = sel(make_reasoning_items(), None, None);
+        send(&mut s, k(KeyCode::Char(' '))).await;
+        send(&mut s, k(KeyCode::Tab)).await;
 
         let changes = s.confirm();
         assert_eq!(changes.len(), 2, "expected model + reasoning changes");
@@ -592,14 +628,13 @@ mod tests {
 
     #[tokio::test]
     async fn confirm_returns_only_reasoning_when_only_reasoning_changed() {
-        let mut s = ModelSelector::new(
+        let mut s = sel(
             make_reasoning_items(),
-            "model".to_string(),
             Some("anthropic:claude-opus-4-6"),
             None,
         );
-        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
-        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        send(&mut s, k(KeyCode::Tab)).await;
+        send(&mut s, k(KeyCode::Tab)).await;
 
         let changes = s.confirm();
         assert_eq!(changes.len(), 1);
@@ -607,149 +642,60 @@ mod tests {
         assert_eq!(changes[0].new_value, "medium");
     }
 
-    #[test]
-    fn confirm_returns_empty_when_nothing_changed() {
-        let s = ModelSelector::new(
-            make_reasoning_items(),
-            "model".to_string(),
-            Some("anthropic:claude-opus-4-6"),
-            Some("high"),
-        );
-        assert!(s.confirm().is_empty());
-    }
-
     #[tokio::test]
     async fn mouse_scroll_moves_selection() {
-        use tui::{MouseEvent, MouseEventKind};
-
         let mut s = make_selector();
         let first = s.combobox.selected().unwrap().value.clone();
 
-        let scroll_down = Event::Mouse(MouseEvent {
-            kind: MouseEventKind::ScrollDown,
-            column: 0,
-            row: 0,
-            modifiers: KeyModifiers::NONE,
-        });
-        let outcome = s.on_event(&scroll_down).await;
-        assert!(outcome.is_some(), "mouse scroll should be consumed");
+        let mouse = |kind| {
+            Event::Mouse(MouseEvent {
+                kind,
+                column: 0,
+                row: 0,
+                modifiers: KeyModifiers::NONE,
+            })
+        };
 
+        let outcome = s.on_event(&mouse(MouseEventKind::ScrollDown)).await;
+        assert!(outcome.is_some(), "mouse scroll should be consumed");
         let second = s.combobox.selected().unwrap().value.clone();
         assert_ne!(
             first, second,
             "scroll down should move to a different model"
         );
 
-        let scroll_up = Event::Mouse(MouseEvent {
-            kind: MouseEventKind::ScrollUp,
-            column: 0,
-            row: 0,
-            modifiers: KeyModifiers::NONE,
-        });
-        s.on_event(&scroll_up).await;
+        s.on_event(&mouse(MouseEventKind::ScrollUp)).await;
         let back = s.combobox.selected().unwrap().value.clone();
         assert_eq!(first, back, "scroll up should return to the original model");
     }
 
-    fn make_mixed_reasoning_items() -> Vec<ModelEntry> {
-        vec![
-            ModelEntry {
-                value: "codex:gpt-5.4-codex".to_string(),
-                name: "Codex / GPT-5.4 Codex".to_string(),
-                reasoning_levels: vec![
-                    ReasoningEffort::Low,
-                    ReasoningEffort::Medium,
-                    ReasoningEffort::High,
-                    ReasoningEffort::Xhigh,
-                ],
-            },
-            ModelEntry {
-                value: "anthropic:claude-opus-4-6".to_string(),
-                name: "Anthropic / Claude Opus 4.6".to_string(),
-                reasoning_levels: vec![
-                    ReasoningEffort::Low,
-                    ReasoningEffort::Medium,
-                    ReasoningEffort::High,
-                ],
-            },
-        ]
-    }
-
-    #[tokio::test]
-    async fn tab_cycles_through_four_levels_on_codex() {
-        let mut s = ModelSelector::new(
-            make_mixed_reasoning_items(),
-            "model".to_string(),
-            None,
-            None,
-        );
-        // Sorted alphabetically: Anthropic first, Codex second. Move to Codex.
-        s.on_event(&Event::Key(key(KeyCode::Down))).await;
-        assert_eq!(s.reasoning_effort, None);
-
-        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
-        assert_eq!(s.reasoning_effort, Some(ReasoningEffort::Low));
-        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
-        assert_eq!(s.reasoning_effort, Some(ReasoningEffort::Medium));
-        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
-        assert_eq!(s.reasoning_effort, Some(ReasoningEffort::High));
-        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
-        assert_eq!(s.reasoning_effort, Some(ReasoningEffort::Xhigh));
-        s.on_event(&Event::Key(key(KeyCode::Tab))).await;
-        assert_eq!(s.reasoning_effort, None);
-    }
-
     #[tokio::test]
     async fn moving_to_fewer_levels_clamps_xhigh_to_high() {
-        let mut s = ModelSelector::new(
-            make_mixed_reasoning_items(),
-            "model".to_string(),
-            None,
-            None,
-        );
-        // Move to Codex model (4 levels)
-        s.on_event(&Event::Key(key(KeyCode::Down))).await;
+        let mut s = sel(make_mixed_reasoning_items(), None, None);
+        send(&mut s, k(KeyCode::Down)).await; // Move to Codex (4 levels)
+        for _ in 0..4 {
+            send(&mut s, k(KeyCode::Tab)).await; // Low -> Medium -> High -> Xhigh
+        }
+        assert_eq!(s.reasoning_effort, Some(Xhigh));
 
-        // Set xhigh on codex model
-        s.on_event(&Event::Key(key(KeyCode::Tab))).await; // Low
-        s.on_event(&Event::Key(key(KeyCode::Tab))).await; // Medium
-        s.on_event(&Event::Key(key(KeyCode::Tab))).await; // High
-        s.on_event(&Event::Key(key(KeyCode::Tab))).await; // Xhigh
-        assert_eq!(s.reasoning_effort, Some(ReasoningEffort::Xhigh));
-
-        // Move back up to anthropic model (3 levels only)
-        s.on_event(&Event::Key(key(KeyCode::Up))).await;
+        send(&mut s, k(KeyCode::Up)).await; // Back to Anthropic (3 levels)
         assert_eq!(
             s.reasoning_effort,
-            Some(ReasoningEffort::High),
-            "xhigh should clamp to high when moving to a 3-level model"
+            Some(High),
+            "xhigh should clamp to high on a 3-level model"
         );
-    }
-
-    fn many_provider_items() -> Vec<ModelEntry> {
-        ["a:m1", "b:m2", "c:m3", "d:m4", "e:m5", "f:m6"]
-            .into_iter()
-            .map(|v| {
-                let (prov, model) = v.split_once(':').unwrap();
-                ModelEntry {
-                    value: v.to_string(),
-                    name: format!("{} / {}", prov.to_uppercase(), model.to_uppercase()),
-                    reasoning_levels: vec![],
-                }
-            })
-            .collect()
     }
 
     #[tokio::test]
     async fn focused_item_always_visible_after_scroll() {
-        let mut s = ModelSelector::new(many_provider_items(), "model".to_string(), None, None);
+        let mut s = sel(many_provider_items(), None, None);
         s.update_viewport(10);
 
         let ctx = ViewContext::new((80, 10));
         let highlight_bg = ctx.theme.highlight_bg();
 
         for _ in 0..6 {
-            s.on_event(&Event::Key(key(KeyCode::Down))).await;
+            send(&mut s, k(KeyCode::Down)).await;
             let frame = s.render(&ctx);
             let lines = frame.lines();
             assert!(

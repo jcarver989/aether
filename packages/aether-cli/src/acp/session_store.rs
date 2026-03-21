@@ -223,7 +223,10 @@ mod tests {
         let (dir, store) = temp_store();
         store.append_meta("s1", &default_meta()).unwrap();
         let raw = std::fs::read_to_string(dir.path().join("s1.jsonl")).unwrap();
-        assert!(raw.contains("\"selectedMode\""), "missing selectedMode: {raw}");
+        assert!(
+            raw.contains("\"selectedMode\""),
+            "missing selectedMode: {raw}"
+        );
     }
 
     #[test]
@@ -277,7 +280,9 @@ mod tests {
         ];
         let kept = vec![
             agent_text("m", "full", true),
-            SessionEvent::Agent(AgentMessage::Error { message: "oops".to_string() }),
+            SessionEvent::Agent(AgentMessage::Error {
+                message: "oops".to_string(),
+            }),
             SessionEvent::Agent(AgentMessage::Done),
             SessionEvent::Agent(AgentMessage::ToolResult {
                 result: ToolCallResult {
@@ -324,7 +329,11 @@ mod tests {
         store.append_meta("s-old", &old).unwrap();
         store.append_meta("s-new", &new).unwrap();
 
-        let ids: Vec<_> = store.list().iter().map(|s| s.meta.session_id.clone()).collect();
+        let ids: Vec<_> = store
+            .list()
+            .iter()
+            .map(|s| s.meta.session_id.clone())
+            .collect();
         assert_eq!(ids, vec!["s-new", "s-old"]);
     }
 
@@ -347,7 +356,11 @@ mod tests {
             ("First line\nSecond\nThird", Some("First line")),
         ];
         for (input, expected) in cases {
-            assert_eq!(listed_title(Some(input)).as_deref(), *expected, "input: {input}");
+            assert_eq!(
+                listed_title(Some(input)).as_deref(),
+                *expected,
+                "input: {input}"
+            );
         }
     }
 

@@ -2,135 +2,146 @@ use tui::testing::{TestTerminal, render_lines};
 use tui::{Line, Theme, ViewContext, render_markdown};
 use unicode_width::UnicodeWidthStr;
 
-fn test_theme() -> Theme {
-    Theme::default()
-}
-
-fn test_context() -> ViewContext {
+fn ctx() -> ViewContext {
     ViewContext::new((80, 24))
 }
 
-fn test_context_with_theme(theme: Theme) -> ViewContext {
-    ViewContext::new_with_theme((80, 24), theme)
+fn themed_ctx(theme: &Theme) -> ViewContext {
+    ViewContext::new_with_theme((80, 24), theme.clone())
 }
 
 fn render(md: &str) -> TestTerminal {
-    let ctx = test_context();
-    let lines = render_markdown(md, &ctx);
-    render_lines(&lines, 80, 24)
+    let ctx = ctx();
+    render_lines(&render_markdown(md, &ctx), 80, 24)
 }
 
-fn render_with_theme(md: &str, theme: &Theme) -> TestTerminal {
-    let ctx = test_context_with_theme(theme.clone());
-    let lines = render_markdown(md, &ctx);
-    render_lines(&lines, 80, 24)
+fn render_themed(md: &str, theme: &Theme) -> TestTerminal {
+    let ctx = themed_ctx(theme);
+    render_lines(&render_markdown(md, &ctx), 80, 24)
 }
 
 fn render_tall(md: &str) -> TestTerminal {
     let ctx = ViewContext::new((80, 100));
-    let lines = render_markdown(md, &ctx);
-    render_lines(&lines, 80, 100)
+    render_lines(&render_markdown(md, &ctx), 80, 100)
 }
 
-fn render_tall_with_theme(md: &str, theme: &Theme) -> TestTerminal {
+fn render_tall_themed(md: &str, theme: &Theme) -> TestTerminal {
     let ctx = ViewContext::new_with_theme((80, 100), theme.clone());
-    let lines = render_markdown(md, &ctx);
-    render_lines(&lines, 80, 100)
+    render_lines(&render_markdown(md, &ctx), 80, 100)
 }
 
-/// Find the row index containing the given text in the terminal output.
 fn find_row(term: &TestTerminal, text: &str) -> Option<usize> {
     term.get_lines().iter().position(|line| line.contains(text))
 }
 
+fn all_text(term: &TestTerminal) -> String {
+    term.get_lines().join("\n")
+}
+
+/// Assert the joined terminal output contains every needle.
+fn assert_contains_all(term: &TestTerminal, needles: &[&str]) {
+    let text = all_text(term);
+    for needle in needles {
+        assert!(
+            text.contains(needle),
+            "Expected to find {needle:?} in:\n{text}"
+        );
+    }
+}
+
+fn row_inner_display_widths(row: &str) -> Vec<usize> {
+    let segments: Vec<&str> = row.split('│').collect();
+    if segments.len() < 3 {
+        return Vec::new();
+    }
+    segments[1..segments.len() - 1]
+        .iter()
+        .map(|s| UnicodeWidthStr::width(*s))
+        .collect()
+}
+
 #[test]
 fn plain_text_passes_through() {
-    let term = render("hello world");
-    let output = term.get_lines();
-    assert_eq!(output[0], "hello world");
+    assert_eq!(render("hello world").get_lines()[0], "hello world");
 }
 
 #[test]
 fn heading_renders_with_prefix_and_style() {
     let term = render("# Title");
-    let output = term.get_lines();
-    let heading_row = find_row(&term, "# Title").expect("heading row not found");
-    assert!(output[heading_row].contains("# Title"));
-    let style = term.style_of_text(heading_row, "Title").unwrap();
-    assert!(style.bold);
+    let row = find_row(&term, "# Title").expect("heading row not found");
+    assert!(term.get_lines()[row].contains("# Title"));
+    assert!(term.style_of_text(row, "Title").unwrap().bold);
 }
 
 #[test]
-fn bold_text_is_bold() {
-    let term = render("some **bold** text");
-    let output = term.get_lines();
-    assert_eq!(output[0].trim(), "some bold text");
-    let style = term.style_of_text(0, "bold").unwrap();
-    assert!(style.bold);
-}
-
-#[test]
-fn italic_text_is_italic() {
-    let term = render("some *italic* text");
-    let output = term.get_lines();
-    assert_eq!(output[0].trim(), "some italic text");
-    let style = term.style_of_text(0, "italic").unwrap();
-    assert!(style.italic);
-}
-
-#[test]
-fn strikethrough_text() {
-    let term = render("some ~~struck~~ text");
-    let output = term.get_lines();
-    assert_eq!(output[0].trim(), "some struck text");
-    let style = term.style_of_text(0, "struck").unwrap();
-    assert!(style.strikethrough);
+fn inline_formatting_styles() {
+    let cases: &[(&str, &str, &str, fn(&tui::Style) -> bool)] = &[
+        ("some **bold** text", "some bold text", "bold", |s| s.bold),
+        ("some *italic* text", "some italic text", "italic", |s| {
+            s.italic
+        }),
+        ("some ~~struck~~ text", "some struck text", "struck", |s| {
+            s.strikethrough
+        }),
+        (
+            "***bold and italic***",
+            "bold and italic",
+            "bold and italic",
+            |s| s.bold && s.italic,
+        ),
+    ];
+    for (md, expected_text, styled_span, check) in cases {
+        let term = render(md);
+        assert_eq!(term.get_lines()[0].trim(), *expected_text, "md={md}");
+        let style = term.style_of_text(0, styled_span).unwrap();
+        assert!(check(&style), "style check failed for md={md}");
+    }
 }
 
 #[test]
 fn inline_code_has_code_style() {
-    let theme = test_theme();
-    let term = render_with_theme("use `foo()` here", &theme);
-    let output = term.get_lines();
-    assert_eq!(output[0].trim(), "use foo() here");
-    let style = term.style_of_text(0, "foo()").unwrap();
-    assert_eq!(style.fg, Some(theme.code_fg()));
+    let theme = Theme::default();
+    let term = render_themed("use `foo()` here", &theme);
+    assert_eq!(term.get_lines()[0].trim(), "use foo() here");
+    assert_eq!(
+        term.style_of_text(0, "foo()").unwrap().fg,
+        Some(theme.code_fg())
+    );
 }
 
 #[test]
 fn fenced_code_block_produces_lines() {
-    let md = "```rust\nfn main() {}\n```";
-    let term = render(md);
-    let output = term.get_lines();
-    let all_text = output.join("\n");
-    assert!(all_text.contains("fn main()"));
+    assert!(all_text(&render("```rust\nfn main() {}\n```")).contains("fn main()"));
 }
 
 #[test]
-fn unordered_list() {
-    let md = "- alpha\n- beta\n- gamma";
-    let term = render(md);
-    let output = term.get_lines();
-    assert!(output.iter().any(|t| t.contains("- alpha")));
-    assert!(output.iter().any(|t| t.contains("- beta")));
-    assert!(output.iter().any(|t| t.contains("- gamma")));
-}
-
-#[test]
-fn ordered_list() {
-    let md = "1. first\n2. second\n3. third";
-    let term = render(md);
-    let output = term.get_lines();
-    assert!(output.iter().any(|t| t.contains("1. first")));
-    assert!(output.iter().any(|t| t.contains("2. second")));
-    assert!(output.iter().any(|t| t.contains("3. third")));
+fn list_items_render() {
+    let cases: &[(&str, &[&str])] = &[
+        (
+            "- alpha\n- beta\n- gamma",
+            &["- alpha", "- beta", "- gamma"],
+        ),
+        (
+            "1. first\n2. second\n3. third",
+            &["1. first", "2. second", "3. third"],
+        ),
+    ];
+    for (md, expected) in cases {
+        let term = render(md);
+        let output = term.get_lines();
+        for item in *expected {
+            assert!(
+                output.iter().any(|t| t.contains(item)),
+                "Missing {item:?} in {md}"
+            );
+        }
+    }
 }
 
 #[test]
 fn blockquote_is_indented() {
-    let md = "> quoted text";
-    let theme = test_theme();
-    let term = render_with_theme(md, &theme);
+    let theme = Theme::default();
+    let term = render_themed("> quoted text", &theme);
     let output = term.get_lines();
     let row = find_row(&term, "quoted text").expect("quoted text row not found");
     assert!(output[row].starts_with("  quoted text"));
@@ -141,18 +152,13 @@ fn blockquote_is_indented() {
 
 #[test]
 fn horizontal_rule() {
-    let md = "above\n\n---\n\nbelow";
-    let term = render(md);
-    let output = term.get_lines();
-    let all_text = output.join("\n");
-    assert!(all_text.contains("───"));
+    assert!(all_text(&render("above\n\n---\n\nbelow")).contains("───"));
 }
 
 #[test]
 fn link_is_underlined() {
-    let md = "click [here](https://example.com)";
-    let theme = test_theme();
-    let term = render_with_theme(md, &theme);
+    let theme = Theme::default();
+    let term = render_themed("click [here](https://example.com)", &theme);
     let style = term.style_of_text(0, "here").unwrap();
     assert!(style.underline);
     assert_eq!(style.fg, Some(theme.link()));
@@ -160,78 +166,51 @@ fn link_is_underlined() {
 
 #[test]
 fn empty_input_returns_empty() {
-    let lines = render_markdown("", &test_context());
-    assert!(lines.is_empty());
+    assert!(render_markdown("", &ctx()).is_empty());
 }
 
 #[test]
 fn multiple_paragraphs_have_spacing() {
-    let md = "para one\n\npara two";
-    let term = render(md);
+    let term = render("para one\n\npara two");
     let output = term.get_lines();
-    // Should have at least 3 lines: "para one", empty, "para two"
-    let non_trailing: Vec<&String> = {
-        let last_non_empty = output.iter().rposition(|l| !l.is_empty()).unwrap_or(0);
-        output[..=last_non_empty].iter().collect()
-    };
+    let last_non_empty = output.iter().rposition(|l| !l.is_empty()).unwrap_or(0);
+    let non_trailing: Vec<&String> = output[..=last_non_empty].iter().collect();
     assert!(non_trailing.len() >= 3);
     assert!(non_trailing.iter().any(|t| t.is_empty()));
 }
 
 #[test]
-fn nested_bold_italic() {
-    let md = "***bold and italic***";
-    let term = render(md);
-    let style = term.style_of_text(0, "bold and italic").unwrap();
-    assert!(style.bold);
-    assert!(style.italic);
-}
-
-#[test]
 fn unknown_language_falls_back_to_plain() {
-    let md = "```nosuchlang\nsome code\n```";
-    let theme = test_theme();
-    let term = render_with_theme(md, &theme);
-    let output = term.get_lines();
-    let all_text = output.join("\n");
-    assert!(all_text.contains("some code"));
+    let theme = Theme::default();
+    let term = render_themed("```nosuchlang\nsome code\n```", &theme);
+    assert!(all_text(&term).contains("some code"));
     let row = find_row(&term, "some code").expect("code row not found");
-    let style = term.style_of_text(row, "some code").unwrap();
-    assert_eq!(style.fg, Some(theme.code_fg()));
+    assert_eq!(
+        term.style_of_text(row, "some code").unwrap().fg,
+        Some(theme.code_fg())
+    );
 }
 
 #[test]
 fn nested_list_indents() {
-    let md = "- outer\n  - inner";
-    let term = render(md);
-    let output = term.get_lines();
-    assert!(output.iter().any(|t| t.contains("outer")));
-    assert!(output.iter().any(|t| t.contains("inner")));
+    let output = render("- outer\n  - inner").get_lines();
     let inner = output.iter().find(|t| t.contains("inner")).unwrap();
     let outer = output.iter().find(|t| t.contains("outer")).unwrap();
-    let inner_indent = inner.len() - inner.trim_start().len();
-    let outer_indent = outer.len() - outer.trim_start().len();
-    assert!(inner_indent > outer_indent);
+    assert!(inner.len() - inner.trim_start().len() > outer.len() - outer.trim_start().len());
 }
 
 #[test]
-fn highlight_cache_returns_cached_code_block() {
-    let ctx = test_context();
+fn highlight_cache_returns_consistent_results() {
+    let ctx = ctx();
     let md = "```rust\nfn main() {}\n```";
     let first = render_markdown(md, &ctx);
     let second = render_markdown(md, &ctx);
     assert_eq!(first, second);
-}
 
-#[test]
-fn highlight_cache_not_affected_by_different_code_block() {
-    let ctx = test_context();
-    let md1 = "```rust\nfn a() {}\n```";
     let md2 = "```rust\nfn b() {}\n```";
-    let lines1 = render_markdown(md1, &ctx);
     let lines2 = render_markdown(md2, &ctx);
     assert_ne!(
-        lines1.iter().map(Line::plain_text).collect::<String>(),
+        first.iter().map(Line::plain_text).collect::<String>(),
         lines2.iter().map(Line::plain_text).collect::<String>(),
     );
 }
@@ -242,72 +221,46 @@ fn simple_table_renders_correctly() {
         "| Name | Age | City |\n|------|-----|------|\n| Alice | 30 | NYC |\n| Bob | 25 | LA |";
     let term = render_tall(md);
     let output = term.get_lines();
-    let all_text = output.join("\n");
-    let non_empty_lines: Vec<&String> = output.iter().filter(|t| !t.is_empty()).collect();
+    let text = all_text(&term);
+    let non_empty: Vec<&String> = output.iter().filter(|t| !t.is_empty()).collect();
 
-    assert!(
-        all_text.contains('┌'),
-        "Should have top-left corner: {all_text}",
-    );
-    assert!(all_text.contains('┐'), "Should have top-right corner");
-    assert!(all_text.contains('┬'), "Should have top T-junction");
-    assert!(all_text.contains('┼'), "Should have cross junction");
-    assert!(all_text.contains('┴'), "Should have bottom T-junction");
-    assert!(all_text.contains('├'), "Should have left T-junction");
-    assert!(all_text.contains('┤'), "Should have right T-junction");
-    assert!(all_text.contains('└'), "Should have bottom-left corner");
-    assert!(all_text.contains('┘'), "Should have bottom-right corner");
-    assert!(all_text.contains('│'), "Should have vertical border");
+    for ch in ['┌', '┐', '┬', '┼', '┴', '├', '┤', '└', '┘', '│'] {
+        assert!(text.contains(ch), "Missing table char {ch:?}");
+    }
     assert_eq!(output.iter().filter(|t| t.contains('┼')).count(), 1);
-    assert_eq!(non_empty_lines.len(), 6);
-
-    assert!(all_text.contains("Alice"));
-    assert!(all_text.contains("30"));
-    assert!(all_text.contains("NYC"));
-    assert!(all_text.contains("Bob"));
-    assert!(all_text.contains("25"));
-    assert!(all_text.contains("LA"));
+    assert_eq!(non_empty.len(), 6);
+    assert_contains_all(&term, &["Alice", "30", "NYC", "Bob", "25", "LA"]);
     assert!(
         !output.iter().any(|t| t.trim() == "Alice"),
-        "Table content leaked to standalone line: {output:?}"
+        "Table content leaked to standalone line"
     );
 }
 
 #[test]
 fn table_with_alignment() {
     let md = "| Left | Center | Right |\n|:-----|:------:|------:|\n| L | C | R |";
-    let term = render_tall(md);
-    let output = term.get_lines();
-    let all_text = output.join("\n");
-
-    assert!(all_text.contains("Left"));
-    assert!(all_text.contains("Center"));
-    assert!(all_text.contains("Right"));
+    assert_contains_all(&render_tall(md), &["Left", "Center", "Right"]);
 }
 
 #[test]
 fn table_with_empty_cells() {
-    let md = "| A | B | C |\n|---|---|---|\n| 1 |   | 3 |";
-    let term = render_tall(md);
-    let output = term.get_lines();
-    let all_text = output.join("\n");
-
-    assert!(all_text.contains('┌'));
-    assert!(all_text.contains('1'));
-    assert!(all_text.contains('3'));
+    let term = render_tall("| A | B | C |\n|---|---|---|\n| 1 |   | 3 |");
+    let text = all_text(&term);
+    assert!(text.contains('┌'));
+    assert!(text.contains('1'));
+    assert!(text.contains('3'));
 }
 
 #[test]
 fn table_cell_inline_code_does_not_leak_line() {
-    let md = "| A | B |\n|---|---|\n| `x` and **y** | z |";
-    let term = render_tall(md);
+    let term = render_tall("| A | B |\n|---|---|\n| `x` and **y** | z |");
     let output = term.get_lines();
-    let non_empty_lines: Vec<&String> = output.iter().filter(|t| !t.is_empty()).collect();
+    let non_empty: Vec<&String> = output.iter().filter(|t| !t.is_empty()).collect();
 
-    assert_eq!(non_empty_lines.len(), 5);
+    assert_eq!(non_empty.len(), 5);
     assert!(
         !output.iter().any(|t| t.trim() == "x"),
-        "Inline code leaked outside table: {output:?}"
+        "Inline code leaked outside table"
     );
     let body_row = output
         .iter()
@@ -318,62 +271,43 @@ fn table_cell_inline_code_does_not_leak_line() {
 
 #[test]
 fn table_cell_preserves_inline_styles() {
-    let theme = test_theme();
+    let theme = Theme::default();
     let md = "| A | B | C |\n|---|---|---|\n| **bold** | [link](https://example.com) | `code` |";
-    let term = render_tall_with_theme(md, &theme);
-    let output = term.get_lines();
+    let term = render_tall_themed(md, &theme);
 
     let bold_row = find_row(&term, "bold").expect("bold row not found");
-    let bold_style = term.style_of_text(bold_row, "bold").unwrap();
-    assert!(bold_style.bold);
+    assert!(term.style_of_text(bold_row, "bold").unwrap().bold);
 
-    let link_row = output
-        .iter()
-        .position(|l| l.contains("link"))
-        .expect("link row not found");
+    let link_row = find_row(&term, "link").expect("link row not found");
     let link_style = term.style_of_text(link_row, "link").unwrap();
     assert!(link_style.underline);
     assert_eq!(link_style.fg, Some(theme.link()));
 
-    let code_row = output
-        .iter()
-        .position(|l| l.contains("code"))
-        .expect("code row not found");
-    let code_style = term.style_of_text(code_row, "code").unwrap();
-    assert_eq!(code_style.fg, Some(theme.code_fg()));
-}
-
-fn row_inner_display_widths(row: &str) -> Vec<usize> {
-    let segments: Vec<&str> = row.split('│').collect();
-    if segments.len() < 3 {
-        return Vec::new();
-    }
-    segments[1..segments.len() - 1]
-        .iter()
-        .map(|segment| UnicodeWidthStr::width(*segment))
-        .collect()
+    let code_row = find_row(&term, "code").expect("code row not found");
+    assert_eq!(
+        term.style_of_text(code_row, "code").unwrap().fg,
+        Some(theme.code_fg())
+    );
 }
 
 #[test]
 fn table_unicode_alignment_uses_display_width() {
     let md = "| Left | Right |\n|------|-------|\n| a | 你 |\n| bb | 😀 |";
-    let term = render_tall(md);
-    let output = term.get_lines();
-    let row_texts: Vec<&String> = output.iter().filter(|text| text.starts_with('│')).collect();
+    let output = render_tall(md).get_lines();
+    let row_texts: Vec<&String> = output.iter().filter(|t| t.starts_with('│')).collect();
 
     assert!(row_texts.len() >= 3);
-    let expected_widths = row_inner_display_widths(row_texts[0]);
+    let expected = row_inner_display_widths(row_texts[0]);
     for row in row_texts.iter().skip(1) {
-        assert_eq!(row_inner_display_widths(row), expected_widths);
+        assert_eq!(row_inner_display_widths(row), expected);
     }
 }
 
 #[test]
 fn table_row_cell_count_normalization() {
     let md = "| A | B | C |\n|---|---|---|\n| 1 | 2 |\n| 3 | 4 | 5 | 6 |";
-    let term = render_tall(md);
-    let output = term.get_lines();
-    let row_texts: Vec<&String> = output.iter().filter(|text| text.starts_with('│')).collect();
+    let output = render_tall(md).get_lines();
+    let row_texts: Vec<&String> = output.iter().filter(|t| t.starts_with('│')).collect();
 
     assert_eq!(row_texts.len(), 3);
     for row in &row_texts {
@@ -385,24 +319,17 @@ fn table_row_cell_count_normalization() {
 #[test]
 fn table_in_paragraph_context() {
     let md = "Here is a table:\n\n| Item | Price |\n|------|-------|\n| Apple | $1.00 |\n| Orange | $1.50 |\n\nThat's the table.";
-    let term = render_tall(md);
-    let output = term.get_lines();
-    let all_text = output.join("\n");
-
-    assert!(all_text.contains("Here is a table:"));
-    assert!(all_text.contains("That's the table."));
-    assert!(all_text.contains("Apple"));
-    assert!(all_text.contains("$1.00"));
+    assert_contains_all(
+        &render_tall(md),
+        &["Here is a table:", "That's the table.", "Apple", "$1.00"],
+    );
 }
 
 #[test]
 fn table_single_column() {
-    let md = "| Value |\n|--------|\n| Hello |";
-    let term = render_tall(md);
-    let output = term.get_lines();
-    let all_text = output.join("\n");
-
-    assert!(all_text.contains('┌'));
-    assert!(all_text.contains('┐'));
-    assert!(all_text.contains("Hello"));
+    let term = render_tall("| Value |\n|--------|\n| Hello |");
+    let text = all_text(&term);
+    assert!(text.contains('┌'));
+    assert!(text.contains('┐'));
+    assert!(text.contains("Hello"));
 }

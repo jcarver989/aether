@@ -2,232 +2,163 @@ use mcp_utils::client::{McpServerConfig, ParseError, RawMcpConfig, ServerConfig}
 use std::collections::HashMap;
 use std::env;
 
+async fn parse_configs(json: &str) -> Result<Vec<McpServerConfig>, ParseError> {
+    RawMcpConfig::from_json(json)
+        .unwrap()
+        .into_configs(&HashMap::new())
+        .await
+}
+
+async fn parse_one(json: &str) -> McpServerConfig {
+    let configs = parse_configs(json).await.unwrap();
+    assert_eq!(configs.len(), 1);
+    configs.into_iter().next().unwrap()
+}
+
+fn server_json(name: &str, body: &str) -> String {
+    format!(r#"{{ "servers": {{ "{name}": {body} }} }}"#)
+}
+
+macro_rules! with_env {
+    ([$( ($k:expr, $v:expr) ),+ $(,)?], $body:expr) => {{
+        unsafe { $( env::set_var($k, $v); )+ }
+        let _result = $body;
+        unsafe { $( env::remove_var($k); )+ }
+        _result
+    }};
+}
+
+fn assert_http(
+    config: McpServerConfig,
+    expected_name: &str,
+    expected_url: &str,
+) -> McpServerConfig {
+    match &config {
+        McpServerConfig::Server(ServerConfig::Http { name, config: c }) => {
+            assert_eq!(name, expected_name);
+            assert_eq!(c.uri.to_string(), expected_url);
+        }
+        other => panic!("Expected Http config, got {other:?}"),
+    }
+    config
+}
+
 #[tokio::test]
 async fn test_parse_stdio_config() {
-    unsafe { env::set_var("GITHUB_TOKEN", "test_token") };
-
-    let json = r#"
-    {
-        "servers": {
-            "githubMcp": {
-                "type": "stdio",
-                "command": "npx",
-                "args": ["-y", "@modelcontextprotocol/server-github"],
-                "env": {
-                    "GITHUB_TOKEN": "$GITHUB_TOKEN"
-                }
+    let json = server_json(
+        "githubMcp",
+        r#"{
+            "type": "stdio",
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-github"],
+            "env": { "GITHUB_TOKEN": "$GITHUB_TOKEN" }
+        }"#,
+    );
+    with_env!([("GITHUB_TOKEN", "test_token")], {
+        match parse_one(&json).await {
+            McpServerConfig::Server(ServerConfig::Stdio {
+                name,
+                command,
+                args,
+                env,
+            }) => {
+                assert_eq!(name, "githubMcp");
+                assert_eq!(command, "npx");
+                assert_eq!(args, vec!["-y", "@modelcontextprotocol/server-github"]);
+                assert_eq!(env.get("GITHUB_TOKEN").unwrap(), "test_token");
             }
+            other => panic!("Expected Stdio config, got {other:?}"),
         }
-    }
-    "#;
-
-    let raw_config = RawMcpConfig::from_json(json).unwrap();
-    let configs = raw_config.into_configs(&HashMap::new()).await.unwrap();
-
-    assert_eq!(configs.len(), 1);
-    match &configs[0] {
-        McpServerConfig::Server(ServerConfig::Stdio {
-            name,
-            command,
-            args,
-            env,
-        }) => {
-            assert_eq!(name, "githubMcp");
-            assert_eq!(command, "npx");
-            assert_eq!(args.len(), 2);
-            assert_eq!(args[0], "-y");
-            assert_eq!(args[1], "@modelcontextprotocol/server-github");
-            assert_eq!(env.get("GITHUB_TOKEN").unwrap(), "test_token");
-        }
-        _ => panic!("Expected Stdio config"),
-    }
-
-    unsafe { env::remove_var("GITHUB_TOKEN") };
+    });
 }
 
 #[tokio::test]
-async fn test_parse_http_config() {
-    unsafe { env::set_var("API_TOKEN", "secret_token") };
-
-    let json = r#"
-    {
-        "servers": {
-            "mcpMesh": {
-                "type": "http",
-                "url": "http://localhost:3000/mcp",
-                "headers": {
-                    "Authorization": "Bearer $API_TOKEN"
-                }
-            }
-        }
-    }
-    "#;
-
-    let raw_config = RawMcpConfig::from_json(json).unwrap();
-    let configs = raw_config.into_configs(&HashMap::new()).await.unwrap();
-
-    assert_eq!(configs.len(), 1);
-    match &configs[0] {
-        McpServerConfig::Server(ServerConfig::Http { name, config }) => {
-            assert_eq!(name, "mcpMesh");
-            assert_eq!(config.uri.to_string(), "http://localhost:3000/mcp");
-            assert_eq!(config.auth_header.as_ref().unwrap(), "Bearer secret_token");
-        }
-        _ => panic!("Expected Http config"),
+async fn test_parse_http_and_sse_configs() {
+    // HTTP with auth header
+    let json = server_json(
+        "mcpMesh",
+        r#"{
+            "type": "http",
+            "url": "http://localhost:3000/mcp",
+            "headers": { "Authorization": "Bearer $API_TOKEN" }
+        }"#,
+    );
+    let cfg = with_env!(
+        [("API_TOKEN", "secret_token")],
+        assert_http(
+            parse_one(&json).await,
+            "mcpMesh",
+            "http://localhost:3000/mcp"
+        )
+    );
+    if let McpServerConfig::Server(ServerConfig::Http { config: c, .. }) = cfg {
+        assert_eq!(c.auth_header.as_ref().unwrap(), "Bearer secret_token");
     }
 
-    unsafe { env::remove_var("API_TOKEN") };
-}
-
-#[tokio::test]
-async fn test_parse_sse_config() {
-    let json = r#"
-    {
-        "servers": {
-            "sseServer": {
-                "type": "sse",
-                "url": "http://localhost:4000/sse",
-                "headers": {}
-            }
-        }
-    }
-    "#;
-
-    let raw_config = RawMcpConfig::from_json(json).unwrap();
-    let configs = raw_config.into_configs(&HashMap::new()).await.unwrap();
-
-    assert_eq!(configs.len(), 1);
     // SSE maps to HTTP internally
-    match &configs[0] {
-        McpServerConfig::Server(ServerConfig::Http { name, config }) => {
-            assert_eq!(name, "sseServer");
-            assert_eq!(config.uri.to_string(), "http://localhost:4000/sse");
-        }
-        _ => panic!("Expected Http config"),
-    }
+    let json = server_json(
+        "sseServer",
+        r#"{ "type": "sse", "url": "http://localhost:4000/sse", "headers": {} }"#,
+    );
+    assert_http(
+        parse_one(&json).await,
+        "sseServer",
+        "http://localhost:4000/sse",
+    );
 }
-
-// Note: InMemory server testing requires complex setup with tool_handler macros
-// and is better tested in integration tests with actual server implementations.
-// Skipping this test for now as it requires too much boilerplate.
 
 #[tokio::test]
 async fn test_missing_env_var_error() {
-    let json = r#"
-    {
-        "servers": {
-            "test": {
-                "type": "stdio",
-                "command": "$MISSING_VAR",
-                "args": []
-            }
-        }
-    }
-    "#;
-
-    let raw_config = RawMcpConfig::from_json(json).unwrap();
-    let result = raw_config.into_configs(&HashMap::new()).await;
-
-    assert!(result.is_err());
-    match result.unwrap_err() {
+    let json = server_json(
+        "test",
+        r#"{ "type": "stdio", "command": "$MISSING_VAR", "args": [] }"#,
+    );
+    match parse_configs(&json).await.unwrap_err() {
         ParseError::VarError(_) => (),
-        _ => panic!("Expected VarError"),
+        other => panic!("Expected VarError, got {other:?}"),
     }
 }
 
 #[tokio::test]
 async fn test_factory_not_found_error() {
-    let json = r#"
-    {
-        "servers": {
-            "test": {
-                "type": "in-memory"
-            }
-        }
-    }
-    "#;
-
-    let raw_config = RawMcpConfig::from_json(json).unwrap();
-    let result = raw_config.into_configs(&HashMap::new()).await;
-
-    assert!(result.is_err());
-    match result.unwrap_err() {
-        ParseError::FactoryNotFound(name) => {
-            assert_eq!(name, "test");
-        }
-        _ => panic!("Expected FactoryNotFound"),
+    let json = server_json("test", r#"{ "type": "in-memory" }"#);
+    match parse_configs(&json).await.unwrap_err() {
+        ParseError::FactoryNotFound(name) => assert_eq!(name, "test"),
+        other => panic!("Expected FactoryNotFound, got {other:?}"),
     }
 }
 
 #[tokio::test]
 async fn test_multiple_servers() {
-    unsafe { env::set_var("TOKEN", "test") };
-
-    let json = r#"
-    {
+    let json = r#"{
         "servers": {
-            "server1": {
-                "type": "stdio",
-                "command": "node",
-                "args": ["server.js"]
-            },
+            "server1": { "type": "stdio", "command": "node", "args": ["server.js"] },
             "server2": {
                 "type": "http",
                 "url": "http://localhost:3000/mcp",
-                "headers": {
-                    "Authorization": "$TOKEN"
-                }
+                "headers": { "Authorization": "$TOKEN" }
             }
         }
-    }
-    "#;
-
-    let raw_config = RawMcpConfig::from_json(json).unwrap();
-    let configs = raw_config.into_configs(&HashMap::new()).await.unwrap();
-
-    assert_eq!(configs.len(), 2);
-
-    unsafe { env::remove_var("TOKEN") };
+    }"#;
+    with_env!([("TOKEN", "test")], {
+        assert_eq!(parse_configs(json).await.unwrap().len(), 2);
+    });
 }
 
 #[tokio::test]
 async fn test_env_var_in_url() {
-    unsafe {
-        env::set_var("HOST", "localhost");
-        env::set_var("PORT", "8080");
-    }
-
-    let json = r#"
-    {
-        "servers": {
-            "test": {
-                "type": "http",
-                "url": "http://${HOST}:${PORT}/mcp"
-            }
-        }
-    }
-    "#;
-
-    let raw_config = RawMcpConfig::from_json(json).unwrap();
-    let configs = raw_config.into_configs(&HashMap::new()).await.unwrap();
-
-    match &configs[0] {
-        McpServerConfig::Server(ServerConfig::Http { config, .. }) => {
-            assert_eq!(config.uri.to_string(), "http://localhost:8080/mcp");
-        }
-        _ => panic!("Expected Http config"),
-    }
-
-    unsafe {
-        env::remove_var("HOST");
-        env::remove_var("PORT");
-    }
+    let json = server_json(
+        "test",
+        r#"{ "type": "http", "url": "http://${HOST}:${PORT}/mcp" }"#,
+    );
+    with_env!([("HOST", "localhost"), ("PORT", "8080")], {
+        assert_http(parse_one(&json).await, "test", "http://localhost:8080/mcp");
+    });
 }
 
 #[tokio::test]
 async fn test_parse_tool_proxy_config() {
-    let json = r#"
-    {
+    let json = r#"{
         "servers": {
             "proxy": {
                 "type": "in-memory",
@@ -238,105 +169,62 @@ async fn test_parse_tool_proxy_config() {
                             "command": "npx",
                             "args": ["-y", "@modelcontextprotocol/server-github"]
                         },
-                        "sentry": {
-                            "type": "http",
-                            "url": "https://sentry.example.com/mcp"
-                        }
+                        "sentry": { "type": "http", "url": "https://sentry.example.com/mcp" }
                     }
                 }
             }
         }
-    }
-    "#;
-
-    let raw_config = RawMcpConfig::from_json(json).unwrap();
-    let configs = raw_config.into_configs(&HashMap::new()).await.unwrap();
-
-    assert_eq!(configs.len(), 1);
-    match &configs[0] {
+    }"#;
+    match parse_one(json).await {
         McpServerConfig::ToolProxy { name, servers } => {
             assert_eq!(name, "proxy");
             assert_eq!(servers.len(), 2);
-
-            // Verify nested servers are properly parsed
-            let has_stdio = servers
-                .iter()
-                .any(|s| matches!(s, ServerConfig::Stdio { .. }));
-            let has_http = servers
-                .iter()
-                .any(|s| matches!(s, ServerConfig::Http { .. }));
-            assert!(has_stdio, "Expected a Stdio nested server");
-            assert!(has_http, "Expected an Http nested server");
+            assert!(
+                servers
+                    .iter()
+                    .any(|s| matches!(s, ServerConfig::Stdio { .. }))
+            );
+            assert!(
+                servers
+                    .iter()
+                    .any(|s| matches!(s, ServerConfig::Http { .. }))
+            );
         }
-        McpServerConfig::Server(_) => {
-            panic!("Expected ToolProxy config");
-        }
+        other => panic!("Expected ToolProxy config, got {other:?}"),
     }
 }
 
 #[tokio::test]
 async fn test_tool_proxy_rejects_nested_in_memory() {
-    let json = r#"
-    {
-        "servers": {
-            "proxy": {
-                "type": "in-memory",
-                "input": {
-                    "servers": {
-                        "bad": {
-                            "type": "in-memory"
-                        }
-                    }
-                }
+    let cases = [
+        (
+            "bad",
+            server_json(
+                "outer",
+                r#"{ "type": "in-memory", "input": { "servers": { "bad": { "type": "in-memory" } } } }"#,
+            ),
+        ),
+        (
+            "inner",
+            server_json(
+                "outer",
+                r#"{ "type": "in-memory", "input": { "servers": { "inner": { "type": "in-memory", "input": { "servers": {} } } } } }"#,
+            ),
+        ),
+    ];
+    for (expected_name, json) in &cases {
+        match parse_configs(json).await.unwrap_err() {
+            ParseError::InvalidNestedConfig(msg) => {
+                assert!(
+                    msg.contains("in-memory"),
+                    "msg should mention in-memory: {msg}"
+                );
+                assert!(
+                    msg.contains(expected_name),
+                    "msg should mention {expected_name}: {msg}"
+                );
             }
+            other => panic!("Expected InvalidNestedConfig, got {other:?}"),
         }
-    }
-    "#;
-
-    let raw_config = RawMcpConfig::from_json(json).unwrap();
-    let result = raw_config.into_configs(&HashMap::new()).await;
-
-    assert!(result.is_err());
-    match result.unwrap_err() {
-        ParseError::InvalidNestedConfig(msg) => {
-            assert!(msg.contains("in-memory"));
-            assert!(msg.contains("bad"));
-        }
-        other => panic!("Expected InvalidNestedConfig, got {other:?}"),
-    }
-}
-
-#[tokio::test]
-async fn test_tool_proxy_rejects_nested_tool_proxy() {
-    let json = r#"
-    {
-        "servers": {
-            "outer": {
-                "type": "in-memory",
-                "input": {
-                    "servers": {
-                        "inner": {
-                            "type": "in-memory",
-                            "input": {
-                                "servers": {}
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    "#;
-
-    let raw_config = RawMcpConfig::from_json(json).unwrap();
-    let result = raw_config.into_configs(&HashMap::new()).await;
-
-    assert!(result.is_err());
-    match result.unwrap_err() {
-        ParseError::InvalidNestedConfig(msg) => {
-            assert!(msg.contains("in-memory"));
-            assert!(msg.contains("inner"));
-        }
-        other => panic!("Expected InvalidNestedConfig, got {other:?}"),
     }
 }

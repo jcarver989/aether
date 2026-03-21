@@ -502,7 +502,11 @@ mod tests {
         for (text, cursor, k, expected) in cases {
             let mut f = cursor.map_or_else(|| field(text), |c| field_at(text, c));
             send_key(&mut f, k).await;
-            assert_eq!(f.cursor_pos(), expected, "failed for {k:?} on {text:?} at {cursor:?}");
+            assert_eq!(
+                f.cursor_pos(),
+                expected,
+                "failed for {k:?} on {text:?} at {cursor:?}"
+            );
         }
     }
 
@@ -510,14 +514,18 @@ mod tests {
     fn move_cursor_up_cases() {
         // (text, cursor, width, expected)
         let cases: Vec<(&str, Option<usize>, usize, usize)> = vec![
-            ("hello world", Some(3), 10, 0),   // first row goes home
-            ("hello world", Some(8), 5, 3),    // multi-row: row1->row0
-            ("hello", Some(3), 0, 3),          // zero width is no-op
+            ("hello world", Some(3), 10, 0), // first row goes home
+            ("hello world", Some(8), 5, 3),  // multi-row: row1->row0
+            ("hello", Some(3), 0, 3),        // zero width is no-op
         ];
         for (text, cursor, width, expected) in cases {
             let mut f = cursor.map_or_else(|| field(text), |c| field_at(text, c));
             f.move_cursor_up(width);
-            assert_eq!(f.cursor_pos(), expected, "up failed: {text:?} cursor={cursor:?} w={width}");
+            assert_eq!(
+                f.cursor_pos(),
+                expected,
+                "up failed: {text:?} cursor={cursor:?} w={width}"
+            );
         }
     }
 
@@ -536,15 +544,19 @@ mod tests {
     fn move_cursor_down_cases() {
         // (text, cursor, width, expected)
         let cases: Vec<(&str, Option<usize>, usize, usize)> = vec![
-            ("hello world", Some(0), 20, 11),  // last row goes end
-            ("hello world", Some(3), 5, 8),    // multi-row: row0->row1
-            ("hello world", Some(8), 5, 11),   // clamps to total width
-            ("", None, 10, 0),                 // empty string
+            ("hello world", Some(0), 20, 11), // last row goes end
+            ("hello world", Some(3), 5, 8),   // multi-row: row0->row1
+            ("hello world", Some(8), 5, 11),  // clamps to total width
+            ("", None, 10, 0),                // empty string
         ];
         for (text, cursor, width, expected) in cases {
             let mut f = cursor.map_or_else(|| field(text), |c| field_at(text, c));
             f.move_cursor_down(width);
-            assert_eq!(f.cursor_pos(), expected, "down failed: {text:?} cursor={cursor:?} w={width}");
+            assert_eq!(
+                f.cursor_pos(),
+                expected,
+                "down failed: {text:?} cursor={cursor:?} w={width}"
+            );
         }
     }
 }

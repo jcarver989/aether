@@ -345,55 +345,54 @@ mod tests {
     use agent_client_protocol::SessionConfigSelectOption;
     use tui::{KeyCode, KeyEvent, KeyModifiers};
 
+    fn select_opt(id: &'static str, name: &'static str) -> SessionConfigSelectOption {
+        SessionConfigSelectOption::new(id, name)
+    }
+
+    fn config_select(
+        id: &'static str,
+        label: &'static str,
+        current: &'static str,
+        opts: Vec<SessionConfigSelectOption>,
+    ) -> agent_client_protocol::SessionConfigOption {
+        agent_client_protocol::SessionConfigOption::select(id, label, current, opts)
+    }
+
+    fn provider_model_options(
+        multi_select_model: bool,
+    ) -> Vec<agent_client_protocol::SessionConfigOption> {
+        let provider = config_select(
+            "provider",
+            "Provider",
+            "openrouter",
+            vec![
+                select_opt("openrouter", "OpenRouter"),
+                select_opt("ollama", "Ollama"),
+            ],
+        );
+        let mut model = config_select(
+            "model",
+            "Model",
+            "gpt-4o",
+            vec![
+                select_opt("gpt-4o", "GPT-4o"),
+                select_opt("claude", "Claude"),
+            ],
+        );
+        if multi_select_model {
+            let mut meta = serde_json::Map::new();
+            meta.insert("multi_select".to_string(), serde_json::Value::Bool(true));
+            model = model.meta(meta);
+        }
+        vec![provider, model]
+    }
+
     fn make_menu() -> SettingsMenu {
-        let options = vec![
-            agent_client_protocol::SessionConfigOption::select(
-                "provider",
-                "Provider",
-                "openrouter",
-                vec![
-                    SessionConfigSelectOption::new("openrouter", "OpenRouter"),
-                    SessionConfigSelectOption::new("ollama", "Ollama"),
-                ],
-            ),
-            agent_client_protocol::SessionConfigOption::select(
-                "model",
-                "Model",
-                "gpt-4o",
-                vec![
-                    SessionConfigSelectOption::new("gpt-4o", "GPT-4o"),
-                    SessionConfigSelectOption::new("claude", "Claude"),
-                ],
-            ),
-        ];
-        SettingsMenu::from_config_options(&options)
+        SettingsMenu::from_config_options(&provider_model_options(false))
     }
 
     fn make_multi_select_menu() -> SettingsMenu {
-        let mut meta = serde_json::Map::new();
-        meta.insert("multi_select".to_string(), serde_json::Value::Bool(true));
-        let options = vec![
-            agent_client_protocol::SessionConfigOption::select(
-                "provider",
-                "Provider",
-                "openrouter",
-                vec![
-                    SessionConfigSelectOption::new("openrouter", "OpenRouter"),
-                    SessionConfigSelectOption::new("ollama", "Ollama"),
-                ],
-            ),
-            agent_client_protocol::SessionConfigOption::select(
-                "model",
-                "Model",
-                "gpt-4o",
-                vec![
-                    SessionConfigSelectOption::new("gpt-4o", "GPT-4o"),
-                    SessionConfigSelectOption::new("claude", "Claude"),
-                ],
-            )
-            .meta(meta),
-        ];
-        SettingsMenu::from_config_options(&options)
+        SettingsMenu::from_config_options(&provider_model_options(true))
     }
 
     fn make_server_statuses() -> Vec<McpServerStatusEntry> {
@@ -409,11 +408,23 @@ mod tests {
         ]
     }
 
+    fn make_auth_methods() -> Vec<acp::AuthMethod> {
+        vec![
+            acp::AuthMethod::Agent(acp::AuthMethodAgent::new("anthropic", "Anthropic")),
+            acp::AuthMethod::Agent(acp::AuthMethodAgent::new("openrouter", "OpenRouter")),
+        ]
+    }
+
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
-    /// Render the overlay and return the footer line text.
+    async fn send_keys(overlay: &mut SettingsOverlay, codes: &[KeyCode]) {
+        for code in codes {
+            overlay.on_event(&Event::Key(key(*code))).await;
+        }
+    }
+
     fn render_footer(overlay: &mut SettingsOverlay) -> String {
         let context = ViewContext::new((80, 24));
         let height = (context.size.height.saturating_sub(1)) as usize;
@@ -423,24 +434,50 @@ mod tests {
         lines[lines.len() - 2].plain_text()
     }
 
-    fn make_auth_methods() -> Vec<acp::AuthMethod> {
-        vec![
-            acp::AuthMethod::Agent(acp::AuthMethodAgent::new("anthropic", "Anthropic")),
-            acp::AuthMethod::Agent(acp::AuthMethodAgent::new("openrouter", "OpenRouter")),
-        ]
+    fn new_overlay() -> SettingsOverlay {
+        SettingsOverlay::new(make_menu(), vec![], vec![])
+    }
+
+    fn new_multi_select_overlay() -> SettingsOverlay {
+        SettingsOverlay::new(make_multi_select_menu(), vec![], vec![])
+    }
+
+    /// Open the model selector on a multi-select overlay (Down to model row, Enter to open).
+    async fn open_model_selector() -> SettingsOverlay {
+        let mut overlay = new_multi_select_overlay();
+        send_keys(&mut overlay, &[KeyCode::Down, KeyCode::Enter]).await;
+        assert!(render_footer(&mut overlay).contains("Toggle"));
+        overlay
+    }
+
+    fn assert_footer_contains(overlay: &mut SettingsOverlay, needle: &str) {
+        let footer = render_footer(overlay);
+        assert!(
+            footer.contains(needle),
+            "expected footer to contain '{needle}'; got: {footer}"
+        );
+    }
+
+    fn has_entry_kind(
+        overlay: &SettingsOverlay,
+        kind: crate::settings::types::SettingsMenuEntryKind,
+    ) -> bool {
+        overlay.menu.options().iter().any(|e| e.entry_kind == kind)
     }
 
     #[tokio::test]
     async fn esc_closes_overlay() {
-        let mut overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
-        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc))).await;
-        let messages = outcome.unwrap();
+        let mut overlay = new_overlay();
+        let messages = overlay
+            .on_event(&Event::Key(key(KeyCode::Esc)))
+            .await
+            .unwrap();
         assert!(matches!(messages.as_slice(), [SettingsMessage::Close]));
     }
 
     #[tokio::test]
     async fn enter_opens_picker() {
-        let mut overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
+        let mut overlay = new_overlay();
         let outcome = overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
         assert!(outcome.is_some());
         assert!(overlay.has_picker());
@@ -448,25 +485,27 @@ mod tests {
 
     #[tokio::test]
     async fn picker_esc_closes_picker_not_overlay() {
-        let mut overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
-        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await; // open picker
+        let mut overlay = new_overlay();
+        send_keys(&mut overlay, &[KeyCode::Enter]).await;
         assert!(overlay.has_picker());
 
-        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc))).await;
-        assert!(outcome.is_some());
+        let messages = overlay
+            .on_event(&Event::Key(key(KeyCode::Esc)))
+            .await
+            .unwrap();
         assert!(!overlay.has_picker());
-        // No messages — overlay remains open
-        assert!(outcome.unwrap().is_empty());
+        assert!(messages.is_empty(), "overlay should remain open");
     }
 
     #[tokio::test]
     async fn picker_confirm_returns_settings_change_action() {
-        let mut overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
-        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await; // open picker
-        overlay.on_event(&Event::Key(key(KeyCode::Down))).await; // move to second option
-        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Enter))).await; // confirm
+        let mut overlay = new_overlay();
+        send_keys(&mut overlay, &[KeyCode::Enter, KeyCode::Down]).await;
+        let messages = overlay
+            .on_event(&Event::Key(key(KeyCode::Enter)))
+            .await
+            .unwrap();
 
-        let messages = outcome.unwrap();
         match messages.as_slice() {
             [SettingsMessage::SetConfigOption { config_id, value }] => {
                 assert_eq!(config_id, "provider");
@@ -476,129 +515,90 @@ mod tests {
         }
     }
 
-    #[test]
-    fn settings_overlay_picker_confirm_updates_menu_row_immediately() {
+    /// Shared setup for theme-picker tests: creates temp dir, theme menu, sends Enter/Down/Enter.
+    fn run_theme_picker_test(check: impl FnOnce(&SettingsOverlay)) {
         use crate::test_helpers::with_wisp_home;
-        use tempfile::TempDir;
 
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = tempfile::TempDir::new().unwrap();
         with_wisp_home(temp_dir.path(), || {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
                 let mut menu = SettingsMenu::from_config_options(&[]);
                 menu.add_theme_entry(None, &["nord.tmTheme".to_string()]);
                 let mut overlay = SettingsOverlay::new(menu, vec![], vec![]);
-
-                overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
-                let _ = overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
-                let _ = overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
-
-                assert_eq!(overlay.menu.options()[0].config_id, THEME_CONFIG_ID);
-                assert_eq!(overlay.menu.options()[0].current_raw_value, "nord.tmTheme");
-                assert_eq!(overlay.menu.options()[0].current_value_index, 1);
+                send_keys(
+                    &mut overlay,
+                    &[KeyCode::Enter, KeyCode::Down, KeyCode::Enter],
+                )
+                .await;
+                check(&overlay);
             });
+        });
+    }
+
+    #[test]
+    fn settings_overlay_picker_confirm_updates_menu_row_immediately() {
+        run_theme_picker_test(|overlay| {
+            let entry = &overlay.menu.options()[0];
+            assert_eq!(entry.config_id, THEME_CONFIG_ID);
+            assert_eq!(entry.current_raw_value, "nord.tmTheme");
+            assert_eq!(entry.current_value_index, 1);
         });
     }
 
     #[test]
     fn settings_overlay_picker_confirm_persists_theme_to_settings() {
-        use crate::settings::load_or_create_settings;
-        use crate::test_helpers::with_wisp_home;
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        with_wisp_home(temp_dir.path(), || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async {
-                let mut menu = SettingsMenu::from_config_options(&[]);
-                menu.add_theme_entry(None, &["nord.tmTheme".to_string()]);
-                let mut overlay = SettingsOverlay::new(menu, vec![], vec![]);
-
-                overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
-                let _ = overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
-                let _ = overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
-
-                let settings = load_or_create_settings();
-                assert_eq!(
-                    settings.theme.file.as_deref(),
-                    Some("nord.tmTheme"),
-                    "theme selection should be persisted to settings.json"
-                );
-            });
+        run_theme_picker_test(|_overlay| {
+            let settings = crate::settings::load_or_create_settings();
+            assert_eq!(settings.theme.file.as_deref(), Some("nord.tmTheme"));
         });
     }
 
-    #[test]
-    fn cursor_col_without_picker_is_zero() {
-        let overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
+    #[tokio::test]
+    async fn cursor_col_and_row_offset() {
+        // Without picker: cursor col is 0
+        let overlay = new_overlay();
         assert_eq!(overlay.cursor_col(), 0);
-    }
 
-    #[tokio::test]
-    async fn cursor_col_with_picker_includes_border_and_prefix() {
-        let mut overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
-        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await; // open picker for Provider
-        let col = overlay.cursor_col();
-        // "│ " (2) + "  Provider search: " (19) + query (0) = should be > 0
-        assert!(col > 0);
-    }
-
-    #[tokio::test]
-    async fn picker_cursor_row_offset_matches_submenu_only_layout() {
-        let mut overlay = SettingsOverlay::new(make_menu(), vec![], vec![]);
-        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
-
+        // With picker open: cursor col includes border + prefix, row offset = TOP_CHROME
+        let mut overlay = new_overlay();
+        send_keys(&mut overlay, &[KeyCode::Enter]).await;
+        assert!(overlay.cursor_col() > 0);
         assert_eq!(overlay.cursor_row_offset(), TOP_CHROME);
     }
 
     #[tokio::test]
     async fn model_selector_esc_without_toggle_returns_no_change() {
-        let mut overlay = SettingsOverlay::new(make_multi_select_menu(), vec![], vec![]);
-
-        // Navigate to model and open model selector
-        overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
-        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
-        assert!(render_footer(&mut overlay).contains("Toggle"));
-
-        // Selector pre-selects current model (gpt-4o); Esc without toggling returns no change
-        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc))).await;
-        assert!(outcome.is_some());
-        assert!(render_footer(&mut overlay).contains("[Enter] Select"));
+        let mut overlay = open_model_selector().await;
+        let messages = overlay
+            .on_event(&Event::Key(key(KeyCode::Esc)))
+            .await
+            .unwrap();
+        assert_footer_contains(&mut overlay, "[Enter] Select");
         assert!(
-            outcome.unwrap().is_empty(),
+            messages.is_empty(),
             "escape without toggling should produce no change"
         );
     }
 
     #[tokio::test]
     async fn model_selector_esc_after_deselecting_all_returns_no_change() {
-        let mut overlay = SettingsOverlay::new(make_multi_select_menu(), vec![], vec![]);
+        let mut overlay = open_model_selector().await;
+        send_keys(&mut overlay, &[KeyCode::Char(' ')]).await; // deselect pre-selected
 
-        overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
-        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await; // open model selector
-        // Deselect the pre-selected model
-        overlay.on_event(&Event::Key(key(KeyCode::Char(' ')))).await;
-
-        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc))).await;
-        assert!(render_footer(&mut overlay).contains("[Enter] Select"));
-        assert!(outcome.unwrap().is_empty()); // No selections => no change
+        let messages = overlay
+            .on_event(&Event::Key(key(KeyCode::Esc)))
+            .await
+            .unwrap();
+        assert_footer_contains(&mut overlay, "[Enter] Select");
+        assert!(messages.is_empty());
     }
 
     #[tokio::test]
     async fn model_selector_enter_toggles_not_confirms() {
-        let mut overlay = SettingsOverlay::new(make_multi_select_menu(), vec![], vec![]);
-
-        overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
-        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await; // open model selector
-        assert!(render_footer(&mut overlay).contains("Toggle"));
-
-        // Enter should toggle, not close the selector
-        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
-        let footer = render_footer(&mut overlay);
-        assert!(
-            footer.contains("Toggle"),
-            "Enter should toggle, not close; got: {footer}"
-        );
+        let mut overlay = open_model_selector().await;
+        send_keys(&mut overlay, &[KeyCode::Enter]).await;
+        assert_footer_contains(&mut overlay, "Toggle");
     }
 
     #[tokio::test]
@@ -638,48 +638,46 @@ mod tests {
             display_name: None,
         }]);
 
-        let mut overlay = SettingsOverlay::new(menu, vec![], vec![]);
-        let options_with_reasoning = vec![
-            agent_client_protocol::SessionConfigOption::select(
+        let reasoning_options = vec![
+            config_select(
                 "model",
                 "Model",
                 "claude-opus",
                 vec![
-                    SessionConfigSelectOption::new("claude-opus", "Claude Opus"),
-                    SessionConfigSelectOption::new("gpt-4o", "GPT-4o"),
+                    select_opt("claude-opus", "Claude Opus"),
+                    select_opt("gpt-4o", "GPT-4o"),
                 ],
             ),
-            agent_client_protocol::SessionConfigOption::select(
+            config_select(
                 "reasoning_effort",
                 "Reasoning Effort",
                 "medium",
                 vec![
-                    SessionConfigSelectOption::new("none", "None"),
-                    SessionConfigSelectOption::new("low", "Low"),
-                    SessionConfigSelectOption::new("medium", "Medium"),
-                    SessionConfigSelectOption::new("high", "High"),
+                    select_opt("none", "None"),
+                    select_opt("low", "Low"),
+                    select_opt("medium", "Medium"),
+                    select_opt("high", "High"),
                 ],
             ),
         ];
-        overlay = overlay.with_reasoning_effort_from_options(&options_with_reasoning);
+        let mut overlay = SettingsOverlay::new(menu, vec![], vec![])
+            .with_reasoning_effort_from_options(&reasoning_options);
 
-        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
-        assert!(
-            render_footer(&mut overlay).contains("Toggle"),
-            "model selector should be open"
-        );
+        send_keys(&mut overlay, &[KeyCode::Enter]).await;
+        assert_footer_contains(&mut overlay, "Toggle");
 
-        overlay.on_event(&Event::Key(key(KeyCode::Tab))).await;
+        send_keys(&mut overlay, &[KeyCode::Tab]).await;
+        let messages = overlay
+            .on_event(&Event::Key(key(KeyCode::Esc)))
+            .await
+            .unwrap();
 
-        let outcome = overlay.on_event(&Event::Key(key(KeyCode::Esc))).await;
-
-        let messages = outcome.unwrap();
         let reasoning_msg = messages.iter().find(|m| {
             matches!(m, SettingsMessage::SetConfigOption { config_id, .. } if config_id == "reasoning_effort")
         });
         assert!(
             reasoning_msg.is_some(),
-            "should have reasoning_effort SetConfigOption; got: {messages:?}"
+            "expected reasoning_effort change; got: {messages:?}"
         );
         match reasoning_msg.unwrap() {
             SettingsMessage::SetConfigOption { value, .. } => {
@@ -705,40 +703,32 @@ mod tests {
         with_wisp_home(temp_dir.path(), || {
             let mut menu = make_menu();
             menu.add_mcp_servers_entry("1 connected, 1 needs auth");
-            let statuses = make_server_statuses();
-            let mut overlay = SettingsOverlay::new(menu, statuses, vec![]);
+            let mut overlay = SettingsOverlay::new(menu, make_server_statuses(), vec![]);
 
-            // Verify MCP servers entry exists initially
             assert!(
-                overlay
-                    .menu
-                    .options()
-                    .iter()
-                    .any(|e| e.entry_kind == SettingsMenuEntryKind::McpServers),
+                has_entry_kind(&overlay, SettingsMenuEntryKind::McpServers),
                 "MCP servers entry should exist before update"
             );
 
-            // Simulate settings update (e.g. after model selection)
             let new_options = vec![
-                agent_client_protocol::SessionConfigOption::select(
+                config_select(
                     "provider",
                     "Provider",
                     "ollama",
                     vec![
-                        SessionConfigSelectOption::new("openrouter", "OpenRouter"),
-                        SessionConfigSelectOption::new("ollama", "Ollama"),
+                        select_opt("openrouter", "OpenRouter"),
+                        select_opt("ollama", "Ollama"),
                     ],
                 ),
-                agent_client_protocol::SessionConfigOption::select(
+                config_select(
                     "model",
                     "Model",
                     "llama",
-                    vec![SessionConfigSelectOption::new("llama", "Llama")],
+                    vec![select_opt("llama", "Llama")],
                 ),
             ];
             overlay.update_config_options(&new_options);
 
-            // Theme and MCP entries should still be present after update
             assert!(
                 overlay
                     .menu
@@ -748,11 +738,7 @@ mod tests {
                 "Theme entry should survive update_config_options"
             );
             assert!(
-                overlay
-                    .menu
-                    .options()
-                    .iter()
-                    .any(|e| e.entry_kind == SettingsMenuEntryKind::McpServers),
+                has_entry_kind(&overlay, SettingsMenuEntryKind::McpServers),
                 "MCP servers entry should survive update_config_options"
             );
         });
@@ -763,9 +749,11 @@ mod tests {
         let mut menu = make_menu();
         menu.add_provider_logins_entry("2 needs login");
         let mut overlay = SettingsOverlay::new(menu, vec![], make_auth_methods());
-        overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
-        overlay.on_event(&Event::Key(key(KeyCode::Down))).await;
-        overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
+        send_keys(
+            &mut overlay,
+            &[KeyCode::Down, KeyCode::Down, KeyCode::Enter],
+        )
+        .await;
         assert!(matches!(
             overlay.active_pane,
             SettingsPane::ProviderLogin(_)
@@ -773,14 +761,12 @@ mod tests {
 
         overlay.on_authenticate_complete("anthropic");
 
-        // Overlay should stay open (entries are not removed)
         assert!(matches!(
             overlay.active_pane,
             SettingsPane::ProviderLogin(_)
         ));
-
-        if let SettingsPane::ProviderLogin(ref overlay_inner) = overlay.active_pane {
-            let entry = overlay_inner
+        if let SettingsPane::ProviderLogin(ref inner) = overlay.active_pane {
+            let entry = inner
                 .entries()
                 .iter()
                 .find(|e| e.method_id == "anthropic")

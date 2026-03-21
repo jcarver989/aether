@@ -367,7 +367,10 @@ mod tests {
 
         composer.on_event(&key(KeyCode::Down)).await;
         let msgs = composer.on_event(&key(KeyCode::Enter)).await.unwrap();
-        assert!(matches!(msgs.as_slice(), [PromptComposerMessage::OpenSettings]));
+        assert!(matches!(
+            msgs.as_slice(),
+            [PromptComposerMessage::OpenSettings]
+        ));
         assert_eq!(composer.buffer(), "");
         assert!(!composer.has_active_picker());
     }
@@ -422,7 +425,10 @@ mod tests {
         type_chars(&mut composer, "@").await;
         assert!(composer.has_file_picker());
 
-        let msgs = composer.on_event(&Event::Paste("pasted text".into())).await.unwrap();
+        let msgs = composer
+            .on_event(&Event::Paste("pasted text".into()))
+            .await
+            .unwrap();
         assert!(msgs.is_empty());
         assert!(!composer.has_active_picker());
         assert_eq!(composer.buffer(), "@pasted text");

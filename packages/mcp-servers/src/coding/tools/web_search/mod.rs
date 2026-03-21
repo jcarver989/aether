@@ -236,7 +236,11 @@ mod tests {
 
     #[test]
     fn test_domain_filtering() {
-        let urls = ["https://example.com/page", "https://test.org/page", "https://sub.example.com/page"];
+        let urls = [
+            "https://example.com/page",
+            "https://test.org/page",
+            "https://sub.example.com/page",
+        ];
         let results: Vec<_> = urls.iter().map(|u| make_result(u)).collect();
 
         // Allowed domains: keeps example.com and sub.example.com
