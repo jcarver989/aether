@@ -315,6 +315,13 @@ impl App {
         }
     }
 
+    fn update_auth_methods(&mut self, auth_methods: Vec<acp::AuthMethod>) {
+        self.auth_methods = auth_methods;
+        if let Some(ref mut overlay) = self.settings_overlay {
+            overlay.update_auth_methods(self.auth_methods.clone());
+        }
+    }
+
     fn restore_config_selections(&self, previous: &[(String, String)]) {
         let new_selections = current_config_selections(&self.config_options);
         for (id, old_value) in previous {
@@ -385,8 +392,9 @@ impl App {
 
     fn on_ext_notification(&mut self, notification: &acp::ExtNotification) {
         use acp_utils::notifications::{
-            CONTEXT_CLEARED_METHOD, CONTEXT_USAGE_METHOD, ContextUsageParams, McpNotification,
-            SUB_AGENT_PROGRESS_METHOD, SubAgentProgressParams,
+            AUTH_METHODS_UPDATED_METHOD, AuthMethodsUpdatedParams, CONTEXT_CLEARED_METHOD,
+            CONTEXT_USAGE_METHOD, ContextUsageParams, McpNotification, SUB_AGENT_PROGRESS_METHOD,
+            SubAgentProgressParams,
         };
 
         match notification.method.as_ref() {
@@ -411,6 +419,11 @@ impl App {
                     serde_json::from_str::<SubAgentProgressParams>(notification.params.get())
                 {
                     self.conversation_screen.on_sub_agent_progress(&progress);
+                }
+            }
+            AUTH_METHODS_UPDATED_METHOD => {
+                if let Ok(params) = AuthMethodsUpdatedParams::try_from(notification) {
+                    self.update_auth_methods(params.auth_methods);
                 }
             }
             _ => {

@@ -29,6 +29,90 @@ async fn test_settings_command_opens_menu() {
     );
 }
 
+fn make_provider_auth_methods() -> Vec<acp::AuthMethod> {
+    vec![
+        acp::AuthMethod::Agent(acp::AuthMethodAgent::new("anthropic", "Anthropic")),
+        acp::AuthMethod::Agent(acp::AuthMethodAgent::new("openrouter", "OpenRouter")),
+    ]
+}
+
+#[tokio::test]
+async fn test_auth_methods_updated_notification_refreshes_provider_login_and_persists_on_reopen() {
+    let terminal = TestTerminal::new(TEST_WIDTH, 40);
+    let mut renderer = Renderer::new_with_auth_methods(
+        terminal,
+        TEST_AGENT.to_string(),
+        &[],
+        make_provider_auth_methods(),
+        (TEST_WIDTH, 40),
+    );
+    renderer.initial_render().unwrap();
+
+    type_string(&mut renderer, "/settings").await;
+    press_enter(&mut renderer).await;
+
+    send_key(&mut renderer, KeyCode::Down, KeyModifiers::empty()).await;
+    send_key(&mut renderer, KeyCode::Down, KeyModifiers::empty()).await;
+
+    let selected = settings_menu_selected_label(renderer.writer());
+    assert!(
+        selected
+            .as_deref()
+            .is_some_and(|label| label.contains("Provider Logins")),
+        "Expected Provider Logins menu row to be selected, got: {selected:?}"
+    );
+
+    press_enter(&mut renderer).await;
+
+    let initial_lines = renderer.writer().get_lines();
+    assert!(
+        initial_lines
+            .iter()
+            .any(|line| line.contains("Anthropic  ⚡ needs login")),
+        "Anthropic should start as needs login.\nBuffer:\n{}",
+        initial_lines.join("\n")
+    );
+
+    let updated_auth_methods = vec![
+        acp::AuthMethod::Agent(
+            acp::AuthMethodAgent::new("anthropic", "Anthropic").description("authenticated"),
+        ),
+        acp::AuthMethod::Agent(acp::AuthMethodAgent::new("openrouter", "OpenRouter")),
+    ];
+    let notification: acp::ExtNotification = acp_utils::notifications::AuthMethodsUpdatedParams {
+        auth_methods: updated_auth_methods,
+    }
+    .into();
+
+    renderer.on_ext_notification(notification).unwrap();
+
+    let updated_lines = renderer.writer().get_lines();
+    assert!(
+        updated_lines
+            .iter()
+            .any(|line| line.contains("Anthropic  ✓ logged in")),
+        "Anthropic should show logged in in active provider pane after notification.\nBuffer:\n{}",
+        updated_lines.join("\n")
+    );
+
+    send_key(&mut renderer, KeyCode::Esc, KeyModifiers::empty()).await;
+    assert!(
+        has_settings_menu(renderer.writer()),
+        "Should return to settings menu after closing provider login pane"
+    );
+
+    press_enter(&mut renderer).await;
+
+    let reopened_lines = renderer.writer().get_lines();
+    assert!(
+        reopened_lines
+            .iter()
+            .any(|line| line.contains("Anthropic  ✓ logged in")),
+        "Anthropic should remain logged in after closing and reopening provider pane.\nBuffer:\n{}",
+        reopened_lines.join("\n")
+    );
+}
+
 #[tokio::test]
 async fn test_settings_menu_esc_closes() {
     let config_options = make_settings_options();
