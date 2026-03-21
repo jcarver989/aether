@@ -3,4 +3,5 @@
 pub struct SelectOption {
     pub value: String,
     pub title: String,
+    pub description: Option<String>,
 }

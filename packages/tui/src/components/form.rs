@@ -328,10 +328,12 @@ mod tests {
                         SelectOption {
                             value: "rust".into(),
                             title: "Rust".into(),
+                            description: None,
                         },
                         SelectOption {
                             value: "ts".into(),
                             title: "TypeScript".into(),
+                            description: None,
                         },
                     ],
                     0,
@@ -354,10 +356,12 @@ mod tests {
                         SelectOption {
                             value: "a".into(),
                             title: "Alpha".into(),
+                            description: None,
                         },
                         SelectOption {
                             value: "b".into(),
                             title: "Beta".into(),
+                            description: None,
                         },
                     ],
                     vec![false, false],
@@ -505,6 +509,7 @@ mod tests {
             vec![SelectOption {
                 value: "a".into(),
                 title: "A".into(),
+                description: None,
             }],
             vec![false],
         ));
@@ -514,6 +519,7 @@ mod tests {
             vec![SelectOption {
                 value: "a".into(),
                 title: "A".into(),
+                description: None,
             }],
             vec![true],
         ));
