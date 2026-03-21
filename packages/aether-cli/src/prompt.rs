@@ -9,7 +9,6 @@ pub async fn build_system_prompt(
 ) -> Result<String, String> {
     let parts = vec![
         Prompt::from_globs(prompt_patterns, roots_path.to_path_buf()),
-        Prompt::system_env().with_cwd(roots_path.to_path_buf()),
         Prompt::mcp_instructions(instructions),
     ];
 

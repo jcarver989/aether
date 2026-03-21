@@ -171,7 +171,6 @@ impl RuntimeBuilder {
             .map_err(|e| CliError::McpError(e.to_string()))?;
 
         let mut spec = self.spec;
-        spec.prompts.push(Prompt::system_env().with_cwd(self.cwd));
         spec.prompts.push(Prompt::mcp_instructions(instructions));
 
         Ok(McpParts {

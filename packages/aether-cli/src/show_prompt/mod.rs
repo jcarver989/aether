@@ -4,10 +4,6 @@ use std::path::PathBuf;
 
 #[derive(clap::Args)]
 pub struct PromptArgs {
-    /// Model (e.g. "anthropic:claude-sonnet-4-5")
-    #[arg(short, long)]
-    pub model: String,
-
     /// Working directory
     #[arg(short = 'C', long = "cwd", default_value = ".")]
     pub cwd: PathBuf,

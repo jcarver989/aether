@@ -284,8 +284,6 @@ async fn execute_single_agent(
         )
         .await?;
         let filtered_tools = spec.tools.apply(tool_definitions);
-        spec.prompts
-            .push(Prompt::system_env().with_cwd(catalog.project_root().to_path_buf()));
         spec.prompts.push(Prompt::mcp_instructions(instructions));
 
         let (user_tx, mut agent_rx, _agent_handle) =

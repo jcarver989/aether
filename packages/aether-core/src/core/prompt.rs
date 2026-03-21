@@ -77,9 +77,10 @@ impl Prompt {
     pub async fn build(&self) -> Result<String> {
         match self {
             Prompt::Text(text) => Ok(text.clone()),
-            Prompt::File { path, args, cwd: _ } => {
+            Prompt::File { path, args, cwd } => {
                 let content = Self::resolve_file(&PathBuf::from(path)).await?;
-                Ok(substitute_parameters(&content, args))
+                let substituted = substitute_parameters(&content, args);
+                Self::expand_builtins(&substituted, cwd.as_deref()).await
             }
             Prompt::PromptGlobs { patterns, cwd } => {
                 Self::resolve_prompt_globs(patterns, cwd).await
@@ -127,7 +128,11 @@ impl Prompt {
             for path in matched {
                 if path.is_file() {
                     match fs::read_to_string(&path).await {
-                        Ok(content) => contents.push(content),
+                        Ok(content) => {
+                            let expanded =
+                                Self::expand_builtins(&content, Some(cwd)).await?;
+                            contents.push(expanded);
+                        }
                         Err(e) => {
                             warn!("Failed to read prompt file '{}': {e}", path.display());
                         }
@@ -137,6 +142,15 @@ impl Prompt {
         }
 
         Ok(contents.join("\n\n"))
+    }
+
+    /// Expand builtin directives like `$SYSTEM_ENV` in prompt file content.
+    async fn expand_builtins(content: &str, cwd: Option<&Path>) -> Result<String> {
+        if !content.contains("$SYSTEM_ENV") {
+            return Ok(content.to_string());
+        }
+        let env_block = Self::resolve_system_env(cwd).await?;
+        Ok(content.replace("$SYSTEM_ENV", &env_block))
     }
 
     async fn resolve_system_env(cwd: Option<&Path>) -> Result<String> {
@@ -321,5 +335,48 @@ mod tests {
         ];
         let result = Prompt::build_all(&prompts).await.unwrap();
         assert_eq!(result, "Part one\n\nPart two");
+    }
+
+    #[tokio::test]
+    async fn expand_builtins_replaces_system_env() {
+        let result = Prompt::expand_builtins("Before\n$SYSTEM_ENV\nAfter", None)
+            .await
+            .unwrap();
+        assert!(result.starts_with("Before\n<env>"));
+        assert!(result.contains("</env>"));
+        assert!(result.ends_with("</env>\nAfter"));
+    }
+
+    #[tokio::test]
+    async fn expand_builtins_no_op_without_marker() {
+        let content = "Just some plain content with no directives";
+        let result = Prompt::expand_builtins(content, None).await.unwrap();
+        assert_eq!(result, content);
+    }
+
+    #[tokio::test]
+    async fn expand_builtins_with_cwd() {
+        let cwd = std::env::temp_dir();
+        let result = Prompt::expand_builtins("$SYSTEM_ENV", Some(cwd.as_path()))
+            .await
+            .unwrap();
+        assert!(result.contains(&cwd.display().to_string()));
+    }
+
+    #[tokio::test]
+    async fn prompt_globs_expands_system_env_in_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("AGENTS.md"),
+            "Instructions\n\n$SYSTEM_ENV\n\nRules",
+        )
+        .unwrap();
+
+        let prompt = Prompt::from_globs(vec!["AGENTS.md".to_string()], dir.path().to_path_buf());
+        let result = prompt.build().await.unwrap();
+        assert!(result.contains("Instructions"));
+        assert!(result.contains("<env>"));
+        assert!(result.contains("Rules"));
+        assert!(!result.contains("$SYSTEM_ENV"));
     }
 }
