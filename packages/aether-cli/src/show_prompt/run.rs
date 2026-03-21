@@ -8,7 +8,7 @@ use llm::ToolDefinition;
 use serde_json::Value;
 
 pub async fn run_prompt(args: PromptArgs) -> Result<(), CliError> {
-    let info = RuntimeBuilder::new(&args.cwd, &args.model)?
+    let info = RuntimeBuilder::new(&args.cwd, "anthropic:claude-sonnet-4-5")?
         .mcp_config_opt(args.mcp_config)
         .build_prompt_info()
         .await?;

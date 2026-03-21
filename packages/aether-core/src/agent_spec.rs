@@ -27,10 +27,10 @@ pub struct AgentSpec {
     pub reasoning_effort: Option<ReasoningEffort>,
     /// The prompt stack for this agent.
     ///
-    /// For authored `AgentSpec`s resolved from settings, this contains only authored-safe
-    /// prompt variants (e.g., `Prompt::PromptGlobs`). Runtime-owned prompts like
-    /// `Prompt::SystemEnv` and `Prompt::McpInstructions` are added separately during
-    /// agent construction.
+    /// For authored `AgentSpec`s resolved from settings, this contains authored prompt
+    /// variants (e.g., `Prompt::PromptGlobs`). Prompt files may include `$SYSTEM_ENV`
+    /// which is expanded to system environment info during resolution.
+    /// `Prompt::McpInstructions` is added separately during agent construction.
     pub prompts: Vec<Prompt>,
     /// Resolved MCP config path for this agent.
     ///
