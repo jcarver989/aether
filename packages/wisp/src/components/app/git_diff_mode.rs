@@ -564,17 +564,54 @@ mod tests {
     fn format_review_prompt_groups_by_file() {
         let hunk = "@@ -1,3 +1,3 @@\n fn main() {\n-    old();\n+    new();\n }";
         let comments = vec![
-            comment("src/foo.rs", hunk, "    new();", 2, PatchLineKind::Added, "Looks risky"),
-            comment("src/foo.rs", hunk, "    old();", 2, PatchLineKind::Removed, "Why remove this?"),
-            comment("src/bar.rs", "@@ -1 +1 @@\n+new_line", "new_line", 1, PatchLineKind::Added, "Needs a test"),
+            comment(
+                "src/foo.rs",
+                hunk,
+                "    new();",
+                2,
+                PatchLineKind::Added,
+                "Looks risky",
+            ),
+            comment(
+                "src/foo.rs",
+                hunk,
+                "    old();",
+                2,
+                PatchLineKind::Removed,
+                "Why remove this?",
+            ),
+            comment(
+                "src/bar.rs",
+                "@@ -1 +1 @@\n+new_line",
+                "new_line",
+                1,
+                PatchLineKind::Added,
+                "Needs a test",
+            ),
         ];
 
         let prompt = format_review_prompt(&comments);
-        assert!(prompt.contains("## `src/foo.rs`"), "should have foo.rs header");
-        assert!(prompt.contains("## `src/bar.rs`"), "should have bar.rs header");
-        assert_eq!(prompt.matches("```diff").count(), 2, "one hunk per file group");
-        for expected in ["Looks risky", "Why remove this?", "Needs a test",
-                         "Line 2 (added)", "Line 2 (removed)", "Line 1 (added)"] {
+        assert!(
+            prompt.contains("## `src/foo.rs`"),
+            "should have foo.rs header"
+        );
+        assert!(
+            prompt.contains("## `src/bar.rs`"),
+            "should have bar.rs header"
+        );
+        assert_eq!(
+            prompt.matches("```diff").count(),
+            2,
+            "one hunk per file group"
+        );
+        for expected in [
+            "Looks risky",
+            "Why remove this?",
+            "Needs a test",
+            "Line 2 (added)",
+            "Line 2 (removed)",
+            "Line 1 (added)",
+        ] {
             assert!(prompt.contains(expected), "missing: {expected}");
         }
     }

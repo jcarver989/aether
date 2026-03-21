@@ -557,22 +557,43 @@ mod tests {
     fn create_test_dir() -> TempDir {
         let dir = TempDir::new().expect("Failed to create temp dir");
         let p = dir.path();
-        fs::write(p.join("test.rs"), "fn main() {\n    println!(\"Hello, world!\");\n    let x = 42;\n}").unwrap();
-        fs::write(p.join("script.py"), "def hello():\n    print(\"Hello, world!\")\n    x = 42\n").unwrap();
-        fs::write(p.join("app.js"), "function hello() {\n    console.log(\"Hello, world!\");\n    const x = 42;\n}").unwrap();
+        fs::write(
+            p.join("test.rs"),
+            "fn main() {\n    println!(\"Hello, world!\");\n    let x = 42;\n}",
+        )
+        .unwrap();
+        fs::write(
+            p.join("script.py"),
+            "def hello():\n    print(\"Hello, world!\")\n    x = 42\n",
+        )
+        .unwrap();
+        fs::write(
+            p.join("app.js"),
+            "function hello() {\n    console.log(\"Hello, world!\");\n    const x = 42;\n}",
+        )
+        .unwrap();
         dir
     }
 
     fn unwrap_content(output: GrepOutput) -> GrepContentOutput {
-        match output { GrepOutput::Content(c) => c, other => panic!("Expected Content, got {other:?}") }
+        match output {
+            GrepOutput::Content(c) => c,
+            other => panic!("Expected Content, got {other:?}"),
+        }
     }
 
     fn unwrap_files(output: GrepOutput) -> GrepFilesOutput {
-        match output { GrepOutput::Files(f) => f, other => panic!("Expected Files, got {other:?}") }
+        match output {
+            GrepOutput::Files(f) => f,
+            other => panic!("Expected Files, got {other:?}"),
+        }
     }
 
     fn unwrap_count(output: GrepOutput) -> GrepCountOutput {
-        match output { GrepOutput::Count(c) => c, other => panic!("Expected Count, got {other:?}") }
+        match output {
+            GrepOutput::Count(c) => c,
+            other => panic!("Expected Count, got {other:?}"),
+        }
     }
 
     async fn grep(args: GrepInput) -> GrepOutput {
@@ -599,8 +620,13 @@ mod tests {
 
             let content = unwrap_content(grep(args).await);
             assert!(content.total_matches > 0, "no matches for {expected_file}");
-            assert!(content.matches.iter().all(|m| m.file.contains(expected_file)),
-                "expected all matches in {expected_file}");
+            assert!(
+                content
+                    .matches
+                    .iter()
+                    .all(|m| m.file.contains(expected_file)),
+                "expected all matches in {expected_file}"
+            );
         }
     }
 
@@ -702,7 +728,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(args.file_type, Some("rust".to_string()));
-        assert!(matches!(args.output_mode, Some(OutputMode::FilesWithMatches)));
+        assert!(matches!(
+            args.output_mode,
+            Some(OutputMode::FilesWithMatches)
+        ));
         assert_eq!(args.case_insensitive, Some(true));
         assert_eq!(args.line_numbers, Some(true));
         assert_eq!(args.context_before, Some(1));
@@ -719,7 +748,10 @@ mod tests {
             "outputMode": "files_with_matches"
         }))
         .unwrap();
-        assert!(matches!(args.output_mode, Some(OutputMode::FilesWithMatches)));
+        assert!(matches!(
+            args.output_mode,
+            Some(OutputMode::FilesWithMatches)
+        ));
     }
 
     #[tokio::test]
@@ -741,6 +773,9 @@ mod tests {
         args.path = Some("/no/such/path/exists".to_string());
 
         let err = perform_grep(args).await.unwrap_err();
-        assert!(matches!(err, GrepError::PathNotFound(_)), "Expected PathNotFound, got: {err}");
+        assert!(
+            matches!(err, GrepError::PathNotFound(_)),
+            "Expected PathNotFound, got: {err}"
+        );
     }
 }

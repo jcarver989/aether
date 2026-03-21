@@ -688,20 +688,25 @@ mod tests {
         for (message, expected_text) in cases {
             let session_id = acp::SessionId::new("test-session");
             assert!(
-                map_agent_message_to_notification(session_id.clone(), &message, NotificationMode::Live).is_none(),
+                map_agent_message_to_notification(
+                    session_id.clone(),
+                    &message,
+                    NotificationMode::Live
+                )
+                .is_none(),
                 "live mode should skip completed chunk"
             );
 
-            let notification = map_agent_message_to_notification(session_id, &message, NotificationMode::Replay)
-                .expect("replay notification");
+            let notification =
+                map_agent_message_to_notification(session_id, &message, NotificationMode::Replay)
+                    .expect("replay notification");
 
             match notification.update {
-                acp::SessionUpdate::AgentMessageChunk(chunk) | acp::SessionUpdate::AgentThoughtChunk(chunk) => {
-                    match chunk.content {
-                        acp::ContentBlock::Text(text) => assert_eq!(text.text, expected_text),
-                        other => panic!("Expected text content, got {other:?}"),
-                    }
-                }
+                acp::SessionUpdate::AgentMessageChunk(chunk)
+                | acp::SessionUpdate::AgentThoughtChunk(chunk) => match chunk.content {
+                    acp::ContentBlock::Text(text) => assert_eq!(text.text, expected_text),
+                    other => panic!("Expected text content, got {other:?}"),
+                },
                 other => panic!("Expected chunk update, got {other:?}"),
             }
         }
@@ -834,7 +839,10 @@ mod tests {
         assert_eq!(humanize_tool_name("coding__read_file"), "Read file");
         assert_eq!(humanize_tool_name("read_file"), "Read file");
         assert_eq!(humanize_tool_name("bash"), "Bash");
-        assert_eq!(humanize_tool_name("plugins__coding__read_file"), "Read file");
+        assert_eq!(
+            humanize_tool_name("plugins__coding__read_file"),
+            "Read file"
+        );
     }
 
     #[test]

@@ -156,7 +156,11 @@ mod tests {
     use serde_json::json;
 
     fn req() -> ToolCallRequest {
-        ToolCallRequest { id: "call_123".into(), name: "test_tool".into(), arguments: "{}".into() }
+        ToolCallRequest {
+            id: "call_123".into(),
+            name: "test_tool".into(),
+            arguments: "{}".into(),
+        }
     }
 
     fn call_structured(structured: serde_json::Value) -> (ToolCallResult, Option<ToolResultMeta>) {
@@ -299,7 +303,10 @@ mod tests {
             _meta: Some(display_meta.clone()),
         })
         .unwrap();
-        assert!(good.get("_meta").is_some(), "expected `_meta` key, got: {good}");
+        assert!(
+            good.get("_meta").is_some(),
+            "expected `_meta` key, got: {good}"
+        );
         let (stripped, meta) = extract_result_and_meta(Some(good), &[]);
         let rm = meta.expect("meta should be extracted");
         assert_eq!(rm.display.title, "Read file");
@@ -319,10 +326,16 @@ mod tests {
             _meta: Some(display_meta),
         })
         .unwrap();
-        assert!(broken.get("_meta").is_none(), "should be mangled by camelCase");
+        assert!(
+            broken.get("_meta").is_none(),
+            "should be mangled by camelCase"
+        );
         assert!(broken.get("meta").is_some());
         let (_, meta) = extract_result_and_meta(Some(broken), &[]);
-        assert!(meta.is_none(), "extraction should fail when _meta is mangled");
+        assert!(
+            meta.is_none(),
+            "extraction should fail when _meta is mangled"
+        );
     }
 
     #[test]
@@ -341,7 +354,10 @@ mod tests {
         }));
         let r = &result.result;
         for expected in ["status: success", "totalCount: 2", "- name:"] {
-            assert!(r.contains(expected), "expected '{expected}' in YAML, got: {r}");
+            assert!(
+                r.contains(expected),
+                "expected '{expected}' in YAML, got: {r}"
+            );
         }
         assert!(!r.starts_with('{'), "expected YAML, not JSON: {r}");
     }
@@ -356,7 +372,10 @@ mod tests {
     fn test_spillover_small_input_unchanged() {
         let dir = tempfile::tempdir().unwrap();
         let input = "hello world".to_string();
-        assert_eq!(maybe_spillover("id", input.clone(), 1000, dir.path()), input);
+        assert_eq!(
+            maybe_spillover("id", input.clone(), 1000, dir.path()),
+            input
+        );
     }
 
     #[test]
@@ -364,8 +383,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let large = "x".repeat(5000);
         let result = maybe_spillover("test_large", large.clone(), 1000, dir.path());
-        for expected in ["<preview>", "</preview>", "Tool result too large", "5000 bytes", "test_large.txt"] {
-            assert!(result.contains(expected), "missing '{expected}' in: {result}");
+        for expected in [
+            "<preview>",
+            "</preview>",
+            "Tool result too large",
+            "5000 bytes",
+            "test_large.txt",
+        ] {
+            assert!(
+                result.contains(expected),
+                "missing '{expected}' in: {result}"
+            );
         }
         let on_disk = std::fs::read_to_string(dir.path().join("test_large.txt")).unwrap();
         assert_eq!(on_disk, large);
@@ -374,7 +402,11 @@ mod tests {
     #[test]
     fn test_spillover_preview_content() {
         let dir = tempfile::tempdir().unwrap();
-        let large = format!("HEAD_{}{}", "z".repeat(SPILLOVER_PREVIEW_BYTES + 5000), "TAIL");
+        let large = format!(
+            "HEAD_{}{}",
+            "z".repeat(SPILLOVER_PREVIEW_BYTES + 5000),
+            "TAIL"
+        );
         let result = maybe_spillover("id", large, 1000, dir.path());
         assert!(result.contains("HEAD_"));
         assert!(!result.contains("TAIL"));
@@ -391,12 +423,20 @@ mod tests {
     #[test]
     fn test_mcp_result_spills_large_output() {
         let request = ToolCallRequest {
-            id: "spill_integration".into(), name: "big_tool".into(), arguments: "{}".into(),
+            id: "spill_integration".into(),
+            name: "big_tool".into(),
+            arguments: "{}".into(),
         };
-        let mut mcp = McpCallToolResult::structured(json!({"data": "x".repeat(TOOL_RESULT_MAX_BYTES + 1000)}));
+        let mut mcp = McpCallToolResult::structured(
+            json!({"data": "x".repeat(TOOL_RESULT_MAX_BYTES + 1000)}),
+        );
         mcp.content = vec![];
         let (result, _) = mcp_result_to_tool_call_result(&request, mcp).unwrap();
-        for expected in ["<preview>", "Tool result too large", "spill_integration.txt"] {
+        for expected in [
+            "<preview>",
+            "Tool result too large",
+            "spill_integration.txt",
+        ] {
             assert!(result.result.contains(expected));
         }
     }

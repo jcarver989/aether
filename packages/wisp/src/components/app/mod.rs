@@ -586,9 +586,8 @@ mod tests {
     use std::fs;
     use std::time::Duration;
     use tempfile::TempDir;
-    use tui::Renderer;
     use tui::testing::render_component;
-    use tui::{Frame, Theme, ViewContext};
+    use tui::{Frame, KeyCode, KeyModifiers, Renderer, Theme, ViewContext};
 
     fn make_renderer() -> Renderer<Vec<u8>> {
         Renderer::new(Vec::new(), Theme::default(), (80, 24))
@@ -599,28 +598,70 @@ mod tests {
         app.render(context)
     }
 
-    #[test]
-    fn decorate_settings_menu_adds_theme_entry() {
+    fn frame_contains(output: &Frame, text: &str) -> bool {
+        output
+            .lines()
+            .iter()
+            .any(|line| line.plain_text().contains(text))
+    }
+
+    async fn send_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+        app.on_event(&Event::Key(KeyEvent::new(code, modifiers)))
+            .await;
+    }
+
+    fn setup_themes_dir(files: &[&str]) -> TempDir {
         let temp_dir = TempDir::new().unwrap();
         let themes_dir = temp_dir.path().join("themes");
         fs::create_dir_all(&themes_dir).unwrap();
-        fs::write(themes_dir.join("catppuccin.tmTheme"), "x").unwrap();
+        for f in files {
+            fs::write(themes_dir.join(f), "x").unwrap();
+        }
+        temp_dir
+    }
 
+    fn make_plan_entry(name: &str, status: acp::PlanEntryStatus) -> acp::PlanEntry {
+        acp::PlanEntry::new(name, acp::PlanEntryPriority::Medium, status)
+    }
+
+    fn mode_model_options(
+        mode_val: impl Into<String>,
+        model_val: impl Into<String>,
+    ) -> Vec<acp::SessionConfigOption> {
+        vec![
+            acp::SessionConfigOption::select(
+                "mode",
+                "Mode",
+                mode_val.into(),
+                vec![
+                    acp::SessionConfigSelectOption::new("Planner", "Planner"),
+                    acp::SessionConfigSelectOption::new("Coder", "Coder"),
+                ],
+            )
+            .category(acp::SessionConfigOptionCategory::Mode),
+            acp::SessionConfigOption::select(
+                "model",
+                "Model",
+                model_val.into(),
+                vec![
+                    acp::SessionConfigSelectOption::new("gpt-4o", "GPT-4o"),
+                    acp::SessionConfigSelectOption::new("claude", "Claude"),
+                ],
+            )
+            .category(acp::SessionConfigOptionCategory::Model),
+        ]
+    }
+
+    #[test]
+    fn settings_overlay_with_themes() {
+        let temp_dir = setup_themes_dir(&["catppuccin.tmTheme"]);
         with_wisp_home(temp_dir.path(), || {
             let mut app = make_app();
             app.open_settings_overlay();
             assert!(app.settings_overlay.is_some());
         });
-    }
 
-    #[test]
-    fn theme_entry_uses_current_theme_from_settings() {
-        let temp_dir = TempDir::new().unwrap();
-        let themes_dir = temp_dir.path().join("themes");
-        fs::create_dir_all(&themes_dir).unwrap();
-        fs::write(themes_dir.join("catppuccin.tmTheme"), "x").unwrap();
-        fs::write(themes_dir.join("nord.tmTheme"), "x").unwrap();
-
+        let temp_dir = setup_themes_dir(&["catppuccin.tmTheme", "nord.tmTheme"]);
         with_wisp_home(temp_dir.path(), || {
             let settings = WispSettings {
                 theme: WispThemeSettings {
@@ -628,7 +669,6 @@ mod tests {
                 },
             };
             save_settings(&settings).unwrap();
-
             let mut app = make_app();
             app.open_settings_overlay();
             assert!(app.settings_overlay.is_some());
@@ -671,29 +711,21 @@ mod tests {
         let mut renderer = make_renderer();
         app.open_settings_overlay();
 
-        let context = ViewContext::new((120, 40));
-        let output = render_app(&mut renderer, &mut app, &context);
-        assert!(
-            output
-                .lines()
-                .iter()
-                .any(|line| line.plain_text().contains("Configuration"))
-        );
-
+        let ctx = ViewContext::new((120, 40));
+        assert!(frame_contains(
+            &render_app(&mut renderer, &mut app, &ctx),
+            "Configuration"
+        ));
         app.settings_overlay = None;
-        let output = render_app(&mut renderer, &mut app, &context);
-        assert!(
-            !output
-                .lines()
-                .iter()
-                .any(|line| line.plain_text().contains("Configuration"))
-        );
+        assert!(!frame_contains(
+            &render_app(&mut renderer, &mut app, &ctx),
+            "Configuration"
+        ));
     }
 
     #[test]
     fn extract_model_display_handles_comma_separated_value() {
         use crate::components::status_line::extract_model_display;
-
         let options = vec![acp::SessionConfigOption::select(
             "model",
             "Model",
@@ -714,7 +746,6 @@ mod tests {
     fn extract_reasoning_effort_returns_none_for_none_value() {
         use crate::components::status_line::extract_reasoning_effort;
         use acp_utils::config_option_id::ConfigOptionId;
-
         let options = vec![acp::SessionConfigOption::select(
             ConfigOptionId::ReasoningEffort.as_str(),
             "Reasoning",
@@ -733,11 +764,7 @@ mod tests {
         let mut renderer = make_renderer();
         let grace_period = app.conversation_screen.plan_tracker.grace_period;
         app.conversation_screen.plan_tracker.replace(
-            vec![acp::PlanEntry::new(
-                "1",
-                acp::PlanEntryPriority::Medium,
-                acp::PlanEntryStatus::Completed,
-            )],
+            vec![make_plan_entry("1", acp::PlanEntryStatus::Completed)],
             Instant::now()
                 .checked_sub(grace_period + Duration::from_millis(1))
                 .unwrap(),
@@ -745,88 +772,59 @@ mod tests {
         app.conversation_screen.plan_tracker.on_tick(Instant::now());
 
         let output = render_app(&mut renderer, &mut app, &ViewContext::new((120, 40)));
-        assert!(
-            !output
-                .lines()
-                .iter()
-                .any(|line| line.plain_text().contains("Plan"))
-        );
+        assert!(!frame_contains(&output, "Plan"));
     }
 
     #[test]
-    fn plan_version_increments_on_replace() {
+    fn plan_version_increments_on_replace_and_clear() {
         let mut app = make_app();
-
-        let initial_version = app.conversation_screen.plan_tracker.version();
-        app.conversation_screen.plan_tracker.replace(
-            vec![acp::PlanEntry::new(
-                "Task A",
-                acp::PlanEntryPriority::Medium,
-                acp::PlanEntryStatus::Pending,
-            )],
-            Instant::now(),
-        );
-
-        assert!(app.conversation_screen.plan_tracker.version() > initial_version);
-    }
-
-    #[test]
-    fn plan_version_increments_on_clear() {
-        let mut app = make_app();
+        let v0 = app.conversation_screen.plan_tracker.version();
 
         app.conversation_screen.plan_tracker.replace(
-            vec![acp::PlanEntry::new(
-                "Task A",
-                acp::PlanEntryPriority::Medium,
-                acp::PlanEntryStatus::Pending,
-            )],
+            vec![make_plan_entry("Task A", acp::PlanEntryStatus::Pending)],
             Instant::now(),
         );
-        let version_before_clear = app.conversation_screen.plan_tracker.version();
+        let v1 = app.conversation_screen.plan_tracker.version();
+        assert!(v1 > v0, "replace should increment version");
+
         app.conversation_screen.plan_tracker.clear();
-
-        assert!(app.conversation_screen.plan_tracker.version() > version_before_clear);
+        assert!(
+            app.conversation_screen.plan_tracker.version() > v1,
+            "clear should increment version"
+        );
     }
 
     #[test]
     fn sessions_listed_filters_out_current_session() {
         let mut app = make_app_with_session_id("current-session");
-
-        let sessions = vec![
-            acp::SessionInfo::new("other-session-1", PathBuf::from("/project"))
-                .title("First other session".to_string()),
-            acp::SessionInfo::new("current-session", PathBuf::from("/project"))
-                .title("Current session title".to_string()),
-            acp::SessionInfo::new("other-session-2", PathBuf::from("/other"))
-                .title("Second other session".to_string()),
-        ];
-
-        app.on_acp_event(AcpEvent::SessionsListed { sessions });
+        app.on_acp_event(AcpEvent::SessionsListed {
+            sessions: vec![
+                acp::SessionInfo::new("other-session-1", PathBuf::from("/project"))
+                    .title("First other session".to_string()),
+                acp::SessionInfo::new("current-session", PathBuf::from("/project"))
+                    .title("Current session title".to_string()),
+                acp::SessionInfo::new("other-session-2", PathBuf::from("/other"))
+                    .title("Second other session".to_string()),
+            ],
+        });
 
         let picker = match &mut app.conversation_screen.active_modal {
             Some(crate::components::conversation_screen::Modal::SessionPicker(p)) => p,
             _ => panic!("expected session picker modal"),
         };
-        let term = render_component(|ctx| picker.render(ctx), 60, 10);
-        let lines = term.get_lines();
+        let lines = render_component(|ctx| picker.render(ctx), 60, 10).get_lines();
 
+        let has = |text: &str| lines.iter().any(|l| l.contains(text));
         assert!(
-            !lines
-                .iter()
-                .any(|line| line.contains("Current session title")),
-            "current session should be filtered out, got: {:?}",
-            lines
+            !has("Current session title"),
+            "current session should be filtered out"
         );
         assert!(
-            lines
-                .iter()
-                .any(|line| line.contains("First other session")),
+            has("First other session"),
             "first other session should be present"
         );
         assert!(
-            lines
-                .iter()
-                .any(|line| line.contains("Second other session")),
+            has("Second other session"),
             "second other session should be present"
         );
     }
@@ -834,51 +832,32 @@ mod tests {
     #[tokio::test]
     async fn custom_exit_keybinding_triggers_exit() {
         use crate::keybindings::KeyBinding;
-        use tui::{KeyCode, KeyModifiers};
-
         let mut app = make_app();
         app.keybindings.exit = KeyBinding::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
 
-        let default_exit = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
-        app.on_event(&Event::Key(default_exit)).await;
+        send_key(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
         assert!(
             !app.exit_requested(),
             "default Ctrl+C should no longer exit"
         );
 
-        let custom_exit = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
-        app.on_event(&Event::Key(custom_exit)).await;
+        send_key(&mut app, KeyCode::Char('q'), KeyModifiers::CONTROL).await;
         assert!(app.exit_requested(), "custom Ctrl+Q should exit");
     }
 
     #[tokio::test]
-    async fn ctrl_g_opens_git_diff_viewer() {
-        use tui::{KeyCode, KeyModifiers};
-
+    async fn ctrl_g_toggles_git_diff_viewer() {
         let mut app = make_app();
-        let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
-        app.on_event(&Event::Key(key)).await;
 
-        assert!(app.screen_router.is_git_diff());
-    }
+        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
+        assert!(app.screen_router.is_git_diff(), "should open git diff");
 
-    #[tokio::test]
-    async fn ctrl_g_closes_git_diff_viewer() {
-        use tui::{KeyCode, KeyModifiers};
-
-        let mut app = make_app();
-        app.screen_router.enter_git_diff_for_test();
-
-        let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
-        app.on_event(&Event::Key(key)).await;
-
-        assert!(!app.screen_router.is_git_diff());
+        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
+        assert!(!app.screen_router.is_git_diff(), "should close git diff");
     }
 
     #[tokio::test]
     async fn ctrl_g_blocked_during_elicitation() {
-        use tui::{KeyCode, KeyModifiers};
-
         let mut app = make_app();
         app.conversation_screen.active_modal =
             Some(crate::components::conversation_screen::Modal::Elicitation(
@@ -891,9 +870,7 @@ mod tests {
                 ),
             ));
 
-        let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
-        app.on_event(&Event::Key(key)).await;
-
+        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
         assert!(
             !app.screen_router.is_git_diff(),
             "git diff should not open during elicitation"
@@ -902,14 +879,11 @@ mod tests {
 
     #[tokio::test]
     async fn esc_in_diff_mode_does_not_cancel() {
-        use tui::{KeyCode, KeyModifiers};
-
         let mut app = make_app();
         app.conversation_screen.waiting_for_response = true;
         app.screen_router.enter_git_diff_for_test();
 
-        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
-        app.on_event(&Event::Key(key)).await;
+        send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
 
         assert!(!app.exit_requested());
         assert!(
@@ -920,8 +894,7 @@ mod tests {
 
     #[tokio::test]
     async fn mouse_scroll_ignored_in_conversation_mode() {
-        use tui::{KeyModifiers, MouseEvent, MouseEventKind};
-
+        use tui::{MouseEvent, MouseEventKind};
         let mut app = make_app();
         let mouse = MouseEvent {
             kind: MouseEventKind::ScrollDown,
@@ -935,16 +908,16 @@ mod tests {
     #[tokio::test]
     async fn prompt_composer_submit_pushes_echo_lines() {
         use crate::components::conversation_window::SegmentContent;
-
         let mut app = make_app();
-        let outcome = Some(vec![ConversationScreenMessage::SendPrompt {
-            user_input: "hello".to_string(),
-            attachments: vec![],
-        }]);
-
         let mut commands = Vec::new();
-        app.handle_conversation_messages(&mut commands, outcome)
-            .await;
+        app.handle_conversation_messages(
+            &mut commands,
+            Some(vec![ConversationScreenMessage::SendPrompt {
+                user_input: "hello".to_string(),
+                attachments: vec![],
+            }]),
+        )
+        .await;
 
         let has_hello = app
             .conversation_screen
@@ -960,12 +933,13 @@ mod tests {
     #[test]
     fn prompt_composer_open_settings() {
         let mut app = make_app();
-        let outcome = Some(vec![ConversationScreenMessage::OpenSettings]);
-
         let mut commands = Vec::new();
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(app.handle_conversation_messages(&mut commands, outcome));
-
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(app.handle_conversation_messages(
+                &mut commands,
+                Some(vec![ConversationScreenMessage::OpenSettings]),
+            ));
         assert!(
             app.settings_overlay.is_some(),
             "settings overlay should be opened"
@@ -976,59 +950,45 @@ mod tests {
     fn settings_overlay_close_clears_overlay() {
         let mut app = make_app();
         app.open_settings_overlay();
-
         app.settings_overlay = None;
-
         assert!(app.settings_overlay.is_none(), "close should clear overlay");
     }
 
     #[tokio::test]
-    async fn tick_advances_tool_call_statuses() {
+    async fn tick_advances_spinner_animations() {
         let mut app = make_app();
-
         let tool_call = acp::ToolCall::new("tool-1".to_string(), "test_tool");
         app.conversation_screen
             .tool_call_statuses
             .on_tool_call(&tool_call);
-        let ctx = ViewContext::new((80, 24));
-        let lines_before = app
-            .conversation_screen
-            .tool_call_statuses
-            .render_tool("tool-1", &ctx);
-        app.on_event(&Event::Tick).await;
-        let lines_after = app
-            .conversation_screen
-            .tool_call_statuses
-            .render_tool("tool-1", &ctx);
-
-        assert_ne!(
-            lines_before[0].plain_text(),
-            lines_after[0].plain_text(),
-            "tick should advance the spinner animation"
-        );
-    }
-
-    #[tokio::test]
-    async fn tick_advances_progress_indicator() {
-        let mut app = make_app();
-
-        let tool_call = acp::ToolCall::new("tool-1".to_string(), "test_tool");
-        app.conversation_screen
-            .tool_call_statuses
-            .on_tool_call(&tool_call);
-
         app.conversation_screen
             .progress_indicator
             .update(0, 1, true);
+
         let ctx = ViewContext::new((80, 24));
-        let output_before = app.conversation_screen.progress_indicator.render(&ctx);
+        let tool_before = app
+            .conversation_screen
+            .tool_call_statuses
+            .render_tool("tool-1", &ctx);
+        let prog_before = app.conversation_screen.progress_indicator.render(&ctx);
+
         app.on_event(&Event::Tick).await;
-        let output_after = app.conversation_screen.progress_indicator.render(&ctx);
+
+        let tool_after = app
+            .conversation_screen
+            .tool_call_statuses
+            .render_tool("tool-1", &ctx);
+        let prog_after = app.conversation_screen.progress_indicator.render(&ctx);
 
         assert_ne!(
-            output_before[0].plain_text(),
-            output_after[0].plain_text(),
-            "spinner frame should change after tick"
+            tool_before[0].plain_text(),
+            tool_after[0].plain_text(),
+            "tick should advance tool spinner"
+        );
+        assert_ne!(
+            prog_before[0].plain_text(),
+            prog_after[0].plain_text(),
+            "tick should advance progress spinner"
         );
     }
 
@@ -1036,55 +996,42 @@ mod tests {
     fn on_prompt_error_clears_waiting_state() {
         let mut app = make_app();
         app.conversation_screen.waiting_for_response = true;
-
-        let error = acp::Error::internal_error();
-        app.conversation_screen.on_prompt_error(&error);
-
+        app.conversation_screen
+            .on_prompt_error(&acp::Error::internal_error());
         assert!(!app.conversation_screen.waiting_for_response);
         assert!(!app.exit_requested());
     }
 
     #[test]
-    fn on_authenticate_complete_does_not_exit() {
+    fn auth_events_and_connection_close_exit_behavior() {
         let mut app = make_app_with_auth(vec![acp::AuthMethod::Agent(acp::AuthMethodAgent::new(
             "anthropic",
             "Anthropic",
         ))]);
-
         app.on_authenticate_complete("anthropic");
+        assert!(
+            !app.exit_requested(),
+            "authenticate_complete should not exit"
+        );
 
-        assert!(!app.exit_requested());
-    }
-
-    #[test]
-    fn on_authenticate_failed_does_not_exit() {
         let mut app = make_app();
-
         app.on_authenticate_failed("anthropic", "bad token");
+        assert!(!app.exit_requested(), "authenticate_failed should not exit");
 
-        assert!(!app.exit_requested());
-    }
-
-    #[test]
-    fn on_connection_closed_requests_exit() {
         let mut app = make_app();
-
         app.on_acp_event(AcpEvent::ConnectionClosed);
-
-        assert!(app.exit_requested());
+        assert!(app.exit_requested(), "connection_closed should exit");
     }
 
     #[tokio::test]
     async fn clear_screen_returns_clear_command() {
         let mut app = make_app();
-
         let mut commands = Vec::new();
         app.handle_conversation_messages(
             &mut commands,
             Some(vec![ConversationScreenMessage::ClearScreen]),
         )
         .await;
-
         assert!(
             commands
                 .iter()
@@ -1095,13 +1042,9 @@ mod tests {
 
     #[tokio::test]
     async fn cancel_sends_directly_via_prompt_handle() {
-        use tui::{KeyCode, KeyModifiers};
-
         let mut app = make_app();
         app.conversation_screen.waiting_for_response = true;
-
-        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
-        app.on_event(&Event::Key(key)).await;
+        send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
         assert!(!app.exit_requested());
     }
 
@@ -1109,88 +1052,18 @@ mod tests {
     fn new_session_restores_changed_config_selections() {
         use acp_utils::client::PromptCommand;
 
-        let initial_options = vec![
-            acp::SessionConfigOption::select(
-                "mode",
-                "Mode",
-                "Planner",
-                vec![
-                    acp::SessionConfigSelectOption::new("Planner", "Planner"),
-                    acp::SessionConfigSelectOption::new("Coder", "Coder"),
-                ],
-            )
-            .category(acp::SessionConfigOptionCategory::Mode),
-            acp::SessionConfigOption::select(
-                "model",
-                "Model",
-                "gpt-4o",
-                vec![
-                    acp::SessionConfigSelectOption::new("gpt-4o", "GPT-4o"),
-                    acp::SessionConfigSelectOption::new("claude", "Claude"),
-                ],
-            )
-            .category(acp::SessionConfigOptionCategory::Model),
-        ];
-        let (mut app, mut rx) = make_app_with_config_recording(&initial_options);
-
-        // Simulate user changing mode to "Coder"
-        let updated_options = vec![
-            acp::SessionConfigOption::select(
-                "mode",
-                "Mode",
-                "Coder",
-                vec![
-                    acp::SessionConfigSelectOption::new("Planner", "Planner"),
-                    acp::SessionConfigSelectOption::new("Coder", "Coder"),
-                ],
-            )
-            .category(acp::SessionConfigOptionCategory::Mode),
-            acp::SessionConfigOption::select(
-                "model",
-                "Model",
-                "gpt-4o",
-                vec![
-                    acp::SessionConfigSelectOption::new("gpt-4o", "GPT-4o"),
-                    acp::SessionConfigSelectOption::new("claude", "Claude"),
-                ],
-            )
-            .category(acp::SessionConfigOptionCategory::Model),
-        ];
-        app.update_config_options(&updated_options);
-
-        // Server returns defaults for the new session (mode reset to "Planner")
-        let server_defaults = vec![
-            acp::SessionConfigOption::select(
-                "mode",
-                "Mode",
-                "Planner",
-                vec![
-                    acp::SessionConfigSelectOption::new("Planner", "Planner"),
-                    acp::SessionConfigSelectOption::new("Coder", "Coder"),
-                ],
-            )
-            .category(acp::SessionConfigOptionCategory::Mode),
-            acp::SessionConfigOption::select(
-                "model",
-                "Model",
-                "gpt-4o",
-                vec![
-                    acp::SessionConfigSelectOption::new("gpt-4o", "GPT-4o"),
-                    acp::SessionConfigSelectOption::new("claude", "Claude"),
-                ],
-            )
-            .category(acp::SessionConfigOptionCategory::Model),
-        ];
+        let (mut app, mut rx) =
+            make_app_with_config_recording(&mode_model_options("Planner", "gpt-4o"));
+        app.update_config_options(&mode_model_options("Coder", "gpt-4o"));
 
         app.on_acp_event(AcpEvent::NewSessionCreated {
             session_id: SessionId::new("new-session"),
-            config_options: server_defaults,
+            config_options: mode_model_options("Planner", "gpt-4o"),
         });
 
         assert_eq!(app.session_id, SessionId::new("new-session"));
         assert!(app.context_usage_pct.is_none());
 
-        // Only "mode" was changed — verify exactly one SetConfigOption was sent
         let cmd = rx.try_recv().expect("expected a SetConfigOption command");
         match cmd {
             PromptCommand::SetConfigOption {

@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use crate::oauth::credential_store::{OAuthCredential, OAuthCredentialStorage};
 use crate::oauth::OAuthError;
+use crate::oauth::credential_store::{OAuthCredential, OAuthCredentialStorage};
 
 #[derive(Default)]
 pub struct FakeOAuthCredentialStore {
@@ -57,10 +57,9 @@ mod tests {
     #[test]
     fn load_returns_none_when_empty() {
         let store = FakeOAuthCredentialStore::new();
-        let result =
-            tokio::runtime::Runtime::new()
-                .unwrap()
-                .block_on(store.load_credential("unknown"));
+        let result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(store.load_credential("unknown"));
         assert!(result.unwrap().is_none());
     }
 

@@ -320,7 +320,11 @@ mod tests {
 
     fn test_specs_with_modes() -> Vec<AgentSpec> {
         vec![
-            spec("Planner", "anthropic:claude-sonnet-4-5", Some(ReasoningEffort::High)),
+            spec(
+                "Planner",
+                "anthropic:claude-sonnet-4-5",
+                Some(ReasoningEffort::High),
+            ),
             spec("Coder", "deepseek:deepseek-chat", None),
         ]
     }
@@ -351,7 +355,9 @@ mod tests {
     }
 
     fn find_option<'a>(opts: &'a [SessionConfigOption], id: &str) -> &'a SessionConfigOption {
-        opts.iter().find(|o| o.id.0.as_ref() == id).unwrap_or_else(|| panic!("option '{id}' not found"))
+        opts.iter()
+            .find(|o| o.id.0.as_ref() == id)
+            .unwrap_or_else(|| panic!("option '{id}' not found"))
     }
 
     fn fake_store() -> FakeOAuthCredentialStore {
@@ -360,7 +366,15 @@ mod tests {
 
     fn config_opts(model: &str, effort: Option<ReasoningEffort>) -> Vec<SessionConfigOption> {
         let modes = test_validated_modes();
-        build_config_options_from_modes(&modes, &test_models(), None, model, effort, LlmModel::all(), &fake_store())
+        build_config_options_from_modes(
+            &modes,
+            &test_models(),
+            None,
+            model,
+            effort,
+            LlmModel::all(),
+            &fake_store(),
+        )
     }
 
     #[test]
@@ -390,8 +404,13 @@ mod tests {
     fn build_config_options_from_modes_includes_mode_option_when_configured() {
         let modes = test_validated_modes();
         let options = build_config_options_from_modes(
-            &modes, &test_models(), Some("Planner"),
-            "anthropic:claude-sonnet-4-5", Some(ReasoningEffort::High), LlmModel::all(), &fake_store(),
+            &modes,
+            &test_models(),
+            Some("Planner"),
+            "anthropic:claude-sonnet-4-5",
+            Some(ReasoningEffort::High),
+            LlmModel::all(),
+            &fake_store(),
         );
         assert!(has_option_id(&options, "mode"));
     }
@@ -399,7 +418,13 @@ mod tests {
     #[test]
     fn build_config_options_from_modes_returns_single_model_option() {
         let opts = build_config_options_from_modes(
-            &[], &test_models(), None, "deepseek:deepseek-chat", None, LlmModel::all(), &fake_store(),
+            &[],
+            &test_models(),
+            None,
+            "deepseek:deepseek-chat",
+            None,
+            LlmModel::all(),
+            &fake_store(),
         );
         assert_eq!(opts.len(), 1);
 
@@ -408,7 +433,10 @@ mod tests {
 
         let options = select_options(model_opt);
         for prefix in ["anthropic:", "deepseek:"] {
-            assert!(options.iter().any(|o| o.value.0.starts_with(prefix)), "missing {prefix}");
+            assert!(
+                options.iter().any(|o| o.value.0.starts_with(prefix)),
+                "missing {prefix}"
+            );
         }
     }
 
@@ -423,21 +451,38 @@ mod tests {
             ("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat", true),
             ("anthropic:claude-sonnet-4-5,mystery:nope", false),
         ] {
-            assert_eq!(model_exists(&models, input), expected, "model_exists({input})");
+            assert_eq!(
+                model_exists(&models, input),
+                expected,
+                "model_exists({input})"
+            );
         }
     }
 
     #[test]
     fn build_model_config_option_includes_multi_select_meta() {
-        let opt = build_model_config_option(&test_models(), "anthropic:claude-sonnet-4-5", LlmModel::all(), &fake_store());
+        let opt = build_model_config_option(
+            &test_models(),
+            "anthropic:claude-sonnet-4-5",
+            LlmModel::all(),
+            &fake_store(),
+        );
         assert!(ConfigOptionMeta::from_meta(opt.meta.as_ref()).multi_select);
     }
 
     #[test]
     fn effective_model_prefers_pending_falls_back_to_active() {
         for (active, pending, expected) in [
-            ("anthropic:claude-sonnet-4-5", Some("deepseek:deepseek-chat"), "deepseek:deepseek-chat"),
-            ("anthropic:claude-sonnet-4-5", None, "anthropic:claude-sonnet-4-5"),
+            (
+                "anthropic:claude-sonnet-4-5",
+                Some("deepseek:deepseek-chat"),
+                "deepseek:deepseek-chat",
+            ),
+            (
+                "anthropic:claude-sonnet-4-5",
+                None,
+                "anthropic:claude-sonnet-4-5",
+            ),
         ] {
             assert_eq!(effective_model(active, pending), expected);
         }
@@ -445,36 +490,77 @@ mod tests {
 
     #[test]
     fn collapsed_entry_for_fully_unavailable_provider() {
-        let opt = build_model_config_option(&test_models(), "anthropic:claude-sonnet-4-5", LlmModel::all(), &fake_store());
+        let opt = build_model_config_option(
+            &test_models(),
+            "anthropic:claude-sonnet-4-5",
+            LlmModel::all(),
+            &fake_store(),
+        );
         let options = select_options(&opt);
 
-        let moonshot = options.iter()
+        let moonshot = options
+            .iter()
             .find(|o| o.value.0.as_ref() == "__unavailable:moonshot")
             .expect("expected collapsed moonshot entry");
 
-        assert!(moonshot.name.starts_with("Moonshot ("), "got: {}", moonshot.name);
+        assert!(
+            moonshot.name.starts_with("Moonshot ("),
+            "got: {}",
+            moonshot.name
+        );
         assert!(moonshot.name.ends_with("models)"));
-        assert!(moonshot.description.as_deref().is_some_and(|d| d.starts_with("Unavailable:")));
+        assert!(
+            moonshot
+                .description
+                .as_deref()
+                .is_some_and(|d| d.starts_with("Unavailable:"))
+        );
     }
 
     #[test]
     fn reasoning_option_presence_depends_on_model() {
         let with = config_opts("anthropic:claude-opus-4-6", Some(ReasoningEffort::High));
-        assert!(has_option_id(&with, "reasoning_effort"), "should be present for opus");
-        assert_eq!(select_current(find_option(&with, "reasoning_effort")), "high");
+        assert!(
+            has_option_id(&with, "reasoning_effort"),
+            "should be present for opus"
+        );
+        assert_eq!(
+            select_current(find_option(&with, "reasoning_effort")),
+            "high"
+        );
 
         let without = config_opts("deepseek:deepseek-chat", None);
-        assert!(!has_option_id(&without, "reasoning_effort"), "should be absent for deepseek");
+        assert!(
+            !has_option_id(&without, "reasoning_effort"),
+            "should be absent for deepseek"
+        );
     }
 
     #[test]
     fn mixed_provider_lists_models_individually() {
-        let opt = build_model_config_option(&test_models(), "anthropic:claude-sonnet-4-5", LlmModel::all(), &fake_store());
+        let opt = build_model_config_option(
+            &test_models(),
+            "anthropic:claude-sonnet-4-5",
+            LlmModel::all(),
+            &fake_store(),
+        );
         let options = select_options(&opt);
 
-        assert!(!options.iter().any(|o| o.value.0.as_ref() == "__unavailable:gemini"),
-            "Gemini should not be collapsed when it has available models");
-        assert!(options.iter().any(|o| o.value.0.starts_with("gemini:") && !o.name.contains("unavailable")));
-        assert!(options.iter().any(|o| o.value.0.starts_with("gemini:") && o.name.contains("unavailable")));
+        assert!(
+            !options
+                .iter()
+                .any(|o| o.value.0.as_ref() == "__unavailable:gemini"),
+            "Gemini should not be collapsed when it has available models"
+        );
+        assert!(
+            options
+                .iter()
+                .any(|o| o.value.0.starts_with("gemini:") && !o.name.contains("unavailable"))
+        );
+        assert!(
+            options
+                .iter()
+                .any(|o| o.value.0.starts_with("gemini:") && o.name.contains("unavailable"))
+        );
     }
 }

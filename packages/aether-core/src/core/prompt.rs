@@ -129,8 +129,7 @@ impl Prompt {
                 if path.is_file() {
                     match fs::read_to_string(&path).await {
                         Ok(content) => {
-                            let expanded =
-                                Self::expand_builtins(&content, Some(cwd)).await?;
+                            let expanded = Self::expand_builtins(&content, Some(cwd)).await?;
                             contents.push(expanded);
                         }
                         Err(e) => {
