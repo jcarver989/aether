@@ -372,7 +372,7 @@ fn emit_provider_impls(out: &mut String, provider_models: &ProviderModels) {
             out,
             models,
             |m| m.reasoning_levels.join(","),
-            |key| format_reasoning_levels_rhs(key),
+            format_reasoning_levels_rhs,
         );
         pushln(out, "        }");
         pushln(out, "    }");
