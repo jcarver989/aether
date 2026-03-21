@@ -119,6 +119,25 @@ impl ProviderLoginOverlay {
         }
     }
 
+    pub fn replace_entries(&mut self, entries: Vec<ProviderLoginEntry>) {
+        let selected_method_id = self
+            .list
+            .selected_item()
+            .map(|entry| entry.method_id.clone());
+
+        self.list.set_items(entries);
+
+        if let Some(selected_method_id) = selected_method_id
+            && let Some(index) = self
+                .list
+                .items()
+                .iter()
+                .position(|entry| entry.method_id == selected_method_id)
+        {
+            self.list.set_selected(index);
+        }
+    }
+
     #[cfg(test)]
     pub fn entries(&self) -> &[ProviderLoginEntry] {
         self.list.items()

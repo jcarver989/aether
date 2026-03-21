@@ -109,6 +109,15 @@ impl SettingsOverlay {
         }
     }
 
+    pub fn update_auth_methods(&mut self, auth_methods: Vec<acp::AuthMethod>) {
+        self.auth_methods = auth_methods;
+        super::decorate_menu(&mut self.menu, &self.server_statuses, &self.auth_methods);
+        let login_entries = super::build_login_entries(&self.auth_methods);
+        if let SettingsPane::ProviderLogin(ref mut overlay) = self.active_pane {
+            overlay.replace_entries(login_entries);
+        }
+    }
+
     pub fn on_authenticate_started(&mut self, method_id: &str) {
         if let SettingsPane::ProviderLogin(ref mut overlay) = self.active_pane {
             overlay.set_authenticating(method_id);

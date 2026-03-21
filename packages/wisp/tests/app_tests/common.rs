@@ -32,11 +32,21 @@ impl Renderer {
         config_options: &[acp::SessionConfigOption],
         size: (u16, u16),
     ) -> Self {
+        Self::new_with_auth_methods(terminal, agent_name, config_options, vec![], size)
+    }
+
+    pub(super) fn new_with_auth_methods(
+        terminal: TestTerminal,
+        agent_name: String,
+        config_options: &[acp::SessionConfigOption],
+        auth_methods: Vec<acp::AuthMethod>,
+        size: (u16, u16),
+    ) -> Self {
         let app = App::new(
             acp::SessionId::new("test"),
             agent_name,
             config_options,
-            vec![],
+            auth_methods,
             std::path::PathBuf::from("."),
             AcpPromptHandle::noop(),
         );

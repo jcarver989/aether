@@ -3,7 +3,7 @@
 //! These types are used on both the agent (server) and client (UI) sides of the
 //! ACP connection.
 
-use agent_client_protocol::ExtNotification;
+use agent_client_protocol::{AuthMethod, ExtNotification};
 pub use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
 use rmcp::model::ElicitationSchema;
 use serde::{Deserialize, Serialize};
@@ -19,6 +19,7 @@ pub const SUB_AGENT_PROGRESS_METHOD: &str = "_aether/sub_agent_progress";
 pub const CONTEXT_USAGE_METHOD: &str = "_aether/context_usage";
 pub const CONTEXT_CLEARED_METHOD: &str = "_aether/context_cleared";
 pub const MCP_MESSAGE_METHOD: &str = "_aether/mcp";
+pub const AUTH_METHODS_UPDATED_METHOD: &str = "_aether/auth_methods_updated";
 
 /// Custom `ext_method` for tunneling MCP elicitation through ACP.
 /// Note: ACP auto-prefixes `ext_method` names with `_`, so the wire method
@@ -36,6 +37,12 @@ pub struct ContextUsageParams {
 /// Parameters for `_aether/context_cleared` notifications.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ContextClearedParams {}
+
+/// Parameters for `_aether/auth_methods_updated` notifications.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AuthMethodsUpdatedParams {
+    pub auth_methods: Vec<AuthMethod>,
+}
 
 /// Parameters sent via `ext_method` for `aether/elicitation`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -119,6 +126,17 @@ impl TryFrom<&ExtNotification> for McpNotification {
     }
 }
 
+impl TryFrom<&ExtNotification> for AuthMethodsUpdatedParams {
+    type Error = ExtNotificationParseError;
+
+    fn try_from(n: &ExtNotification) -> Result<Self, Self::Error> {
+        if n.method.as_ref() != AUTH_METHODS_UPDATED_METHOD {
+            return Err(ExtNotificationParseError::WrongMethod);
+        }
+        serde_json::from_str(n.params.get()).map_err(ExtNotificationParseError::InvalidJson)
+    }
+}
+
 fn ext_notification<T: Serialize>(method: &str, params: &T) -> ExtNotification {
     let raw_value = to_raw_value(params).expect("notification params are serializable");
     ExtNotification::new(method, Arc::from(raw_value))
@@ -133,6 +151,12 @@ impl From<ContextUsageParams> for ExtNotification {
 impl From<ContextClearedParams> for ExtNotification {
     fn from(params: ContextClearedParams) -> Self {
         ext_notification(CONTEXT_CLEARED_METHOD, &params)
+    }
+}
+
+impl From<AuthMethodsUpdatedParams> for ExtNotification {
+    fn from(params: AuthMethodsUpdatedParams) -> Self {
+        ext_notification(AUTH_METHODS_UPDATED_METHOD, &params)
     }
 }
 
@@ -195,6 +219,9 @@ pub struct SubAgentToolError {
 
 #[cfg(test)]
 mod tests {
+    use agent_client_protocol::AuthMethodAgent;
+    use serde_json::from_str;
+
     use super::*;
 
     #[test]
@@ -203,6 +230,7 @@ mod tests {
         assert!(CONTEXT_USAGE_METHOD.starts_with('_'));
         assert!(CONTEXT_CLEARED_METHOD.starts_with('_'));
         assert!(MCP_MESSAGE_METHOD.starts_with('_'));
+        assert!(AUTH_METHODS_UPDATED_METHOD.starts_with('_'));
     }
 
     #[test]
@@ -247,6 +275,25 @@ mod tests {
         let parsed: McpNotification =
             serde_json::from_str(notification.params.get()).expect("valid JSON");
         assert_eq!(parsed, msg);
+    }
+
+    #[test]
+    fn auth_methods_updated_params_roundtrip() {
+        let params = AuthMethodsUpdatedParams {
+            auth_methods: vec![
+                AuthMethod::Agent(
+                    AuthMethodAgent::new("anthropic", "Anthropic").description("authenticated"),
+                ),
+                AuthMethod::Agent(AuthMethodAgent::new("openrouter", "OpenRouter")),
+            ],
+        };
+
+        let notification: ExtNotification = params.clone().into();
+        let parsed: AuthMethodsUpdatedParams =
+            from_str(notification.params.get()).expect("valid JSON");
+
+        assert_eq!(parsed, params);
+        assert_eq!(notification.method.as_ref(), AUTH_METHODS_UPDATED_METHOD);
     }
 
     #[test]
@@ -411,6 +458,20 @@ mod tests {
         let parsed =
             McpNotification::try_from(&notification).expect("should parse McpNotification");
         assert_eq!(parsed, msg);
+    }
+
+    #[test]
+    fn auth_methods_updated_try_from_roundtrip() {
+        let params = AuthMethodsUpdatedParams {
+            auth_methods: vec![AuthMethod::Agent(
+                AuthMethodAgent::new("anthropic", "Anthropic").description("authenticated"),
+            )],
+        };
+
+        let notification: ExtNotification = params.clone().into();
+        let parsed =
+            AuthMethodsUpdatedParams::try_from(&notification).expect("should parse auth methods");
+        assert_eq!(parsed, params);
     }
 
     #[test]

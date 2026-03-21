@@ -1,13 +1,13 @@
 use acp_utils::config_option_id::ConfigOptionId;
-use acp_utils::notifications::McpRequest;
+use acp_utils::notifications::{AuthMethodsUpdatedParams, McpRequest};
 use agent_client_protocol::{
     self as acp, Agent, AgentCapabilities, AuthMethod, AuthenticateRequest, AuthenticateResponse,
-    AvailableCommandsUpdate, ConfigOptionUpdate, Implementation, InitializeRequest,
-    InitializeResponse, ListSessionsRequest, ListSessionsResponse, LoadSessionRequest,
-    LoadSessionResponse, McpCapabilities, NewSessionRequest, NewSessionResponse,
-    PromptCapabilities, PromptResponse, ProtocolVersion, SessionId, SessionNotification,
-    SessionUpdate, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse,
-    SetSessionModeRequest, SetSessionModeResponse,
+    AvailableCommandsUpdate, ConfigOptionUpdate, ExtNotification, Implementation,
+    InitializeRequest, InitializeResponse, ListSessionsRequest, ListSessionsResponse,
+    LoadSessionRequest, LoadSessionResponse, McpCapabilities, NewSessionRequest,
+    NewSessionResponse, PromptCapabilities, PromptResponse, ProtocolVersion, SessionId,
+    SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
+    SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse,
 };
 use llm::ReasoningEffort;
 use llm::catalog::{self, LlmModel, get_local_models};
@@ -432,6 +432,16 @@ impl Agent for SessionManager {
                 })?;
             }
             _ => return Err(acp::Error::invalid_params()),
+        }
+        let auth_methods = build_auth_methods();
+        let auth_methods_notification: ExtNotification =
+            AuthMethodsUpdatedParams { auth_methods }.into();
+        if let Err(e) = self
+            .actor_handle
+            .send_ext_notification(auth_methods_notification)
+            .await
+        {
+            error!("Failed to send auth methods updated notification: {:?}", e);
         }
 
         // Broadcast updated config options to all active sessions
