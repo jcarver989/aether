@@ -36,6 +36,7 @@ skills = [
 ]
 tasks = [
     "dep:chrono",
+    "dep:tempfile",
     "dep:thiserror",
 ]
 subagents = [
@@ -81,6 +82,9 @@ url = { workspace = true, optional = true }
 
 # skills feature
 serde_yml = { workspace = true, optional = true }
+
+# tasks feature
+tempfile = { workspace = true, optional = true }
 
 # subagents feature
 aether-core = { path = "../aether-core", optional = true }
