@@ -20,7 +20,6 @@ pub trait McpBuilderExt {
 
 impl McpBuilderExt for McpBuilder {
     fn with_builtin_servers(self, cwd: PathBuf, roots_path: &Path) -> Self {
-        let tasks_cwd = cwd.clone();
         let lsp_cwd = cwd.clone();
         self.register_in_memory_server(
             "coding",
@@ -89,12 +88,11 @@ impl McpBuilderExt for McpBuilder {
         .register_in_memory_server(
             "tasks",
             Box::new(move |args, _input| {
-                let project_path = tasks_cwd.clone();
                 async move {
                     TasksMcp::from_args(args)
                         .unwrap_or_else(|e| {
                             tracing::warn!("Failed to parse TasksMcp args: {e}, using defaults");
-                            TasksMcp::new(project_path)
+                            TasksMcp::new()
                         })
                         .into_dyn()
                 }

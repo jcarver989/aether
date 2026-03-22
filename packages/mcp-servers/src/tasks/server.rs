@@ -9,6 +9,7 @@ use rmcp::{
     tool, tool_handler, tool_router,
 };
 use std::path::PathBuf;
+use tempfile::TempDir;
 use tokio::sync::{Mutex, RwLock};
 
 use crate::tasks::{
@@ -20,9 +21,11 @@ use crate::tasks::{
 /// CLI arguments for `TasksMcp` server
 #[derive(Debug, Clone, Parser)]
 pub struct TasksMcpArgs {
-    /// Base directory for task storage (tasks stored in `{dir}/.aether-tasks/`)
-    #[arg(long = "dir", default_value = ".")]
-    pub dir: PathBuf,
+    /// Base directory for persistent task storage. If omitted, tasks are
+    /// session-scoped and stored in a temporary directory that is cleaned up
+    /// when the server is dropped.
+    #[arg(long = "dir")]
+    pub dir: Option<PathBuf>,
 }
 
 impl TasksMcpArgs {
@@ -40,32 +43,68 @@ impl TasksMcpArgs {
 ///
 /// Provides tools for creating, listing, and updating tasks organized into
 /// hierarchical trees with dependency tracking.
+///
+/// By default, tasks are session-scoped: stored in a temporary directory that
+/// is automatically cleaned up when this server is dropped. Use
+/// [`TasksMcp::new_persistent`] or `--dir` to opt into cross-session storage.
 #[derive(Debug)]
 pub struct TasksMcp {
     task_store: Mutex<TaskStore>,
     tool_router: ToolRouter<Self>,
     /// Workspace roots (from MCP protocol or CLI args)
     roots: RwLock<Vec<PathBuf>>,
+    /// Holds the temp directory alive for session-scoped storage.
+    /// Dropped (and cleaned up) when the server is dropped.
+    _temp_dir: Option<TempDir>,
+}
+
+impl Default for TasksMcp {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TasksMcp {
-    /// Create a new `TasksMcp` server with task storage in the given directory.
+    /// Create a new session-scoped `TasksMcp` server.
     ///
-    /// Tasks will be stored in `{base_dir}/.aether-tasks/`.
-    pub fn new(base_dir: PathBuf) -> Self {
+    /// Tasks are stored in a temporary directory and automatically cleaned up
+    /// when this server is dropped. Use [`Self::new_persistent`] for
+    /// cross-session storage.
+    pub fn new() -> Self {
+        let temp_dir = TempDir::with_prefix("aether-tasks-")
+            .expect("failed to create temp dir for task storage");
+        let task_path = temp_dir.path().to_path_buf();
+        Self {
+            task_store: Mutex::new(TaskStore::new(task_path)),
+            tool_router: Self::tool_router(),
+            roots: RwLock::new(vec![]),
+            _temp_dir: Some(temp_dir),
+        }
+    }
+
+    /// Create a new `TasksMcp` server with persistent task storage.
+    ///
+    /// Tasks will be stored in `{base_dir}/.aether-tasks/` and persist across
+    /// sessions.
+    pub fn new_persistent(base_dir: PathBuf) -> Self {
         Self {
             task_store: Mutex::new(TaskStore::new(base_dir.join(".aether-tasks"))),
             tool_router: Self::tool_router(),
             roots: RwLock::new(vec![base_dir]),
+            _temp_dir: None,
         }
     }
 
     /// Create a new `TasksMcp` server from parsed CLI arguments.
     ///
-    /// If no `--dir` argument is provided, uses the current directory.
+    /// If `--dir` is provided, tasks persist at that path. Otherwise, tasks are
+    /// session-scoped in a temporary directory.
     pub fn from_args(args: Vec<String>) -> Result<Self, String> {
         let parsed_args = TasksMcpArgs::from_args(args)?;
-        Ok(Self::new(parsed_args.dir))
+        Ok(match parsed_args.dir {
+            Some(dir) => Self::new_persistent(dir),
+            None => Self::new(),
+        })
     }
 
     /// Set workspace roots.
@@ -140,5 +179,42 @@ impl TasksMcp {
         execute_task_get(input, &store)
             .map(Json)
             .map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_is_session_scoped() {
+        let server = TasksMcp::new();
+        assert!(server._temp_dir.is_some());
+        let temp_path = server._temp_dir.as_ref().unwrap().path().to_path_buf();
+        assert!(temp_path.exists());
+
+        drop(server);
+        assert!(!temp_path.exists(), "temp dir should be cleaned up on drop");
+    }
+
+    #[test]
+    fn test_new_persistent_uses_provided_dir() {
+        let temp = TempDir::new().unwrap();
+        let server = TasksMcp::new_persistent(temp.path().to_path_buf());
+        assert!(server._temp_dir.is_none());
+    }
+
+    #[test]
+    fn test_from_args_no_dir_is_session_scoped() {
+        let server = TasksMcp::from_args(vec![]).unwrap();
+        assert!(server._temp_dir.is_some());
+    }
+
+    #[test]
+    fn test_from_args_with_dir_is_persistent() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().to_str().unwrap().to_string();
+        let server = TasksMcp::from_args(vec!["--dir".into(), dir]).unwrap();
+        assert!(server._temp_dir.is_none());
     }
 }
