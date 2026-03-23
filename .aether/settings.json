@@ -30,8 +30,8 @@
     },
     {
       "name": "Fast",
-      "description": "MiniMax M2.5 with high reasoning",
-      "model": "openrouter:minimax/minimax-m2.5",
+      "description": "MiniMax M2.7 with high reasoning",
+      "model": "openrouter:minimax/minimax-m2.7",
       "reasoningEffort": "high",
       "userInvocable": true,
       "agentInvocable": false,
