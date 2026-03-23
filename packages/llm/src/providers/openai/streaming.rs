@@ -32,6 +32,8 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
                         yield Ok(LlmResponse::Usage {
                             input_tokens: usage.prompt_tokens,
                             output_tokens: usage.completion_tokens,
+                            cached_input_tokens: usage.prompt_tokens_details
+                                .and_then(|d| d.cached_tokens),
                         });
                     }
 

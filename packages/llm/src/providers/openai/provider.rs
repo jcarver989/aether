@@ -24,6 +24,7 @@ impl<T: OpenAiChatProvider + Send + Sync> StreamingModelProvider for T {
     fn stream_response(&self, context: &Context) -> LlmResponseStream {
         let client = self.client().clone();
         let model = self.model().to_string();
+        let prompt_cache_key = context.prompt_cache_key().map(String::from);
         let messages = map_messages(context.messages());
         let message_count = messages.len();
         let tools = if context.tools().is_empty() {
@@ -43,6 +44,7 @@ impl<T: OpenAiChatProvider + Send + Sync> StreamingModelProvider for T {
                 messages,
                 tools,
                 stream: Some(true),
+                prompt_cache_key,
                 ..Default::default()
             };
 

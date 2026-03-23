@@ -182,6 +182,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             LlmResponse::Usage {
                 input_tokens,
                 output_tokens,
+                ..
             } => {
                 println!("\n📊 Token usage - input: {input_tokens}, output: {output_tokens}");
             }

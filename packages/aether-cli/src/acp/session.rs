@@ -37,11 +37,16 @@ impl Session {
         cwd: PathBuf,
         extra_mcp_servers: Vec<McpServerConfig>,
         restored_messages: Option<Vec<ChatMessage>>,
+        prompt_cache_key: Option<String>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         debug!("MCP config: {:?}", spec.mcp_config_path);
         debug!("Using project root: {:?}", cwd);
 
         let mut rb = RuntimeBuilder::from_spec(cwd, spec).extra_servers(extra_mcp_servers);
+
+        if let Some(key) = prompt_cache_key {
+            rb = rb.prompt_cache_key(key);
+        }
 
         match BrowserOAuthHandler::new() {
             Ok(handler) => {

@@ -44,6 +44,7 @@ pub struct AgentBuilder {
     tool_timeout: Duration,
     compaction_config: Option<CompactionConfig>,
     max_auto_continues: u32,
+    prompt_cache_key: Option<String>,
 }
 
 impl AgentBuilder {
@@ -58,6 +59,7 @@ impl AgentBuilder {
             tool_timeout: Duration::from_secs(60 * 20),
             compaction_config: Some(CompactionConfig::default()),
             max_auto_continues: 3,
+            prompt_cache_key: None,
         }
     }
 
@@ -159,6 +161,15 @@ impl AgentBuilder {
         self
     }
 
+    /// Set a prompt cache key for LLM provider request routing.
+    ///
+    /// This is typically a session ID (UUID) that remains stable across all
+    /// turns within a conversation, improving prompt cache hit rates.
+    pub fn prompt_cache_key(mut self, key: String) -> Self {
+        self.prompt_cache_key = Some(key);
+        self
+    }
+
     /// Pre-populate the context with conversation history (e.g. from a restored session).
     ///
     /// These messages are inserted after the system prompt.
@@ -187,7 +198,8 @@ impl AgentBuilder {
 
         let (message_tx, agent_message_rx) = mpsc::channel::<AgentMessage>(self.channel_capacity);
 
-        let context = Context::new(messages, self.tool_definitions);
+        let mut context = Context::new(messages, self.tool_definitions);
+        context.set_prompt_cache_key(self.prompt_cache_key);
 
         let config = AgentConfig {
             llm: self.llm,

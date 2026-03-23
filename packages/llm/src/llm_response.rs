@@ -50,6 +50,8 @@ pub enum LlmResponse {
     Usage {
         input_tokens: u32,
         output_tokens: u32,
+        #[serde(default)]
+        cached_input_tokens: Option<u32>,
     },
 }
 
@@ -107,6 +109,19 @@ impl LlmResponse {
         Self::Usage {
             input_tokens,
             output_tokens,
+            cached_input_tokens: None,
+        }
+    }
+
+    pub fn usage_with_cache(
+        input_tokens: u32,
+        output_tokens: u32,
+        cached_input_tokens: Option<u32>,
+    ) -> Self {
+        Self::Usage {
+            input_tokens,
+            output_tokens,
+            cached_input_tokens,
         }
     }
 

@@ -62,6 +62,7 @@ impl CodexProvider {
                 format: TextResponseFormatConfiguration::Text,
                 verbosity: Some(Verbosity::Medium),
             }),
+            prompt_cache_key: context.prompt_cache_key().map(String::from),
             ..Default::default()
         })
     }
@@ -360,5 +361,36 @@ mod tests {
         assert_eq!(json["reasoning"]["effort"], "medium");
         assert_eq!(json["text"]["verbosity"], "medium");
         assert_eq!(json["include"][0], "reasoning.encrypted_content");
+    }
+
+    #[test]
+    fn build_request_includes_prompt_cache_key_when_set() {
+        let provider = create_test_provider();
+        let mut context = Context::new(
+            vec![ChatMessage::User {
+                content: "Hi".to_string(),
+                timestamp: IsoString::now(),
+            }],
+            vec![],
+        );
+        context.set_prompt_cache_key(Some("session-abc".to_string()));
+
+        let request = provider.build_request(&context).unwrap();
+        assert_eq!(request.prompt_cache_key.as_deref(), Some("session-abc"));
+    }
+
+    #[test]
+    fn build_request_omits_prompt_cache_key_when_unset() {
+        let provider = create_test_provider();
+        let context = Context::new(
+            vec![ChatMessage::User {
+                content: "Hi".to_string(),
+                timestamp: IsoString::now(),
+            }],
+            vec![],
+        );
+
+        let request = provider.build_request(&context).unwrap();
+        assert!(request.prompt_cache_key.is_none());
     }
 }

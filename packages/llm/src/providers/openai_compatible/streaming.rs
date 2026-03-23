@@ -65,6 +65,8 @@ pub fn process_compatible_stream<E: Into<LlmError> + Send>(
                         yield Ok(LlmResponse::Usage {
                             input_tokens: u32::try_from(usage.prompt_tokens.max(0)).unwrap_or(0),
                             output_tokens: u32::try_from(usage.completion_tokens.max(0)).unwrap_or(0),
+                            cached_input_tokens: usage.prompt_tokens_details
+                                .and_then(|d| d.cached_tokens),
                         });
                     }
 

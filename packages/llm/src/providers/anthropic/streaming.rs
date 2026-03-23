@@ -222,6 +222,7 @@ fn handle_message_delta(delta_data: &super::types::MessageDelta) -> EventResult 
             Some(LlmResponse::Usage {
                 input_tokens: usage.input_tokens,
                 output_tokens: usage.output_tokens,
+                cached_input_tokens: usage.cache_read_input_tokens,
             }),
             stop_reason,
         )
@@ -272,7 +273,8 @@ mod tests {
             responses[3],
             LlmResponse::Usage {
                 input_tokens: 10,
-                output_tokens: 25
+                output_tokens: 25,
+                ..
             }
         ));
         assert!(matches!(
@@ -313,7 +315,8 @@ mod tests {
             responses[3],
             LlmResponse::Usage {
                 input_tokens: 10,
-                output_tokens: 15
+                output_tokens: 15,
+                ..
             }
         ));
         assert!(matches!(
@@ -401,7 +404,8 @@ mod tests {
             responses[4],
             LlmResponse::Usage {
                 input_tokens: 10,
-                output_tokens: 50
+                output_tokens: 50,
+                ..
             }
         ));
         assert!(matches!(

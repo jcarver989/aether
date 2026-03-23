@@ -35,6 +35,7 @@ async fn test_openrouter_negative_token_handling() {
                 prompt_tokens: -5, // Negative value
                 completion_tokens: 10,
                 total_tokens: 5,
+                prompt_tokens_details: None,
             }),
         },
     )];
@@ -58,6 +59,7 @@ async fn test_openrouter_negative_token_handling() {
             LlmResponse::Usage {
                 input_tokens,
                 output_tokens,
+                ..
             } => Some((input_tokens, output_tokens)),
             _ => None,
         })
@@ -129,6 +131,7 @@ async fn test_openrouter_usage_in_separate_final_chunk() {
                 prompt_tokens: 15,
                 completion_tokens: 25,
                 total_tokens: 40,
+                prompt_tokens_details: None,
             }),
         }),
     ];
@@ -153,6 +156,7 @@ async fn test_openrouter_usage_in_separate_final_chunk() {
             LlmResponse::Usage {
                 input_tokens,
                 output_tokens,
+                ..
             } => Some((*input_tokens, *output_tokens)),
             _ => None,
         })

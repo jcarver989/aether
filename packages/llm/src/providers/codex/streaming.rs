@@ -93,6 +93,7 @@ fn process_event(
                 responses.push(Ok(LlmResponse::Usage {
                     input_tokens: usage.input_tokens,
                     output_tokens: usage.output_tokens,
+                    cached_input_tokens: Some(usage.input_tokens_details.cached_tokens),
                 }));
             }
             match e.response.status {
@@ -197,7 +198,8 @@ mod tests {
             responses[3],
             LlmResponse::Usage {
                 input_tokens: 10,
-                output_tokens: 5
+                output_tokens: 5,
+                ..
             }
         ));
         assert!(matches!(

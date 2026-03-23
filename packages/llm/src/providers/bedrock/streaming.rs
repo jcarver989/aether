@@ -98,6 +98,7 @@ fn process_stream_event(
                 StreamEvent::Emit(LlmResponse::Usage {
                     input_tokens,
                     output_tokens,
+                    cached_input_tokens: None,
                 })
             })
         }
