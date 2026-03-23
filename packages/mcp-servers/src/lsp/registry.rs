@@ -238,7 +238,7 @@ impl LspRegistry {
 
         let mut result: HashMap<String, Vec<Diagnostic>> = HashMap::new();
         for client in self.active_clients().await {
-            if let Ok(params_list) = client.get_workspace_diagnostics().await {
+            if let Ok(params_list) = client.get_diagnostics(None).await {
                 merge_diagnostics(&mut result, params_list);
             }
         }
@@ -261,7 +261,7 @@ impl LspRegistry {
         };
 
         let mut result: HashMap<String, Vec<Diagnostic>> = HashMap::new();
-        if let Ok(params_list) = client.get_document_diagnostics(uri).await {
+        if let Ok(params_list) = client.get_diagnostics(Some(uri)).await {
             merge_diagnostics(&mut result, params_list);
         }
         result
