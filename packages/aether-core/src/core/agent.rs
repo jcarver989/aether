@@ -394,8 +394,10 @@ impl Agent {
             Usage {
                 input_tokens,
                 output_tokens,
+                cached_input_tokens,
             } => {
-                self.handle_llm_usage(input_tokens, output_tokens).await;
+                self.handle_llm_usage(input_tokens, output_tokens, cached_input_tokens)
+                    .await;
             }
         }
     }
@@ -478,8 +480,14 @@ impl Agent {
         }
     }
 
-    async fn handle_llm_usage(&mut self, input_tokens: u32, output_tokens: u32) {
-        self.token_tracker.record_usage(input_tokens, output_tokens);
+    async fn handle_llm_usage(
+        &mut self,
+        input_tokens: u32,
+        output_tokens: u32,
+        cached_input_tokens: Option<u32>,
+    ) {
+        self.token_tracker
+            .record_usage(input_tokens, output_tokens, cached_input_tokens);
         match (
             self.token_tracker.usage_ratio(),
             self.token_tracker.tokens_remaining(),

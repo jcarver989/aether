@@ -515,6 +515,7 @@ impl Agent for SessionManager {
             args.cwd.clone(),
             map_acp_mcp_servers(args.mcp_servers),
             None,
+            Some(session_id.clone()),
         )
         .await
         .map_err(|e| {
@@ -634,6 +635,7 @@ impl Agent for SessionManager {
             args.cwd.clone(),
             map_acp_mcp_servers(args.mcp_servers),
             Some(restored_messages),
+            Some(session_id.clone()),
         )
         .await
         .map_err(|e| {

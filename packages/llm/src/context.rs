@@ -13,6 +13,8 @@ pub struct Context {
     tools: Vec<ToolDefinition>,
     #[serde(skip)]
     reasoning_effort: Option<ReasoningEffort>,
+    #[serde(skip)]
+    prompt_cache_key: Option<String>,
 }
 
 impl Context {
@@ -21,7 +23,16 @@ impl Context {
             messages,
             tools,
             reasoning_effort: None,
+            prompt_cache_key: None,
         }
+    }
+
+    pub fn prompt_cache_key(&self) -> Option<&str> {
+        self.prompt_cache_key.as_deref()
+    }
+
+    pub fn set_prompt_cache_key(&mut self, key: Option<String>) {
+        self.prompt_cache_key = key;
     }
 
     pub fn reasoning_effort(&self) -> Option<ReasoningEffort> {
@@ -133,6 +144,7 @@ impl Context {
             messages,
             tools: self.tools.clone(),
             reasoning_effort: self.reasoning_effort,
+            prompt_cache_key: self.prompt_cache_key.clone(),
         }
     }
 
@@ -175,6 +187,7 @@ impl Context {
             messages,
             tools: self.tools.clone(),
             reasoning_effort: self.reasoning_effort,
+            prompt_cache_key: self.prompt_cache_key.clone(),
         }
     }
 }
@@ -260,6 +273,45 @@ mod tests {
 
         assert_eq!(msgs.len(), 5);
         assert!(msgs.iter().all(|m| !m.is_system()));
+    }
+
+    #[test]
+    fn test_prompt_cache_key_default_is_none() {
+        let ctx = create_test_context();
+        assert_eq!(ctx.prompt_cache_key(), None);
+    }
+
+    #[test]
+    fn test_prompt_cache_key_set_and_get() {
+        let mut ctx = create_test_context();
+        ctx.set_prompt_cache_key(Some("session-123".to_string()));
+        assert_eq!(ctx.prompt_cache_key(), Some("session-123"));
+
+        ctx.set_prompt_cache_key(None);
+        assert_eq!(ctx.prompt_cache_key(), None);
+    }
+
+    #[test]
+    fn test_prompt_cache_key_preserved_through_compaction() {
+        let mut ctx = create_test_context();
+        ctx.set_prompt_cache_key(Some("session-abc".to_string()));
+        let compacted = ctx.with_compacted_summary("Summary");
+        assert_eq!(compacted.prompt_cache_key(), Some("session-abc"));
+    }
+
+    #[test]
+    fn test_prompt_cache_key_preserved_through_projection() {
+        let model: LlmModel = "anthropic:claude-opus-4-6".parse().unwrap();
+        let mut ctx = Context::new(
+            vec![ChatMessage::User {
+                content: "Hello".to_string(),
+                timestamp: IsoString::now(),
+            }],
+            vec![],
+        );
+        ctx.set_prompt_cache_key(Some("session-xyz".to_string()));
+        let projected = ctx.filter_encrypted_reasoning(&model);
+        assert_eq!(projected.prompt_cache_key(), Some("session-xyz"));
     }
 
     #[test]

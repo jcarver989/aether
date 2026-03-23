@@ -23,6 +23,7 @@ pub struct RuntimeBuilder {
     mcp_config: Option<PathBuf>,
     extra_mcp_servers: Vec<McpServerConfig>,
     oauth_applicator: Option<Box<dyn FnOnce(McpBuilder) -> McpBuilder + Send>>,
+    prompt_cache_key: Option<String>,
 }
 
 pub struct Runtime {
@@ -53,6 +54,7 @@ impl RuntimeBuilder {
             mcp_config: None,
             extra_mcp_servers: Vec::new(),
             oauth_applicator: None,
+            prompt_cache_key: None,
         })
     }
 
@@ -63,7 +65,13 @@ impl RuntimeBuilder {
             mcp_config: None,
             extra_mcp_servers: Vec::new(),
             oauth_applicator: None,
+            prompt_cache_key: None,
         }
+    }
+
+    pub fn prompt_cache_key(mut self, key: String) -> Self {
+        self.prompt_cache_key = Some(key);
+        self
     }
 
     pub fn mcp_config(mut self, path: PathBuf) -> Self {
@@ -93,12 +101,17 @@ impl RuntimeBuilder {
         custom_prompt: Option<Prompt>,
         messages: Option<Vec<ChatMessage>>,
     ) -> Result<Runtime, CliError> {
+        let prompt_cache_key = self.prompt_cache_key.clone();
         let mcp = self.spawn_mcp().await?;
 
         let filtered_tools = mcp.spec.tools.apply(mcp.tool_definitions);
         let mut agent_builder = AgentBuilder::from_spec(&mcp.spec, vec![])
             .map_err(|e| CliError::AgentError(e.to_string()))?
             .tools(mcp.mcp_tx.clone(), filtered_tools);
+
+        if let Some(key) = prompt_cache_key {
+            agent_builder = agent_builder.prompt_cache_key(key);
+        }
 
         if let Some(prompt) = custom_prompt {
             agent_builder = agent_builder.system_prompt(prompt);
