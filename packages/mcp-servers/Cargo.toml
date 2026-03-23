@@ -25,6 +25,7 @@ coding = [
     "dep:uuid",
     "dep:chrono",
     "dep:htmd",
+    "dep:dom_smoothie",
     "dep:url",
 ]
 skills = [
@@ -78,6 +79,7 @@ reqwest = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
 chrono = { workspace = true, optional = true }
 htmd = { workspace = true, optional = true }
+dom_smoothie = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
 
 # skills feature

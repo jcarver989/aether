@@ -7,6 +7,7 @@ pub use http_client::{
     ReqwestClient, WebFetchInput, WebFetchOutput,
 };
 
+use dom_smoothie::Readability;
 use htmd::convert;
 use reqwest::Url;
 use std::time::Duration;
@@ -54,16 +55,19 @@ impl<C: HttpClient> WebFetcher<C> {
             .fetch(&url, Duration::from_millis(timeout_ms))
             .await?;
 
-        let (title, markdown) = html_to_markdown(&response.body);
-        let (content, truncated) = if markdown.len() > MAX_CONTENT_LENGTH {
-            (truncate_str(&markdown, MAX_CONTENT_LENGTH), true)
+        let extracted = extract_content(&response.body, &url);
+        let (content, truncated) = if extracted.markdown.len() > MAX_CONTENT_LENGTH {
+            (truncate_str(&extracted.markdown, MAX_CONTENT_LENGTH), true)
         } else {
-            (markdown, false)
+            (extracted.markdown, false)
         };
 
         let display_meta = ToolDisplayMeta::new(
             "Fetch URL",
-            title.clone().unwrap_or_else(|| truncate(&url, 60)),
+            extracted
+                .title
+                .clone()
+                .unwrap_or_else(|| truncate(&url, 60)),
         );
 
         Ok(WebFetchOutput {
@@ -71,9 +75,51 @@ impl<C: HttpClient> WebFetcher<C> {
             final_url: response.final_url,
             status_code: response.status_code,
             truncated,
-            title,
+            title: extracted.title,
+            byline: extracted.byline,
             meta: Some(display_meta.into()),
         })
+    }
+}
+
+struct ExtractedContent {
+    title: Option<String>,
+    markdown: String,
+    byline: Option<String>,
+}
+
+fn extract_content(html: &str, url: &str) -> ExtractedContent {
+    if let Some(extracted) = try_readability(html, url) {
+        return extracted;
+    }
+    fallback_extract(html)
+}
+
+fn try_readability(html: &str, url: &str) -> Option<ExtractedContent> {
+    let mut reader = Readability::new(html, Some(url), None).ok()?;
+    let article = reader.parse().ok()?;
+
+    if article.content.is_empty() {
+        return None;
+    }
+
+    let markdown = convert(&article.content).unwrap_or_else(|_| article.text_content.to_string());
+    let title = non_empty(article.title);
+
+    Some(ExtractedContent {
+        title,
+        markdown,
+        byline: article.byline,
+    })
+}
+
+fn fallback_extract(html: &str) -> ExtractedContent {
+    let title = extract_title(html);
+    let markdown = convert(html).unwrap_or_else(|_| html.to_string());
+    ExtractedContent {
+        title,
+        markdown,
+        byline: None,
     }
 }
 
@@ -91,21 +137,18 @@ fn normalize_url(url: &str) -> Result<String, WebFetchError> {
         .map_err(|e| WebFetchError::InvalidUrl(e.to_string()))
 }
 
-fn html_to_markdown(html: &str) -> (Option<String>, String) {
+fn extract_title(html: &str) -> Option<String> {
     let lower = html.to_lowercase();
-    let title = if let (Some(start), Some(end)) = (lower.find("<title>"), lower.find("</title>")) {
-        if start < end {
-            let title_start = start + 7;
-            Some(html[title_start..end].trim().to_string())
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+    let start = lower.find("<title>")?;
+    let end = lower.find("</title>")?;
+    if start >= end {
+        return None;
+    }
+    non_empty(html[start + 7..end].trim().to_string())
+}
 
-    let content = convert(html).unwrap_or_else(|_| html.to_string());
-    (title, content)
+fn non_empty(s: String) -> Option<String> {
+    if s.trim().is_empty() { None } else { Some(s) }
 }
 
 fn truncate_str(content: &str, max_len: usize) -> String {
@@ -150,17 +193,68 @@ mod tests {
     }
 
     #[test]
-    fn test_html_to_markdown() {
-        let (title, _) =
-            html_to_markdown("<html><head><title>Test Page</title></head><body></body></html>");
-        assert_eq!(title, Some("Test Page".to_string()));
+    fn test_extract_title() {
+        assert_eq!(
+            extract_title("<html><head><title>Test Page</title></head></html>"),
+            Some("Test Page".to_string())
+        );
+        assert_eq!(
+            extract_title("<html><head></head><body></body></html>"),
+            None
+        );
+        assert_eq!(extract_title("<html><head><title>  </title></head></html>"), None);
+    }
 
-        let (title, _) = html_to_markdown("<html><head></head><body></body></html>");
-        assert_eq!(title, None);
+    fn article_html(body: &str) -> String {
+        format!(
+            r#"<html><head><title>Test Article</title>
+            <meta name="author" content="Jane Doe">
+            <meta property="og:description" content="A test excerpt">
+            </head><body>
+            <nav><a href="/">Home</a><a href="/about">About</a></nav>
+            <article>{body}</article>
+            <footer><p>Copyright 2026</p></footer>
+            </body></html>"#
+        )
+    }
 
-        let (_, md) = html_to_markdown("<h1>Title</h1><p>Content paragraph.</p>");
-        assert!(md.contains("Title"));
-        assert!(md.contains("Content paragraph"));
+    #[test]
+    fn test_readability_extracts_article_content() {
+        let body = "<h1>Main Article</h1>";
+        let paragraphs: Vec<String> = (0..10)
+            .map(|i| format!("<p>This is paragraph {i} with enough content to be considered substantial by the readability algorithm.</p>"))
+            .collect();
+        let html = article_html(&format!("{body}{}", paragraphs.join("")));
+
+        let result = extract_content(&html, "https://example.com/article");
+
+        assert!(result.markdown.contains("Main Article"));
+        assert!(result.markdown.contains("paragraph 0"));
+        assert!(
+            !result.markdown.contains("Copyright 2026"),
+            "Footer should be stripped by readability"
+        );
+    }
+
+    #[test]
+    fn test_readability_extracts_metadata() {
+        let paragraphs: Vec<String> = (0..10)
+            .map(|i| format!("<p>Paragraph {i} with enough content for readability to engage.</p>"))
+            .collect();
+        let html = article_html(&paragraphs.join(""));
+
+        let result = extract_content(&html, "https://example.com/article");
+
+        assert!(result.title.is_some());
+    }
+
+    #[test]
+    fn test_fallback_when_no_article_content() {
+        let html = "<html><head><title>Sparse</title></head><body><p>Hi</p></body></html>";
+        let result = extract_content(html, "https://example.com/sparse");
+
+        assert_eq!(result.title, Some("Sparse".to_string()));
+        assert!(result.markdown.contains("Hi"));
     }
 
     #[test]

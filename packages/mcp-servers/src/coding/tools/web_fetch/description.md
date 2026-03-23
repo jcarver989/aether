@@ -1,4 +1,6 @@
-Fetches content from a URL, converting HTML to Markdown.
+Fetches content from a URL, extracts the main article content, and converts it to Markdown.
+
+Uses a readability algorithm to strip navigation, sidebars, footers, and other non-content elements, giving you clean article text instead of the full page.
 
 ## Usage
 
@@ -15,3 +17,4 @@ Fetches content from a URL, converting HTML to Markdown.
 
 - Use specific URLs rather than relying on search
 - Handle 4xx/5xx status codes gracefully
+- Falls back to full-page conversion when readability extraction fails
