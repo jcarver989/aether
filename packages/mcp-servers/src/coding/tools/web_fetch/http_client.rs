@@ -44,6 +44,10 @@ pub struct WebFetchOutput {
     /// Page title if available
     pub title: Option<String>,
 
+    /// Author or byline if available
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub byline: Option<String>,
+
     /// Display metadata for human-friendly rendering
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
