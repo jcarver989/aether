@@ -9,16 +9,27 @@ import Hero from "../components/Hero.astro";
 import ToolShowcaseItem from "../components/ToolShowcaseItem.astro";
 import CallToAction from "../components/CallToAction.astro";
 
-{/* ── Step 1: Get started ── */}
 
 export const installCode = `$ cargo install aether-cli`;
-
 export const initCode = `$ aether init
 ✓ Created .aether/settings.json
 ✓ Created mcp.json
 ✓ Created AGENTS.md`;
 
-{/* ── Step 2: Control every token in context ── */}
+export const showPromptCode = `$ aether show-prompt
+---
+Prompt chars:            0
+Tool schema chars:       0
+Est. tokens:     ~       0
+MCP tools:               0
+    `;
+
+export const showPromptCode2 = `$ aether show-prompt
+---
+Prompt chars:          456
+Tool schema chars:       0
+Est. tokens:     ~     114
+MCP tools:               0`;
 
 export const promptsCode = `{
   "prompts": ["SYSTEM.md", "AGENTS.md"]
@@ -37,9 +48,8 @@ export const subAgentCode = `{
 export const systemPromptCode = `# System Prompt
 You are an expert senior Rust engineer.
 
-## Coding Style
-- Prefer generics over dynamic boxing
-- Use async fn in traits directly
+## System Env
+$SYSTEM_ENV
 ...`;
 
 export const agentsPromptCode = `# Agents
@@ -48,8 +58,6 @@ search code before making changes.
 Use the Frontier agent for complex
 multi-file refactors.
 ...`;
-
-{/* ── Step 3: Use any LLM ── */}
 
 export const llmCloudCode = `{
   "agents": [
@@ -95,8 +103,6 @@ export const llmReasoningCode = `{
     }
   ]
 }`;
-
-{/* ── Step 4: Use any tools ── */}
 
 export const toolsCodingCode = `{
   "servers": {
@@ -174,7 +180,7 @@ aether-cli = "0.1"`;
 <section class="px-16 py-20">
     <div class="mx-auto max-w-350">
         <div class="text-center mb-16">
-            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Build your 1st agent in 5 minutes</h2>
+            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Getting started is easy as 1,2,3</h2>
             <p class="text-gray-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">From install to running agent &mdash; everything is plain config files and markdown.</p>
         </div>
         <div class="flex flex-col gap-16">
@@ -194,21 +200,20 @@ aether-cli = "0.1"`;
 <section class="px-16 py-20">
     <div class="mx-auto max-w-350">
         <div class="text-center mb-16">
-            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Control every token in context</h2>
-            <p class="text-gray-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">Aether agents start as blank slates, with no system prompt or tools. You have full control.</p>
+            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Control every token</h2>
+            <p class="text-gray-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">In your context window.</p>
         </div>
         <div class="flex flex-col gap-6">
-            <ToolShowcaseItem title="Load any file as a prompt" description="Point the prompts array at files or globs &mdash; CLAUDE.md, AGENTS.md, **/*.md, whatever you want.">
+            <ToolShowcaseItem title="Start with a blank slate" description="Agents begin with no system prompt or tools">
+                <Code code={showPromptCode} lang="sh" title="terminal" />
+            </ToolShowcaseItem>
+            <ToolShowcaseItem title="Compose your system prompt" description="Point the prompts array at files or globs &mdash; CLAUDE.md, AGENTS.md, **/*.md, whatever you want.">
                 <Code code={promptsCode} lang="json" title=".aether/settings.json" meta="ins={2}" />
-            </ToolShowcaseItem>
-            <ToolShowcaseItem title="Define sub-agents" description="Each sub-agent gets its own model, prompts, and tools. Decompose tasks across specialized agents.">
-                <Code code={subAgentCode} lang="json" title=".aether/settings.json" />
-            </ToolShowcaseItem>
-            <ToolShowcaseItem title="Write your system prompt" description="Plain markdown &mdash; coding style, conventions, and domain knowledge. No templating language required.">
                 <Code code={systemPromptCode} lang="md" title="SYSTEM.md" />
-            </ToolShowcaseItem>
-            <ToolShowcaseItem title="Orchestrate with agent prompts" description="Routing logic in prose, not code. Tell agents when to delegate and which sub-agent to use." border={false}>
                 <Code code={agentsPromptCode} lang="md" title="AGENTS.md" />
+            </ToolShowcaseItem>
+            <ToolShowcaseItem title="Measure" description="So you don't waste tokens">
+                <Code code={showPromptCode2} lang="sh" title="terminal" />
             </ToolShowcaseItem>
         </div>
     </div>
