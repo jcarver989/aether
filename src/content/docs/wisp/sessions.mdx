@@ -1,0 +1,44 @@
+---
+title: Sessions
+description: Session persistence, resume, and management.
+---
+
+Wisp sessions represent a conversation with an agent. Each session has its own message history, configuration state, and working directory.
+
+## How sessions work
+
+Sessions are managed by the agent, not by Wisp. When you start Wisp, it asks the agent to create a new session. The agent stores the session state — messages, config, and context — and Wisp renders it.
+
+## Starting a new session
+
+```
+/clear
+```
+
+This tells the agent to create a fresh session. The conversation history is cleared and configuration options are reset.
+
+## Resuming a session
+
+```
+/resume
+```
+
+This asks the agent for a list of previous sessions. A picker appears showing available sessions with their titles. Select one to restore it — the conversation history and configuration are loaded from the agent.
+
+## Session state
+
+Each session tracks:
+
+| State | Description |
+|-------|-------------|
+| Session ID | Unique identifier |
+| Title | Agent-generated summary |
+| Working directory | The directory the session was started in |
+| Config selections | Model, reasoning effort, mode, etc. |
+| Conversation history | Full message history (stored by agent) |
+
+When you switch sessions, Wisp restores the configuration options that were active in that session.
+
+## Multiple sessions
+
+You can have many sessions stored by the agent. Use `/resume` to switch between them. Only one session is active at a time in a Wisp instance.

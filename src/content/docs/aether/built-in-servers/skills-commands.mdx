@@ -1,0 +1,116 @@
+---
+title: Skills & Commands
+description: Create slash commands and reusable skill prompts.
+---
+
+import { Tabs, TabItem, FileTree } from '@astrojs/starlight/components';
+
+The `skills` server lets you define slash commands and skill prompts that agents can load on demand. Commands are quick actions triggered by `/name`; skills are deeper knowledge bases agents can reference. See [Tools](/aether/configuration/mcp-servers/) for configuration.
+
+## Directory structure
+
+<FileTree>
+- .aether/ (or ~/.aether/ for global)
+  - commands/
+    - commit.md
+    - review.md
+    - plan.md
+  - skills/
+    - rust/
+      - SKILL.md
+      - traits.md
+      - error-handling.md
+    - testing/
+      - SKILL.md
+</FileTree>
+
+## Tools
+
+| Tool | Description |
+|------|-------------|
+| `get_skills` | Load a skill or auxiliary file |
+| `save_note` | Append content to a topic-based note |
+| `search_notes` | Search notes by topic or tags |
+
+<Tabs>
+  <TabItem label="Writing a command">
+    Commands are markdown files in the `commands/` directory. The filename (minus `.md`) becomes the command name.
+
+    ```markdown title="commands/commit.md"
+    ---
+    description: Generate a commit message for staged changes
+    argument-hint: [optional context]
+    allowed-tools:
+      - bash
+      - grep
+    ---
+
+    Generate a concise commit message for the currently staged git changes.
+
+    The user provided: $ARGUMENTS
+
+    Rules:
+    - Use conventional commit format
+    - Keep the subject line under 72 characters
+    ```
+
+    ### Frontmatter fields
+
+    | Field | Description |
+    |-------|-------------|
+    | `description` | Shown in the command picker UI |
+    | `argument-hint` | Placeholder text for the argument input |
+    | `allowed-tools` | Tools the agent can use when running this command |
+
+    ### Template variables
+
+    | Variable | Description |
+    |----------|-------------|
+    | `$ARGUMENTS` | The full argument string passed by the user |
+    | `$1`, `$2`, ... | Positional arguments (space-separated) |
+  </TabItem>
+  <TabItem label="Writing a skill">
+    Skills are directories containing a `SKILL.md` file and optional auxiliary files.
+
+    ```markdown title="skills/rust/SKILL.md"
+    ---
+    name: rust
+    description: Rust coding conventions and best practices
+    tags: [rust, coding, testing]
+    ---
+
+    # Rust Conventions
+
+    ## Error Handling
+    - Use specific enum types, not `Box<dyn Error>`
+    - Never add `anyhow` as a dependency
+
+    ## Testing
+    - Use `Fake` prefix, never `Mock`
+    - Prefer in-memory fakes over side-effect mocks
+
+    See [error-handling](./error-handling.md) for detailed patterns.
+    ```
+
+    ### SKILL.md frontmatter
+
+    | Field | Description |
+    |-------|-------------|
+    | `name` | Skill identifier |
+    | `description` | What this skill covers (used for discovery) |
+    | `tags` | Search tags for finding relevant skills |
+
+    ### Auxiliary files
+
+    Additional markdown files in the skill directory can be loaded on demand:
+
+    ```
+    get_skills(name: "rust", path: "error-handling.md")
+    ```
+  </TabItem>
+</Tabs>
+
+## Global vs project skills
+
+- **Project skills** — Place in `.aether/commands/` and `.aether/skills/` within your project
+- **Global skills** — Place in `~/.aether/commands/` and `~/.aether/skills/` for availability across all projects

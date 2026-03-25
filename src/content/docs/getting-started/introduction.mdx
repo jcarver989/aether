@@ -1,0 +1,30 @@
+---
+title: Introduction
+description: What is Aether and why use it?
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Aether is an open-source AI coding agent written in Rust. It gives you full control over your agent's behavior — no bundled prompts, no hidden tools, no telemetry. You decide what model to use, what tools to expose, and what instructions to give.
+
+## Design philosophy
+
+- **Empty by default** — Agents start with no system prompt and no tools. You add exactly what you need.
+- **MCP-first** — All tools come via the [Model Context Protocol](https://modelcontextprotocol.io/). Built-in servers handle files, bash, search, and LSP. Add any external MCP server for more.
+- **Provider-agnostic** — Use Anthropic, OpenAI, OpenRouter, DeepSeek, Gemini, Ollama, or any compatible API through a unified `provider:model` format.
+- **Multi-interface** — Run as an interactive TUI, a headless CLI for scripts and CI, or an ACP server for editor integration.
+
+## Get started
+
+<CardGrid>
+  <LinkCard
+    title="Installation"
+    description="Install Aether and set up your API key"
+    href="/getting-started/installation/"
+  />
+  <LinkCard
+    title="Quick Start"
+    description="Go from zero to running in 2 minutes"
+    href="/getting-started/quickstart/"
+  />
+</CardGrid>

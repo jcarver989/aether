@@ -1,37 +1,30 @@
 ---
-
+import TerminalDemo from "./TerminalDemo.astro";
 ---
 
-<section class="px-16 pt-16 pb-16 sm:pt-28 sm:pb-20">
+<section class="pt-16 pb-16 sm:pt-28 sm:pb-20">
     <div class="max-w-350 mx-auto">
         <div
             class="grid grid-cols-1 gap-10 items-center lg:grid-cols-[5fr_7fr] lg:gap-16"
         >
             <div class="text-center lg:text-left">
                 <h1
-                    class="font-mono text-2xl sm:text-4xl lg:text-5xl font-semibold tracking-tight text-white mb-6 [word-spacing:-0.15em]"
+                    class="font-mono text-2xl sm:text-4xl lg:text-5xl font-semibold text-white mb-6"
                 >
-                    The coding agent you actually own.
+                    The open-source coding agent that's actually yours
                 </h1>
                 <p
-                    class="text-base sm:text-lg lg:text-xl text-accent-400 font-mono font-medium mb-4"
+                    class="text-base sm:text-lg lg:text-xl text-accent-400 font-mono font-medium mb-6"
                 >
-                    A blank-slate agent where you control every token. No
-                    bundled prompts, tools or telemetry.
-                </p>
-                <p
-                    class="text-sm sm:text-base lg:text-lg text-gray-300 mb-8 leading-relaxed"
-                >
-                    Use any LLM. Connect any tools (via MCP). Run it in a
-                    terminal, IDE/editor, or headless. Open source. Written in
-                    Rust.
+                    Control every token. No bundled prompts, tools or telemetry.
+                    Optional batteries included.
                 </p>
 
                 <div
                     class="flex flex-wrap justify-center lg:justify-start gap-4 mb-8"
                 >
                     <a
-                        href="/guides/introduction/"
+                        href="/getting-started/introduction/"
                         class="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium bg-accent-600 text-white hover:bg-accent-500 transition-all duration-200 shadow-lg shadow-accent-900/30"
                         >Quick Start<span aria-hidden="true">&rarr;</span></a
                     >
@@ -66,14 +59,7 @@
                 </div>
             </div>
 
-            <div>
-                <div
-                    id="hero-player"
-                    class="min-h-50 max-h-105 overflow-hidden rounded-lg border border-gray-400/30 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)]"
-                    data-src="/demos/demo.cast"
-                >
-                </div>
-            </div>
+            <TerminalDemo id="hero-player" src="/demos/demo.cast" />
         </div>
     </div>
 </section>

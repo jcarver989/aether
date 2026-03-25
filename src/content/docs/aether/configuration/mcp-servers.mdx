@@ -1,0 +1,194 @@
+---
+title: Tools
+description: Configure the MCP servers that give agents their tools.
+---
+
+import { Tabs, TabItem, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Agents get their tools exclusively from MCP (Model Context Protocol) servers. You list servers in `.aether/mcp.json`, and when an agent starts it connects to each server and discovers the available tools.
+
+## Server types
+
+<Tabs>
+  <TabItem label="In-memory">
+    Built-in Aether servers that run inside the agent process. No subprocess needed.
+
+    ```json
+    {
+      "servers": {
+        "coding": {
+          "type": "in-memory"
+        },
+        "skills": {
+          "type": "in-memory",
+          "args": ["--dir", ".aether"]
+        },
+        "tasks": {
+          "type": "in-memory"
+        },
+        "subagents": {
+          "type": "in-memory"
+        }
+      }
+    }
+    ```
+
+    Available in-memory servers:
+
+    | Server | Purpose | Args |
+    |--------|---------|------|
+    | `coding` | File I/O, bash, search, web, LSP | `--root-dir <path>` (default: cwd) |
+    | `skills` | Slash commands and skill prompts | `--dir <path>` (base for `commands/` and `skills/`) |
+    | `tasks` | Hierarchical task management | `--dir <path>` (creates `.aether-tasks/` inside) |
+    | `subagents` | Spawn child agents | `--project-root <path>` (for `.aether/settings.json` discovery) |
+    | `survey` | Human-in-the-loop questions | — |
+
+    <CardGrid>
+      <LinkCard title="Coding" description="File ops, bash, search, web, LSP" href="/aether/built-in-servers/coding/" />
+      <LinkCard title="Skills & Commands" description="Slash commands and skill prompts" href="/aether/built-in-servers/skills-commands/" />
+      <LinkCard title="Tasks" description="Hierarchical task management" href="/aether/built-in-servers/tasks/" />
+      <LinkCard title="Sub-Agents" description="Spawn child agents in parallel" href="/aether/built-in-servers/subagents/" />
+    </CardGrid>
+  </TabItem>
+  <TabItem label="Stdio">
+    External MCP servers launched as subprocesses. Communication happens over JSON-RPC via stdin/stdout.
+
+    ```json
+    {
+      "servers": {
+        "playwright": {
+          "type": "stdio",
+          "command": "npx",
+          "args": ["@playwright/mcp@latest"]
+        },
+        "github": {
+          "type": "stdio",
+          "command": "gh-mcp",
+          "env": {
+            "GITHUB_TOKEN": "$GITHUB_TOKEN"
+          }
+        }
+      }
+    }
+    ```
+
+    | Field | Type | Description |
+    |-------|------|-------------|
+    | `type` | `"stdio"` | Required |
+    | `command` | `string` | Executable to run |
+    | `args` | `string[]` | Command arguments |
+    | `env` | `object` | Environment variables (supports `$VAR` expansion) |
+  </TabItem>
+  <TabItem label="HTTP / SSE">
+    Remote MCP servers over HTTP with Server-Sent Events for streaming.
+
+    ```json
+    {
+      "servers": {
+        "remote-tools": {
+          "type": "sse",
+          "url": "https://mcp.example.com/sse"
+        }
+      }
+    }
+    ```
+
+    | Field | Type | Description |
+    |-------|------|-------------|
+    | `type` | `"sse"` | Required |
+    | `url` | `string` | SSE endpoint URL |
+  </TabItem>
+</Tabs>
+
+## Variable expansion
+
+Environment variables are expanded in `command`, `args`, `url`, and `env` values:
+
+```json
+{
+  "servers": {
+    "my-server": {
+      "type": "stdio",
+      "command": "$HOME/.local/bin/my-mcp-server",
+      "env": {
+        "API_KEY": "$MY_API_KEY"
+      }
+    }
+  }
+}
+```
+
+## Per-agent overrides
+
+Each agent can use a different MCP config by setting `mcpServers` in its [agent entry](/aether/configuration/agent-settings/). Aether resolves the config in this order:
+
+1. Agent-level `mcpServers` (if set)
+2. Top-level `mcpServers` (inherited)
+3. `mcp.json` in the working directory
+
+## Tool filtering
+
+The `tools` field in an [agent entry](/aether/configuration/agent-settings/) restricts which MCP tools that agent can use.
+
+```json
+"tools": {
+  "allow": ["pattern1", "pattern2"],
+  "deny": ["pattern3"]
+}
+```
+
+- **`allow`** — Only tools matching these patterns are available. If empty or omitted, all tools are allowed.
+- **`deny`** — Remove tools matching these patterns from the allowed set.
+
+Matching order: allow is applied first, then deny removes from the result. Patterns support a trailing `*` wildcard. Tool names use the format `servername__toolname` (double underscore).
+
+### Pattern examples
+
+| Pattern | Matches |
+|---------|---------|
+| `coding__*` | All coding server tools |
+| `coding__read_file` | Only the `read_file` tool |
+| `coding__web_*` | `web_fetch` and `web_search` |
+| `tasks__*` | All task management tools |
+| `*__bash` | The `bash` tool from any server |
+
+### Common configurations
+
+**Read-only agent:**
+
+```json
+"tools": {
+  "allow": [
+    "coding__read_file",
+    "coding__list_files",
+    "coding__grep",
+    "coding__find",
+    "coding__lsp_*",
+    "coding__web_*"
+  ]
+}
+```
+
+**Full coding without bash:**
+
+```json
+"tools": {
+  "allow": ["coding__*"],
+  "deny": ["coding__bash", "coding__read_background_bash"]
+}
+```
+
+**Research + tasks only:**
+
+```json
+"tools": {
+  "allow": [
+    "coding__read_file",
+    "coding__grep",
+    "coding__find",
+    "tasks__*"
+  ]
+}
+```
+
+If `tools` is omitted or empty, the agent has access to all tools from its configured MCP servers.

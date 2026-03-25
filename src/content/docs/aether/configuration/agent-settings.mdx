@@ -1,0 +1,69 @@
+---
+title: Agents
+description: Configure agents in .aether/settings.json.
+---
+
+import { FileTree } from '@astrojs/starlight/components';
+
+Agents are defined in `.aether/settings.json` — their model, prompts, tools, and how they can be invoked.
+
+## File location
+
+<FileTree>
+
+- .aether/
+  - **settings.json** — Agent catalog
+  - mcp.json — MCP server config
+  - SYSTEM.md — Base system prompt
+- AGENTS.md — Project instructions
+
+</FileTree>
+
+## Example
+
+```json
+{
+  "prompts": ["AGENTS.md"],
+  "mcpServers": ".aether/mcp.json",
+  "agents": [
+    {
+      "name": "coder",
+      "description": "General-purpose coding assistant",
+      "model": "anthropic:claude-sonnet-4-5",
+      "userInvocable": true
+    }
+  ]
+}
+```
+
+## Top-level fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `prompts` | `string[]` | Glob patterns for prompt files inherited by all agents |
+| `mcpServers` | `string` | Path to inherited MCP config (relative to project root) |
+| `agents` | `AgentEntry[]` | Array of agent definitions |
+
+## Agent entry fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | *required* | Unique identifier for the agent |
+| `description` | `string` | *required* | Human-readable description shown in the UI |
+| `model` | `string` | *required* | Model spec — `provider:model-id` or comma-separated [alloy](/aether/configuration/llm-providers/#alloying) |
+| `reasoningEffort` | `string` | — | `"low"`, `"medium"`, `"high"`, or `"xhigh"` |
+| `userInvocable` | `boolean` | `false` | Appears as a mode in the TUI and ACP clients |
+| `agentInvocable` | `boolean` | `false` | Can be spawned as a [sub-agent](/aether/built-in-servers/subagents/) |
+| `prompts` | `string[]` | `[]` | Glob patterns for agent-specific prompt files |
+| `mcpServers` | `string` | — | Override MCP config path for this agent |
+| `tools` | `object` | `{}` | [Tool filtering](/aether/configuration/mcp-servers/#tool-filtering) with `allow` and `deny` arrays |
+
+## Validation rules
+
+:::note
+- Agent names must be unique (whitespace is trimmed)
+- `"__default__"` is a reserved name
+- At least one of `userInvocable` or `agentInvocable` must be `true`
+- All prompt glob patterns must match at least one file
+- MCP config paths must point to existing files
+:::

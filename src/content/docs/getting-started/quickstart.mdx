@@ -1,0 +1,63 @@
+---
+title: Quick Start
+description: Get Aether running locally in minutes.
+---
+
+import { Steps, FileTree } from '@astrojs/starlight/components';
+
+<Steps>
+
+1. **Install Aether**
+
+   ```bash
+   cargo install aether-cli
+   ```
+
+   Need more options? See the full [Installation](/getting-started/installation/) guide.
+
+2. **Initialize your project**
+
+   ```bash
+   cd your-project
+   aether init
+   ```
+
+   This creates the following structure:
+
+   <FileTree>
+     - .aether/
+       - settings.json — [Agent definitions](/aether/configuration/agent-settings/)
+       - mcp.json — [MCP server config](/aether/configuration/mcp-servers/)
+       - SYSTEM.md — Base system prompt
+     - AGENTS.md — [Project instructions](/aether/configuration/system-prompts/)
+   </FileTree>
+
+3. **Set your API key**
+
+   ```bash
+   export ANTHROPIC_API_KEY=sk-ant-...
+   ```
+
+   Aether supports [many providers](/aether/configuration/llm-providers/) — Anthropic, OpenAI, OpenRouter, Ollama, and more.
+
+4. **Run it**
+
+   Launch the interactive TUI:
+
+   ```bash
+   aether
+   ```
+
+   Or run a single prompt headlessly:
+
+   ```bash
+   aether headless "Explain the main function in this project"
+   ```
+
+</Steps>
+
+## Next steps
+
+- [Agent Settings](/aether/configuration/agent-settings/) — Define agents, models, and tool access
+- [MCP Servers](/aether/configuration/mcp-servers/) — Configure which tools are available
+- [LLM Providers](/aether/configuration/llm-providers/) — All supported models and providers

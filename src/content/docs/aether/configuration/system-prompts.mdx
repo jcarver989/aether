@@ -1,0 +1,60 @@
+---
+title: Prompts
+description: Control agent behavior with prompt files.
+---
+
+import { FileTree } from '@astrojs/starlight/components';
+
+Aether assembles system prompts from multiple sources — markdown files on disk, glob patterns in your config, and MCP server instructions — into a single system prompt for each agent.
+
+## Prompt sources
+
+Prompts are assembled in this order:
+
+1. **Inherited prompts** — `prompts` array at the top level of `settings.json`, applied to all agents
+2. **Agent-specific prompts** — `prompts` array on individual agent entries
+3. **MCP instructions** — Prompts provided by MCP servers during initialization
+
+## Prompt files
+
+The `prompts` field in `settings.json` accepts glob patterns that resolve to markdown files relative to the project root. Top-level patterns are inherited by all agents; agent-specific patterns add to (not replace) the inherited set.
+
+```json title=".aether/settings.json"
+{
+  "prompts": ["AGENTS.md", "prompts/*.md"],
+  "agents": [
+    {
+      "name": "coder",
+      "prompts": [".aether/agents/coder/AGENTS.md"],
+      "..."
+    }
+  ]
+}
+```
+
+A common convention is to place an `AGENTS.md` at the project root with shared instructions:
+
+```markdown title="AGENTS.md"
+# Project Agent
+
+You are a coding assistant for this Rust project.
+
+## Rules
+- Always read files before editing them
+- Write tests for new functionality
+- Use `cargo clippy` to check for warnings
+```
+
+:::note
+Every glob pattern must match at least one file. Aether reports a validation error if a pattern matches nothing.
+:::
+
+## Debugging prompts
+
+Use `show-prompt` to see the fully assembled system prompt for any agent:
+
+```bash
+aether show-prompt
+aether show-prompt --agent researcher
+aether show-prompt -C /path/to/project
+```

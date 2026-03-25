@@ -8,6 +8,7 @@ import { Code } from "astro-expressive-code/components";
 import Hero from "../components/Hero.astro";
 import ToolShowcaseItem from "../components/ToolShowcaseItem.astro";
 import CallToAction from "../components/CallToAction.astro";
+import TerminalDemo from "../components/TerminalDemo.astro";
 
 
 export const installCode = `$ cargo install aether-cli`;
@@ -16,54 +17,55 @@ export const initCode = `$ aether init
 ✓ Created mcp.json
 ✓ Created AGENTS.md`;
 
-export const showPromptCode = `$ aether show-prompt
+export const showPromptCode = `$ aether show-prompt -a Smart
+
 ---
 Prompt chars:            0
 Tool schema chars:       0
 Est. tokens:     ~       0
-MCP tools:               0
-    `;
-
-export const showPromptCode2 = `$ aether show-prompt
----
-Prompt chars:          456
-Tool schema chars:       0
-Est. tokens:     ~     114
 MCP tools:               0`;
 
 export const promptsCode = `{
-  "prompts": ["SYSTEM.md", "AGENTS.md"]
-}`;
-
-export const subAgentCode = `{
   "agents": [
     {
-      "name": "Explorer",
-      "description": "Explores codebases to find relevant files, patterns, and integration points",
-      "prompts": [".agents/explorer/AGENTS.md"]
+      "name": "Smart",
+      "model": "zai:glm-5",
+      "reasoningEffort": "high",
+      "prompts": ["SYSTEM.md", "AGENTS.md"]
     }
   ]
 }`;
 
 export const systemPromptCode = `# System Prompt
 You are an expert senior Rust engineer.
-
-## System Env
-$SYSTEM_ENV
 ...`;
 
 export const agentsPromptCode = `# Agents
-Use the codebase-explorer agent to
-search code before making changes.
-Use the Frontier agent for complex
-multi-file refactors.
+Use the Explorer agent to search code.
 ...`;
+
+export const showPromptCmd = `$ aether show-prompt -a Smart`;
+
+export const showPromptOutput = `# System Prompt
+You are an expert senior Rust engineer.
+...
+
+# Agents
+Use the Explorer agent to search code.
+...
+
+---
+Prompt chars:          120
+Tool schema chars:       0
+Est. tokens:     ~      30
+MCP tools:               0`;
 
 export const llmCloudCode = `{
   "agents": [
     {
-      "name": "Default",
-      "model": "anthropic:claude-sonnet-4-5"
+      "name": "Smart",
+      "model": "zai:glm-5",
+      "reasoningEffort": "high"
     }
   ]
 }`;
@@ -71,35 +73,43 @@ export const llmCloudCode = `{
 export const llmLocalCode = `{
   "agents": [
     {
-      "name": "Default",
-      "model": "ollama:qwen3"
+      "name": "Smart",
+      "model": "zai:glm-5",
+      "reasoningEffort": "high"
+    },
+    {
+      "name": "Local",
+      "model": "llamacpp:qwen3"
     }
   ]
 }`;
 
-export const llmMultiModelCode = `{
+export const llmAlloyCode = `{
   "agents": [
-    {
-      "name": "Frontier",
-      "model": "codex:gpt-5.4"
-    },
     {
       "name": "Smart",
-      "model": "zai:glm-5"
+      "model": "zai:glm-5",
+      "reasoningEffort": "high"
     },
     {
-      "name": "Fast",
-      "model": "openrouter:minimax/minimax-m2.5"
+      "name": "Local",
+      "model": "llamacpp:qwen3"
+    },
+    {
+      "name": "Alloy",
+      "model": "zai:glm-5,llamacpp:qwen3"
     }
   ]
 }`;
 
-export const llmReasoningCode = `{
+export const toolsWireCode = `{
   "agents": [
     {
-      "name": "Thinker",
-      "model": "anthropic:claude-sonnet-4-5",
-      "reasoningEffort": "high"
+      "name": "Smart",
+      "model": "zai:glm-5",
+      "reasoningEffort": "high",
+      "prompts": ["SYSTEM.md", "AGENTS.md"],
+      "mcpServers": "mcp.json"
     }
   ]
 }`;
@@ -149,38 +159,19 @@ export const toolsProxyCode = `{
 
 export const runTuiCode = `$ aether`;
 
-export const runHeadlessCode = `$ aether headless -m codex:gpt-5.4 "refactor auth"`;
+export const runHeadlessCode = `$ aether headless -a Smart "refactor auth"`;
 
 export const runAcpCode = `$ aether acp`;
 
-{/* ── Use a la carte ── */}
-
-export const pkgCoreCode = `[dependencies]
-aether-core = "0.1"`;
-
-export const pkgLlmCode = `[dependencies]
-aether-llm = "0.1"`;
-
-export const pkgMcpCode = `[dependencies]
-aether-mcp-servers = "0.1"`;
-
-export const pkgWispCode = `[dependencies]
-aether-wisp = "0.1"`;
-
-export const pkgCrucibleCode = `[dependencies]
-aether-crucible = "0.1"`;
-
-export const pkgCliCode = `[dependencies]
-aether-cli = "0.1"`;
 
 <Hero />
 
 <hr class="border-gray-700/50 mx-16" />
 
-<section class="px-16 py-20">
+<section class="py-20">
     <div class="mx-auto max-w-350">
         <div class="text-center mb-16">
-            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Getting started is easy as 1,2,3</h2>
+            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Getting started is easy as `install`, `init`, `run`</h2>
             <p class="text-gray-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">From install to running agent &mdash; everything is plain config files and markdown.</p>
         </div>
         <div class="flex flex-col gap-16">
@@ -200,20 +191,42 @@ aether-cli = "0.1"`;
 <section class="px-16 py-20">
     <div class="mx-auto max-w-350">
         <div class="text-center mb-16">
-            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Control every token</h2>
-            <p class="text-gray-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">In your context window.</p>
+            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Use any LLM, local or remote</h2>
+            <p class="text-gray-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">Anthropic, OpenAI, OpenRouter, DeepSeek, Moonshot, Zai, LlamaCpp and more. Plus, you can bring your own.</p>
+        </div>
+        <TerminalDemo id="llm-player" src="/demos/llm-demo.cast" class="mx-auto max-w-4xl mb-12" />
+        <div class="flex flex-col gap-6">
+            <ToolShowcaseItem title="Cloud" description="100+ cloud providers through one unified interface &mdash; OpenAI, Anthropic, DeepSeek, OpenRouter, Bedrock, and more. Configurable reasoning effort per agent.">
+                <Code code={llmCloudCode} lang="json" title=".aether/settings.json" meta="ins={3-7}" />
+            </ToolShowcaseItem>
+            <ToolShowcaseItem title="Local" description="Run fully offline with llama.cpp, Ollama, or any local inference server. Same config format, no code changes.">
+                <Code code={llmLocalCode} lang="json" title=".aether/settings.json" meta="ins={8-11}" />
+            </ToolShowcaseItem>
+            <ToolShowcaseItem title="Alloyed" description="Comma-separate models to create an alloy &mdash; requests round-robin across providers each turn. Mix cloud reasoning with local speed in a single agent." border={false}>
+                <Code code={llmAlloyCode} lang="json" title=".aether/settings.json" meta="ins={12-15}" />
+            </ToolShowcaseItem>
+        </div>
+    </div>
+</section>
+
+<section class="px-16 py-20">
+    <div class="mx-auto max-w-350">
+        <div class="text-center mb-16">
+            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Build a system prompt</h2>
+            <p class="text-gray-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">Start with a blank slate and add only what you need.</p>
         </div>
         <div class="flex flex-col gap-6">
-            <ToolShowcaseItem title="Start with a blank slate" description="Agents begin with no system prompt or tools">
+            <ToolShowcaseItem title="Start with a blank slate" description="Agents begin with no system prompt or tools.">
                 <Code code={showPromptCode} lang="sh" title="terminal" />
             </ToolShowcaseItem>
-            <ToolShowcaseItem title="Compose your system prompt" description="Point the prompts array at files or globs &mdash; CLAUDE.md, AGENTS.md, **/*.md, whatever you want.">
-                <Code code={promptsCode} lang="json" title=".aether/settings.json" meta="ins={2}" />
+            <ToolShowcaseItem title="Compose your system prompt" description="Add a prompts array to pull in markdown files &mdash; system instructions, agent guides, whatever you want.">
+                <Code code={promptsCode} lang="json" title=".aether/settings.json" meta="ins={7}" />
                 <Code code={systemPromptCode} lang="md" title="SYSTEM.md" />
                 <Code code={agentsPromptCode} lang="md" title="AGENTS.md" />
             </ToolShowcaseItem>
-            <ToolShowcaseItem title="Measure" description="So you don't waste tokens">
-                <Code code={showPromptCode2} lang="sh" title="terminal" />
+            <ToolShowcaseItem title="Measure" description="So you don't waste tokens." border={false}>
+                <Code code={showPromptCmd} lang="sh" title="terminal" />
+                <Code code={showPromptOutput} lang="md" title="output" />
             </ToolShowcaseItem>
         </div>
     </div>
@@ -222,43 +235,21 @@ aether-cli = "0.1"`;
 <section class="px-16 py-20">
     <div class="mx-auto max-w-350">
         <div class="text-center mb-16">
-            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Use any LLM</h2>
-            <p class="text-gray-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">Anthropic, OpenAI, DeepSeek, Ollama, and more. One unified interface, swap with a single line.</p>
+            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Connect tools</h2>
+            <p class="text-gray-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">Aether agents get tools exclusively via MCP. Add what you need, nothing more.</p>
         </div>
         <div class="flex flex-col gap-6">
-            <ToolShowcaseItem title="Cloud providers" description="100+ providers through one unified interface. Anthropic, OpenAI, OpenRouter, DeepSeek, Bedrock &mdash; swap with a single line.">
-                <Code code={llmCloudCode} lang="json" title=".aether/settings.json" />
-            </ToolShowcaseItem>
-            <ToolShowcaseItem title="Local models" description="Fully offline with Ollama. Same config format, no code changes.">
-                <Code code={llmLocalCode} lang="json" title=".aether/settings.json" />
-            </ToolShowcaseItem>
-            <ToolShowcaseItem title="Multi-model agents" description="Alloy multiple models into a single project. Round-robin across providers per turn &mdash; combine a reasoning model with a fast model.">
-                <Code code={llmMultiModelCode} lang="json" title=".aether/settings.json" />
-            </ToolShowcaseItem>
-            <ToolShowcaseItem title="Reasoning effort" description="Configurable per agent &mdash; Low, Medium, or High. Extended thinking support for models that offer it." border={false}>
-                <Code code={llmReasoningCode} lang="json" title=".aether/settings.json" />
-            </ToolShowcaseItem>
-        </div>
-    </div>
-</section>
-
-<section class="px-16 py-20">
-    <div class="mx-auto max-w-350">
-        <div class="text-center mb-16">
-            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Use any tools</h2>
-            <p class="text-gray-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">Aether agents get tools exclusively via MCP.</p>
-        </div>
-        <div class="flex flex-col gap-6">
-            <ToolShowcaseItem title="Coding" description="File I/O, regex grep, bash execution, web fetch, and full LSP integration &mdash; go-to-definition, find references, rename symbols, and compiler diagnostics out of the box.">
+            <ToolShowcaseItem title="Coding" description="Point the agent at an MCP config, then add servers. Coding gives you file I/O, regex grep, bash execution, web fetch, and full LSP integration out of the box.">
+                <Code code={toolsWireCode} lang="json" title=".aether/settings.json" meta="ins={8}" />
                 <Code code={toolsCodingCode} lang="json" title="mcp.json" meta="ins={3}" />
             </ToolShowcaseItem>
-            <ToolShowcaseItem title="Skills" description="Reusable domain knowledge packaged as skill directories with progressive disclosure. Define slash commands as markdown with YAML frontmatter. Topic-based notes for learning consolidation.">
+            <ToolShowcaseItem title="Skills" description="Reusable domain knowledge packaged as skill directories with progressive disclosure. Define slash commands as markdown with YAML frontmatter.">
                 <Code code={toolsSkillsCode} lang="json" title="mcp.json" meta="ins={4}" />
             </ToolShowcaseItem>
-            <ToolShowcaseItem title="Sub-agents" description="Spawn child agents that execute in parallel. Each gets its own model, prompts, and tools. Decompose tasks across multiple agents, then collect structured results when they all complete.">
+            <ToolShowcaseItem title="Sub-agents" description="Spawn child agents that execute in parallel. Each gets its own model, prompts, and tools. Decompose tasks across multiple agents, then collect structured results.">
                 <Code code={toolsSubagentsCode} lang="json" title="mcp.json" meta="ins={5}" />
             </ToolShowcaseItem>
-            <ToolShowcaseItem title="Proxy" description="Plug in any MCP-compatible server &mdash; Chrome DevTools, Playwright, databases, or your own custom tools. The proxy wraps external stdio servers into the unified in-memory interface." border={false}>
+            <ToolShowcaseItem title="Proxy" description="Plug in any external MCP server without bloating context. The proxy replaces all nested tool schemas with a single routing tool and writes definitions to disk &mdash; the agent browses them via the filesystem instead. 100 tools in context becomes 1, saving 90%+ on schema tokens every turn." border={false}>
                 <Code code={toolsProxyCode} lang="json" title="mcp.json" meta="ins={6-17}" />
             </ToolShowcaseItem>
         </div>
@@ -285,36 +276,7 @@ aether-cli = "0.1"`;
     </div>
 </section>
 
-<section class="px-16 py-20">
-    <div class="mx-auto max-w-350">
-        <div class="text-center mb-16">
-            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Use a la carte and as a library</h2>
-            <p class="text-gray-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">Each package does one thing well. Compose only what you need.</p>
-        </div>
-        <div class="flex flex-col gap-6">
-            <ToolShowcaseItem title="aether-core" description="Agent runtime, context management, and the main conversation loop.">
-                <Code code={pkgCoreCode} lang="toml" title="Cargo.toml" />
-            </ToolShowcaseItem>
-            <ToolShowcaseItem title="aether-llm" description="Unified provider interface for Anthropic, OpenAI, Bedrock, Ollama, and more.">
-                <Code code={pkgLlmCode} lang="toml" title="Cargo.toml" />
-            </ToolShowcaseItem>
-            <ToolShowcaseItem title="aether-mcp-servers" description="Built-in MCP tool servers: file I/O, bash, web fetch, LSP integration.">
-                <Code code={pkgMcpCode} lang="toml" title="Cargo.toml" />
-            </ToolShowcaseItem>
-            <ToolShowcaseItem title="aether-wisp" description="Terminal UI with markdown, syntax highlighting, diffs, and session management.">
-                <Code code={pkgWispCode} lang="toml" title="Cargo.toml" />
-            </ToolShowcaseItem>
-            <ToolShowcaseItem title="aether-crucible" description="Evaluation framework for testing agent behavior with assertions and metrics.">
-                <Code code={pkgCrucibleCode} lang="toml" title="Cargo.toml" />
-            </ToolShowcaseItem>
-            <ToolShowcaseItem title="aether-cli" description="Command-line interface with headless mode, ACP relay, and session persistence." border={false}>
-                <Code code={pkgCliCode} lang="toml" title="Cargo.toml" />
-            </ToolShowcaseItem>
-        </div>
-    </div>
-</section>
-
-<CallToAction title="Ready to build?" description="Get started with Aether in minutes. Read the docs, clone the repo, and start building your own AI agents.">
-    <a href="/guides/introduction/" class="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium bg-accent-600 text-white hover:bg-accent-500 transition-all duration-200 shadow-lg shadow-accent-900/30">Read the docs <span aria-hidden="true">&rarr;</span></a>
+<CallToAction title="Ready to build?" description="Use the full CLI or pick individual crates &mdash; aether-core, aether-llm, aether-mcp-servers, aether-wisp, aether-crucible &mdash; to compose your own agent.">
+    <a href="/getting-started/introduction/" class="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium bg-accent-600 text-white hover:bg-accent-500 transition-all duration-200 shadow-lg shadow-accent-900/30">Read the docs <span aria-hidden="true">&rarr;</span></a>
     <a href="https://github.com/joshka/aether" class="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium border border-gray-500 text-gray-200 hover:border-accent-400 hover:text-accent-400 transition-all duration-200"><span>View on GitHub</span><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg></a>
 </CallToAction>

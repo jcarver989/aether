@@ -50,3 +50,8 @@ h5,
 h6 {
     font-family: "IBM Plex Mono", monospace;
 }
+
+/* Vertical spacing between adjacent expressive-code blocks */
+.expressive-code + .expressive-code {
+    margin-top: 0.75rem;
+}

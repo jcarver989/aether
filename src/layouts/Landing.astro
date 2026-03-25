@@ -33,7 +33,7 @@ const { title, description } = Astro.props.frontmatter;
             >
             <nav class="flex items-center gap-6">
                 <a
-                    href="/guides/introduction/"
+                    href="/getting-started/introduction/"
                     class="text-gray-300 no-underline text-sm transition-colors hover:text-gray-50"
                     >Docs</a
                 >
@@ -66,36 +66,45 @@ const { title, description } = Astro.props.frontmatter;
 <script>
     import * as AsciinemaPlayer from "asciinema-player";
 
-    let currentPlayer: ReturnType<typeof AsciinemaPlayer.create> | null = null;
+    const players = new Map<
+        string,
+        ReturnType<typeof AsciinemaPlayer.create>
+    >();
 
-    function createPlayer(src: string) {
-        const container = document.getElementById("hero-player");
+    function createPlayer(
+        containerId: string,
+        src: string,
+        opts?: Partial<Parameters<typeof AsciinemaPlayer.create>[2]>,
+    ) {
+        const container = document.getElementById(containerId);
         if (!container) return;
 
-        if (currentPlayer) {
-            currentPlayer.dispose();
+        const existing = players.get(containerId);
+        if (existing) {
+            existing.dispose();
             container.innerHTML = "";
         }
 
-        currentPlayer = AsciinemaPlayer.create(src, container, {
+        const player = AsciinemaPlayer.create(src, container, {
             autoPlay: true,
             loop: true,
             speed: 1,
             idleTimeLimit: 3,
             fit: "width",
-            rows: 24,
             theme: "aether",
+            ...opts,
         });
+        players.set(containerId, player);
     }
 
     function init() {
-        const container = document.getElementById("hero-player");
-        if (!container) return;
-
-        const initialSrc = container.dataset.src;
-        if (initialSrc) {
-            createPlayer(initialSrc);
-        }
+        document
+            .querySelectorAll<HTMLElement>(".terminal-demo")
+            .forEach((container) => {
+                const src = container.dataset.src;
+                if (src && container.id)
+                    createPlayer(container.id, src);
+            });
 
         const pills = document.querySelectorAll<HTMLButtonElement>(".pill");
         pills.forEach((pill) => {
@@ -103,7 +112,7 @@ const { title, description } = Astro.props.frontmatter;
                 pills.forEach((p) => p.classList.remove("active"));
                 pill.classList.add("active");
                 const src = pill.dataset.src;
-                if (src) createPlayer(src);
+                if (src) createPlayer("hero-player", src);
             });
         });
     }
@@ -139,12 +148,12 @@ const { title, description } = Astro.props.frontmatter;
         --term-color-15: #f0f6fc;
     }
 
-    #hero-player .ap-wrapper {
+    .terminal-demo .ap-wrapper {
         border-radius: 0;
         border: none;
     }
 
-    #hero-player .ap-control-bar {
+    .terminal-demo .ap-control-bar {
         display: none !important;
     }
 </style>

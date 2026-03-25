@@ -1,0 +1,59 @@
+---
+title: Installation
+description: Install Aether on your system.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+## Prerequisites
+
+- **Rust 1.80+** — install via [rustup](https://rustup.rs) if you don't have it
+- **An API key** for at least one [LLM provider](/aether/configuration/llm-providers/) (Anthropic, OpenRouter, etc.)
+
+## Install Aether
+
+<Tabs>
+  <TabItem label="cargo install">
+    ```bash
+    cargo install aether-cli
+    ```
+
+    This installs the `aether` binary — run it with no subcommand to launch the TUI, or use `aether headless` for single prompts.
+  </TabItem>
+  <TabItem label="Build from source">
+    ```bash
+    git clone https://github.com/joshka/aether.git
+    cd aether
+    cargo build --release
+    ```
+
+    Binaries are written to `target/release/aether` and `target/release/wisp`.
+  </TabItem>
+</Tabs>
+
+## Set up your API key
+
+Export the environment variable for your chosen provider:
+
+<Tabs>
+  <TabItem label="Anthropic">
+    ```bash
+    export ANTHROPIC_API_KEY=sk-ant-...
+    ```
+  </TabItem>
+  <TabItem label="OpenRouter">
+    ```bash
+    export OPENROUTER_API_KEY=sk-or-...
+    ```
+  </TabItem>
+  <TabItem label="OpenAI">
+    ```bash
+    export OPENAI_API_KEY=sk-...
+    ```
+  </TabItem>
+  <TabItem label="Ollama">
+    No API key needed — just make sure [Ollama](https://ollama.com) is running locally.
+  </TabItem>
+</Tabs>
+
+Head to the [Quick Start](/getting-started/quickstart/) to initialize a project and run your first prompt.

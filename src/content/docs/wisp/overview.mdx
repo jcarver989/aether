@@ -1,0 +1,67 @@
+---
+title: Overview
+description: A general-purpose terminal UI for ACP-compatible AI agents.
+---
+
+Wisp is a terminal interface for AI coding agents. It works with any agent that speaks the [Agent Client Protocol (ACP)](https://github.com/anthropics/agent-client-protocol) — Aether is the default, but Wisp can front any compatible agent.
+
+## What you get
+
+- **Conversation view** — Streaming markdown responses with syntax highlighting
+- **Tool tracking** — Live progress for running tool calls and sub-agents
+- **Plan visualization** — Task plans with status updates
+- **Git diff viewer** — Two-pane diff with inline commenting (`Ctrl+G`)
+- **File attachments** — Attach files to prompts via `@` picker
+- **Settings overlay** — Configure models, reasoning, MCP servers
+- **Session management** — Resume previous conversations
+
+## Launch
+
+```bash
+# Default: starts Aether as the backend agent
+wisp
+
+# Use a custom ACP agent
+wisp --agent "my-custom-agent serve"
+```
+
+The `--agent` flag specifies the command Wisp runs as a subprocess. The agent must speak ACP over stdin/stdout.
+
+## CLI flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--agent <command>` | `aether acp` | Agent subprocess command |
+| `--log-dir <path>` | `/tmp/wisp-logs` | Log output directory |
+
+## UI layout
+
+```
+┌──────────────────────────────────────────┐
+│  Conversation                            │
+│  ├─ User messages                        │
+│  ├─ Agent responses (streaming markdown) │
+│  ├─ Tool calls (with progress)           │
+│  └─ Plan entries                         │
+│                                          │
+├──────────────────────────────────────────┤
+│  Prompt input          [@file] [/command]│
+├──────────────────────────────────────────┤
+│  agent · mode · model   ░░░░ · 45%      │
+└──────────────────────────────────────────┘
+```
+
+The status line at the bottom shows the agent name, current mode, model, reasoning effort level, and context usage percentage.
+
+## Logging
+
+```bash
+# Default location
+/tmp/wisp-logs/wisp.log.2026-03-25
+
+# Custom directory
+wisp --log-dir ./logs
+
+# Verbose logging
+RUST_LOG=debug wisp
+```

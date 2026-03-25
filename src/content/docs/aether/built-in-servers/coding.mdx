@@ -1,0 +1,114 @@
+---
+title: Coding Tools
+description: File operations, bash, search, web, and LSP tools.
+---
+
+The `coding` server provides tools for reading and writing files, running shell commands, searching codebases, fetching web content, and interacting with language servers. See [Tools](/aether/configuration/mcp-servers/) for configuration.
+
+## File operations
+
+| Tool | Description |
+|------|-------------|
+| `read_file` | Read a file with optional line range (max 2000 lines per call) |
+| `write_file` | Write content to a file (creates or overwrites) |
+| `edit_file` | Find-and-replace within a file |
+| `list_files` | List directory contents with metadata |
+
+**`read_file(path, line_offset?, limit?)`**
+- `path` — File path (relative to root)
+- `line_offset` — Start line (0-indexed, optional)
+- `limit` — Max lines to return (default: 2000)
+
+**`write_file(path, content)`**
+- `path` — File path
+- `content` — Full file content
+
+**`edit_file(path, find, replace, replace_all?)`**
+- `path` — File path
+- `find` — Text to search for (must be unique unless `replace_all` is true)
+- `replace` — Replacement text
+- `replace_all` — Replace all occurrences (default: false)
+
+:::caution
+`write_file` and `edit_file` require the file to be read first with `read_file`. This prevents agents from blindly overwriting files they haven't seen.
+:::
+
+## Search
+
+| Tool | Description |
+|------|-------------|
+| `grep` | Regex search across files with context and filtering |
+| `find` | Find files by glob pattern |
+
+**`grep(pattern, glob?, file_type?, context?, case_insensitive?, multiline?)`**
+- `pattern` — Regex pattern (ripgrep syntax)
+- `glob` — Filter files by glob (e.g., `"*.rs"`)
+- `file_type` — Filter by type (e.g., `"rust"`, `"js"`)
+- `context` — Lines of context around matches
+- `case_insensitive` — Ignore case (default: false)
+- `multiline` — Match across lines (default: false)
+
+Output modes: `Content` (matching lines), `FilesWithMatches` (file paths only), `Count` (match counts).
+
+**`find(pattern)`**
+- `pattern` — Glob pattern (e.g., `"**/*.rs"`, `"src/**/test_*"`)
+
+## Bash
+
+| Tool | Description |
+|------|-------------|
+| `bash` | Execute a shell command |
+| `read_background_bash` | Read output from a background process |
+
+**`bash(command, timeout?, background?)`**
+- `command` — Shell command to execute
+- `timeout` — Max duration in milliseconds (default: 120000, max: 600000)
+- `background` — Run in background and return a shell ID (default: false)
+
+**`read_background_bash(shell_id, regex?)`**
+- `shell_id` — ID from a background bash call
+- `regex` — Filter output lines by pattern
+
+## Web
+
+| Tool | Description |
+|------|-------------|
+| `web_fetch` | Fetch a URL and convert HTML to markdown |
+| `web_search` | Search the web via Brave Search API |
+
+**`web_fetch(url)`**
+- `url` — URL to fetch
+
+**`web_search(query, allow_domains?, block_domains?)`**
+- `query` — Search query
+- `allow_domains` — Only return results from these domains
+- `block_domains` — Exclude results from these domains
+
+`web_search` requires the `BRAVE_SEARCH_API_KEY` environment variable.
+
+## LSP (Language Server Protocol)
+
+| Tool | Description |
+|------|-------------|
+| `lsp_symbol` | Go-to-definition, find references, hover, call hierarchy |
+| `lsp_document` | Get all symbols in a document |
+| `lsp_check_errors` | Get compiler diagnostics |
+| `lsp_rename` | Rename a symbol across the codebase |
+
+**`lsp_symbol(file, line, char, action)`**
+- `action` — One of: `definition`, `references`, `hover`, `incoming_calls`, `outgoing_calls`
+- `file` — File path
+- `line` — Line number (0-indexed)
+- `char` — Character offset (0-indexed)
+
+**`lsp_document(file)`**
+- `file` — File path
+
+**`lsp_check_errors(file?)`**
+- `file` — Optional file to check (omit for all workspace errors)
+
+**`lsp_rename(file, line, char, new_name)`**
+- `file` — File path
+- `line` — Line number (0-indexed)
+- `char` — Character offset (0-indexed)
+- `new_name` — New name for the symbol

@@ -1,0 +1,73 @@
+---
+title: Tasks
+description: Hierarchical task management for complex work.
+---
+
+The `tasks` server gives agents a structured way to break down complex work into trackable tasks with dependencies and status tracking. Tasks are stored as JSONL files in `.aether-tasks/`. See [Tools](/aether/configuration/mcp-servers/) for configuration.
+
+## Tools
+
+| Tool | Description |
+|------|-------------|
+| `task_create` | Create a new task or subtask |
+| `task_get` | Get a task by ID |
+| `task_list` | List tasks with filters |
+| `task_update` | Update task status, title, or other fields |
+
+### task_create
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `title` | `string` | Task title (required) |
+| `description` | `string` | Detailed description |
+| `parent` | `string` | Parent task ID (creates a subtask) |
+| `assignee` | `string` | Agent or user name |
+| `dependencies` | `string[]` | Task IDs that must complete first |
+
+### task_list
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `assignee` | `string` | Filter by assignee |
+| `status` | `string` | Filter by status |
+| `tree_id` | `string` | Filter by root task tree |
+| `ready_only` | `boolean` | Only tasks with all dependencies met |
+
+### task_update
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | `string` | Task ID (required) |
+| `title` | `string` | New title |
+| `description` | `string` | New description |
+| `status` | `string` | New status |
+| `assignee` | `string` | New assignee |
+| `dependencies` | `string[]` | Updated dependencies |
+
+## Task IDs
+
+- Root tasks: `at-a1b2c3d4` (prefix + 8-char hash)
+- Subtasks: `at-a1b2c3d4.1`, `at-a1b2c3d4.2`, etc.
+
+## Status values
+
+| Status | Description |
+|--------|-------------|
+| `Pending` | Not yet started |
+| `InProgress` | Currently being worked on |
+| `Completed` | Done |
+| `Blocked` | Waiting on dependencies |
+
+## Research metadata
+
+Tasks support structured metadata for tracking research progress:
+
+| Field | Purpose |
+|-------|---------|
+| `summary` | High-level summary of findings |
+| `decisions` | Key decisions made |
+| `facts` | Important facts discovered |
+| `next_steps` | What to do next |
+| `blockers` | What's blocking progress |
+| `files_read` | Files that were examined |
+| `resources` | External resources referenced |

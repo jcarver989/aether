@@ -1,0 +1,34 @@
+---
+title: TUI
+description: Run Aether interactively in the terminal.
+---
+
+The default way to use Aether is through the Wisp terminal UI — a full-screen interactive interface for chatting with agents, reviewing diffs, and managing sessions.
+
+```bash
+aether
+```
+
+This launches the Wisp TUI with Aether as the backend agent. You can also run Wisp directly for more control:
+
+```bash
+wisp
+wisp --agent "my-custom-agent serve"
+```
+
+## Features
+
+- **Streaming responses** — See model output as it arrives
+- **Inline diffs** — Review file changes in a two-pane diff viewer
+- **Slash commands** — Trigger skills and commands with `/name`
+- **Session persistence** — Resume previous conversations
+- **Model selection** — Switch models on the fly
+
+## Detailed documentation
+
+Wisp has its own dedicated section covering all TUI features in depth:
+
+- [Keybindings & Commands](/wisp/keybindings/) — Keyboard shortcuts, slash commands, and file attachments
+- [Git Diff View](/wisp/git-diff/) — Two-pane diff viewer with inline comments
+- [Settings & Themes](/wisp/settings/) — Appearance and agent options
+- [Sessions](/wisp/sessions/) — Session persistence, resume, and management
