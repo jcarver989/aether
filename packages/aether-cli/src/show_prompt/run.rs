@@ -1,14 +1,21 @@
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use super::PromptArgs;
 use crate::error::CliError;
 use crate::runtime::RuntimeBuilder;
+use aether_core::agent_spec::AgentSpec;
 use aether_core::core::Prompt;
+use aether_project::{AgentCatalog, load_agent_catalog};
 use llm::ToolDefinition;
 use serde_json::Value;
 
 pub async fn run_prompt(args: PromptArgs) -> Result<(), CliError> {
-    let info = RuntimeBuilder::new(&args.cwd, "anthropic:claude-sonnet-4-5")?
+    let cwd = args.cwd.canonicalize().map_err(CliError::IoError)?;
+    let catalog = load_agent_catalog(&cwd).map_err(|e| CliError::AgentError(e.to_string()))?;
+    let spec = resolve_agent_spec(&catalog, args.agent.as_deref(), &cwd)?;
+
+    let info = RuntimeBuilder::from_spec(cwd, spec)
         .mcp_config_opt(args.mcp_config)
         .build_prompt_info()
         .await?;
@@ -83,6 +90,32 @@ pub fn format_stats(prompt_chars: usize, tool_schema_chars: usize, tool_count: u
          Est. tokens:     ~{est_tokens:>8}\n\
          MCP tools:        {tool_count:>8}"
     )
+}
+
+fn resolve_agent_spec(
+    catalog: &AgentCatalog,
+    agent_name: Option<&str>,
+    cwd: &Path,
+) -> Result<AgentSpec, CliError> {
+    match agent_name {
+        Some(name) => catalog
+            .resolve(name, cwd)
+            .map_err(|e| CliError::AgentError(e.to_string())),
+
+        None => match catalog.user_invocable().next() {
+            Some(first) => catalog
+                .resolve(&first.name, cwd)
+                .map_err(|e| CliError::AgentError(e.to_string())),
+
+            None => {
+                let model = "anthropic:claude-sonnet-4-5"
+                    .parse()
+                    .map_err(|e: String| CliError::ModelError(e))?;
+
+                Ok(catalog.resolve_default(&model, None, cwd))
+            }
+        },
+    }
 }
 
 #[cfg(test)]
@@ -212,5 +245,84 @@ mod tests {
         let output = build_tools(&tools);
         assert!(output.contains("bad_tool"));
         assert!(output.contains("null"));
+    }
+
+    fn write_file(dir: &std::path::Path, path: &str, content: &str) {
+        let full = dir.join(path);
+        if let Some(parent) = full.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(full, content).unwrap();
+    }
+
+    fn setup_catalog(settings_json: &str) -> (tempfile::TempDir, AgentCatalog) {
+        let dir = tempfile::tempdir().unwrap();
+        write_file(dir.path(), "PROMPT.md", "Be helpful");
+        write_file(dir.path(), ".aether/settings.json", settings_json);
+        let catalog = load_agent_catalog(dir.path()).unwrap();
+        (dir, catalog)
+    }
+
+    #[test]
+    fn resolve_agent_spec_with_explicit_name() {
+        let (dir, catalog) = setup_catalog(
+            r#"{"agents": [
+                {"name": "first", "description": "First", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["PROMPT.md"]},
+                {"name": "second", "description": "Second", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["PROMPT.md"]}
+            ]}"#,
+        );
+        let spec = resolve_agent_spec(&catalog, Some("second"), dir.path()).unwrap();
+        assert_eq!(spec.name, "second");
+    }
+
+    #[test]
+    fn resolve_agent_spec_auto_selects_first_user_invocable() {
+        let (dir, catalog) = setup_catalog(
+            r#"{"agents": [
+                {"name": "internal", "description": "Internal", "model": "anthropic:claude-sonnet-4-5", "agentInvocable": true, "prompts": ["PROMPT.md"]},
+                {"name": "visible", "description": "Visible", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["PROMPT.md"]}
+            ]}"#,
+        );
+        let spec = resolve_agent_spec(&catalog, None, dir.path()).unwrap();
+        assert_eq!(spec.name, "visible");
+    }
+
+    #[test]
+    fn resolve_agent_spec_falls_back_to_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let catalog = AgentCatalog::empty(dir.path().to_path_buf());
+        let spec = resolve_agent_spec(&catalog, None, dir.path()).unwrap();
+        assert_eq!(spec.name, "__default__");
+    }
+
+    #[test]
+    fn resolve_agent_spec_unknown_name_errors() {
+        let (dir, catalog) = setup_catalog(
+            r#"{"agents": [
+                {"name": "alpha", "description": "Alpha", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["PROMPT.md"]}
+            ]}"#,
+        );
+        let result = resolve_agent_spec(&catalog, Some("nonexistent"), dir.path());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resolve_agent_spec_preserves_agent_mcp_config() {
+        let dir = tempfile::tempdir().unwrap();
+        write_file(dir.path(), "PROMPT.md", "Be helpful");
+        write_file(dir.path(), "agent-mcp.json", "{}");
+        write_file(
+            dir.path(),
+            ".aether/settings.json",
+            r#"{"agents": [
+                {"name": "with-mcp", "description": "Has MCP", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["PROMPT.md"], "mcpServers": "agent-mcp.json"}
+            ]}"#,
+        );
+        let catalog = load_agent_catalog(dir.path()).unwrap();
+        let spec = resolve_agent_spec(&catalog, None, dir.path()).unwrap();
+        assert_eq!(
+            spec.mcp_config_path,
+            Some(dir.path().join("agent-mcp.json"))
+        );
     }
 }
