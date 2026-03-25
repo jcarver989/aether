@@ -1,6 +1,7 @@
 #![cfg(feature = "stdio")]
 
 use rmcp::ServiceExt;
+use rmcp::model::CallToolRequestParams;
 use rmcp::transport::TokioChildProcess;
 use std::process::Stdio;
 use tokio::process::Command;
@@ -75,9 +76,8 @@ async fn tasks_server_create_and_get_task_over_stdio() {
     // Create a task
     let create_result = client
         .peer()
-        .call_tool(rmcp::model::CallToolRequestParams {
-            name: "task_create".into(),
-            arguments: Some(
+        .call_tool(
+            rmcp::model::CallToolRequestParams::new("task_create").with_arguments(
                 serde_json::json!({
                     "title": "Test task",
                     "description": "A test task created over stdio"
@@ -86,9 +86,7 @@ async fn tasks_server_create_and_get_task_over_stdio() {
                 .unwrap()
                 .clone(),
             ),
-            meta: None,
-            task: None,
-        })
+        )
         .await
         .expect("call task_create");
 
@@ -99,17 +97,14 @@ async fn tasks_server_create_and_get_task_over_stdio() {
     // Get the task back
     let get_result = client
         .peer()
-        .call_tool(rmcp::model::CallToolRequestParams {
-            name: "task_get".into(),
-            arguments: Some(
+        .call_tool(
+            CallToolRequestParams::new("task_get").with_arguments(
                 serde_json::json!({ "id": task_id })
                     .as_object()
                     .unwrap()
                     .clone(),
             ),
-            meta: None,
-            task: None,
-        })
+        )
         .await
         .expect("call task_get");
 
@@ -167,7 +162,15 @@ async fn lsp_server_lists_tools_over_stdio() {
         names.contains(&"lsp_check_errors"),
         "expected lsp_check_errors, got: {names:?}"
     );
-    assert_eq!(names.len(), 3, "expected exactly 3 tools, got: {names:?}");
+    assert!(
+        names.contains(&"lsp_workspace_search"),
+        "expected lsp_workspace_search, got: {names:?}"
+    );
+    assert!(
+        names.contains(&"lsp_rename"),
+        "expected lsp_rename, got: {names:?}"
+    );
+    assert_eq!(names.len(), 5, "expected exactly 5 tools, got: {names:?}");
 }
 
 #[tokio::test]
@@ -190,6 +193,33 @@ async fn skills_server_lists_tools_over_stdio() {
         names.contains(&"search_notes"),
         "expected search_notes, got: {names:?}"
     );
+}
+
+#[tokio::test]
+async fn subagents_server_lists_tools_over_stdio() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+
+    let tools =
+        connect_and_list_tools("subagents", &["--", "--dir", tmp.path().to_str().unwrap()]).await;
+    let names = tool_names(&tools);
+
+    assert!(
+        names.contains(&"spawn_subagent"),
+        "expected spawn_subagent, got: {names:?}"
+    );
+    assert_eq!(names.len(), 1, "expected exactly 1 tool, got: {names:?}");
+}
+
+#[tokio::test]
+async fn survey_server_lists_tools_over_stdio() {
+    let tools = connect_and_list_tools("survey", &[]).await;
+    let names = tool_names(&tools);
+
+    assert!(
+        names.contains(&"ask_user"),
+        "expected ask_user, got: {names:?}"
+    );
+    assert_eq!(names.len(), 1, "expected exactly 1 tool, got: {names:?}");
 }
 
 #[tokio::test]
