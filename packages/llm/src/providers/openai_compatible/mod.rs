@@ -42,5 +42,6 @@ pub fn build_chat_request(
             include_usage: Some(true),
             include_obfuscation: None,
         }),
+        reasoning_effort: context.reasoning_effort(),
     })
 }

@@ -153,6 +153,13 @@ const PROVIDERS: &[ProviderConfig] = &[
         Some("MOONSHOT_API_KEY"),
     ),
     ProviderConfig::standard(
+        "openai",
+        "Openai",
+        "openai",
+        "OpenAI",
+        Some("OPENAI_API_KEY"),
+    ),
+    ProviderConfig::standard(
         "openrouter",
         "OpenRouter",
         "openrouter",
