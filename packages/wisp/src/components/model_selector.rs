@@ -241,7 +241,7 @@ impl Component for ModelSelector {
                 }
                 Some(vec![])
             }
-            PickerKey::Confirm | PickerKey::Char(' ') => {
+            PickerKey::Confirm => {
                 self.toggle_focused();
                 Some(vec![])
             }
@@ -455,15 +455,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn space_and_enter_both_toggle_focused_model() {
-        for toggle_key in [k(KeyCode::Char(' ')), k(KeyCode::Enter)] {
-            let mut s = make_selector();
-            assert_eq!(s.selected_count(), 0);
-            send(&mut s, toggle_key).await;
-            assert_eq!(s.selected_count(), 1);
-            send(&mut s, toggle_key).await;
-            assert_eq!(s.selected_count(), 0);
-        }
+    async fn enter_toggles_focused_model() {
+        let mut s = make_selector();
+        assert_eq!(s.selected_count(), 0);
+        send(&mut s, k(KeyCode::Enter)).await;
+        assert_eq!(s.selected_count(), 1);
+        send(&mut s, k(KeyCode::Enter)).await;
+        assert_eq!(s.selected_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn space_adds_to_search_query_not_selects() {
+        let mut s = make_selector();
+        assert_eq!(s.selected_count(), 0);
+        assert_eq!(s.query(), "");
+
+        send(&mut s, k(KeyCode::Char('K'))).await;
+        send(&mut s, k(KeyCode::Char('i'))).await;
+        send(&mut s, k(KeyCode::Char('m'))).await;
+        send(&mut s, k(KeyCode::Char('i'))).await;
+        send(&mut s, k(KeyCode::Char(' '))).await;
+        send(&mut s, k(KeyCode::Char('2'))).await;
+
+        assert_eq!(s.query(), "Kimi 2");
+        assert_eq!(
+            s.selected_count(),
+            0,
+            "space should not select the focused model"
+        );
     }
 
     #[test]
@@ -489,7 +508,7 @@ mod tests {
     #[tokio::test]
     async fn confirm_with_one_returns_single_model() {
         let mut s = make_selector();
-        send(&mut s, k(KeyCode::Char(' '))).await;
+        send(&mut s, k(KeyCode::Enter)).await;
         let changes = s.confirm();
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].config_id, "model");
@@ -499,9 +518,9 @@ mod tests {
     #[tokio::test]
     async fn confirm_with_two_returns_comma_joined() {
         let mut s = make_selector();
-        send(&mut s, k(KeyCode::Char(' '))).await;
+        send(&mut s, k(KeyCode::Enter)).await;
         send(&mut s, k(KeyCode::Down)).await;
-        send(&mut s, k(KeyCode::Char(' '))).await;
+        send(&mut s, k(KeyCode::Enter)).await;
         assert_confirm_models(
             &s.confirm(),
             &["anthropic:claude-sonnet-4-5", "deepseek:deepseek-chat"],
@@ -531,9 +550,9 @@ mod tests {
     #[tokio::test]
     async fn escape_with_selections_returns_done_with_change() {
         let mut s = make_selector();
-        send(&mut s, k(KeyCode::Char(' '))).await;
+        send(&mut s, k(KeyCode::Enter)).await;
         send(&mut s, k(KeyCode::Down)).await;
-        send(&mut s, k(KeyCode::Char(' '))).await;
+        send(&mut s, k(KeyCode::Enter)).await;
 
         let msgs = send(&mut s, k(KeyCode::Esc)).await.unwrap();
         match msgs.as_slice() {
@@ -551,7 +570,7 @@ mod tests {
     async fn escape_after_toggle_returns_change() {
         let mut s = sel(make_items(), Some("anthropic:claude-sonnet-4-5"), None);
         send(&mut s, k(KeyCode::Down)).await;
-        send(&mut s, k(KeyCode::Char(' '))).await;
+        send(&mut s, k(KeyCode::Enter)).await;
         assert_confirm_models(
             &s.confirm(),
             &["anthropic:claude-sonnet-4-5", "deepseek:deepseek-chat"],
@@ -613,7 +632,7 @@ mod tests {
     #[tokio::test]
     async fn confirm_returns_both_model_and_reasoning_changes() {
         let mut s = sel(make_reasoning_items(), None, None);
-        send(&mut s, k(KeyCode::Char(' '))).await;
+        send(&mut s, k(KeyCode::Enter)).await;
         send(&mut s, k(KeyCode::Tab)).await;
 
         let changes = s.confirm();
