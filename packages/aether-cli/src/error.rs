@@ -4,6 +4,7 @@ use std::io;
 #[derive(Debug)]
 pub enum CliError {
     NoPrompt,
+    ConflictingArgs(String),
     ModelError(String),
     McpError(String),
     IoError(io::Error),
@@ -17,6 +18,7 @@ impl Display for CliError {
                 f,
                 "No prompt provided. Pass a prompt as an argument or pipe via stdin."
             ),
+            Self::ConflictingArgs(e) => write!(f, "{e}"),
             Self::ModelError(e) => write!(f, "Model error: {e}"),
             Self::McpError(e) => write!(f, "MCP error: {e}"),
             Self::IoError(e) => write!(f, "IO error: {e}"),

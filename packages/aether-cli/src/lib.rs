@@ -3,6 +3,7 @@ pub mod error;
 pub mod headless;
 pub mod init;
 pub mod prompt;
+pub mod resolve;
 pub mod runtime;
 pub mod sandbox;
 pub mod show_prompt;
