@@ -15,6 +15,10 @@ pub struct PromptArgs {
     /// Additional system prompt
     #[arg(long = "system-prompt")]
     pub system_prompt: Option<String>,
+
+    /// Named agent to inspect (defaults to first user-invocable agent)
+    #[arg(short = 'a', long = "agent")]
+    pub agent: Option<String>,
 }
 
 pub use run::run_prompt;
