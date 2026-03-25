@@ -11,7 +11,7 @@ use crate::runtime::RuntimeBuilder;
 pub async fn run(config: RunConfig) -> Result<ExitCode, CliError> {
     setup_tracing(config.verbose, &config.output);
 
-    let agent = RuntimeBuilder::new(&config.cwd, &config.model)?
+    let agent = RuntimeBuilder::from_spec(config.cwd.clone(), config.spec)
         .mcp_config_opt(config.mcp_config)
         .build(config.system_prompt.as_deref().map(Prompt::text), None)
         .await?;
@@ -147,7 +147,7 @@ fn setup_tracing(verbose: bool, format: &OutputFormat) {
     let diag_filter = if verbose {
         EnvFilter::new("debug,agent=off")
     } else {
-        EnvFilter::new("warn,agent=off")
+        EnvFilter::new("error,agent=off")
     };
 
     let diag_layer = fmt::layer()
@@ -158,8 +158,12 @@ fn setup_tracing(verbose: bool, format: &OutputFormat) {
 
     match format {
         OutputFormat::Text => {
-            // Text mode writes directly to stdout — no agent tracing layer needed.
-            tracing_subscriber::registry().with(diag_layer).init();
+            if verbose {
+                tracing_subscriber::registry().with(diag_layer).init();
+            } else {
+                // No tracing output — text mode writes directly to stdout/stderr.
+                tracing_subscriber::registry().init();
+            }
         }
         OutputFormat::Pretty => {
             let agent_layer = fmt::layer()

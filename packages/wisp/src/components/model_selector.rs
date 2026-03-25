@@ -318,7 +318,7 @@ impl Component for ModelSelector {
                             format!("    {bar}"),
                             context
                                 .theme
-                                .selected_row_style_with_fg(context.theme.text_secondary()),
+                                .selected_row_style_with_fg(context.theme.highlight_fg()),
                         );
                     }
                     item_lines.push(line);
