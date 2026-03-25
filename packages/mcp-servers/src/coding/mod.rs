@@ -500,6 +500,10 @@ When using tools that take file paths, always use absolute paths from:
             .await
             .map_err(|e| e.to_string())?;
 
+        if let Some(lsp) = &self.lsp {
+            lsp.queue_diagnostic_refresh(&response.file_path).await;
+        }
+
         Ok(Json(response))
     }
 
@@ -536,6 +540,10 @@ When using tools that take file paths, always use absolute paths from:
             .edit_file(args)
             .await
             .map_err(|e| e.to_string())?;
+
+        if let Some(lsp) = &self.lsp {
+            lsp.queue_diagnostic_refresh(&response.file_path).await;
+        }
 
         Ok(Json(response))
     }

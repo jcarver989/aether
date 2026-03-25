@@ -1,4 +1,4 @@
-use crate::language_id::LanguageId;
+use crate::language_catalog::LanguageId;
 use lsp_types::Uri;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -19,7 +19,10 @@ pub enum DaemonRequest {
         /// If None, return all cached diagnostics for the workspace
         uri: Option<Uri>,
     },
-    LspNotification(LspNotification),
+    QueueDiagnosticRefresh {
+        client_id: i64,
+        uri: Uri,
+    },
     Disconnect,
     Ping,
 }

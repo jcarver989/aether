@@ -202,7 +202,10 @@ mod tests {
             extract_title("<html><head></head><body></body></html>"),
             None
         );
-        assert_eq!(extract_title("<html><head><title>  </title></head></html>"), None);
+        assert_eq!(
+            extract_title("<html><head><title>  </title></head></html>"),
+            None
+        );
     }
 
     fn article_html(body: &str) -> String {
