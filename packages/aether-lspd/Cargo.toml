@@ -42,6 +42,7 @@ lsp-types = { workspace = true }
 # File watching
 notify = { workspace = true }
 globset = { workspace = true }
+ignore = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }

@@ -1,35 +1,37 @@
 #[cfg(feature = "testing")]
 pub mod testing;
 
-mod client_handler;
+mod client_connection;
+mod diagnostics_store;
+mod document_coordinator;
 mod file_watcher;
-mod lsp_manager;
+pub mod language_catalog;
 mod pid_lockfile;
+mod process_transport;
+mod workspace_registry;
+mod workspace_session;
 
-pub mod client;
+mod client;
 pub mod daemon;
 pub mod error;
-pub mod language_id;
-pub mod language_metadata;
-pub mod lsp_config;
 pub mod lsp_utils;
 pub mod protocol;
 pub mod socket_path;
 pub mod uri;
 
-pub use client::{ClientError, ClientResult, LspClient, ensure_daemon_running};
+pub use client::{ClientError, ClientResult, LspClient};
 pub use daemon::{LspDaemon, run_daemon};
 pub use error::{DaemonError, DaemonResult};
-pub use language_id::LanguageId;
-pub use language_metadata::{
-    LANGUAGE_METADATA, LanguageMetadata, extensions_for_alias, from_lsp_id, metadata_for,
+pub use language_catalog::LanguageId;
+pub use language_catalog::{
+    LANGUAGE_METADATA, LanguageMetadata, LspConfig, extensions_for_alias, from_lsp_id,
+    get_config_for_language, metadata_for,
 };
-pub use lsp_config::{LspConfig, get_config_for_language};
 pub use lsp_utils::symbol_kind_to_string;
 pub use socket_path::{ensure_socket_dir, lockfile_path, log_file_path, socket_path};
 
 pub use protocol::{
-    DaemonRequest, DaemonResponse, InitializeRequest, LspErrorResponse, LspNotification,
-    MAX_MESSAGE_SIZE, ProtocolError,
+    DaemonRequest, DaemonResponse, InitializeRequest, LspErrorResponse, MAX_MESSAGE_SIZE,
+    ProtocolError,
 };
 pub use uri::{path_to_uri, uri_to_path};

@@ -1,4 +1,5 @@
-use crate::language_id::LanguageId;
+use crate::language_catalog::LanguageId;
+use crate::language_catalog::socket_identity_for_language;
 use std::path::{Path, PathBuf};
 
 /// Generate a deterministic socket path for a given workspace and language
@@ -66,7 +67,11 @@ fn generate_socket_name(workspace_root: &Path, language: LanguageId) -> String {
     // Use first 8 bytes of SHA256 for a 16-char hex string
     let short_hash = u64::from_be_bytes(hash[..8].try_into().unwrap());
 
-    format!("lsp-{}-{:016x}.sock", language.as_str(), short_hash)
+    format!(
+        "lsp-{}-{:016x}.sock",
+        socket_identity_for_language(language),
+        short_hash
+    )
 }
 
 /// Get the current user's UID
@@ -129,6 +134,19 @@ mod tests {
         assert_eq!(
             lockfile,
             PathBuf::from("/tmp/aether-lspd-1000/lsp-rust-abc123.lock")
+        );
+    }
+
+    #[test]
+    fn socket_path_uses_shared_server_identity() {
+        let workspace = Path::new("/tmp/test-workspace");
+        assert_eq!(
+            socket_path(workspace, LanguageId::TypeScript),
+            socket_path(workspace, LanguageId::TypeScriptReact)
+        );
+        assert_eq!(
+            socket_path(workspace, LanguageId::C),
+            socket_path(workspace, LanguageId::Cpp)
         );
     }
 }

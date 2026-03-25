@@ -4,40 +4,46 @@ pub mod daemon_harness;
 pub use cargo_project::{CargoProject, TestProject};
 pub use daemon_harness::DaemonHarness;
 
-use lsp_types::{
-    DidChangeTextDocumentParams, DidOpenTextDocumentParams, TextDocumentContentChangeEvent,
-    TextDocumentItem, VersionedTextDocumentIdentifier,
-};
+use lsp_types::Hover;
+use std::path::PathBuf;
+use std::sync::Once;
 
-/// Default timeout for rust-analyzer initialization
-pub const RA_INIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
-
-/// Helper to create `DidOpenTextDocumentParams`
 #[allow(dead_code)]
-pub fn did_open_params(uri: lsp_types::Uri, content: &str) -> DidOpenTextDocumentParams {
-    DidOpenTextDocumentParams {
-        text_document: TextDocumentItem {
-            uri,
-            language_id: "rust".to_string(),
-            version: 1,
-            text: content.to_string(),
-        },
-    }
+static FAKE_SERVER_ENV: Once = Once::new();
+
+#[allow(dead_code)]
+pub fn use_fake_rust_server() {
+    FAKE_SERVER_ENV.call_once(|| {
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("common")
+            .join("fake_lsp_server.py");
+        unsafe {
+            std::env::set_var("AETHER_LSPD_SERVER_COMMAND_RUST_ANALYZER", "python3");
+            std::env::set_var(
+                "AETHER_LSPD_SERVER_ARGS_RUST_ANALYZER",
+                serde_json::to_string(&vec![script.to_string_lossy().to_string()]).unwrap(),
+            );
+        }
+    });
 }
 
-/// Helper to create `DidChangeTextDocumentParams`
 #[allow(dead_code)]
-pub fn did_change_params(
-    uri: lsp_types::Uri,
-    version: i32,
-    new_content: &str,
-) -> DidChangeTextDocumentParams {
-    DidChangeTextDocumentParams {
-        text_document: VersionedTextDocumentIdentifier { uri, version },
-        content_changes: vec![TextDocumentContentChangeEvent {
-            range: None,
-            range_length: None,
-            text: new_content.to_string(),
-        }],
+pub fn hover_text(hover: Option<Hover>) -> String {
+    let hover = hover.expect("Expected hover result");
+    match hover.contents {
+        lsp_types::HoverContents::Scalar(scalar) => match scalar {
+            lsp_types::MarkedString::String(text) => text,
+            lsp_types::MarkedString::LanguageString(value) => value.value,
+        },
+        lsp_types::HoverContents::Array(values) => values
+            .into_iter()
+            .map(|value| match value {
+                lsp_types::MarkedString::String(text) => text,
+                lsp_types::MarkedString::LanguageString(value) => value.value,
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        lsp_types::HoverContents::Markup(markup) => markup.value,
     }
 }

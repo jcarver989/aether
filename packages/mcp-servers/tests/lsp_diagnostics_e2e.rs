@@ -12,8 +12,78 @@
 mod common;
 
 use aether_lspd::testing::{CargoProject, TestProject};
-use common::{call_tool, connect_lsp, has_errors, has_no_errors, poll_diagnostics};
-use std::time::Duration;
+use common::{call_tool, connect_lsp, has_errors, has_no_errors, poll_diagnostics, try_call_tool};
+use rmcp::RoleClient;
+use rmcp::model::ClientInfo;
+use rmcp::service::RunningService;
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+async fn workspace_diagnostics(
+    client: &RunningService<RoleClient, ClientInfo>,
+) -> serde_json::Value {
+    call_tool(
+        client,
+        "lsp_check_errors",
+        serde_json::json!({"input": {"scope": "workspace"}}),
+    )
+    .await
+}
+
+async fn poll_workspace_diagnostics(
+    client: &RunningService<RoleClient, ClientInfo>,
+    predicate: impl Fn(&serde_json::Value) -> bool,
+    timeout: Duration,
+) -> serde_json::Value {
+    let start = Instant::now();
+    let mut last_result = None;
+
+    while start.elapsed() < timeout {
+        if let Some(result) = try_call_tool(
+            client,
+            "lsp_check_errors",
+            serde_json::json!({"input": {"scope": "workspace"}}),
+        )
+        .await
+        {
+            if predicate(&result) {
+                return result;
+            }
+            last_result = Some(result);
+        }
+
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+
+    panic!(
+        "workspace diagnostics timed out after {timeout:?}. Last result: {}",
+        last_result
+            .as_ref()
+            .map(|result| result.to_string())
+            .unwrap_or_else(|| "(no valid response)".to_string())
+    );
+}
+
+fn file_error_count(result: &serde_json::Value, file_path: &str) -> usize {
+    let expected_path = canonical_path(file_path);
+    result["diagnostics"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|diagnostic| {
+            diagnostic["file"].as_str().map(canonical_path).as_deref()
+                == Some(expected_path.as_str())
+                && diagnostic["severity"].as_str() == Some("error")
+        })
+        .count()
+}
+
+fn canonical_path(path: &str) -> String {
+    std::fs::canonicalize(path)
+        .unwrap_or_else(|_| PathBuf::from(path))
+        .to_string_lossy()
+        .to_string()
+}
 
 /// Test: MCP edit_file tool → rust-analyzer picks up change → diagnostics queryable
 #[tokio::test]
@@ -211,6 +281,115 @@ async fn test_diagnostics_all_files_after_edit() {
         errors > 0,
         "Expected diagnostics after edit + single lsp_check_errors call (workspace scope), \
          got 0 errors. This indicates the daemon returns stale diagnostics when uri is None. \
+         Full result: {result}"
+    );
+}
+
+/// Regression test: after edit_file, an immediate workspace-scoped
+/// `lsp_check_errors` call should report the new error even when no file-scoped
+/// diagnostics request has ever been made.
+#[tokio::test]
+async fn test_workspace_diagnostics_after_edit_without_file_check() {
+    let project = CargoProject::new("diag_workspace_after_edit").expect("Failed to create project");
+    project
+        .add_file(
+            "src/main.rs",
+            r#"fn main() {
+    let x: i32 = 42;
+    println!("{}", x);
+}
+"#,
+        )
+        .expect("Failed to add file");
+
+    let main_rs = project.file_path_str("src/main.rs");
+
+    let (_server_handle, client) = connect_lsp(&project).await;
+
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    call_tool(
+        &client,
+        "read_file",
+        serde_json::json!({ "filePath": main_rs }),
+    )
+    .await;
+
+    call_tool(
+        &client,
+        "edit_file",
+        serde_json::json!({
+            "filePath": main_rs,
+            "oldString": "42",
+            "newString": "\"not an int\""
+        }),
+    )
+    .await;
+
+    let result = workspace_diagnostics(&client).await;
+    assert!(
+        file_error_count(&result, &main_rs) > 0,
+        "Expected immediate workspace diagnostics after edit_file, got 0 errors. \
+         The daemon should refresh workspace diagnostics in the background without a file-scoped check. \
+         Full result: {result}"
+    );
+}
+
+/// Regression test: once workspace diagnostics have recorded an error, fixing the
+/// file via edit_file should immediately clear the workspace result without any
+/// file-scoped diagnostics request.
+#[tokio::test]
+async fn test_workspace_diagnostics_clear_after_fix_without_file_check() {
+    let project = CargoProject::new("diag_workspace_fix").expect("Failed to create project");
+    project
+        .add_file(
+            "src/main.rs",
+            r#"fn main() {
+    let x: i32 = "not an int";
+    println!("{}", x);
+}
+"#,
+        )
+        .expect("Failed to add file");
+
+    let main_rs = project.file_path_str("src/main.rs");
+
+    let (_server_handle, client) = connect_lsp(&project).await;
+
+    let initial = poll_workspace_diagnostics(
+        &client,
+        |result| file_error_count(result, &main_rs) > 0,
+        Duration::from_secs(15),
+    )
+    .await;
+    assert!(
+        file_error_count(&initial, &main_rs) > 0,
+        "Expected bootstrap workspace diagnostics to report the initial error. Full result: {initial}"
+    );
+
+    call_tool(
+        &client,
+        "read_file",
+        serde_json::json!({ "filePath": main_rs }),
+    )
+    .await;
+
+    call_tool(
+        &client,
+        "edit_file",
+        serde_json::json!({
+            "filePath": main_rs,
+            "oldString": "\"not an int\"",
+            "newString": "42"
+        }),
+    )
+    .await;
+
+    let result = workspace_diagnostics(&client).await;
+    assert_eq!(
+        file_error_count(&result, &main_rs),
+        0,
+        "Expected workspace diagnostics to clear immediately after fixing the file. \
          Full result: {result}"
     );
 }

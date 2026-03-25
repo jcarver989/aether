@@ -1,7 +1,7 @@
-use crate::client_handler::handle_client;
+use crate::client_connection::handle_client;
 use crate::error::{DaemonError, DaemonResult};
-use crate::lsp_manager::LspManager;
 use crate::pid_lockfile::PidLockfile;
+use crate::workspace_registry::WorkspaceRegistry;
 use std::fs::{create_dir_all, remove_file};
 use std::future::pending;
 use std::path::PathBuf;
@@ -19,7 +19,7 @@ use uuid::Uuid;
 pub struct LspDaemon {
     socket_path: PathBuf,
     idle_timeout: Option<Duration>,
-    lsp_manager: LspManager,
+    workspace_registry: WorkspaceRegistry,
 }
 
 impl LspDaemon {
@@ -28,7 +28,7 @@ impl LspDaemon {
         Self {
             socket_path,
             idle_timeout,
-            lsp_manager: LspManager::new(),
+            workspace_registry: WorkspaceRegistry::new(),
         }
     }
 
@@ -49,7 +49,7 @@ impl LspDaemon {
         self.run_listener_loop(shutdown_rx).await?;
 
         tracing::info!("Shutting down LSP servers");
-        self.lsp_manager.shutdown().await;
+        self.workspace_registry.shutdown().await;
 
         let _ = remove_file(&self.socket_path);
         tracing::info!("Daemon shutdown complete");
@@ -76,7 +76,7 @@ impl LspDaemon {
                     match result {
                         Ok((stream, _)) => {
                             let client_id = Uuid::new_v4();
-                            let manager = self.lsp_manager.clone();
+                            let registry = self.workspace_registry.clone();
                             let client_count = Arc::clone(&client_count);
                             let last_activity = Arc::clone(&last_activity);
 
@@ -84,7 +84,7 @@ impl LspDaemon {
                             *last_activity.write().await = Instant::now();
 
                             spawn(async move {
-                                handle_client(stream, manager, client_id).await;
+                                handle_client(stream, registry, client_id).await;
                                 client_count.fetch_sub(1, Ordering::Relaxed);
                                 *last_activity.write().await = Instant::now();
                                 tracing::debug!("Client {} handler complete", client_id);
@@ -101,7 +101,7 @@ impl LspDaemon {
                     return Ok(());
                 }
 
-                () = check_workspace_liveness(&self.lsp_manager, Duration::from_secs(10)) => {
+                () = check_workspace_liveness(&self.workspace_registry, Duration::from_secs(10)) => {
                     tracing::info!("All workspace roots deleted, shutting down");
                     return Ok(());
                 }
@@ -164,10 +164,10 @@ fn all_roots_deleted(roots: &[PathBuf]) -> bool {
 
 /// Resolves when every workspace root managed by `lsp_manager` has been deleted
 /// from disk. Polls at `poll_interval`.
-async fn check_workspace_liveness(lsp_manager: &LspManager, poll_interval: Duration) {
+async fn check_workspace_liveness(workspace_registry: &WorkspaceRegistry, poll_interval: Duration) {
     loop {
         sleep(poll_interval).await;
-        let roots = lsp_manager.workspace_roots().await;
+        let roots = workspace_registry.workspace_roots().await;
         if all_roots_deleted(&roots) {
             return;
         }

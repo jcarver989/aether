@@ -1,14 +1,12 @@
 use aether_lspd::{ClientError, LanguageId, LspClient, lockfile_path, socket_path};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 /// Error type for daemon harness operations
 #[derive(Debug)]
 pub enum HarnessError {
     SpawnFailed(String),
     ClientError(ClientError),
-    DaemonNotReady,
     KillFailed(String),
 }
 
@@ -17,7 +15,6 @@ impl std::fmt::Display for HarnessError {
         match self {
             HarnessError::SpawnFailed(e) => write!(f, "Failed to spawn daemon: {e}"),
             HarnessError::ClientError(e) => write!(f, "Client error: {e}"),
-            HarnessError::DaemonNotReady => write!(f, "Daemon not ready after retries"),
             HarnessError::KillFailed(e) => write!(f, "Failed to kill daemon: {e}"),
         }
     }
@@ -40,7 +37,7 @@ pub struct DaemonHarness {
 }
 
 impl DaemonHarness {
-    /// Spawn a daemon for testing using `connect_or_spawn`
+    /// Spawn a daemon for testing using `connect`
     pub async fn spawn(workspace_root: &Path, language: LanguageId) -> Result<Self, HarnessError> {
         let sock_path = socket_path(workspace_root, language);
         let lock_path = lockfile_path(&sock_path);
@@ -48,7 +45,7 @@ impl DaemonHarness {
         let _ = fs::remove_file(&sock_path);
         let _ = fs::remove_file(&lock_path);
 
-        let _client = LspClient::connect_or_spawn(workspace_root, language)
+        let _client = LspClient::connect(workspace_root, language)
             .await
             .map_err(|e| HarnessError::SpawnFailed(e.to_string()))?;
 
@@ -62,34 +59,9 @@ impl DaemonHarness {
 
     /// Connect a client to the running daemon
     pub async fn connect(&self) -> Result<LspClient, HarnessError> {
-        LspClient::connect(&self.socket_path, &self.workspace_root, self.language)
+        LspClient::connect(&self.workspace_root, self.language)
             .await
             .map_err(HarnessError::ClientError)
-    }
-
-    /// Wait for rust-analyzer to be ready (send probe requests until it responds)
-    pub async fn wait_for_lsp_ready(
-        client: &LspClient,
-        test_uri: lsp_types::Uri,
-        timeout_duration: Duration,
-    ) -> Result<(), HarnessError> {
-        let deadline = tokio::time::Instant::now() + timeout_duration;
-
-        loop {
-            if tokio::time::Instant::now() > deadline {
-                return Err(HarnessError::DaemonNotReady);
-            }
-
-            match client.hover(test_uri.clone(), 0, 0).await {
-                Ok(_) => return Ok(()),
-                Err(ClientError::LspError { .. }) => {
-                    return Ok(());
-                }
-                Err(_) => {
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                }
-            }
-        }
     }
 
     /// Kill the daemon by reading PID from lockfile and sending SIGTERM
@@ -116,7 +88,15 @@ impl DaemonHarness {
             }
         }
 
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        for _ in 0..100 {
+            #[cfg(unix)]
+            {
+                if unsafe { libc::kill(pid, 0) } != 0 {
+                    break;
+                }
+            }
+            tokio::task::yield_now().await;
+        }
 
         let _ = fs::remove_file(&self.socket_path);
 
