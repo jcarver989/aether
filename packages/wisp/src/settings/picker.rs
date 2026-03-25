@@ -180,7 +180,7 @@ impl Component for SettingsPicker {
                 } else if is_selected {
                     Line::with_style(line_text, ctx.theme.selected_row_style())
                 } else {
-                    Line::new(line_text)
+                    Line::styled(line_text, ctx.theme.text_primary())
                 }
             });
         lines.extend(item_lines);

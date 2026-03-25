@@ -323,7 +323,7 @@ impl Component for ModelSelector {
                     }
                     item_lines.push(line);
                 } else {
-                    item_lines.push(Line::new(label));
+                    item_lines.push(Line::styled(label, context.theme.text_primary()));
                 }
             }
         }
