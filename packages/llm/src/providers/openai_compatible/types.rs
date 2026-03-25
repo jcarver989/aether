@@ -81,6 +81,8 @@ pub struct CompatibleChatRequest {
     pub tools: Option<Vec<ChatCompletionTools>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream_options: Option<ChatCompletionStreamOptions>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<crate::ReasoningEffort>,
 }
 
 pub fn map_messages(messages: &[ChatMessage]) -> Vec<CompatibleChatMessage> {

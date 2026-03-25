@@ -9,6 +9,7 @@ use crate::providers::{
     anthropic::AnthropicProvider,
     gemini::GeminiProvider,
     local::{llama_cpp::LlamaCppProvider, ollama::OllamaProvider},
+    openai::OpenAiProvider,
     openai_compatible::generic::{self, GenericOpenAiProvider},
     openrouter::OpenRouterProvider,
 };
@@ -37,6 +38,7 @@ impl Default for ModelProviderParser {
             .with_provider::<OpenRouterProvider>("openrouter")
             .with_provider::<OllamaProvider>("ollama")
             .with_provider::<LlamaCppProvider>("llamacpp")
+            .with_provider::<OpenAiProvider>("openai")
             .with_openai_provider("deepseek", &generic::DEEPSEEK)
             .with_openai_provider("moonshot", &generic::MOONSHOT)
             .with_openai_provider("zai", &generic::ZAI);
@@ -196,6 +198,19 @@ mod tests {
         assert!(result.is_ok());
         let (_, model) = result.unwrap();
         assert_eq!(model, LlmModel::Ollama("llama3.2".to_string()));
+    }
+
+    #[test]
+    fn test_parse_openai() {
+        let parser = ModelProviderParser::default();
+        let result = parser.parse("openai:gpt-4.1");
+        if let Err(e) = result {
+            let err = e.to_string();
+            assert!(
+                err.contains("API") || err.contains("OPENAI"),
+                "Should fail on API key, not parsing. Got: {err}"
+            );
+        }
     }
 
     #[test]
