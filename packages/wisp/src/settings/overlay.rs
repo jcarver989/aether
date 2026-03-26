@@ -276,6 +276,8 @@ impl Component for SettingsOverlay {
                                     value: v.value.clone(),
                                     name: v.name.clone(),
                                     reasoning_levels: v.meta.reasoning_levels.clone(),
+                                    supports_image: v.meta.supports_image,
+                                    supports_audio: v.meta.supports_audio,
                                 })
                                 .collect();
                             self.active_pane = SettingsPane::ModelSelector(ModelSelector::new(

@@ -12,6 +12,30 @@ const MAX_MEDIA_BYTES: usize = 10 * 1024 * 1024;
 const IMAGE_MIME_TYPES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
 const AUDIO_MIME_TYPES: &[&str] = &["audio/wav", "audio/mpeg", "audio/mp3", "audio/ogg"];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttachmentKind {
+    Text,
+    Image,
+    Audio,
+    Unsupported,
+}
+
+pub fn classify_attachment(path: &Path) -> AttachmentKind {
+    let mime = mime_guess::from_path(path)
+        .first_or_octet_stream()
+        .to_string();
+
+    if IMAGE_MIME_TYPES.contains(&mime.as_str()) {
+        AttachmentKind::Image
+    } else if AUDIO_MIME_TYPES.contains(&mime.as_str()) {
+        AttachmentKind::Audio
+    } else if mime.starts_with("text/") {
+        AttachmentKind::Text
+    } else {
+        AttachmentKind::Unsupported
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct AttachmentBuildOutcome {
     pub blocks: Vec<acp::ContentBlock>,
@@ -50,34 +74,33 @@ async fn try_build_attachment_block(
     path: &Path,
     display_name: &str,
 ) -> Result<AttachmentBlockResult, String> {
+    let kind = classify_attachment(path);
     let mime_type = mime_guess::from_path(path)
         .first_or_octet_stream()
         .to_string();
 
-    if IMAGE_MIME_TYPES.contains(&mime_type.as_str())
-        || AUDIO_MIME_TYPES.contains(&mime_type.as_str())
-    {
-        let bytes = read_media_bytes(path, display_name).await?;
-        let data = BASE64.encode(&bytes);
-        let (block, placeholder) = if IMAGE_MIME_TYPES.contains(&mime_type.as_str()) {
-            (
-                acp::ContentBlock::Image(acp::ImageContent::new(data, &mime_type)),
-                format!("[image attachment: {display_name}]"),
-            )
-        } else {
-            (
-                acp::ContentBlock::Audio(acp::AudioContent::new(data, &mime_type)),
-                format!("[audio attachment: {display_name}]"),
-            )
-        };
-        return Ok(AttachmentBlockResult {
-            block,
-            transcript_placeholder: Some(placeholder),
-            warning: None,
-        });
+    match kind {
+        AttachmentKind::Image | AttachmentKind::Audio => {
+            let bytes = read_media_bytes(path, display_name).await?;
+            let data = BASE64.encode(&bytes);
+            let (block, placeholder) = match kind {
+                AttachmentKind::Image => (
+                    acp::ContentBlock::Image(acp::ImageContent::new(data, &mime_type)),
+                    format!("[image attachment: {display_name}]"),
+                ),
+                _ => (
+                    acp::ContentBlock::Audio(acp::AudioContent::new(data, &mime_type)),
+                    format!("[audio attachment: {display_name}]"),
+                ),
+            };
+            Ok(AttachmentBlockResult {
+                block,
+                transcript_placeholder: Some(placeholder),
+                warning: None,
+            })
+        }
+        _ => build_text_resource_block(path, display_name, &mime_type).await,
     }
-
-    build_text_resource_block(path, display_name, &mime_type).await
 }
 
 async fn read_media_bytes(path: &Path, display_name: &str) -> Result<Vec<u8>, String> {
@@ -254,5 +277,57 @@ mod tests {
             vec!["[audio attachment: test.wav]"]
         );
         assert!(matches!(outcome.blocks[0], acp::ContentBlock::Audio(_)));
+    }
+
+    #[test]
+    fn classify_attachment_detects_images() {
+        assert_eq!(
+            classify_attachment(Path::new("photo.png")),
+            AttachmentKind::Image
+        );
+        assert_eq!(
+            classify_attachment(Path::new("photo.jpg")),
+            AttachmentKind::Image
+        );
+        assert_eq!(
+            classify_attachment(Path::new("photo.gif")),
+            AttachmentKind::Image
+        );
+        assert_eq!(
+            classify_attachment(Path::new("photo.webp")),
+            AttachmentKind::Image
+        );
+    }
+
+    #[test]
+    fn classify_attachment_detects_audio() {
+        assert_eq!(
+            classify_attachment(Path::new("note.wav")),
+            AttachmentKind::Audio
+        );
+        assert_eq!(
+            classify_attachment(Path::new("note.mp3")),
+            AttachmentKind::Audio
+        );
+        assert_eq!(
+            classify_attachment(Path::new("note.ogg")),
+            AttachmentKind::Audio
+        );
+    }
+
+    #[test]
+    fn classify_attachment_detects_text() {
+        assert_eq!(
+            classify_attachment(Path::new("readme.txt")),
+            AttachmentKind::Text
+        );
+    }
+
+    #[test]
+    fn classify_attachment_unknown_extension_is_unsupported() {
+        assert_eq!(
+            classify_attachment(Path::new("data.xyz")),
+            AttachmentKind::Unsupported
+        );
     }
 }

@@ -13,6 +13,8 @@ pub struct ModelEntry {
     pub value: String,
     pub name: String,
     pub reasoning_levels: Vec<ReasoningEffort>,
+    pub supports_image: bool,
+    pub supports_audio: bool,
 }
 
 impl ModelEntry {
@@ -60,6 +62,15 @@ fn compare_model_entries(a: &ModelEntry, b: &ModelEntry) -> Ordering {
         .then_with(|| a.model_label().cmp(b.model_label()))
         .then_with(|| a.name.cmp(&b.name))
         .then_with(|| a.value.cmp(&b.value))
+}
+
+fn capability_tags(supports_image: bool, supports_audio: bool) -> &'static str {
+    match (supports_image, supports_audio) {
+        (true, true) => "img  audio",
+        (true, false) => "img",
+        (false, true) => "audio",
+        (false, false) => "",
+    }
 }
 
 const REASONING_EFFORT_CONFIG_ID: &str = "reasoning_effort";
@@ -311,15 +322,17 @@ impl Component for ModelSelector {
                 let label = format!("{check}{}", entry.model_label());
                 if *is_focused {
                     let mut line = Line::with_style(label, context.theme.selected_row_style());
+                    let indicator_style = context
+                        .theme
+                        .selected_row_style_with_fg(context.theme.highlight_fg());
                     if !entry.reasoning_levels.is_empty() {
                         let bar =
                             reasoning_bar(self.reasoning_effort, entry.reasoning_levels.len());
-                        line.push_with_style(
-                            format!("    {bar}"),
-                            context
-                                .theme
-                                .selected_row_style_with_fg(context.theme.highlight_fg()),
-                        );
+                        line.push_with_style(format!("    {bar}"), indicator_style);
+                    }
+                    let caps = capability_tags(entry.supports_image, entry.supports_audio);
+                    if !caps.is_empty() {
+                        line.push_with_style(format!("    {caps}"), indicator_style);
                     }
                     item_lines.push(line);
                 } else {
@@ -360,6 +373,8 @@ mod tests {
             value: value.to_string(),
             name: name.to_string(),
             reasoning_levels: levels,
+            supports_image: false,
+            supports_audio: false,
         }
     }
 
@@ -725,6 +740,73 @@ mod tests {
                 "focused item must be visible after scrolling down, got: {:?}",
                 lines.iter().map(|l| l.plain_text()).collect::<Vec<_>>()
             );
+        }
+    }
+
+    #[test]
+    fn capability_tags_empty_when_no_support() {
+        assert_eq!(capability_tags(false, false), "");
+    }
+
+    #[test]
+    fn capability_tags_image_only() {
+        assert_eq!(capability_tags(true, false), "img");
+    }
+
+    #[test]
+    fn capability_tags_audio_only() {
+        assert_eq!(capability_tags(false, true), "audio");
+    }
+
+    #[test]
+    fn capability_tags_both() {
+        assert_eq!(capability_tags(true, true), "img  audio");
+    }
+
+    #[test]
+    fn focused_row_shows_capability_indicators() {
+        let items = vec![ModelEntry {
+            value: "anthropic:claude-sonnet-4-5".to_string(),
+            name: "Anthropic / Claude Sonnet 4.5".to_string(),
+            reasoning_levels: vec![],
+            supports_image: true,
+            supports_audio: true,
+        }];
+        let mut s = sel(items, None, None);
+        let ctx = ViewContext::new((80, 10));
+        let frame = s.render(&ctx);
+        let text: String = frame.lines().iter().map(|l| l.plain_text()).collect();
+        assert!(text.contains("img"), "focused row should show img indicator");
+        assert!(
+            text.contains("audio"),
+            "focused row should show audio indicator"
+        );
+    }
+
+    #[test]
+    fn unfocused_row_hides_capability_indicators() {
+        let items = vec![
+            entry("a:m1", "A / M1", vec![]),
+            ModelEntry {
+                value: "b:m2".to_string(),
+                name: "B / M2".to_string(),
+                reasoning_levels: vec![],
+                supports_image: true,
+                supports_audio: true,
+            },
+        ];
+        let mut s = sel(items, None, None);
+        let ctx = ViewContext::new((80, 10));
+        let frame = s.render(&ctx);
+        for line in frame.lines() {
+            let text = line.plain_text();
+            if text.contains("M2") {
+                assert!(!text.contains("img"), "unfocused row should not show img");
+                assert!(
+                    !text.contains("audio"),
+                    "unfocused row should not show audio"
+                );
+            }
         }
     }
 }

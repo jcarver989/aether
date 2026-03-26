@@ -3,6 +3,7 @@ pub mod command_picker;
 pub(crate) mod context_bar;
 pub(crate) mod conversation_screen;
 pub mod conversation_window;
+pub(crate) mod dropped_files;
 pub mod elicitation_form;
 pub(crate) mod file_list_renderer;
 pub mod file_picker;
