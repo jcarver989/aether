@@ -2,6 +2,7 @@
 name = "mcp-servers"
 version = "0.1.0"
 edition = "2024"
+publish = false
 
 [lints]
 workspace = true
@@ -89,7 +90,7 @@ serde_yml = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 
 # subagents feature
-aether-core = { path = "../aether-core", optional = true }
+aether-core = { package = "aether-agent-core", path = "../aether-core", optional = true }
 aether-project = { path = "../aether-project", optional = true }
 llm = { path = "../llm", optional = true }
 

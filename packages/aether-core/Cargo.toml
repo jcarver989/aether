@@ -1,10 +1,14 @@
 [package]
-name = "aether-core"
+name = "aether-agent-core"
 version = "0.1.0"
 edition = "2024"
 
 [lints]
 workspace = true
+
+[lib]
+name = "aether_core"
+path = "src/lib.rs"
 
 [dependencies]
 futures = { workspace = true }
@@ -32,7 +36,7 @@ utils = { path = "../utils" }
 testing = []
 
 [dev-dependencies]
-aether-core = { path = ".", features = ["testing"] }
+aether-core = { package = "aether-agent-core", path = ".", features = ["testing"] }
 reqwest = { workspace = true }
 tempfile = { workspace = true }
 

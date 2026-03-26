@@ -75,23 +75,23 @@ Create a custom agent in ~10 minutes, no Rust code required.
    - **Headless CLI** — single prompt in, text out:
 
      ```bash
-     cargo run -p aether-cli --bin aether -- -m anthropic:claude-sonnet-4-20250514 "Refactor auth module"
+     cargo run -p aether-agent-cli --bin aether -- -m anthropic:claude-sonnet-4-20250514 "Refactor auth module"
      ```
 
    - **ACP server** — for editor/IDE integration via [ACP](https://agentclientprotocol.com/get-started/introduction):
 
      ```bash
-     cargo run -p aether-cli --bin aether-acp -- --model anthropic:claude-sonnet-4-20250514 --mcp-config mcp.json
+     cargo run -p aether-agent-cli --bin aether-acp -- --model anthropic:claude-sonnet-4-20250514 --mcp-config mcp.json
      ```
 
 ### 2. Build a custom agent as a Rust library
 
-Use `aether-core` as a Rust library to build your own agent in ~25 lines. Bring your own model via the `StreamableModelProvider` trait, or alloy models together to round-robin across providers per turn.
+Use `aether-agent-core` as a Rust library to build your own agent in ~25 lines. Bring your own model via the `StreamableModelProvider` trait, or alloy models together to round-robin across providers per turn.
 
 1. **Add dependencies**
 
    ```bash
-   cargo add aether-core llm tokio
+   cargo add aether-agent-core tokio
    ```
 
 2. **Write your agent**
@@ -148,7 +148,7 @@ The [`llm`](packages/llm) provides a unified streaming interface for LLM provide
 
 ### Build a custom agent
 
-[`aether-core`](packages/aether-core) is the core crate. Create a custom agent in ~10 lines of Rust and tailor it to your domain. Aether agents start as a blank slate with no system prompt or tools, so you control every token in your agent's context window.
+[`aether-agent-core`](packages/aether-core) is the core crate. Create a custom agent in ~10 lines of Rust and tailor it to your domain. Aether agents start as a blank slate with no system prompt or tools, so you control every token in your agent's context window.
 
 Agents get their tools from [MCP](https://modelcontextprotocol.io/) servers — write tool servers in any language and connect them via a standard `mcp.json` file. This repo includes several pre-built servers to get you started:
 
@@ -160,13 +160,13 @@ Agents get their tools from [MCP](https://modelcontextprotocol.io/) servers — 
 
 ### Connect your agent to an IDE or UI
 
-[`aether-cli`](packages/aether-cli) Connect your agent to any [ACP](https://agentclientprotocol.com/get-started/introduction) compatible client ([see list](https://agentclientprotocol.com/get-started/clients)).
+[`aether-agent-cli`](packages/aether-cli) Connect your agent to any [ACP](https://agentclientprotocol.com/get-started/introduction) compatible client ([see list](https://agentclientprotocol.com/get-started/clients)).
 
 ### Run a fully-fledged, open source coding agent
 
-Combine all the above for a "batteries-included" AI coding agent: [`wisp`](packages/wisp) (TUI) + [`aether-cli`](packages/aether-cli) (ACP server) + the pre-built [MCP tool servers](packages/mcp-servers).
+Combine all the above for a "batteries-included" AI coding agent: [`wisp`](packages/wisp) (TUI) + [`aether-agent-cli`](packages/aether-cli) (ACP server) + the pre-built [MCP tool servers](packages/mcp-servers).
 
-See each package's README for detailed usage: [`aether-core`](packages/aether-core), [`llm`](packages/llm), [`wisp`](packages/wisp), [`aether-cli`](packages/aether-cli).
+See each package's README for detailed usage: [`aether-agent-core`](packages/aether-core), [`llm`](packages/llm), [`wisp`](packages/wisp), [`aether-agent-cli`](packages/aether-cli).
 
 ## Development
 
