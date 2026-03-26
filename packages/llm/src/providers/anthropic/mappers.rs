@@ -305,7 +305,7 @@ mod tests {
 
         let mapped = map_tools(&tools).unwrap();
         assert_eq!(mapped.len(), 1);
-        // Tools don't have cache_control - they're auto-cached when system prompt is cached
+        // Mapper doesn't set cache_control — that's the provider's responsibility
         assert!(mapped[0].cache_control.is_none());
     }
 

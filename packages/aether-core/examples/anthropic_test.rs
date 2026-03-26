@@ -58,11 +58,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .with_temperature(args.temperature)
         .with_max_tokens(args.max_tokens);
 
-    let provider = if args.no_cache {
-        provider.with_prompt_caching(false)
-    } else {
-        provider // Caching is enabled by default
-    };
+    let _ = args.no_cache; // Prompt caching is always enabled
 
     // Prepare context
     let messages = vec![

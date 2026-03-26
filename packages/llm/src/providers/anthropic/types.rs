@@ -28,6 +28,8 @@ pub struct Request {
     pub stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking: Option<Thinking>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_control: Option<CacheControl>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,7 +59,13 @@ impl Request {
             tools: None,
             stream: false,
             thinking: None,
+            cache_control: None,
         }
+    }
+
+    pub fn with_auto_caching(mut self) -> Self {
+        self.cache_control = Some(CacheControl::ephemeral());
+        self
     }
 
     pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
@@ -67,11 +75,6 @@ impl Request {
 
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = Some(temperature);
-        self
-    }
-
-    pub fn with_system(mut self, system: String) -> Self {
-        self.system = Some(SystemContent::Text(system));
         self
     }
 

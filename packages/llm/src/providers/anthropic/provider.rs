@@ -21,7 +21,6 @@ pub struct AnthropicProvider {
     base_url: Option<String>,
     temperature: Option<f32>,
     max_tokens: u32,
-    enable_prompt_caching: bool,
     api_key: Option<String>,
 }
 
@@ -35,7 +34,6 @@ impl AnthropicProvider {
             base_url: Some("https://api.anthropic.com".to_string()),
             temperature: None,
             max_tokens: 16_384,
-            enable_prompt_caching: true,
             api_key,
         })
     }
@@ -60,11 +58,6 @@ impl AnthropicProvider {
         self
     }
 
-    pub fn with_prompt_caching(mut self, enable: bool) -> Self {
-        self.enable_prompt_caching = enable;
-        self
-    }
-
     pub(crate) fn build_request(&self, context: &Context) -> Result<Request> {
         let (system_prompt, messages) = map_messages(context.messages())?;
         let tools = if context.tools().is_empty() {
@@ -75,18 +68,15 @@ impl AnthropicProvider {
 
         let mut request = Request::new(self.model.clone(), messages)
             .with_max_tokens(self.max_tokens)
-            .with_stream(true);
+            .with_stream(true)
+            .with_auto_caching();
 
         if let Some(temp) = self.temperature {
             request = request.with_temperature(temp);
         }
 
         if let Some(system) = system_prompt {
-            request = if self.enable_prompt_caching {
-                request.with_system_cached(system)
-            } else {
-                request.with_system(system)
-            };
+            request = request.with_system_cached(system);
         }
 
         if let Some(tools) = tools {
@@ -302,7 +292,6 @@ mod tests {
             .with_model("claude-sonnet-4-5-20250929")
             .with_temperature(0.7)
             .with_max_tokens(1000)
-            .with_prompt_caching(false)
     }
 
     #[test]
@@ -372,15 +361,17 @@ mod tests {
         let request = provider.build_request(&context).unwrap();
         if let Some(system) = &request.system {
             match system {
-                SystemContent::Text(text) => {
+                SystemContent::Blocks(blocks) => {
+                    assert_eq!(blocks.len(), 1);
+                    let SystemContentBlock::Text { text, .. } = &blocks[0];
                     assert_eq!(text, "You are helpful");
                 }
-                SystemContent::Blocks(_) => panic!("Expected text system content"),
+                SystemContent::Text(_) => panic!("Expected blocks system content"),
             }
         } else {
             panic!("Expected system prompt");
         }
-        assert_eq!(request.messages.len(), 1); // Only user message, system becomes separate field
+        assert_eq!(request.messages.len(), 1);
         assert!(request.tools.is_some());
         assert_eq!(request.tools.unwrap().len(), 1);
     }
@@ -429,47 +420,10 @@ mod tests {
             panic!("Expected system prompt");
         }
 
-        // Tools should not have cache_control (they're automatically cached when system is cached)
         assert!(request.tools.is_some());
-        let tools = request.tools.unwrap();
-        assert!(tools[0].cache_control.is_none());
-    }
 
-    #[test]
-    fn test_build_request_with_no_caching() {
-        let provider = AnthropicProvider::new(Some("test-api-key".to_string()))
-            .unwrap()
-            .with_prompt_caching(false);
-
-        let context = Context::new(
-            vec![
-                ChatMessage::System {
-                    content: "Hello".to_string(),
-                    timestamp: IsoString::now(),
-                },
-                ChatMessage::User {
-                    content: vec![ContentBlock::text("Hello")],
-                    timestamp: IsoString::now(),
-                },
-            ],
-            vec![],
-        );
-
-        let request = provider.build_request(&context).unwrap();
-
-        // With caching disabled, system prompt should be simple text
-        if let Some(system) = &request.system {
-            match system {
-                SystemContent::Text(text) => {
-                    assert_eq!(text, "Hello");
-                }
-                SystemContent::Blocks(_) => {
-                    panic!("Expected text system content when caching disabled")
-                }
-            }
-        } else {
-            panic!("Expected system prompt");
-        }
+        // Top-level cache_control enables automatic caching
+        assert!(request.cache_control.is_some());
     }
 
     #[test]
@@ -514,8 +468,7 @@ mod tests {
     fn test_build_request_thinking_bumps_max_tokens_if_needed() {
         let provider = AnthropicProvider::new(Some("test-api-key".to_string()))
             .unwrap()
-            .with_max_tokens(500)
-            .with_prompt_caching(false);
+            .with_max_tokens(500);
 
         let mut context = Context::new(
             vec![ChatMessage::User {
