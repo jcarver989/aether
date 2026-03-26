@@ -195,6 +195,7 @@ impl Context {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ContentBlock;
     use crate::ToolCallResult;
     use crate::catalog::LlmModel;
 
@@ -205,7 +206,7 @@ mod tests {
                 timestamp: IsoString::now(),
             },
             ChatMessage::User {
-                content: "Hello".to_string(),
+                content: vec![ContentBlock::text("Hello")],
                 timestamp: IsoString::now(),
             },
             ChatMessage::Assistant {
@@ -304,7 +305,7 @@ mod tests {
         let model: LlmModel = "anthropic:claude-opus-4-6".parse().unwrap();
         let mut ctx = Context::new(
             vec![ChatMessage::User {
-                content: "Hello".to_string(),
+                content: vec![ContentBlock::text("Hello")],
                 timestamp: IsoString::now(),
             }],
             vec![],
@@ -375,7 +376,7 @@ mod tests {
         let ctx = Context::new(
             vec![
                 ChatMessage::User {
-                    content: "Hello".to_string(),
+                    content: vec![ContentBlock::text("Hello")],
                     timestamp: IsoString::now(),
                 },
                 ChatMessage::Assistant {

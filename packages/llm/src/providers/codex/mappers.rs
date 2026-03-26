@@ -1,15 +1,16 @@
 use async_openai::types::responses::{
     EasyInputContent, EasyInputMessage, FunctionCallOutput, FunctionCallOutputItemParam,
-    FunctionTool, FunctionToolCall, InputItem, Item, ReasoningItem, Role, Tool,
+    FunctionTool, FunctionToolCall, InputItem, Item, MessageType, ReasoningItem, Role, Tool,
 };
 
-use crate::{ChatMessage, LlmError, ToolDefinition};
+use crate::providers::openai::responses_provider::map_user_content_for_responses;
+use crate::{ChatMessage, LlmError, Result, ToolDefinition};
 
 /// Map internal `ChatMessage`s to Codex Responses API input items.
 ///
 /// Returns `(system_prompt, input_items)` — the system prompt is extracted
 /// separately since the Codex API uses `instructions` for it.
-pub fn map_messages(messages: &[ChatMessage]) -> (Option<String>, Vec<InputItem>) {
+pub fn map_messages(messages: &[ChatMessage]) -> crate::Result<(Option<String>, Vec<InputItem>)> {
     let mut system_prompt = None;
     let mut items = Vec::new();
 
@@ -19,7 +20,11 @@ pub fn map_messages(messages: &[ChatMessage]) -> (Option<String>, Vec<InputItem>
                 system_prompt = Some(content.clone());
             }
             ChatMessage::User { content, .. } => {
-                items.push(easy_message(Role::User, content.clone()));
+                items.push(InputItem::EasyMessage(EasyInputMessage {
+                    r#type: MessageType::Message,
+                    role: Role::User,
+                    content: map_user_content_for_responses(content)?,
+                }));
             }
             ChatMessage::Assistant {
                 content,
@@ -83,11 +88,11 @@ pub fn map_messages(messages: &[ChatMessage]) -> (Option<String>, Vec<InputItem>
         }
     }
 
-    (system_prompt, items)
+    Ok((system_prompt, items))
 }
 
 /// Map internal `ToolDefinition`s to async-openai `Tool` types.
-pub fn map_tools(tools: &[ToolDefinition]) -> Result<Vec<Tool>, LlmError> {
+pub fn map_tools(tools: &[ToolDefinition]) -> Result<Vec<Tool>> {
     tools
         .iter()
         .map(|tool| {
@@ -122,8 +127,8 @@ mod tests {
     use super::*;
     use crate::types::IsoString;
     use crate::{
-        AssistantReasoning, EncryptedReasoningContent, ToolCallError, ToolCallRequest,
-        ToolCallResult,
+        AssistantReasoning, ContentBlock, EncryptedReasoningContent, ToolCallError,
+        ToolCallRequest, ToolCallResult,
     };
 
     #[test]
@@ -134,12 +139,12 @@ mod tests {
                 timestamp: IsoString::now(),
             },
             ChatMessage::User {
-                content: "Hello".to_string(),
+                content: vec![ContentBlock::text("Hello")],
                 timestamp: IsoString::now(),
             },
         ];
 
-        let (system, items) = map_messages(&messages);
+        let (system, items) = map_messages(&messages).unwrap();
         assert_eq!(system, Some("You are helpful".to_string()));
         assert_eq!(items.len(), 1);
     }
@@ -148,7 +153,7 @@ mod tests {
     fn map_messages_handles_multi_turn_with_tool_calls() {
         let messages = vec![
             ChatMessage::User {
-                content: "Read foo.rs".to_string(),
+                content: vec![ContentBlock::text("Read foo.rs")],
                 timestamp: IsoString::now(),
             },
             ChatMessage::Assistant {
@@ -175,7 +180,7 @@ mod tests {
             },
         ];
 
-        let (system, items) = map_messages(&messages);
+        let (system, items) = map_messages(&messages).unwrap();
         assert!(system.is_none());
         assert_eq!(items.len(), 5); // user + assistant msg + function_call + function_call_output + assistant msg
 
@@ -208,7 +213,7 @@ mod tests {
             error: "command failed".to_string(),
         }))];
 
-        let (_, items) = map_messages(&messages);
+        let (_, items) = map_messages(&messages).unwrap();
         assert_eq!(items.len(), 1);
         if let InputItem::Item(Item::FunctionCallOutput(out)) = &items[0] {
             assert!(
@@ -227,7 +232,7 @@ mod tests {
             messages_compacted: 5,
         }];
 
-        let (_, items) = map_messages(&messages);
+        let (_, items) = map_messages(&messages).unwrap();
         assert_eq!(items.len(), 1);
         if let InputItem::EasyMessage(msg) = &items[0] {
             assert_eq!(msg.role, Role::User);
@@ -246,7 +251,7 @@ mod tests {
     fn map_messages_serialization_shape() {
         let messages = vec![
             ChatMessage::User {
-                content: "Hello".to_string(),
+                content: vec![ContentBlock::text("Hello")],
                 timestamp: IsoString::now(),
             },
             ChatMessage::Assistant {
@@ -267,7 +272,7 @@ mod tests {
             })),
         ];
 
-        let (_, items) = map_messages(&messages);
+        let (_, items) = map_messages(&messages).unwrap();
         // EasyMessage items serialize with "type": "message"
         let json = serde_json::to_value(&items[0]).unwrap();
         assert_eq!(json["role"], "user");
@@ -338,7 +343,7 @@ mod tests {
             tool_calls: vec![],
         }];
 
-        let (_, items) = map_messages(&messages);
+        let (_, items) = map_messages(&messages).unwrap();
         // Should have: easy_message (text) + reasoning item = 2
         assert_eq!(items.len(), 2);
 
@@ -359,9 +364,25 @@ mod tests {
             tool_calls: vec![],
         }];
 
-        let (_, items) = map_messages(&messages);
+        let (_, items) = map_messages(&messages).unwrap();
         // Only the text message, no reasoning item
         assert_eq!(items.len(), 1);
         assert!(matches!(&items[0], InputItem::EasyMessage(_)));
+    }
+
+    #[test]
+    fn map_messages_with_audio_errors() {
+        let messages = vec![ChatMessage::User {
+            content: vec![ContentBlock::Audio {
+                data: "YXVkaW8=".to_string(),
+                mime_type: "audio/wav".to_string(),
+            }],
+            timestamp: IsoString::now(),
+        }];
+
+        assert!(matches!(
+            map_messages(&messages),
+            Err(LlmError::UnsupportedContent(_))
+        ));
     }
 }

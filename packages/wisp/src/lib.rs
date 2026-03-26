@@ -41,6 +41,7 @@ pub async fn run_with_state(state: RuntimeState) -> Result<(), AppError> {
     let RuntimeState {
         session_id,
         agent_name,
+        prompt_capabilities,
         config_options,
         auth_methods,
         theme,
@@ -52,6 +53,7 @@ pub async fn run_with_state(state: RuntimeState) -> Result<(), AppError> {
     let app = App::new(
         session_id,
         agent_name,
+        prompt_capabilities,
         &config_options,
         auth_methods,
         working_dir,

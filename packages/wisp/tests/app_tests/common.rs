@@ -45,6 +45,7 @@ impl Renderer {
         let app = App::new(
             acp::SessionId::new("test"),
             agent_name,
+            acp::PromptCapabilities::new(),
             config_options,
             auth_methods,
             std::path::PathBuf::from("."),
@@ -218,16 +219,20 @@ pub(super) fn has_settings_picker(terminal: &TestTerminal) -> bool {
     lines.iter().any(|l| l.contains("search:"))
 }
 
+#[allow(dead_code)]
 pub(super) fn settings_menu_selected_label(terminal: &TestTerminal) -> Option<String> {
     let theme = Theme::default();
     let highlight_bg = theme.highlight_bg();
+    let highlight_fg = theme.highlight_fg();
     let lines = terminal.get_lines();
     let width = terminal.get_lines().first().map_or(80, |l| l.len().max(80));
     // Scan each row for any cell with highlight_bg to find the selected row.
     // The menu is inside a bordered overlay so we need to check multiple columns.
     for (row, line) in lines.iter().enumerate() {
-        let has_highlight =
-            (0..width).any(|col| terminal.get_style_at(row, col).bg == Some(highlight_bg));
+        let has_highlight = (0..width).any(|col| {
+            let style = terminal.get_style_at(row, col);
+            style.bg == Some(highlight_bg) || style.fg == Some(highlight_fg)
+        });
         if has_highlight {
             let label = line.trim().to_string();
             if !label.is_empty() {

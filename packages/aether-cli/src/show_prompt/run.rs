@@ -219,5 +219,4 @@ mod tests {
         assert!(output.contains("bad_tool"));
         assert!(output.contains("null"));
     }
-
 }

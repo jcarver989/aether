@@ -1,5 +1,7 @@
-use super::types::{Content, ContentBlock, Message, Role, Tool};
-use crate::{ChatMessage, LlmError, Result, ToolDefinition};
+use super::types::{
+    Content, ContentBlock as AnthropicContentBlock, ImageSource, Message, Role, Tool,
+};
+use crate::{ChatMessage, ContentBlock, LlmError, Result, ToolDefinition};
 
 pub fn map_messages(messages: &[ChatMessage]) -> Result<(Option<String>, Vec<Message>)> {
     let mut system_prompt = None;
@@ -13,7 +15,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> Result<(Option<String>, Vec<Mes
             ChatMessage::User { content, .. } => {
                 anthropic_messages.push(Message {
                     role: Role::User,
-                    content: Content::Text(content.clone()),
+                    content: map_content_blocks(content)?,
                     cache_control: None,
                 });
             }
@@ -32,7 +34,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> Result<(Option<String>, Vec<Mes
                     let mut blocks = if content.is_empty() {
                         Vec::new()
                     } else {
-                        vec![ContentBlock::Text {
+                        vec![AnthropicContentBlock::Text {
                             text: content.clone(),
                             cache_control: None,
                         }]
@@ -42,7 +44,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> Result<(Option<String>, Vec<Mes
                         let input: serde_json::Value = serde_json::from_str(&tool_call.arguments)
                             .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
 
-                        blocks.push(ContentBlock::ToolUse {
+                        blocks.push(AnthropicContentBlock::ToolUse {
                             id: tool_call.id.clone(),
                             name: tool_call.name.clone(),
                             input,
@@ -60,7 +62,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> Result<(Option<String>, Vec<Mes
                 Ok(tool_result) => {
                     anthropic_messages.push(Message {
                         role: Role::User,
-                        content: Content::Blocks(vec![ContentBlock::ToolResult {
+                        content: Content::Blocks(vec![AnthropicContentBlock::ToolResult {
                             tool_use_id: tool_result.id.clone(),
                             content: tool_result.result.clone(),
                             is_error: Some(false),
@@ -71,7 +73,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> Result<(Option<String>, Vec<Mes
                 Err(tool_error) => {
                     anthropic_messages.push(Message {
                         role: Role::User,
-                        content: Content::Blocks(vec![ContentBlock::ToolResult {
+                        content: Content::Blocks(vec![AnthropicContentBlock::ToolResult {
                             tool_use_id: tool_error.id.clone(),
                             content: tool_error.error.clone(),
                             is_error: Some(true),
@@ -98,6 +100,31 @@ pub fn map_messages(messages: &[ChatMessage]) -> Result<(Option<String>, Vec<Mes
     }
 
     Ok((system_prompt, anthropic_messages))
+}
+
+fn map_content_blocks(parts: &[ContentBlock]) -> Result<Content> {
+    let mut blocks = Vec::with_capacity(parts.len());
+    for p in parts {
+        match p {
+            ContentBlock::Text { text } => blocks.push(AnthropicContentBlock::Text {
+                text: text.clone(),
+                cache_control: None,
+            }),
+            ContentBlock::Image { data, mime_type } => blocks.push(AnthropicContentBlock::Image {
+                source: ImageSource {
+                    source_type: "base64".to_string(),
+                    media_type: mime_type.clone(),
+                    data: data.clone(),
+                },
+            }),
+            ContentBlock::Audio { .. } => {
+                return Err(LlmError::UnsupportedContent(
+                    "Anthropic does not support audio input".into(),
+                ));
+            }
+        }
+    }
+    Ok(Content::Blocks(blocks))
 }
 
 pub fn map_tools(tools: &[ToolDefinition]) -> Result<Vec<Tool>> {
@@ -130,7 +157,7 @@ mod tests {
     #[test]
     fn test_map_simple_user_message() {
         let messages = vec![ChatMessage::User {
-            content: "Hello".to_string(),
+            content: vec![ContentBlock::text("Hello")],
             timestamp: IsoString::now(),
         }];
 
@@ -138,7 +165,72 @@ mod tests {
         assert_eq!(system, None);
         assert_eq!(mapped.len(), 1);
         assert_eq!(mapped[0].role, Role::User);
-        assert!(matches!(mapped[0].content, Content::Text(_)));
+        if let Content::Blocks(blocks) = &mapped[0].content {
+            assert_eq!(blocks.len(), 1);
+            assert!(matches!(blocks[0], AnthropicContentBlock::Text { .. }));
+        } else {
+            panic!("Expected Blocks content");
+        }
+    }
+
+    #[test]
+    fn test_map_user_message_with_image() {
+        let messages = vec![ChatMessage::User {
+            content: vec![
+                ContentBlock::text("Look at this:"),
+                ContentBlock::Image {
+                    data: "aW1hZ2VkYXRh".to_string(),
+                    mime_type: "image/png".to_string(),
+                },
+            ],
+            timestamp: IsoString::now(),
+        }];
+
+        let (_system, mapped) = map_messages(&messages).unwrap();
+        assert_eq!(mapped.len(), 1);
+        if let Content::Blocks(blocks) = &mapped[0].content {
+            assert_eq!(blocks.len(), 2);
+            assert!(matches!(blocks[0], AnthropicContentBlock::Text { .. }));
+            assert!(matches!(blocks[1], AnthropicContentBlock::Image { .. }));
+        } else {
+            panic!("Expected Blocks content for multimodal message");
+        }
+    }
+
+    #[test]
+    fn test_map_user_image_serialization() {
+        let content = map_content_blocks(&[ContentBlock::Image {
+            data: "aW1n".to_string(),
+            mime_type: "image/png".to_string(),
+        }])
+        .unwrap();
+        let json = serde_json::to_value(&content).unwrap();
+        let block = &json[0];
+        assert_eq!(block["type"], "image");
+        assert_eq!(block["source"]["type"], "base64");
+        assert_eq!(block["source"]["media_type"], "image/png");
+        assert_eq!(block["source"]["data"], "aW1n");
+    }
+
+    #[test]
+    fn test_map_user_message_with_audio_errors() {
+        let result = map_content_blocks(&[
+            ContentBlock::text("Listen:"),
+            ContentBlock::Audio {
+                data: "YXVkaW8=".to_string(),
+                mime_type: "audio/wav".to_string(),
+            },
+        ]);
+        assert!(matches!(result, Err(LlmError::UnsupportedContent(_))));
+    }
+
+    #[test]
+    fn test_map_user_message_audio_only_errors() {
+        let result = map_content_blocks(&[ContentBlock::Audio {
+            data: "YXVkaW8=".to_string(),
+            mime_type: "audio/wav".to_string(),
+        }]);
+        assert!(matches!(result, Err(LlmError::UnsupportedContent(_))));
     }
 
     #[test]
@@ -149,7 +241,7 @@ mod tests {
                 timestamp: IsoString::now(),
             },
             ChatMessage::User {
-                content: "Hello".to_string(),
+                content: vec![ContentBlock::text("Hello")],
                 timestamp: IsoString::now(),
             },
         ];
@@ -178,8 +270,8 @@ mod tests {
 
         if let Content::Blocks(blocks) = &mapped[0].content {
             assert_eq!(blocks.len(), 2);
-            assert!(matches!(blocks[0], ContentBlock::Text { .. }));
-            assert!(matches!(blocks[1], ContentBlock::ToolUse { .. }));
+            assert!(matches!(blocks[0], AnthropicContentBlock::Text { .. }));
+            assert!(matches!(blocks[1], AnthropicContentBlock::ToolUse { .. }));
         } else {
             panic!("Expected blocks content");
         }

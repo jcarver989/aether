@@ -141,8 +141,11 @@ impl SessionStore {
 
 const MAX_TITLE_LEN: usize = 80;
 
-fn extract_title(content: &str) -> String {
-    let first_line = content.lines().next().unwrap_or("").trim();
+fn extract_title(content: &[llm::ContentBlock]) -> String {
+    let first_line = llm::ContentBlock::first_text(content)
+        .and_then(|text| text.lines().next())
+        .unwrap_or("Media prompt")
+        .trim();
     if first_line.len() > MAX_TITLE_LEN {
         let end = first_line.floor_char_boundary(MAX_TITLE_LEN);
         format!("{}…", &first_line[..end])
@@ -188,7 +191,7 @@ mod tests {
 
     fn user_msg(content: &str) -> SessionEvent {
         SessionEvent::User(UserEvent::Message {
-            content: content.to_string(),
+            content: vec![llm::ContentBlock::text(content)],
         })
     }
 
@@ -374,5 +377,25 @@ mod tests {
         let title = listed_title(Some(&"a".repeat(120))).unwrap();
         assert!(title.len() <= 84); // 80 chars + "…" (3 bytes)
         assert!(title.ends_with('…'));
+    }
+
+    #[test]
+    fn list_uses_media_prompt_title_when_no_text_blocks_exist() {
+        let (_dir, store) = temp_store();
+        store.append_meta("s1", &default_meta()).unwrap();
+        store
+            .append_event(
+                "s1",
+                &SessionEvent::User(UserEvent::Message {
+                    content: vec![llm::ContentBlock::Image {
+                        data: "aW1n".to_string(),
+                        mime_type: "image/png".to_string(),
+                    }],
+                }),
+            )
+            .unwrap();
+
+        let title = store.list().into_iter().next().unwrap().title;
+        assert_eq!(title.as_deref(), Some("Media prompt"));
     }
 }

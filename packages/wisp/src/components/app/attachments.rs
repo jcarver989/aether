@@ -1,14 +1,21 @@
 use super::PromptAttachment;
 use agent_client_protocol as acp;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use std::path::Path;
 use tokio::io::AsyncReadExt;
 use url::Url;
 
 const MAX_EMBED_TEXT_BYTES: usize = 1024 * 1024;
+const MAX_MEDIA_BYTES: usize = 10 * 1024 * 1024;
+
+const IMAGE_MIME_TYPES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
+const AUDIO_MIME_TYPES: &[&str] = &["audio/wav", "audio/mpeg", "audio/mp3", "audio/ogg"];
 
 #[derive(Debug, Default)]
 pub struct AttachmentBuildOutcome {
     pub blocks: Vec<acp::ContentBlock>,
+    pub transcript_placeholders: Vec<String>,
     pub warnings: Vec<String>,
 }
 
@@ -17,9 +24,12 @@ pub async fn build_attachment_blocks(attachments: &[PromptAttachment]) -> Attach
 
     for attachment in attachments {
         match try_build_attachment_block(&attachment.path, &attachment.display_name).await {
-            Ok((block, maybe_warning)) => {
-                outcome.blocks.push(block);
-                if let Some(warning) = maybe_warning {
+            Ok(result) => {
+                outcome.blocks.push(result.block);
+                if let Some(placeholder) = result.transcript_placeholder {
+                    outcome.transcript_placeholders.push(placeholder);
+                }
+                if let Some(warning) = result.warning {
                     outcome.warnings.push(warning);
                 }
             }
@@ -30,10 +40,69 @@ pub async fn build_attachment_blocks(attachments: &[PromptAttachment]) -> Attach
     outcome
 }
 
+struct AttachmentBlockResult {
+    block: acp::ContentBlock,
+    transcript_placeholder: Option<String>,
+    warning: Option<String>,
+}
+
 async fn try_build_attachment_block(
     path: &Path,
     display_name: &str,
-) -> Result<(acp::ContentBlock, Option<String>), String> {
+) -> Result<AttachmentBlockResult, String> {
+    let mime_type = mime_guess::from_path(path)
+        .first_or_octet_stream()
+        .to_string();
+
+    if IMAGE_MIME_TYPES.contains(&mime_type.as_str())
+        || AUDIO_MIME_TYPES.contains(&mime_type.as_str())
+    {
+        let bytes = read_media_bytes(path, display_name).await?;
+        let data = BASE64.encode(&bytes);
+        let (block, placeholder) = if IMAGE_MIME_TYPES.contains(&mime_type.as_str()) {
+            (
+                acp::ContentBlock::Image(acp::ImageContent::new(data, &mime_type)),
+                format!("[image attachment: {display_name}]"),
+            )
+        } else {
+            (
+                acp::ContentBlock::Audio(acp::AudioContent::new(data, &mime_type)),
+                format!("[audio attachment: {display_name}]"),
+            )
+        };
+        return Ok(AttachmentBlockResult {
+            block,
+            transcript_placeholder: Some(placeholder),
+            warning: None,
+        });
+    }
+
+    build_text_resource_block(path, display_name, &mime_type).await
+}
+
+async fn read_media_bytes(path: &Path, display_name: &str) -> Result<Vec<u8>, String> {
+    let metadata = tokio::fs::metadata(path)
+        .await
+        .map_err(|e| format!("Failed to read {display_name}: {e}"))?;
+
+    if metadata.len() > MAX_MEDIA_BYTES as u64 {
+        return Err(format!(
+            "Skipped {display_name}: file too large ({} bytes, max {})",
+            metadata.len(),
+            MAX_MEDIA_BYTES
+        ));
+    }
+
+    tokio::fs::read(path)
+        .await
+        .map_err(|e| format!("Failed to read {display_name}: {e}"))
+}
+
+async fn build_text_resource_block(
+    path: &Path,
+    display_name: &str,
+    mime_type: &str,
+) -> Result<AttachmentBlockResult, String> {
     let file = tokio::fs::File::open(path)
         .await
         .map_err(|error| format!("Failed to read {display_name}: {error}"))?;
@@ -62,9 +131,6 @@ async fn try_build_attachment_block(
     };
 
     let file_uri = build_attachment_file_uri(path, display_name).await?;
-    let mime_type = mime_guess::from_path(path)
-        .first_or_octet_stream()
-        .to_string();
     let warning =
         truncated.then(|| format!("Truncated {display_name} to {MAX_EMBED_TEXT_BYTES} bytes"));
 
@@ -74,7 +140,11 @@ async fn try_build_attachment_block(
         ),
     ));
 
-    Ok((block, warning))
+    Ok(AttachmentBlockResult {
+        block,
+        transcript_placeholder: None,
+        warning,
+    })
 }
 
 async fn build_attachment_file_uri(path: &Path, display_name: &str) -> Result<String, String> {
@@ -142,5 +212,47 @@ mod tests {
             .expect("URI should be built from original absolute path");
 
         assert_eq!(uri, expected);
+    }
+
+    #[tokio::test]
+    async fn png_file_produces_image_content_block() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("test.png");
+        std::fs::write(&path, b"fake png data").unwrap();
+
+        let attachments = vec![PromptAttachment {
+            path,
+            display_name: "test.png".to_string(),
+        }];
+        let outcome = build_attachment_blocks(&attachments).await;
+
+        assert_eq!(outcome.blocks.len(), 1);
+        assert!(outcome.warnings.is_empty());
+        assert_eq!(
+            outcome.transcript_placeholders,
+            vec!["[image attachment: test.png]"]
+        );
+        assert!(matches!(outcome.blocks[0], acp::ContentBlock::Image(_)));
+    }
+
+    #[tokio::test]
+    async fn wav_file_produces_audio_content_block() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("test.wav");
+        std::fs::write(&path, b"fake wav data").unwrap();
+
+        let attachments = vec![PromptAttachment {
+            path,
+            display_name: "test.wav".to_string(),
+        }];
+        let outcome = build_attachment_blocks(&attachments).await;
+
+        assert_eq!(outcome.blocks.len(), 1);
+        assert!(outcome.warnings.is_empty());
+        assert_eq!(
+            outcome.transcript_placeholders,
+            vec!["[audio attachment: test.wav]"]
+        );
+        assert!(matches!(outcome.blocks[0], acp::ContentBlock::Audio(_)));
     }
 }

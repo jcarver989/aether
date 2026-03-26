@@ -5,7 +5,7 @@ use crate::evals::eval::WorkingDirectory;
 use crate::metrics::EvalMetric;
 use futures::StreamExt;
 use llm::types::IsoString;
-use llm::{ChatMessage, Context, LlmResponse, StreamingModelProvider};
+use llm::{ChatMessage, ContentBlock, Context, LlmResponse, StreamingModelProvider};
 use std::path::Path;
 
 /// Check if a file exists at the specified path
@@ -116,11 +116,11 @@ where
 {
     tracing::info!("Running LLM judge for assertion");
     let judge_prompt = ChatMessage::User {
-        content: build_prompt(&LlmJudgeContext {
+        content: vec![ContentBlock::text(build_prompt(&LlmJudgeContext {
             working_dir,
             original_prompt,
             messages,
-        }),
+        }))],
         timestamp: IsoString::now(),
     };
 

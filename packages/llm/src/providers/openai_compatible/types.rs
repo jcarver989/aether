@@ -7,7 +7,7 @@ use async_openai::types::chat::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::ChatMessage;
+use crate::{ChatMessage, ContentBlock};
 
 /// Unified custom types for OpenAI-compatible APIs that deviate slightly from the standard.
 /// This handles quirks from providers like `OpenRouter`, Z.ai, and potentially others.
@@ -50,13 +50,32 @@ fn default_object() -> String {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum UserContent {
+    Text(String),
+    Parts(Vec<UserContentPart>),
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum UserContentPart {
+    Text { text: String },
+    ImageUrl { image_url: ImageUrlContent },
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ImageUrlContent {
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 #[serde(tag = "role", rename_all = "lowercase")]
 pub enum CompatibleChatMessage {
     System {
         content: String,
     },
     User {
-        content: String,
+        content: UserContent,
     },
     Assistant {
         content: String,
@@ -85,15 +104,16 @@ pub struct CompatibleChatRequest {
     pub reasoning_effort: Option<crate::ReasoningEffort>,
 }
 
-pub fn map_messages(messages: &[ChatMessage]) -> Vec<CompatibleChatMessage> {
-    messages
-        .iter()
-        .filter_map(|message| match message {
+pub fn map_messages(messages: &[ChatMessage]) -> crate::Result<Vec<CompatibleChatMessage>> {
+    let mut result = Vec::new();
+
+    for message in messages {
+        let mapped = match message {
             ChatMessage::System { content, .. } => Some(CompatibleChatMessage::System {
                 content: content.clone(),
             }),
             ChatMessage::User { content, .. } => Some(CompatibleChatMessage::User {
-                content: content.clone(),
+                content: map_user_content(content)?,
             }),
             ChatMessage::Assistant {
                 content,
@@ -131,8 +151,8 @@ pub fn map_messages(messages: &[ChatMessage]) -> Vec<CompatibleChatMessage> {
                     tool_calls,
                 })
             }
-            ChatMessage::ToolCallResult(result) => {
-                let (content, tool_call_id) = match result {
+            ChatMessage::ToolCallResult(r) => {
+                let (content, tool_call_id) = match r {
                     Ok(tool_result) => (tool_result.result.clone(), tool_result.id.clone()),
                     Err(tool_error) => (tool_error.error.clone(), tool_error.id.clone()),
                 };
@@ -143,11 +163,46 @@ pub fn map_messages(messages: &[ChatMessage]) -> Vec<CompatibleChatMessage> {
                 })
             }
             ChatMessage::Summary { content, .. } => Some(CompatibleChatMessage::User {
-                content: format!("[Previous conversation handoff]\n\n{content}"),
+                content: UserContent::Text(format!("[Previous conversation handoff]\n\n{content}")),
             }),
             ChatMessage::Error { .. } => None,
-        })
-        .collect()
+        };
+
+        if let Some(msg) = mapped {
+            result.push(msg);
+        }
+    }
+
+    Ok(result)
+}
+
+fn map_user_content(parts: &[ContentBlock]) -> crate::Result<UserContent> {
+    let has_non_text = parts
+        .iter()
+        .any(|p| !matches!(p, ContentBlock::Text { .. }));
+
+    if !has_non_text {
+        return Ok(UserContent::Text(ContentBlock::join_text(parts)));
+    }
+
+    let mut items = Vec::with_capacity(parts.len());
+    for p in parts {
+        match p {
+            ContentBlock::Text { text } => items.push(UserContentPart::Text { text: text.clone() }),
+            ContentBlock::Image { .. } => items.push(UserContentPart::ImageUrl {
+                image_url: ImageUrlContent {
+                    url: p.as_data_uri().unwrap(),
+                },
+            }),
+            ContentBlock::Audio { .. } => {
+                return Err(crate::LlmError::UnsupportedContent(
+                    "This provider does not support audio input".into(),
+                ));
+            }
+        }
+    }
+
+    Ok(UserContent::Parts(items))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -317,7 +372,7 @@ mod tests {
         crate::Context::new(
             vec![
                 ChatMessage::User {
-                    content: "run a tool".to_string(),
+                    content: vec![ContentBlock::text("run a tool")],
                     timestamp: IsoString::now(),
                 },
                 message,
@@ -347,7 +402,7 @@ mod tests {
     fn test_build_request_includes_stream_options_with_usage() {
         let context = crate::Context::new(
             vec![ChatMessage::User {
-                content: "hello".to_string(),
+                content: vec![ContentBlock::text("hello")],
                 timestamp: IsoString::now(),
             }],
             vec![],
@@ -370,5 +425,63 @@ mod tests {
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["messages"][1]["role"], "assistant");
         assert_eq!(json["messages"][1]["reasoning_content"], ".");
+    }
+
+    #[test]
+    fn test_user_message_text_only_serializes_as_string() {
+        let content = map_user_content(&[ContentBlock::text("Hello")]).unwrap();
+        let json = serde_json::to_value(&content).unwrap();
+        assert_eq!(json, "Hello");
+    }
+
+    #[test]
+    fn test_user_message_with_image_serializes_as_array() {
+        let content = map_user_content(&[
+            ContentBlock::text("Look:"),
+            ContentBlock::Image {
+                data: "aW1n".to_string(),
+                mime_type: "image/png".to_string(),
+            },
+        ])
+        .unwrap();
+        let json = serde_json::to_value(&content).unwrap();
+        let parts = json.as_array().expect("Expected array");
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0]["type"], "text");
+        assert_eq!(parts[0]["text"], "Look:");
+        assert_eq!(parts[1]["type"], "image_url");
+        assert!(
+            parts[1]["image_url"]["url"]
+                .as_str()
+                .unwrap()
+                .starts_with("data:image/png;base64,")
+        );
+    }
+
+    #[test]
+    fn test_user_message_audio_only_errors() {
+        let result = map_user_content(&[ContentBlock::Audio {
+            data: "YXVkaW8=".to_string(),
+            mime_type: "audio/wav".to_string(),
+        }]);
+        assert!(matches!(
+            result,
+            Err(crate::LlmError::UnsupportedContent(_))
+        ));
+    }
+
+    #[test]
+    fn test_user_message_audio_with_text_errors() {
+        let result = map_user_content(&[
+            ContentBlock::text("Listen:"),
+            ContentBlock::Audio {
+                data: "YXVkaW8=".to_string(),
+                mime_type: "audio/wav".to_string(),
+            },
+        ]);
+        assert!(matches!(
+            result,
+            Err(crate::LlmError::UnsupportedContent(_))
+        ));
     }
 }

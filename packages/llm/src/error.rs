@@ -79,6 +79,9 @@ pub enum LlmError {
     /// OAuth authentication error
     #[error("OAuth error: {0}")]
     OAuthError(String),
+    /// The message contained only content types this provider doesn't support
+    #[error("Unsupported content: {0}")]
+    UnsupportedContent(String),
     /// Generic error for other cases
     #[error("{0}")]
     Other(String),

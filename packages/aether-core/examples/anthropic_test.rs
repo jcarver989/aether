@@ -73,7 +73,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             timestamp: IsoString::now(),
         },
         ChatMessage::User {
-            content: args.prompt,
+            content: vec![llm::ContentBlock::text(args.prompt)],
             timestamp: IsoString::now(),
         },
     ];

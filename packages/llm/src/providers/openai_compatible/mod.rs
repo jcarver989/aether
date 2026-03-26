@@ -26,7 +26,7 @@ pub fn build_chat_request(
     model: &str,
     context: &Context,
 ) -> Result<CompatibleChatRequest, LlmError> {
-    let messages = types::map_messages(context.messages());
+    let messages = types::map_messages(context.messages())?;
     let tools = if context.tools().is_empty() {
         None
     } else {

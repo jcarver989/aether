@@ -621,6 +621,8 @@ mod tests {
                             utils::ReasoningEffort::Medium,
                             utils::ReasoningEffort::High,
                         ],
+                        supports_image: false,
+                        supports_audio: false,
                     },
                 },
                 SettingsMenuValue {

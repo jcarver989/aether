@@ -243,7 +243,7 @@ impl Agent {
         let _ = self.message_tx.send(AgentMessage::ContextCleared).await;
     }
 
-    fn on_user_text(&mut self, content: String) {
+    fn on_user_text(&mut self, content: Vec<llm::ContentBlock>) {
         self.context.add_message(ChatMessage::User {
             content,
             timestamp: IsoString::now(),
@@ -309,9 +309,9 @@ impl Agent {
             stop_reason.map_or_else(|| "Unknown".to_string(), |reason| format!("{reason:?}"));
 
         self.context.add_message(ChatMessage::User {
-            content: format!(
+            content: vec![llm::ContentBlock::text(format!(
                 "<system-notification>The LLM API stopped with reason '{reason}'. Continue from where you left off and finish your task.</system-notification>"
-            ),
+            ))],
             timestamp: IsoString::now(),
         });
     }
@@ -806,7 +806,7 @@ mod tests {
         );
         let context = Context::new(
             vec![ChatMessage::User {
-                content: "x".repeat(344),
+                content: vec![llm::ContentBlock::text("x".repeat(344))],
                 timestamp: IsoString::now(),
             }],
             vec![],

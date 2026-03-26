@@ -31,6 +31,14 @@ struct ModelData {
     cost: Option<CostData>,
     #[serde(default)]
     limit: Option<LimitData>,
+    #[serde(default)]
+    modalities: Option<ModalitiesData>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct ModalitiesData {
+    #[serde(default)]
+    input: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -190,6 +198,7 @@ struct ModelInfo {
     display_name: String,
     context_window: u32,
     reasoning_levels: Vec<String>,
+    input_modalities: Vec<String>,
 }
 
 type ProviderModels = BTreeMap<&'static str, Vec<ModelInfo>>;
@@ -233,12 +242,18 @@ fn build_provider_models(data: &ModelsDevData) -> Result<ProviderModels, String>
                 } else {
                     Vec::new()
                 };
+                let input_modalities = m
+                    .modalities
+                    .as_ref()
+                    .map(|md| md.input.clone())
+                    .unwrap_or_else(|| vec!["text".to_string()]);
                 ModelInfo {
                     variant_name: model_id_to_variant(&m.id),
                     model_id: m.id.clone(),
                     display_name: m.name.clone(),
                     context_window: m.limit.as_ref().map_or(0, |l| l.context),
                     reasoning_levels,
+                    input_modalities,
                 }
             })
             .collect();
@@ -391,6 +406,24 @@ fn emit_provider_impls(out: &mut String, provider_models: &ProviderModels) {
         pushln(out, "    }");
         blank(out);
 
+        for modality in ["image", "audio"] {
+            pushln(
+                out,
+                format!("    pub fn supports_{modality}(self) -> bool {{"),
+            );
+            pushln(out, "        match self {");
+            let mod_owned = modality.to_string();
+            emit_grouped_arms(
+                out,
+                models,
+                |m| m.input_modalities.contains(&mod_owned).to_string(),
+                |val| val.to_string(),
+            );
+            pushln(out, "        }");
+            pushln(out, "    }");
+            blank(out);
+        }
+
         // ALL constant
         pushln(out, format!("    const ALL: &[{enum_name}] = &["));
         for model in models {
@@ -538,6 +571,9 @@ fn emit_llm_model_impl(out: &mut String) {
     emit_llm_oauth_provider_id(out);
     emit_llm_reasoning_levels(out);
     emit_llm_supports_reasoning(out);
+    for modality in ["image", "audio"] {
+        emit_llm_supports_modality(out, modality);
+    }
     emit_llm_all(out);
     pushln(out, "}");
     blank(out);
@@ -810,6 +846,37 @@ fn emit_llm_supports_reasoning(out: &mut String) {
     );
     pushln(out, "    pub fn supports_reasoning(&self) -> bool {");
     pushln(out, "        !self.reasoning_levels().is_empty()");
+    pushln(out, "    }");
+    blank(out);
+}
+
+fn emit_llm_supports_modality(out: &mut String, modality: &str) {
+    pushln(
+        out,
+        format!("    /// Whether this model supports {modality} input"),
+    );
+    pushln(
+        out,
+        format!("    pub fn supports_{modality}(&self) -> bool {{"),
+    );
+    pushln(out, "        match self {");
+    for cfg in PROVIDERS {
+        pushln(
+            out,
+            format!(
+                "            Self::{}(m) => m.supports_{modality}(),",
+                cfg.enum_name
+            ),
+        );
+    }
+    pushln(
+        out,
+        format!(
+            "            {} => false,",
+            dynamic_pattern_with_binding("_")
+        ),
+    );
+    pushln(out, "        }");
     pushln(out, "    }");
     blank(out);
 }

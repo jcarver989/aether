@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum UserEvent {
-    Message { content: String },
+    Message { content: Vec<llm::ContentBlock> },
     ClearContext,
 }
 
@@ -120,7 +120,7 @@ mod tests {
 
     fn user_msg(content: &str) -> UserEvent {
         UserEvent::Message {
-            content: content.to_string(),
+            content: vec![llm::ContentBlock::text(content)],
         }
     }
 
@@ -164,7 +164,12 @@ mod tests {
         let mut ctx = system_context();
         apply_user_event(&mut ctx, &user_msg("Hello"));
         assert_eq!(ctx.message_count(), 2);
-        assert!(matches!(ctx.messages()[1], ChatMessage::User { .. }));
+        match &ctx.messages()[1] {
+            ChatMessage::User { content, .. } => {
+                assert_eq!(content, &vec![llm::ContentBlock::text("Hello")]);
+            }
+            other => panic!("Expected User, got {other:?}"),
+        }
     }
 
     #[test]

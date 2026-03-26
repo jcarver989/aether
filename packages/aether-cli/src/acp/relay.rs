@@ -4,8 +4,8 @@ use acp_utils::notifications::{
 use aether_core::events::{AgentMessage, UserMessage};
 use aether_core::mcp::run_mcp_task::McpCommand;
 use agent_client_protocol::{self as acp, ExtNotification, SessionId};
-use llm::ReasoningEffort;
 use llm::parser::ModelProviderParser;
+use llm::{ContentBlock, ReasoningEffort};
 use mcp_utils::client::ElicitationRequest;
 use rmcp::model::{CreateElicitationRequestParams, CreateElicitationResult, ElicitationSchema};
 use std::collections::BTreeMap;
@@ -27,7 +27,7 @@ use aether_core::context::ext::{SessionEvent, UserEvent};
 
 pub(crate) enum SessionCommand {
     Prompt {
-        text: String,
+        content: Vec<ContentBlock>,
         switch_model: Option<String>,
         reasoning_effort: Option<ReasoningEffort>,
         result_tx: oneshot::Sender<Result<acp::StopReason, RelayError>>,
@@ -112,7 +112,7 @@ async fn run_session_relay(
             Some(cmd) = cmd_rx.recv() => {
                 match cmd {
                     SessionCommand::Prompt {
-                        text,
+                        content,
                         switch_model,
                         reasoning_effort,
                         result_tx,
@@ -128,7 +128,7 @@ async fn run_session_relay(
                             acp_session_id: &acp_session_id,
                             session_store: &session_store,
                         };
-                        let result = handle_prompt(&mut ctx, text, switch_model, reasoning_effort).await;
+                        let result = handle_prompt(&mut ctx, content, switch_model, reasoning_effort).await;
                         let _ = result_tx.send(result);
                     }
                     SessionCommand::Cancel => {
@@ -162,9 +162,9 @@ struct PromptContext<'a> {
 
 async fn handle_prompt(
     ctx: &mut PromptContext<'_>,
-    text: String,
+    content: Vec<ContentBlock>,
     switch_model: Option<String>,
-    reasoning_effort: Option<llm::ReasoningEffort>,
+    reasoning_effort: Option<ReasoningEffort>,
 ) -> Result<acp::StopReason, RelayError> {
     if let Some(model) = switch_model {
         let parser = ModelProviderParser::default();
@@ -182,18 +182,17 @@ async fn handle_prompt(
         .await
         .map_err(|e| RelayError::SendPromptFailed(format!("{e}")))?;
 
-    let text = expand_slash_command_if_needed(ctx.mcp_tx, text).await;
-
+    let content = expand_slash_command_in_content(ctx.mcp_tx, content).await;
     log_event(
         ctx.session_store,
         &ctx.acp_session_id.0,
         &SessionEvent::User(UserEvent::Message {
-            content: text.clone(),
+            content: content.clone(),
         }),
     );
 
     ctx.agent_tx
-        .send(UserMessage::text(&text))
+        .send(UserMessage::with_content(content))
         .await
         .map_err(|e| RelayError::SendPromptFailed(format!("{e}")))?;
 
@@ -343,6 +342,19 @@ fn parse_elicitation_response(response: &acp::ExtResponse) -> CreateElicitationR
             }
         }
     }
+}
+
+async fn expand_slash_command_in_content(
+    mcp_tx: &mpsc::Sender<McpCommand>,
+    mut content: Vec<ContentBlock>,
+) -> Vec<ContentBlock> {
+    if let Some(ContentBlock::Text { text }) = content.first()
+        && text.starts_with('/')
+    {
+        let expanded = expand_slash_command_if_needed(mcp_tx, text.clone()).await;
+        content[0] = ContentBlock::text(expanded);
+    }
+    content
 }
 
 async fn expand_slash_command_if_needed(mcp_tx: &mpsc::Sender<McpCommand>, text: String) -> String {
@@ -579,7 +591,7 @@ mod tests {
         handle_in_flight_command(
             &agent_tx,
             SessionCommand::Prompt {
-                text: "second prompt".to_string(),
+                content: vec![ContentBlock::text("second prompt")],
                 switch_model: None,
                 reasoning_effort: None,
                 result_tx,

@@ -9,10 +9,10 @@ use agent_client_protocol::{
     SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
     SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse,
 };
-use llm::ReasoningEffort;
 use llm::catalog::{self, LlmModel, get_local_models};
 use llm::oauth::OAuthCredentialStore;
 use llm::types::IsoString;
+use llm::{ContentBlock, ReasoningEffort};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
@@ -20,19 +20,19 @@ use tokio::spawn;
 use tokio::sync::oneshot;
 use tokio::sync::{Mutex, mpsc};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use super::config_setting::ConfigSetting;
 use super::mappers::{map_acp_mcp_servers, replay_to_client};
 use super::model_config::{
     ValidatedMode, build_config_options_from_modes, effective_model,
     mode_name_for_state_from_modes, model_exists, pick_default_model, resolve_mode_from_modes,
-    validated_modes_from_specs,
+    supports_prompt_audio, validated_modes_from_specs,
 };
 use super::relay::{RelayHandle, SessionCommand, spawn_relay};
 use super::session::Session;
 use super::session_store::{SessionMeta, SessionStore};
-use acp_utils::content::map_content_blocks_to_text;
+use acp_utils::content::format_embedded_resource;
 use acp_utils::server::AcpActorHandle;
 use aether_core::context::ext::ContextExt;
 use aether_project::{AgentCatalog, load_agent_catalog};
@@ -41,6 +41,27 @@ use llm::Context;
 struct SessionModeCatalog {
     catalog: AgentCatalog,
     modes: Vec<ValidatedMode>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct PromptModalities {
+    image: bool,
+    audio: bool,
+}
+
+impl PromptModalities {
+    fn from_content(content: &[ContentBlock]) -> Self {
+        Self {
+            image: content.iter().any(ContentBlock::is_image),
+            audio: content
+                .iter()
+                .any(|block| matches!(block, ContentBlock::Audio { .. })),
+        }
+    }
+
+    fn is_empty(self) -> bool {
+        !self.image && !self.audio
+    }
 }
 
 /// Mutable per-session config state.
@@ -262,6 +283,28 @@ fn build_auth_methods(has_credential: impl Fn(&str) -> bool) -> Vec<AuthMethod> 
         .collect()
 }
 
+fn map_acp_to_content_blocks(blocks: Vec<acp::ContentBlock>) -> Vec<ContentBlock> {
+    blocks
+        .into_iter()
+        .map(|block| match block {
+            acp::ContentBlock::Text(t) => ContentBlock::text(t.text),
+            acp::ContentBlock::Image(img) => ContentBlock::Image {
+                data: img.data,
+                mime_type: img.mime_type,
+            },
+            acp::ContentBlock::Audio(aud) => ContentBlock::Audio {
+                data: aud.data,
+                mime_type: aud.mime_type,
+            },
+            acp::ContentBlock::Resource(r) => ContentBlock::text(format_embedded_resource(&r)),
+            acp::ContentBlock::ResourceLink(l) => {
+                ContentBlock::text(format!("[Resource: {}]", l.uri))
+            }
+            _ => ContentBlock::text("[Unknown content]"),
+        })
+        .collect()
+}
+
 fn select_initial_mode(
     validated_modes: &[ValidatedMode],
 ) -> (Option<String>, Option<(String, Option<ReasoningEffort>)>) {
@@ -271,6 +314,42 @@ fn select_initial_mode(
             Some((mode.model.clone(), mode.reasoning_effort)),
         )
     })
+}
+
+fn prompt_capabilities_for_models(models: &[LlmModel]) -> PromptCapabilities {
+    PromptCapabilities::new()
+        .embedded_context(true)
+        .image(models.iter().any(LlmModel::supports_image))
+        .audio(models.iter().any(supports_prompt_audio))
+}
+
+fn selected_models(model_value: &str) -> Result<Vec<LlmModel>, acp::Error> {
+    model_value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            part.parse::<LlmModel>()
+                .map_err(|_| acp::Error::invalid_params())
+        })
+        .collect()
+}
+
+fn validate_prompt_support(model_value: &str, content: &[ContentBlock]) -> Result<(), acp::Error> {
+    let modalities = PromptModalities::from_content(content);
+    if modalities.is_empty() {
+        return Ok(());
+    }
+
+    let selected = selected_models(model_value)?;
+    if modalities.image && selected.iter().any(|model| !model.supports_image()) {
+        return Err(acp::Error::invalid_params());
+    }
+    if modalities.audio && selected.iter().any(|model| !supports_prompt_audio(model)) {
+        return Err(acp::Error::invalid_params());
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -378,6 +457,62 @@ mod tests {
         let json = serde_json::to_string(&response).expect("response serializes");
         assert!(json.contains("\"loadSession\":true"));
     }
+
+    #[test]
+    fn prompt_capabilities_reflect_available_modalities() {
+        let image_only =
+            prompt_capabilities_for_models(&["anthropic:claude-sonnet-4-5".parse().unwrap()]);
+        assert!(image_only.image);
+        assert!(!image_only.audio);
+
+        let audio_capable =
+            prompt_capabilities_for_models(&["gemini:gemini-live-2.5-flash-preview-native-audio"
+                .parse()
+                .unwrap()]);
+        assert!(!audio_capable.image);
+        assert!(audio_capable.audio);
+
+        let text_only = prompt_capabilities_for_models(&[DEEPSEEK.parse().unwrap()]);
+        assert!(!text_only.image);
+        assert!(!text_only.audio);
+    }
+
+    #[test]
+    fn validate_prompt_support_requires_all_selected_models_to_support_media() {
+        let image_content = vec![ContentBlock::Image {
+            data: "aW1n".to_string(),
+            mime_type: "image/png".to_string(),
+        }];
+        let audio_content = vec![ContentBlock::Audio {
+            data: "YXVkaW8=".to_string(),
+            mime_type: "audio/wav".to_string(),
+        }];
+
+        assert!(validate_prompt_support(SONNET, &image_content).is_ok());
+        assert!(validate_prompt_support(DEEPSEEK, &image_content).is_err());
+        assert!(
+            validate_prompt_support(
+                "gemini:gemini-live-2.5-flash-preview-native-audio",
+                &audio_content,
+            )
+            .is_ok()
+        );
+        assert!(validate_prompt_support(SONNET, &audio_content).is_err());
+        assert!(
+            validate_prompt_support(
+                "anthropic:claude-sonnet-4-5,deepseek:deepseek-chat",
+                &image_content,
+            )
+            .is_err()
+        );
+        assert!(
+            validate_prompt_support(
+                "gemini:gemini-live-2.5-flash-preview-native-audio,deepseek:deepseek-chat",
+                &audio_content,
+            )
+            .is_err()
+        );
+    }
 }
 
 #[async_trait::async_trait(?Send)]
@@ -385,6 +520,7 @@ impl Agent for SessionManager {
     async fn initialize(&self, args: InitializeRequest) -> Result<InitializeResponse, acp::Error> {
         info!("Received initialize request: {:?}", args);
         let auth_methods = build_auth_methods(self.has_oauth_credential);
+        let available = get_local_models().await;
         Ok(InitializeResponse::new(ProtocolVersion::V1)
             .agent_info(Implementation::new("Aether", "0.1.0"))
             .agent_capabilities(
@@ -394,12 +530,7 @@ impl Agent for SessionManager {
                     .session_capabilities(
                         acp::SessionCapabilities::new().list(acp::SessionListCapabilities::new()),
                     )
-                    .prompt_capabilities(
-                        PromptCapabilities::new()
-                            .embedded_context(true)
-                            .image(false)
-                            .audio(false),
-                    ),
+                    .prompt_capabilities(prompt_capabilities_for_models(&available)),
             )
             .auth_methods(auth_methods))
     }
@@ -681,15 +812,19 @@ impl Agent for SessionManager {
         info!("Received prompt for session: {:?}", args.session_id);
         let session_id_str = args.session_id.0.to_string();
 
-        let (relay_tx, prompt_text, switch_model, reasoning_effort) = {
+        let (relay_tx, content, switch_model, reasoning_effort) = {
             let mut sessions = self.sessions.lock().await;
             let state = sessions.get_mut(&session_id_str).ok_or_else(|| {
                 error!("Session not found: {}", session_id_str);
                 acp::Error::invalid_params()
             })?;
 
-            let prompt_text = map_content_blocks_to_text(args.prompt);
-            debug!("Prompt text: {}", prompt_text);
+            let content = map_acp_to_content_blocks(args.prompt);
+            let effective_model = effective_model(
+                &state.config.active_model,
+                state.config.pending_model.as_deref(),
+            );
+            validate_prompt_support(effective_model, &content)?;
 
             let switch_model = state.config.pending_model.take().and_then(|pending| {
                 if pending == state.config.active_model {
@@ -704,7 +839,7 @@ impl Agent for SessionManager {
 
             (
                 state.relay_tx.clone(),
-                prompt_text,
+                content,
                 switch_model,
                 reasoning_effort,
             )
@@ -713,7 +848,7 @@ impl Agent for SessionManager {
         let (result_tx, result_rx) = oneshot::channel();
         relay_tx
             .send(SessionCommand::Prompt {
-                text: prompt_text,
+                content,
                 switch_model,
                 reasoning_effort,
                 result_tx,

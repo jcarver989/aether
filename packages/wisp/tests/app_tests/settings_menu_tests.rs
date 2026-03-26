@@ -44,14 +44,6 @@ async fn test_auth_methods_updated_notification_refreshes_provider_login_and_per
     press_down(&mut r).await;
     press_down(&mut r).await;
 
-    let selected = settings_menu_selected_label(r.writer());
-    assert!(
-        selected
-            .as_deref()
-            .is_some_and(|l| l.contains("Provider Logins")),
-        "Expected Provider Logins, got: {selected:?}"
-    );
-
     press_enter(&mut r).await;
     assert_buffer_contains(r.writer(), "Anthropic  ⚡ needs login");
 
@@ -102,33 +94,23 @@ async fn test_settings_menu_arrow_navigation_single_entry() {
     let mut r = open_settings(&make_settings_options(), (80, 24)).await;
     assert!(has_settings_menu(r.writer()));
 
-    let label = settings_menu_selected_label(r.writer());
-    assert!(
-        label.as_deref().is_some_and(|l| l.contains("Model")),
-        "got: {label:?}"
-    );
+    press_enter(&mut r).await;
+    assert_buffer_contains(r.writer(), "Model search");
 
+    press_esc(&mut r).await;
     press_down(&mut r).await;
-    let label = settings_menu_selected_label(r.writer());
-    assert!(
-        label.as_deref().is_some_and(|l| l.contains("Theme")),
-        "got: {label:?}"
-    );
+    press_enter(&mut r).await;
+    assert_buffer_contains(r.writer(), "Theme search");
 
+    press_esc(&mut r).await;
     press_down(&mut r).await;
-    let label = settings_menu_selected_label(r.writer());
-    assert!(
-        label.as_deref().is_some_and(|l| l.contains("MCP Servers")),
-        "got: {label:?}"
-    );
+    press_enter(&mut r).await;
+    assert_buffer_contains(r.writer(), "no MCP servers configured");
 
-    // Wraps back
+    press_esc(&mut r).await;
     press_down(&mut r).await;
-    let label = settings_menu_selected_label(r.writer());
-    assert!(
-        label.as_deref().is_some_and(|l| l.contains("Model")),
-        "got: {label:?}"
-    );
+    press_enter(&mut r).await;
+    assert_buffer_contains(r.writer(), "Model search");
 }
 
 #[tokio::test]

@@ -6,6 +6,63 @@ use crate::types::IsoString;
 use super::{ToolCallError, ToolCallRequest, ToolCallResult};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ContentBlock {
+    Text { text: String },
+    Image { data: String, mime_type: String },
+    Audio { data: String, mime_type: String },
+}
+
+impl ContentBlock {
+    pub fn text(s: impl Into<String>) -> Self {
+        ContentBlock::Text { text: s.into() }
+    }
+
+    pub fn estimated_bytes(&self) -> usize {
+        match self {
+            ContentBlock::Text { text } => text.len(),
+            ContentBlock::Image { data, .. } | ContentBlock::Audio { data, .. } => data.len(),
+        }
+    }
+
+    pub fn is_image(&self) -> bool {
+        matches!(self, ContentBlock::Image { .. })
+    }
+
+    pub fn first_text(parts: &[ContentBlock]) -> Option<&str> {
+        parts.iter().find_map(|part| match part {
+            ContentBlock::Text { text } => {
+                let trimmed = text.trim();
+                (!trimmed.is_empty()).then_some(trimmed)
+            }
+            _ => None,
+        })
+    }
+
+    /// Joins all text blocks with newlines, ignoring non-text content.
+    pub fn join_text(parts: &[ContentBlock]) -> String {
+        parts
+            .iter()
+            .filter_map(|p| match p {
+                ContentBlock::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Returns a `data:{mime};base64,{data}` URI for image/audio blocks, `None` for text.
+    pub fn as_data_uri(&self) -> Option<String> {
+        match self {
+            ContentBlock::Image { data, mime_type } | ContentBlock::Audio { data, mime_type } => {
+                Some(format!("data:{mime_type};base64,{data}"))
+            }
+            ContentBlock::Text { .. } => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EncryptedReasoningContent {
     pub id: String,
     #[serde(
@@ -46,7 +103,7 @@ pub enum ChatMessage {
         timestamp: IsoString,
     },
     User {
-        content: String,
+        content: Vec<ContentBlock>,
         timestamp: IsoString,
     },
     Assistant {
@@ -92,11 +149,13 @@ impl ChatMessage {
     pub fn estimated_bytes(&self) -> usize {
         match self {
             ChatMessage::System { content, .. }
-            | ChatMessage::User { content, .. }
             | ChatMessage::Error {
                 message: content, ..
             }
             | ChatMessage::Summary { content, .. } => content.len(),
+            ChatMessage::User { content, .. } => {
+                content.iter().map(ContentBlock::estimated_bytes).sum()
+            }
             ChatMessage::Assistant {
                 content,
                 reasoning,
@@ -185,6 +244,20 @@ mod tests {
         let r = AssistantReasoning::from_parts(String::new(), None);
         assert!(r.summary_text.is_none());
         assert!(r.is_empty());
+    }
+
+    #[test]
+    fn first_text_returns_first_non_empty_text_block() {
+        let parts = vec![
+            ContentBlock::Image {
+                data: "a".to_string(),
+                mime_type: "image/png".to_string(),
+            },
+            ContentBlock::text(" "),
+            ContentBlock::text("hello"),
+        ];
+
+        assert_eq!(ContentBlock::first_text(&parts), Some("hello"));
     }
 
     #[test]

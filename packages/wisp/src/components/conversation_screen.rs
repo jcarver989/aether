@@ -104,6 +104,11 @@ impl ConversationScreen {
 
     pub fn on_session_update(&mut self, update: &acp::SessionUpdate) {
         match update {
+            acp::SessionUpdate::UserMessageChunk(chunk) => {
+                if let Some(text) = render_user_content_block(&chunk.content) {
+                    self.conversation.push_user_message(&text);
+                }
+            }
             acp::SessionUpdate::AgentMessageChunk(chunk) => {
                 if let acp::ContentBlock::Text(text_content) = &chunk.content {
                     self.conversation.append_text_chunk(&text_content.text);
@@ -170,6 +175,12 @@ impl ConversationScreen {
     pub fn on_prompt_error(&mut self, error: &acp::Error) {
         tracing::error!("Prompt error: {error}");
         self.waiting_for_response = false;
+    }
+
+    pub fn reject_local_prompt(&mut self, message: &str) {
+        self.waiting_for_response = false;
+        self.conversation
+            .push_user_message(&format!("[wisp] {message}"));
     }
 
     pub fn on_elicitation_request(
@@ -260,6 +271,15 @@ impl ConversationScreen {
             }
         }
         Some(out)
+    }
+}
+
+fn render_user_content_block(block: &acp::ContentBlock) -> Option<String> {
+    match block {
+        acp::ContentBlock::Text(text) => Some(text.text.clone()),
+        acp::ContentBlock::Image(_) => Some("[image attachment]".to_string()),
+        acp::ContentBlock::Audio(_) => Some("[audio attachment]".to_string()),
+        _ => None,
     }
 }
 

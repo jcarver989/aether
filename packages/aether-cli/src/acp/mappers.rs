@@ -467,25 +467,44 @@ pub async fn replay_to_client(
     session_id: &SessionId,
 ) {
     for event in events {
-        let notification = match event {
-            SessionEvent::User(UserEvent::Message { content }) => Some(SessionNotification::new(
-                session_id.clone(),
-                SessionUpdate::UserMessageChunk(ContentChunk::new(ContentBlock::Text(
-                    TextContent::new(content.clone()),
-                ))),
-            )),
+        let notifications: Vec<_> = match event {
+            SessionEvent::User(UserEvent::Message { content }) => content
+                .iter()
+                .map(|block| {
+                    SessionNotification::new(
+                        session_id.clone(),
+                        SessionUpdate::UserMessageChunk(ContentChunk::new(map_user_content_block(
+                            block,
+                        ))),
+                    )
+                })
+                .collect(),
             SessionEvent::Agent(message) => map_agent_message_to_notification(
                 session_id.clone(),
                 message,
                 NotificationMode::Replay,
-            ),
-            SessionEvent::User(_) => None,
+            )
+            .into_iter()
+            .collect(),
+            SessionEvent::User(_) => Vec::new(),
         };
 
-        if let Some(notif) = notification
-            && let Err(e) = actor_handle.send_session_notification(notif).await
-        {
-            tracing::error!("Failed to send replay notification: {e:?}");
+        for notif in notifications {
+            if let Err(e) = actor_handle.send_session_notification(notif).await {
+                tracing::error!("Failed to send replay notification: {e:?}");
+            }
+        }
+    }
+}
+
+fn map_user_content_block(block: &llm::ContentBlock) -> ContentBlock {
+    match block {
+        llm::ContentBlock::Text { text } => ContentBlock::Text(TextContent::new(text.clone())),
+        llm::ContentBlock::Image { data, mime_type } => {
+            ContentBlock::Image(acp::ImageContent::new(data.clone(), mime_type.clone()))
+        }
+        llm::ContentBlock::Audio { data, mime_type } => {
+            ContentBlock::Audio(acp::AudioContent::new(data.clone(), mime_type.clone()))
         }
     }
 }
@@ -512,6 +531,7 @@ fn try_parse_sub_agent_progress(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use acp_utils::server::AcpRequest;
     use aether_core::events::SUB_AGENT_PROGRESS_METHOD;
     use llm::ToolCallRequest;
 
@@ -558,6 +578,60 @@ mod tests {
         assert!(matches!(
             parsed.event,
             acp_utils::notifications::SubAgentEvent::Other
+        ));
+    }
+
+    #[tokio::test]
+    async fn replay_emits_user_media_chunks_in_order() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let actor = AcpActorHandle::new(tx);
+        let session_id = acp::SessionId::new("test-session");
+        let events = vec![SessionEvent::User(UserEvent::Message {
+            content: vec![
+                llm::ContentBlock::text("hello"),
+                llm::ContentBlock::Image {
+                    data: "aW1n".to_string(),
+                    mime_type: "image/png".to_string(),
+                },
+                llm::ContentBlock::Audio {
+                    data: "YXVkaW8=".to_string(),
+                    mime_type: "audio/wav".to_string(),
+                },
+            ],
+        })];
+
+        let responder = tokio::spawn(async move {
+            let mut updates = Vec::new();
+            for _ in 0..3 {
+                if let Some(AcpRequest::SessionNotification {
+                    notification,
+                    response_tx,
+                }) = rx.recv().await
+                {
+                    updates.push(notification.update);
+                    let _ = response_tx.send(Ok(()));
+                }
+            }
+            updates
+        });
+
+        replay_to_client(&events, &actor, &session_id).await;
+
+        let updates = responder.await.unwrap();
+        assert!(matches!(
+            &updates[0],
+            acp::SessionUpdate::UserMessageChunk(chunk)
+                if matches!(&chunk.content, acp::ContentBlock::Text(text) if text.text == "hello")
+        ));
+        assert!(matches!(
+            &updates[1],
+            acp::SessionUpdate::UserMessageChunk(chunk)
+                if matches!(&chunk.content, acp::ContentBlock::Image(_))
+        ));
+        assert!(matches!(
+            &updates[2],
+            acp::SessionUpdate::UserMessageChunk(chunk)
+                if matches!(&chunk.content, acp::ContentBlock::Audio(_))
         ));
     }
 

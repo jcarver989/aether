@@ -25,7 +25,10 @@ impl<T: OpenAiChatProvider + Send + Sync> StreamingModelProvider for T {
         let client = self.client().clone();
         let model = self.model().to_string();
         let prompt_cache_key = context.prompt_cache_key().map(String::from);
-        let messages = map_messages(context.messages());
+        let messages = match map_messages(context.messages()) {
+            Ok(messages) => messages,
+            Err(e) => return Box::pin(async_stream::stream! { yield Err(e); }),
+        };
         let message_count = messages.len();
         let tools = if context.tools().is_empty() {
             None

@@ -87,9 +87,9 @@ impl Compactor {
 
         let mut summary_context = context.clone();
         summary_context.add_message(ChatMessage::User {
-            content: format!(
+            content: vec![llm::ContentBlock::text(format!(
                 "{SUMMARIZATION_PROMPT}\n\nPlease perform a structured handoff of the conversation above."
-            ),
+            ))],
             timestamp: IsoString::now(),
         });
 
@@ -168,7 +168,7 @@ mod tests {
                     timestamp: IsoString::now(),
                 },
                 ChatMessage::User {
-                    content: "Test message".to_string(),
+                    content: vec![llm::ContentBlock::text("Test message")],
                     timestamp: IsoString::now(),
                 },
             ],
@@ -203,7 +203,7 @@ mod tests {
                     timestamp: IsoString::now(),
                 },
                 ChatMessage::User {
-                    content: "Test".to_string(),
+                    content: vec![llm::ContentBlock::text("Test")],
                     timestamp: IsoString::now(),
                 },
             ],

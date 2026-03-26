@@ -192,7 +192,9 @@ fn test_openrouter_request_serialization() {
     let request = OpenRouterChatRequest {
         model: "openai/gpt-3.5-turbo".to_string(),
         messages: vec![CompatibleChatMessage::User {
-            content: "Hello".to_string(),
+            content: llm::providers::openai_compatible::types::UserContent::Text(
+                "Hello".to_string(),
+            ),
         }],
         stream: Some(true),
         tools: None,
@@ -250,7 +252,9 @@ fn test_openrouter_from_compatible_request_includes_cache_control() {
                 content: "You are helpful.".to_string(),
             },
             CompatibleChatMessage::User {
-                content: "Hello".to_string(),
+                content: llm::providers::openai_compatible::types::UserContent::Text(
+                    "Hello".to_string(),
+                ),
             },
         ],
         stream: Some(true),

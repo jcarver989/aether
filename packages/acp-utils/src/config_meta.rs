@@ -20,6 +20,10 @@ fn is_false(b: &bool) -> bool {
 pub struct SelectOptionMeta {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reasoning_levels: Vec<ReasoningEffort>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub supports_image: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub supports_audio: bool,
 }
 
 impl SelectOptionMeta {
@@ -83,6 +87,8 @@ mod tests {
                 ReasoningEffort::Medium,
                 ReasoningEffort::High,
             ],
+            supports_image: true,
+            supports_audio: false,
         };
         let meta = original.clone().into_meta();
         assert!(meta.is_some());
@@ -133,6 +139,8 @@ mod tests {
         let value = serde_json::to_value(&meta).unwrap();
         let obj = value.as_object().unwrap();
         assert!(!obj.contains_key("reasoning_levels"));
+        assert!(!obj.contains_key("supports_image"));
+        assert!(!obj.contains_key("supports_audio"));
     }
 
     #[test]
@@ -140,6 +148,8 @@ mod tests {
         assert!(!SelectOptionMeta::default().supports_reasoning());
         let meta = SelectOptionMeta {
             reasoning_levels: vec![ReasoningEffort::Low, ReasoningEffort::High],
+            supports_image: false,
+            supports_audio: false,
         };
         assert!(meta.supports_reasoning());
     }
