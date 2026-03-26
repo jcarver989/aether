@@ -1,11 +1,14 @@
+use crate::components::app::attachments::{AttachmentKind, classify_attachment};
 use crate::components::command_picker::{CommandEntry, CommandPicker, CommandPickerMessage};
+use crate::components::dropped_files::parse_dropped_file_paths;
 use crate::components::file_picker::{FilePicker, FilePickerMessage};
 use crate::components::input_prompt::{InputPrompt, prompt_content_width};
 use crate::components::text_input::{SelectedFileMention, TextInput, TextInputMessage};
 use crate::keybindings::Keybindings;
 use std::collections::HashSet;
+use std::path::PathBuf;
 use tui::KeyCode;
-use tui::{Component, Cursor, Event, Frame, PickerMessage, ViewContext};
+use tui::{Component, Cursor, Event, Frame, Line, PickerMessage, ViewContext};
 
 use super::app::PromptAttachment;
 
@@ -25,6 +28,7 @@ pub struct PromptComposer {
     available_commands: Vec<CommandEntry>,
     file_picker: Option<FilePicker>,
     command_picker: Option<CommandPicker>,
+    pending_media: Vec<PromptAttachment>,
 }
 
 impl Default for PromptComposer {
@@ -40,6 +44,7 @@ impl PromptComposer {
             available_commands: Vec::new(),
             file_picker: None,
             command_picker: None,
+            pending_media: Vec::new(),
         }
     }
 
@@ -76,6 +81,11 @@ impl PromptComposer {
     #[cfg(test)]
     pub(crate) fn open_command_picker_with_entries(&mut self, commands: Vec<CommandEntry>) {
         self.command_picker = Some(CommandPicker::new(commands));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pending_media(&self) -> &[PromptAttachment] {
+        &self.pending_media
     }
 
     pub fn close_all(&mut self) {
@@ -209,13 +219,50 @@ impl PromptComposer {
         }
     }
 
+    fn add_dropped_media(&mut self, paths: Vec<PathBuf>) -> bool {
+        let mut existing: HashSet<PathBuf> = self
+            .pending_media
+            .iter()
+            .filter_map(|a| std::fs::canonicalize(&a.path).ok())
+            .collect();
+
+        let before = self.pending_media.len();
+
+        for path in paths {
+            let kind = classify_attachment(&path);
+            if !matches!(kind, AttachmentKind::Image | AttachmentKind::Audio) {
+                continue;
+            }
+            if let Some(canon) = std::fs::canonicalize(&path).ok() {
+                if !existing.insert(canon) {
+                    continue;
+                }
+            }
+            let display_name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.to_string_lossy().into_owned());
+            self.pending_media.push(PromptAttachment {
+                path,
+                display_name,
+            });
+        }
+
+        self.pending_media.len() > before
+    }
+
     fn prepare_submit(&mut self) -> Vec<PromptComposerMessage> {
-        if self.text_input.buffer().trim().is_empty() {
+        let has_text = !self.text_input.buffer().trim().is_empty();
+        let has_media = !self.pending_media.is_empty();
+
+        if !has_text && !has_media {
             return vec![];
         }
 
         let user_input = self.text_input.buffer().trim().to_string();
-        let attachments = collect_submit_attachments(&user_input, self.text_input.take_mentions());
+        let mut attachments =
+            collect_submit_attachments(&user_input, self.text_input.take_mentions());
+        attachments.extend(std::mem::take(&mut self.pending_media));
         self.text_input.clear();
         self.close_all();
 
@@ -233,7 +280,12 @@ impl Component for PromptComposer {
         match event {
             Event::Paste(text) => {
                 self.close_all();
-                self.text_input.insert_paste(text);
+                let added = parse_dropped_file_paths(text)
+                    .map(|paths| self.add_dropped_media(paths))
+                    .unwrap_or(false);
+                if !added {
+                    self.text_input.insert_paste(text);
+                }
                 Some(vec![])
             }
             Event::Key(key_event) => {
@@ -261,6 +313,15 @@ impl Component for PromptComposer {
                     return Some(self.handle_command_picker_outcome(outcome));
                 }
 
+                // Backspace on empty prompt removes the last dropped media attachment
+                if key_event.code == KeyCode::Backspace
+                    && self.text_input.buffer().is_empty()
+                    && !self.pending_media.is_empty()
+                {
+                    self.pending_media.pop();
+                    return Some(vec![]);
+                }
+
                 let outcome = self.text_input.on_event(event).await;
                 self.handle_text_input_outcome(outcome)
             }
@@ -279,6 +340,21 @@ impl Component for PromptComposer {
         }
         .layout(context)
         .lines;
+
+        for attachment in &self.pending_media {
+            let kind = classify_attachment(&attachment.path);
+            let label = match kind {
+                AttachmentKind::Image => "image",
+                AttachmentKind::Audio => "audio",
+                _ => "file",
+            };
+            let mut line = Line::default();
+            line.push_styled(
+                format!("  attached {label}: {}", attachment.display_name),
+                context.theme.info(),
+            );
+            lines.push(line);
+        }
 
         if let Some(ref mut picker) = self.file_picker {
             lines.extend(picker.render(context).into_lines());
@@ -337,6 +413,7 @@ fn builtin_commands() -> Vec<CommandEntry> {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use tempfile::TempDir;
     use tui::{KeyEvent, KeyModifiers};
 
     fn key(code: KeyCode) -> Event {
@@ -455,5 +532,232 @@ mod tests {
             .position(|line| line.plain_text().contains("> "))
             .expect("input prompt should exist");
         assert_eq!(cursor.row, input_row);
+    }
+
+    fn create_temp_media(dir: &TempDir, name: &str) -> PathBuf {
+        let p = dir.path().join(name);
+        std::fs::write(&p, b"fake media data").unwrap();
+        p
+    }
+
+    #[tokio::test]
+    async fn paste_image_path_adds_pending_media_attachment() {
+        let tmp = TempDir::new().unwrap();
+        let img = create_temp_media(&tmp, "photo.png");
+
+        let mut composer = PromptComposer::default();
+        composer
+            .on_event(&Event::Paste(img.to_str().unwrap().into()))
+            .await;
+
+        assert_eq!(composer.pending_media().len(), 1);
+        assert_eq!(composer.pending_media()[0].display_name, "photo.png");
+        assert_eq!(composer.buffer(), "");
+    }
+
+    #[tokio::test]
+    async fn paste_audio_path_adds_pending_media_attachment() {
+        let tmp = TempDir::new().unwrap();
+        let audio = create_temp_media(&tmp, "note.wav");
+
+        let mut composer = PromptComposer::default();
+        composer
+            .on_event(&Event::Paste(audio.to_str().unwrap().into()))
+            .await;
+
+        assert_eq!(composer.pending_media().len(), 1);
+        assert_eq!(composer.pending_media()[0].display_name, "note.wav");
+        assert_eq!(composer.buffer(), "");
+    }
+
+    #[tokio::test]
+    async fn paste_ordinary_text_inserts_into_prompt() {
+        let mut composer = PromptComposer::default();
+        composer
+            .on_event(&Event::Paste("hello world".into()))
+            .await;
+
+        assert!(composer.pending_media().is_empty());
+        assert_eq!(composer.buffer(), "hello world");
+    }
+
+    #[tokio::test]
+    async fn paste_non_media_file_falls_back_to_text() {
+        let tmp = TempDir::new().unwrap();
+        let txt = create_temp_media(&tmp, "readme.txt");
+
+        let mut composer = PromptComposer::default();
+        composer
+            .on_event(&Event::Paste(txt.to_str().unwrap().into()))
+            .await;
+
+        // Text files are not media — should fall back to inserting the path as text
+        assert!(composer.pending_media().is_empty());
+        assert!(!composer.buffer().is_empty());
+    }
+
+    #[tokio::test]
+    async fn paste_closes_file_picker_before_processing_drop() {
+        let tmp = TempDir::new().unwrap();
+        let img = create_temp_media(&tmp, "screen.png");
+
+        let mut composer = PromptComposer::default();
+        type_chars(&mut composer, "@").await;
+        assert!(composer.has_file_picker());
+
+        composer
+            .on_event(&Event::Paste(img.to_str().unwrap().into()))
+            .await;
+
+        assert!(!composer.has_active_picker());
+        assert_eq!(composer.pending_media().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn duplicate_dropped_file_is_not_added_twice() {
+        let tmp = TempDir::new().unwrap();
+        let img = create_temp_media(&tmp, "photo.png");
+        let path_str = img.to_str().unwrap().to_string();
+
+        let mut composer = PromptComposer::default();
+        composer.on_event(&Event::Paste(path_str.clone())).await;
+        composer.on_event(&Event::Paste(path_str)).await;
+
+        assert_eq!(composer.pending_media().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn submit_merges_dropped_media_with_prompt() {
+        let tmp = TempDir::new().unwrap();
+        let img = create_temp_media(&tmp, "photo.png");
+
+        let mut composer = PromptComposer::default();
+        composer
+            .on_event(&Event::Paste(img.to_str().unwrap().into()))
+            .await;
+        type_chars(&mut composer, "describe this").await;
+
+        let msgs = composer.on_event(&key(KeyCode::Enter)).await.unwrap();
+        let [PromptComposerMessage::SubmitRequested {
+            user_input,
+            attachments,
+        }] = msgs.as_slice()
+        else {
+            panic!("expected submit request");
+        };
+        assert_eq!(user_input, "describe this");
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(attachments[0].display_name, "photo.png");
+    }
+
+    #[tokio::test]
+    async fn submit_clears_pending_media() {
+        let tmp = TempDir::new().unwrap();
+        let img = create_temp_media(&tmp, "photo.png");
+
+        let mut composer = PromptComposer::default();
+        composer
+            .on_event(&Event::Paste(img.to_str().unwrap().into()))
+            .await;
+        type_chars(&mut composer, "go").await;
+        composer.on_event(&key(KeyCode::Enter)).await;
+
+        assert!(composer.pending_media().is_empty());
+        assert_eq!(composer.buffer(), "");
+    }
+
+    #[tokio::test]
+    async fn submit_with_only_media_and_no_text() {
+        let tmp = TempDir::new().unwrap();
+        let img = create_temp_media(&tmp, "photo.png");
+
+        let mut composer = PromptComposer::default();
+        composer
+            .on_event(&Event::Paste(img.to_str().unwrap().into()))
+            .await;
+
+        let msgs = composer.on_event(&key(KeyCode::Enter)).await.unwrap();
+        let [PromptComposerMessage::SubmitRequested {
+            user_input,
+            attachments,
+        }] = msgs.as_slice()
+        else {
+            panic!("expected submit request");
+        };
+        assert_eq!(user_input, "");
+        assert_eq!(attachments.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn backspace_on_empty_removes_last_dropped_media() {
+        let tmp = TempDir::new().unwrap();
+        let img1 = create_temp_media(&tmp, "a.png");
+        let img2 = create_temp_media(&tmp, "b.png");
+
+        let mut composer = PromptComposer::default();
+        composer
+            .on_event(&Event::Paste(img1.to_str().unwrap().into()))
+            .await;
+        composer
+            .on_event(&Event::Paste(img2.to_str().unwrap().into()))
+            .await;
+        assert_eq!(composer.pending_media().len(), 2);
+
+        composer.on_event(&key(KeyCode::Backspace)).await;
+        assert_eq!(composer.pending_media().len(), 1);
+        assert_eq!(composer.pending_media()[0].display_name, "a.png");
+
+        composer.on_event(&key(KeyCode::Backspace)).await;
+        assert!(composer.pending_media().is_empty());
+    }
+
+    #[test]
+    fn render_shows_attachment_tray() {
+        let tmp = TempDir::new().unwrap();
+        let img = create_temp_media(&tmp, "photo.png");
+
+        let mut composer = PromptComposer::default();
+        composer.pending_media.push(PromptAttachment {
+            path: img,
+            display_name: "photo.png".to_string(),
+        });
+
+        let context = ViewContext::new((80, 24));
+        let output = composer.render(&context);
+        let text: String = output
+            .lines()
+            .iter()
+            .map(|l| l.plain_text())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("attached image: photo.png"));
+    }
+
+    #[test]
+    fn render_shows_multiple_attachments() {
+        let tmp = TempDir::new().unwrap();
+        let img = create_temp_media(&tmp, "photo.png");
+        let audio = create_temp_media(&tmp, "note.wav");
+
+        let mut composer = PromptComposer::default();
+        composer.pending_media.push(PromptAttachment {
+            path: img,
+            display_name: "photo.png".to_string(),
+        });
+        composer.pending_media.push(PromptAttachment {
+            path: audio,
+            display_name: "note.wav".to_string(),
+        });
+
+        let context = ViewContext::new((80, 24));
+        let output = composer.render(&context);
+        let text: String = output
+            .lines()
+            .iter()
+            .map(|l| l.plain_text())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("attached image: photo.png"));
+        assert!(text.contains("attached audio: note.wav"));
     }
 }

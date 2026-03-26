@@ -70,6 +70,8 @@ async fn build_model_entries() -> Vec<ModelEntry> {
             value: m.to_string(),
             name: format!("{} / {}", m.provider_display_name(), m.display_name()),
             reasoning_levels: m.reasoning_levels().to_vec(),
+            supports_image: m.supports_image(),
+            supports_audio: m.supports_audio(),
         })
         .collect()
 }
