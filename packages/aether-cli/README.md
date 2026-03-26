@@ -1,4 +1,4 @@
-# aether-cli
+# aether-agent-cli
 
 Binary package containing Aether's two runnable entrypoints:
 
@@ -12,7 +12,7 @@ Binary package containing Aether's two runnable entrypoints:
 From the workspace root:
 
 ```bash
-cargo build --release -p aether-cli
+cargo build --release -p aether-agent-cli
 ```
 
 Binaries will be at `target/release/aether-acp` and `target/release/aether`.
@@ -20,13 +20,13 @@ Binaries will be at `target/release/aether-acp` and `target/release/aether`.
 ### Run the CLI
 
 ```bash
-cargo run -p aether-cli --bin aether -- -m anthropic:claude-sonnet-4-20250514 "Refactor auth module"
+cargo run -p aether-agent-cli --bin aether -- -m anthropic:claude-sonnet-4-20250514 "Refactor auth module"
 ```
 
 ### Run the ACP server
 
 ```bash
-cargo run -p aether-cli --bin aether-acp -- --model anthropic:claude-sonnet-4-20250514 --mcp-config mcp.json
+cargo run -p aether-agent-cli --bin aether-acp -- --model anthropic:claude-sonnet-4-20250514 --mcp-config mcp.json
 ```
 
 ## Choosing a Model

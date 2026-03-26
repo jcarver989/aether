@@ -38,11 +38,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "aether-cli"
+name = "aether-agent-cli"
 version = "0.1.0"
 dependencies = [
  "acp_utils",
- "aether-core",
+ "aether-agent-core",
  "aether-project",
  "agent-client-protocol",
  "async-trait",
@@ -67,11 +67,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "aether-core"
+name = "aether-agent-core"
 version = "0.1.0"
 dependencies = [
  "acp_utils",
- "aether-core",
+ "aether-agent-core",
  "agent-client-protocol",
  "async-openai",
  "chrono",
@@ -123,7 +123,7 @@ dependencies = [
 name = "aether-project"
 version = "0.1.0"
 dependencies = [
- "aether-core",
+ "aether-agent-core",
  "glob",
  "globset",
  "llm",
@@ -1283,7 +1283,7 @@ dependencies = [
 name = "crucible"
 version = "0.1.0"
 dependencies = [
- "aether-core",
+ "aether-agent-core",
  "async-trait",
  "axum",
  "chrono",
@@ -2917,7 +2917,7 @@ checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 name = "mcp-servers"
 version = "0.1.0"
 dependencies = [
- "aether-core",
+ "aether-agent-core",
  "aether-lspd",
  "aether-project",
  "chrono",
@@ -5816,6 +5816,7 @@ version = "0.1.0"
 dependencies = [
  "acp_utils",
  "agent-client-protocol",
+ "base64",
  "chrono",
  "clap",
  "ignore",

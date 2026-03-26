@@ -31,7 +31,7 @@ Add Aether to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-aether-core = "0.1"
+aether-agent-core = "0.1"
 ```
 
 ## Examples

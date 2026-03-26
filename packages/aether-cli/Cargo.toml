@@ -1,5 +1,5 @@
 [package]
-name = "aether-cli"
+name = "aether-agent-cli"
 version = "0.1.0"
 edition = "2024"
 
@@ -15,7 +15,7 @@ name = "aether"
 path = "src/main.rs"
 
 [dependencies]
-aether-core = { path = "../aether-core" }
+aether-core = { package = "aether-agent-core", path = "../aether-core" }
 aether-project = { path = "../aether-project" }
 llm = { path = "../llm", features = ["bedrock", "codex"] }
 mcp_utils = { path = "../mcp-utils" }

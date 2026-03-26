@@ -2,13 +2,14 @@
 name = "llm"
 version = "0.1.0"
 edition = "2024"
+publish = false
 
 [lints]
 workspace = true
 
 [features]
 default = []
-bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types"]
+bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types", "dep:base64"]
 oauth = ["dep:rmcp", "dep:oauth2", "dep:async-trait", "dep:keyring"]
 codex = ["oauth", "dep:base64", "dep:url"]
 

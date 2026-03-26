@@ -2,12 +2,13 @@
 name = "aether-project"
 version = "0.1.0"
 edition = "2024"
+publish = false
 
 [lints]
 workspace = true
 
 [dependencies]
-aether-core = { path = "../aether-core" }
+aether-core = { package = "aether-agent-core", path = "../aether-core" }
 llm = { path = "../llm" }
 utils = { path = "../utils" }
 serde = { workspace = true }
