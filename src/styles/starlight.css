@@ -23,4 +23,16 @@
   --sl-color-bg: var(--sl-color-black);
   --sl-color-bg-nav: var(--color-gray-900);
   --sl-color-bg-sidebar: var(--color-gray-900);
+
+  --sl-color-bg-inline-code: var(--color-highlight-bg);
+}
+
+/* Inline code uses theme's editor selection colors */
+.sl-markdown-content code:not(pre code) {
+  color: var(--color-highlight-fg);
+}
+
+/* File tree: use highlight bg for the container */
+starlight-file-tree {
+  background-color: var(--color-highlight-bg) !important;
 }

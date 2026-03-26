@@ -22,6 +22,9 @@
  * Official: bg #0b0e14, fg #bfbdb6, accent #e6b450,
  *           panel #0d1017, gutter #3d424d, guide #6c7380. */
 html[data-color-theme="ayu-dark"] {
+  --color-highlight-bg: #273747; /* editor.selectionBackground */
+  --color-highlight-fg: #bfbdb6; /* fg */
+
   --color-gray-50:  #bfbdb6; /* fg */
   --color-gray-100: #acb6bf;
   --color-gray-200: #8b9199;
@@ -58,6 +61,9 @@ html[data-color-theme="ayu-dark"] {
  * Official dark-medium: bg0–bg4, grey0–grey2, fg #d3c6aa.
  * All grays bg0–grey2 are official. 200/100 interpolated. */
 html[data-color-theme="everforest-dark"] {
+  --color-highlight-bg: #3d484d; /* bg2 / editor selection */
+  --color-highlight-fg: #d3c6aa; /* fg */
+
   --color-gray-50:  #d3c6aa; /* fg */
   --color-gray-100: #bec5b8;
   --color-gray-200: #9da9a0; /* grey2 */
@@ -95,6 +101,9 @@ html[data-color-theme="everforest-dark"] {
  *           Comment #6272a4, Foreground #f8f8f2, Purple #bd93f9
  * Intermediates are interpolated (palette has only 4 neutrals). */
 html[data-color-theme="dracula"] {
+  --color-highlight-bg: #44475a; /* Current Line / selection */
+  --color-highlight-fg: #f8f8f2; /* Foreground */
+
   --color-gray-50:  #f8f8f2; /* Foreground */
   --color-gray-100: #dddfe8;
   --color-gray-200: #c0c6d6;
@@ -131,6 +140,9 @@ html[data-color-theme="dracula"] {
  * Polar Night: nord0–3, Snow Storm: nord4–6, Frost: nord7–10.
  * Gray 200–600 interpolated (no official colors between nord3 and nord4). */
 html[data-color-theme="nord"] {
+  --color-highlight-bg: #434c5e; /* nord2 – selection */
+  --color-highlight-fg: #eceff4; /* nord6 */
+
   --color-gray-50:  #eceff4; /* nord6 – Snow Storm */
   --color-gray-100: #d8dee9; /* nord4 – Snow Storm */
   --color-gray-200: #bfc5cf;
@@ -167,6 +179,9 @@ html[data-color-theme="nord"] {
  * All 11 grays are official Catppuccin Mocha semantic colors.
  * Mantle → Text, zero interpolation needed. */
 html[data-color-theme="catppuccin"] {
+  --color-highlight-bg: #45475a; /* Surface1 / selection */
+  --color-highlight-fg: #cdd6f4; /* Text */
+
   --color-gray-50:  #cdd6f4; /* Text */
   --color-gray-100: #bac2de; /* Subtext1 */
   --color-gray-200: #a6adc8; /* Subtext0 */
@@ -203,6 +218,9 @@ html[data-color-theme="catppuccin"] {
  * Official Night variant colors. Gray 300 and 50 interpolated
  * (no official color between dark5 and fg_dark, or above fg). */
 html[data-color-theme="tokyo-night"] {
+  --color-highlight-bg: #292e42; /* bg_highlight / selection */
+  --color-highlight-fg: #c0caf5; /* fg */
+
   --color-gray-50:  #cad3f5;
   --color-gray-100: #c0caf5; /* fg */
   --color-gray-200: #a9b1d6; /* fg_dark */
@@ -240,6 +258,9 @@ html[data-color-theme="tokyo-night"] {
  *           Muted, Subtle, Text, Rose, Iris.
  * Gray 100–300 interpolated (no official colors between Subtle and Text). */
 html[data-color-theme="rose-pine"] {
+  --color-highlight-bg: #403d52; /* Highlight Med / selection */
+  --color-highlight-fg: #e0def4; /* Text */
+
   --color-gray-50:  #e0def4; /* Text */
   --color-gray-100: #d2d0e6;
   --color-gray-200: #c1bfd8;

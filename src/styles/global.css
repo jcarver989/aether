@@ -27,6 +27,10 @@
     --color-accent-900: #064e3b;
     --color-accent-950: #022c22;
 
+    /* Editor highlight (GitHub Dark: blue selection) */
+    --color-highlight-bg: #1f6feb33;
+    --color-highlight-fg: #f0f1f4;
+
     /* Cool dark grays (IDE-like, GitHub dark inspired) */
     --color-gray-50: #f0f1f4;
     --color-gray-100: #d8dbe2;

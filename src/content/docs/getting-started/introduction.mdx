@@ -1,30 +1,100 @@
 ---
-title: Introduction
-description: What is Aether and why use it?
+title: Getting Started
+description: Install Aether and run your first prompt.
 ---
 
-import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { Tabs, TabItem, Steps, FileTree } from '@astrojs/starlight/components';
 
 Aether is an open-source AI coding agent written in Rust. It gives you full control over your agent's behavior — no bundled prompts, no hidden tools, no telemetry. You decide what model to use, what tools to expose, and what instructions to give.
-
-## Design philosophy
 
 - **Empty by default** — Agents start with no system prompt and no tools. You add exactly what you need.
 - **MCP-first** — All tools come via the [Model Context Protocol](https://modelcontextprotocol.io/). Built-in servers handle files, bash, search, and LSP. Add any external MCP server for more.
 - **Provider-agnostic** — Use Anthropic, OpenAI, OpenRouter, DeepSeek, Gemini, Ollama, or any compatible API through a unified `provider:model` format.
 - **Multi-interface** — Run as an interactive TUI, a headless CLI for scripts and CI, or an ACP server for editor integration.
 
-## Get started
+## Install
 
-<CardGrid>
-  <LinkCard
-    title="Installation"
-    description="Install Aether and set up your API key"
-    href="/getting-started/installation/"
-  />
-  <LinkCard
-    title="Quick Start"
-    description="Go from zero to running in 2 minutes"
-    href="/getting-started/quickstart/"
-  />
-</CardGrid>
+<Tabs>
+  <TabItem label="cargo install">
+    ```bash
+    cargo install aether-cli
+    ```
+  </TabItem>
+  <TabItem label="Build from source">
+    ```bash
+    git clone https://github.com/joshka/aether.git
+    cd aether
+    cargo build --release
+    ```
+
+    Binaries are written to `target/release/aether` and `target/release/wisp`.
+  </TabItem>
+</Tabs>
+
+Requires **Rust 1.80+** — install via [rustup](https://rustup.rs) if you don't have it.
+
+## Set up your API key
+
+<Tabs>
+  <TabItem label="Anthropic">
+    ```bash
+    export ANTHROPIC_API_KEY=sk-ant-...
+    ```
+  </TabItem>
+  <TabItem label="OpenRouter">
+    ```bash
+    export OPENROUTER_API_KEY=sk-or-...
+    ```
+  </TabItem>
+  <TabItem label="OpenAI">
+    ```bash
+    export OPENAI_API_KEY=sk-...
+    ```
+  </TabItem>
+  <TabItem label="Ollama">
+    No API key needed — just make sure [Ollama](https://ollama.com) is running locally.
+  </TabItem>
+</Tabs>
+
+## Initialize and run
+
+<Steps>
+
+1. **Initialize your project**
+
+   ```bash
+   cd your-project
+   aether init
+   ```
+
+   This creates the following structure:
+
+   <FileTree>
+     - .aether/
+       - settings.json — [Agent definitions](/aether/configuration/agent-settings/)
+       - mcp.json — [MCP server config](/aether/configuration/mcp-servers/)
+       - SYSTEM.md — Base system prompt
+     - AGENTS.md — [Project instructions](/aether/configuration/system-prompts/)
+   </FileTree>
+
+2. **Run it**
+
+   Launch the interactive TUI:
+
+   ```bash
+   aether
+   ```
+
+   Or run a single prompt headlessly:
+
+   ```bash
+   aether headless "Explain the main function in this project"
+   ```
+
+</Steps>
+
+## Next steps
+
+- [Agent Settings](/aether/configuration/agent-settings/) — Define agents, models, and tool access
+- [MCP Servers](/aether/configuration/mcp-servers/) — Configure which tools are available
+- [LLM Providers](/aether/configuration/llm-providers/) — All supported models and providers
