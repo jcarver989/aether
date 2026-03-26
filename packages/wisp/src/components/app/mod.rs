@@ -13,6 +13,8 @@ use crate::keybindings::Keybindings;
 use crate::settings;
 use crate::settings::overlay::{SettingsMessage, SettingsOverlay};
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
+use acp_utils::config_meta::SelectOptionMeta;
+use acp_utils::config_option_id::ConfigOptionId;
 use agent_client_protocol::{self as acp, SessionId};
 use attachments::build_attachment_blocks;
 use std::path::PathBuf;
@@ -32,6 +34,7 @@ pub struct App {
     context_usage_pct: Option<u8>,
     exit_requested: bool,
     conversation_screen: ConversationScreen,
+    prompt_capabilities: acp::PromptCapabilities,
     config_options: Vec<acp::SessionConfigOption>,
     server_statuses: Vec<acp_utils::notifications::McpServerStatusEntry>,
     auth_methods: Vec<acp::AuthMethod>,
@@ -47,6 +50,7 @@ impl App {
     pub fn new(
         session_id: SessionId,
         agent_name: String,
+        prompt_capabilities: acp::PromptCapabilities,
         config_options: &[acp::SessionConfigOption],
         auth_methods: Vec<acp::AuthMethod>,
         working_dir: PathBuf,
@@ -58,6 +62,7 @@ impl App {
             context_usage_pct: None,
             exit_requested: false,
             conversation_screen: ConversationScreen::new(keybindings.clone()),
+            prompt_capabilities,
             config_options: config_options.to_vec(),
             server_statuses: Vec::new(),
             auth_methods,
@@ -189,17 +194,25 @@ impl App {
                     user_input,
                     attachments,
                 } => {
+                    let outcome = build_attachment_blocks(&attachments).await;
                     self.conversation_screen.conversation.push_user_message("");
-
                     self.conversation_screen
                         .conversation
                         .push_user_message(&user_input);
-
-                    let outcome = build_attachment_blocks(&attachments).await;
+                    for placeholder in &outcome.transcript_placeholders {
+                        self.conversation_screen
+                            .conversation
+                            .push_user_message(placeholder);
+                    }
                     for w in outcome.warnings {
                         self.conversation_screen
                             .conversation
                             .push_user_message(&format!("[wisp] {w}"));
+                    }
+
+                    if let Some(message) = self.media_support_error(&outcome.blocks) {
+                        self.conversation_screen.reject_local_prompt(&message);
+                        continue;
                     }
 
                     let _ = self.prompt_handle.prompt(
@@ -451,6 +464,73 @@ impl App {
             overlay.on_authenticate_failed(method_id);
         }
     }
+
+    fn media_support_error(&self, blocks: &[acp::ContentBlock]) -> Option<String> {
+        let requires_image = blocks
+            .iter()
+            .any(|block| matches!(block, acp::ContentBlock::Image(_)));
+        let requires_audio = blocks
+            .iter()
+            .any(|block| matches!(block, acp::ContentBlock::Audio(_)));
+
+        if !requires_image && !requires_audio {
+            return None;
+        }
+
+        if requires_image && !self.prompt_capabilities.image {
+            return Some("ACP agent does not support image input.".to_string());
+        }
+        if requires_audio && !self.prompt_capabilities.audio {
+            return Some("ACP agent does not support audio input.".to_string());
+        }
+
+        let option = self
+            .config_options
+            .iter()
+            .find(|option| option.id.0.as_ref() == ConfigOptionId::Model.as_str())?;
+        let acp::SessionConfigKind::Select(select) = &option.kind else {
+            return None;
+        };
+
+        let values: Vec<_> = select
+            .current_value
+            .0
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .collect();
+
+        if values.is_empty() {
+            return None;
+        }
+
+        let acp::SessionConfigSelectOptions::Ungrouped(options) = &select.options else {
+            return None;
+        };
+
+        let selected_meta: Vec<_> = values
+            .iter()
+            .filter_map(|value| {
+                options
+                    .iter()
+                    .find(|option| option.value.0.as_ref() == *value)
+                    .map(|option| SelectOptionMeta::from_meta(option.meta.as_ref()))
+            })
+            .collect();
+
+        if selected_meta.len() != values.len() {
+            return Some("Current model selection is missing prompt capability metadata.".into());
+        }
+
+        if requires_image && selected_meta.iter().any(|meta| !meta.supports_image) {
+            return Some("Current model selection does not support image input.".to_string());
+        }
+        if requires_audio && selected_meta.iter().any(|meta| !meta.supports_audio) {
+            return Some("Current model selection does not support audio input.".to_string());
+        }
+
+        None
+    }
 }
 
 impl Component for App {
@@ -516,6 +596,7 @@ pub(crate) mod test_helpers {
         App::new(
             SessionId::new("test"),
             "test-agent".to_string(),
+            acp::PromptCapabilities::new(),
             &[],
             vec![],
             PathBuf::from("."),
@@ -527,6 +608,7 @@ pub(crate) mod test_helpers {
         App::new(
             SessionId::new("test"),
             "test-agent".to_string(),
+            acp::PromptCapabilities::new(),
             config_options,
             vec![],
             PathBuf::from("."),
@@ -538,6 +620,7 @@ pub(crate) mod test_helpers {
         App::new(
             SessionId::new("test"),
             "test-agent".to_string(),
+            acp::PromptCapabilities::new(),
             &[],
             auth_methods,
             PathBuf::from("."),
@@ -555,6 +638,7 @@ pub(crate) mod test_helpers {
         let app = App::new(
             SessionId::new("test"),
             "test-agent".to_string(),
+            acp::PromptCapabilities::new(),
             config_options,
             vec![],
             PathBuf::from("."),
@@ -567,11 +651,32 @@ pub(crate) mod test_helpers {
         App::new(
             SessionId::new(session_id),
             "test-agent".to_string(),
+            acp::PromptCapabilities::new(),
             &[],
             vec![],
             PathBuf::from("."),
             AcpPromptHandle::noop(),
         )
+    }
+
+    pub fn make_app_with_config_and_capabilities_recording(
+        config_options: &[acp::SessionConfigOption],
+        prompt_capabilities: acp::PromptCapabilities,
+    ) -> (
+        App,
+        tokio::sync::mpsc::UnboundedReceiver<acp_utils::client::PromptCommand>,
+    ) {
+        let (handle, rx) = AcpPromptHandle::recording();
+        let app = App::new(
+            SessionId::new("test"),
+            "test-agent".to_string(),
+            prompt_capabilities,
+            config_options,
+            vec![],
+            PathBuf::from("."),
+            handle,
+        );
+        (app, rx)
     }
 }
 
@@ -646,6 +751,39 @@ mod tests {
                 vec![
                     acp::SessionConfigSelectOption::new("gpt-4o", "GPT-4o"),
                     acp::SessionConfigSelectOption::new("claude", "Claude"),
+                ],
+            )
+            .category(acp::SessionConfigOptionCategory::Model),
+        ]
+    }
+
+    fn image_model_options() -> Vec<acp::SessionConfigOption> {
+        vec![
+            acp::SessionConfigOption::select(
+                "model",
+                "Model",
+                "anthropic:claude-sonnet-4-5",
+                vec![
+                    acp::SessionConfigSelectOption::new(
+                        "anthropic:claude-sonnet-4-5",
+                        "Claude Sonnet",
+                    )
+                    .meta(
+                        SelectOptionMeta {
+                            reasoning_levels: vec![],
+                            supports_image: true,
+                            supports_audio: false,
+                        }
+                        .into_meta(),
+                    ),
+                    acp::SessionConfigSelectOption::new("deepseek:deepseek-chat", "DeepSeek").meta(
+                        SelectOptionMeta {
+                            reasoning_levels: vec![],
+                            supports_image: false,
+                            supports_audio: false,
+                        }
+                        .into_meta(),
+                    ),
                 ],
             )
             .category(acp::SessionConfigOptionCategory::Model),
@@ -928,6 +1066,83 @@ mod tests {
             has_hello,
             "conversation buffer should contain the user input"
         );
+    }
+
+    #[tokio::test]
+    async fn unsupported_media_is_blocked_locally() {
+        let (mut app, mut rx) = make_app_with_config_and_capabilities_recording(
+            &image_model_options(),
+            acp::PromptCapabilities::new().image(true).audio(false),
+        );
+        let mut commands = Vec::new();
+        let temp = tempfile::tempdir().unwrap();
+        let audio_path = temp.path().join("clip.wav");
+        std::fs::write(&audio_path, b"fake wav").unwrap();
+
+        app.handle_conversation_messages(
+            &mut commands,
+            Some(vec![ConversationScreenMessage::SendPrompt {
+                user_input: "listen".to_string(),
+                attachments: vec![PromptAttachment {
+                    path: audio_path,
+                    display_name: "clip.wav".to_string(),
+                }],
+            }]),
+        )
+        .await;
+
+        assert!(rx.try_recv().is_err(), "prompt should be blocked locally");
+        assert!(!app.conversation_screen.waiting_for_response);
+        let messages: Vec<_> = app
+            .conversation_screen
+            .conversation
+            .segments()
+            .filter_map(|segment| match segment {
+                crate::components::conversation_window::SegmentContent::UserMessage(text) => {
+                    Some(text.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        assert!(messages.iter().any(|text| text == "listen"));
+        assert!(
+            messages
+                .iter()
+                .any(|text| text == "[audio attachment: clip.wav]")
+        );
+        assert!(messages.iter().any(|text| {
+            text == "[wisp] ACP agent does not support audio input."
+                || text == "[wisp] Current model selection does not support audio input."
+        }));
+    }
+
+    #[test]
+    fn replayed_media_user_chunks_render_placeholders() {
+        use crate::components::conversation_window::SegmentContent;
+        let mut app = make_app();
+
+        app.on_session_update(&acp::SessionUpdate::UserMessageChunk(
+            acp::ContentChunk::new(acp::ContentBlock::Image(acp::ImageContent::new(
+                "aW1n",
+                "image/png",
+            ))),
+        ));
+        app.on_session_update(&acp::SessionUpdate::UserMessageChunk(
+            acp::ContentChunk::new(acp::ContentBlock::Audio(acp::AudioContent::new(
+                "YXVkaW8=",
+                "audio/wav",
+            ))),
+        ));
+
+        let segments: Vec<_> = app.conversation_screen.conversation.segments().collect();
+        assert!(matches!(
+            segments[0],
+            SegmentContent::UserMessage(text) if text == "[image attachment]"
+        ));
+        assert!(matches!(
+            segments[1],
+            SegmentContent::UserMessage(text) if text == "[audio attachment]"
+        ));
     }
 
     #[test]

@@ -9,7 +9,7 @@ use aether_core::{
     },
 };
 use llm::testing::llm_response;
-use llm::{ChatMessage, LlmResponse, StopReason};
+use llm::{ChatMessage, ContentBlock, LlmResponse, StopReason};
 
 fn split_json_in_half(input: &str) -> (&str, &str) {
     let split = input
@@ -289,7 +289,7 @@ async fn test_simple_message_content() -> Result<(), Box<dyn Error>> {
     };
 
     // Content should be exactly the user's message
-    assert_eq!(content, "Just a simple message");
+    assert_eq!(content, &vec![ContentBlock::text("Just a simple message")]);
 
     Ok(())
 }

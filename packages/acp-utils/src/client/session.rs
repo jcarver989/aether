@@ -22,6 +22,7 @@ use tracing::info;
 pub struct AcpSession {
     pub session_id: SessionId,
     pub agent_name: String,
+    pub prompt_capabilities: acp::PromptCapabilities,
     pub config_options: Vec<SessionConfigOption>,
     pub auth_methods: Vec<acp::AuthMethod>,
     pub event_rx: mpsc::UnboundedReceiver<AcpEvent>,
@@ -182,30 +183,30 @@ where
         });
     });
 
-    let (session_id, agent_name, config_options, auth_methods) =
-        session_rx.await.map_err(|_| {
-            AcpClientError::AgentCrashed("ACP thread died during handshake".to_string())
-        })??;
+    let handshake = session_rx.await.map_err(|_| {
+        AcpClientError::AgentCrashed("ACP thread died during handshake".to_string())
+    })??;
 
     Ok(AcpSession {
-        session_id,
-        agent_name,
-        config_options,
-        auth_methods,
+        session_id: handshake.session_id,
+        agent_name: handshake.agent_name,
+        prompt_capabilities: handshake.prompt_capabilities,
+        config_options: handshake.config_options,
+        auth_methods: handshake.auth_methods,
         event_rx,
         prompt_handle: AcpPromptHandle { cmd_tx },
     })
 }
 
-type HandshakeResult = Result<
-    (
-        acp::SessionId,
-        String,
-        Vec<acp::SessionConfigOption>,
-        Vec<acp::AuthMethod>,
-    ),
-    AcpClientError,
->;
+struct HandshakeData {
+    session_id: acp::SessionId,
+    agent_name: String,
+    prompt_capabilities: acp::PromptCapabilities,
+    config_options: Vec<acp::SessionConfigOption>,
+    auth_methods: Vec<acp::AuthMethod>,
+}
+
+type HandshakeResult = Result<HandshakeData, AcpClientError>;
 
 struct AcpThreadContext<F> {
     child_stdin: tokio::process::ChildStdin,
@@ -258,6 +259,7 @@ where
         || "agent".to_string(),
         |info| info.title.as_deref().unwrap_or(&info.name).to_string(),
     );
+    let prompt_capabilities = init_resp.agent_capabilities.prompt_capabilities.clone();
 
     info!(
         "ACP initialized: protocol={:?}, agent_info={:?}",
@@ -278,7 +280,13 @@ where
     info!("ACP session created: {session_id}");
 
     let config_options = session_resp.config_options.unwrap_or_default();
-    let _ = session_tx.send(Ok((session_id, agent_name, config_options, auth_methods)));
+    let _ = session_tx.send(Ok(HandshakeData {
+        session_id,
+        agent_name,
+        prompt_capabilities,
+        config_options,
+        auth_methods,
+    }));
 
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {

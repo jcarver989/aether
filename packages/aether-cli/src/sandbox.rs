@@ -32,7 +32,7 @@ impl fmt::Display for SandboxError {
                 write!(
                     f,
                     "Sandbox image '{image}' not found. Build it with:\n\
-                     cargo build --release -p aether-cli\n\
+                     cargo build --release -p aether-agent-cli\n\
                      cp target/release/aether docker/\n\
                      docker build -t {image} -f docker/Dockerfile.sandbox docker/"
                 )

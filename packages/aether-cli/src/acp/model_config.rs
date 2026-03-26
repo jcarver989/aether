@@ -13,6 +13,14 @@ fn needs_oauth_login(model: &LlmModel, store: &impl OAuthCredentialStorage) -> b
         .is_some_and(|id| !store.has_credential(id))
 }
 
+pub(crate) fn supports_prompt_image(model: &LlmModel) -> bool {
+    model.supports_image()
+}
+
+pub(crate) fn supports_prompt_audio(model: &LlmModel) -> bool {
+    model.supports_audio()
+}
+
 pub(crate) fn unavailable_reason(model: &LlmModel, store: &impl OAuthCredentialStorage) -> String {
     if needs_oauth_login(model, store) {
         return "Needs login".to_string();
@@ -95,11 +103,12 @@ pub(crate) fn build_model_config_option(
                     format!("{display}: {} (unavailable)", m.display_name())
                 };
                 let mut option = acp::SessionConfigSelectOption::new(value, name);
-                let levels = m.reasoning_levels();
-                if !levels.is_empty() {
-                    let meta = SelectOptionMeta {
-                        reasoning_levels: levels.to_vec(),
-                    };
+                let meta = SelectOptionMeta {
+                    reasoning_levels: m.reasoning_levels().to_vec(),
+                    supports_image: supports_prompt_image(m),
+                    supports_audio: supports_prompt_audio(m),
+                };
+                if meta != SelectOptionMeta::default() {
                     option = option.meta(meta.into_meta());
                 }
                 if is_available && !needs_login {

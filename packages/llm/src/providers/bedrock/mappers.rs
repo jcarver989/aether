@@ -1,13 +1,17 @@
 use aws_sdk_bedrockruntime::types::{
-    ContentBlock, ConversationRole, Message, SystemContentBlock, Tool, ToolConfiguration,
-    ToolInputSchema, ToolResultBlock, ToolResultContentBlock, ToolResultStatus, ToolSpecification,
-    ToolUseBlock,
+    ContentBlock as BedrockContentBlock, ConversationRole, ImageBlock, ImageFormat, ImageSource,
+    Message, SystemContentBlock, Tool, ToolConfiguration, ToolInputSchema, ToolResultBlock,
+    ToolResultContentBlock, ToolResultStatus, ToolSpecification, ToolUseBlock,
 };
-use aws_smithy_types::{Document, Number};
+use aws_smithy_types::{Blob, Document, Number};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::Value;
 use std::{collections::HashMap, fmt::Display, result};
 
-use crate::{ChatMessage, LlmError, Result, ToolCallError, ToolCallResult, ToolDefinition};
+use crate::{
+    ChatMessage, ContentBlock, LlmError, Result, ToolCallError, ToolCallResult, ToolDefinition,
+};
 
 fn bedrock_err(e: impl Display) -> LlmError {
     LlmError::Other(e.to_string())
@@ -23,7 +27,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> Result<(Vec<SystemContentBlock>
             }
 
             ChatMessage::User { content, .. } => {
-                bedrock_messages.push(build_user_message(content)?);
+                bedrock_messages.push(build_user_content_blocks(content)?);
             }
 
             ChatMessage::Assistant {
@@ -82,16 +86,55 @@ pub fn map_tools(tools: &[ToolDefinition]) -> Result<ToolConfiguration> {
 fn build_user_message(content: &str) -> Result<Message> {
     Message::builder()
         .role(ConversationRole::User)
-        .content(ContentBlock::Text(content.to_string()))
+        .content(BedrockContentBlock::Text(content.to_string()))
         .build()
         .map_err(bedrock_err)
+}
+
+fn build_user_content_blocks(parts: &[ContentBlock]) -> Result<Message> {
+    let mut builder = Message::builder().role(ConversationRole::User);
+    for part in parts {
+        match part {
+            ContentBlock::Text { text } => {
+                builder = builder.content(BedrockContentBlock::Text(text.clone()));
+            }
+            ContentBlock::Image { data, mime_type } => {
+                let bytes = BASE64
+                    .decode(data)
+                    .map_err(|e| LlmError::Other(format!("Invalid base64 image data: {e}")))?;
+                let format = mime_to_image_format(mime_type);
+                builder = builder.content(BedrockContentBlock::Image(
+                    ImageBlock::builder()
+                        .format(format)
+                        .source(ImageSource::Bytes(Blob::new(bytes)))
+                        .build()
+                        .map_err(bedrock_err)?,
+                ));
+            }
+            ContentBlock::Audio { .. } => {
+                return Err(LlmError::UnsupportedContent(
+                    "Bedrock does not support audio input".into(),
+                ));
+            }
+        }
+    }
+    builder.build().map_err(bedrock_err)
+}
+
+fn mime_to_image_format(mime_type: &str) -> ImageFormat {
+    match mime_type {
+        "image/jpeg" | "image/jpg" => ImageFormat::Jpeg,
+        "image/gif" => ImageFormat::Gif,
+        "image/webp" => ImageFormat::Webp,
+        _ => ImageFormat::Png,
+    }
 }
 
 fn map_assistant_message(content: &str, tool_calls: &[crate::ToolCallRequest]) -> Result<Message> {
     if tool_calls.is_empty() {
         return Message::builder()
             .role(ConversationRole::Assistant)
-            .content(ContentBlock::Text(content.to_string()))
+            .content(BedrockContentBlock::Text(content.to_string()))
             .build()
             .map_err(bedrock_err);
     }
@@ -99,7 +142,7 @@ fn map_assistant_message(content: &str, tool_calls: &[crate::ToolCallRequest]) -
     let mut builder = Message::builder().role(ConversationRole::Assistant);
 
     if !content.is_empty() {
-        builder = builder.content(ContentBlock::Text(content.to_string()));
+        builder = builder.content(BedrockContentBlock::Text(content.to_string()));
     }
 
     for tool_call in tool_calls {
@@ -113,7 +156,7 @@ fn map_assistant_message(content: &str, tool_calls: &[crate::ToolCallRequest]) -
             .build()
             .map_err(bedrock_err)?;
 
-        builder = builder.content(ContentBlock::ToolUse(tool_use));
+        builder = builder.content(BedrockContentBlock::ToolUse(tool_use));
     }
 
     builder.build().map_err(bedrock_err)
@@ -138,7 +181,7 @@ fn map_tool_call_result(result: &result::Result<ToolCallResult, ToolCallError>) 
 
     Message::builder()
         .role(ConversationRole::User)
-        .content(ContentBlock::ToolResult(block))
+        .content(BedrockContentBlock::ToolResult(block))
         .build()
         .map_err(bedrock_err)
 }
@@ -175,12 +218,11 @@ mod tests {
     use super::*;
     use crate::tools::{ToolCallError, ToolCallRequest, ToolCallResult};
     use crate::types::IsoString;
-    use aws_sdk_bedrockruntime::types::ContentBlock;
 
     #[test]
     fn test_map_simple_user_message() {
         let messages = vec![ChatMessage::User {
-            content: "Hello".to_string(),
+            content: vec![ContentBlock::text("Hello")],
             timestamp: IsoString::now(),
         }];
 
@@ -193,6 +235,44 @@ mod tests {
     }
 
     #[test]
+    fn test_map_user_message_with_image() {
+        let messages = vec![ChatMessage::User {
+            content: vec![
+                ContentBlock::text("Look:"),
+                ContentBlock::Image {
+                    data: base64::engine::general_purpose::STANDARD.encode(b"fakepng"),
+                    mime_type: "image/png".to_string(),
+                },
+            ],
+            timestamp: IsoString::now(),
+        }];
+
+        let (_system, mapped) = map_messages(&messages).unwrap();
+        assert_eq!(mapped[0].content().len(), 2);
+        assert!(mapped[0].content()[0].is_text());
+        assert!(mapped[0].content()[1].is_image());
+    }
+
+    #[test]
+    fn test_map_user_message_with_audio_errors() {
+        let messages = vec![ChatMessage::User {
+            content: vec![
+                ContentBlock::text("Listen:"),
+                ContentBlock::Audio {
+                    data: base64::engine::general_purpose::STANDARD.encode(b"fakewav"),
+                    mime_type: "audio/wav".to_string(),
+                },
+            ],
+            timestamp: IsoString::now(),
+        }];
+
+        assert!(matches!(
+            map_messages(&messages),
+            Err(LlmError::UnsupportedContent(_))
+        ));
+    }
+
+    #[test]
     fn test_map_system_message() {
         let messages = vec![
             ChatMessage::System {
@@ -200,7 +280,7 @@ mod tests {
                 timestamp: IsoString::now(),
             },
             ChatMessage::User {
-                content: "Hello".to_string(),
+                content: vec![ContentBlock::text("Hello")],
                 timestamp: IsoString::now(),
             },
         ];
@@ -300,7 +380,7 @@ mod tests {
         assert_eq!(mapped.len(), 1);
         assert_eq!(mapped[0].role(), &ConversationRole::User);
         match &mapped[0].content()[0] {
-            ContentBlock::Text(text) => assert!(text.contains("something broke")),
+            BedrockContentBlock::Text(text) => assert!(text.contains("something broke")),
             other => panic!("Expected text, got {other:?}"),
         }
     }
@@ -316,7 +396,7 @@ mod tests {
         let (_system, mapped) = map_messages(&messages).unwrap();
         assert_eq!(mapped.len(), 1);
         match &mapped[0].content()[0] {
-            ContentBlock::Text(text) => {
+            BedrockContentBlock::Text(text) => {
                 assert!(text.contains("[Previous conversation handoff]"));
                 assert!(text.contains("we talked about stuff"));
             }

@@ -4,18 +4,45 @@ use async_openai::Client;
 use async_openai::config::OpenAIConfig;
 use async_openai::types::responses::{
     CreateResponse, EasyInputContent, EasyInputMessage, FunctionCallOutput,
-    FunctionCallOutputItemParam, FunctionTool, FunctionToolCall, IncludeEnum, InputItem,
-    InputParam, Item, MessageType, OutputItem, Reasoning, ReasoningEffort as OaiReasoningEffort,
-    ReasoningSummary, ResponseStreamEvent, Role, Tool,
+    FunctionCallOutputItemParam, FunctionTool, FunctionToolCall, ImageDetail, IncludeEnum,
+    InputContent, InputImageContent, InputItem, InputParam, InputTextContent, Item, MessageType,
+    OutputItem, Reasoning, ReasoningEffort as OaiReasoningEffort, ReasoningSummary,
+    ResponseStreamEvent, Role, Tool,
 };
 use tokio_stream::StreamExt;
 use tracing::{debug, error};
 
 use crate::provider::get_context_window;
 use crate::{
-    ChatMessage, Context, LlmError, LlmModel, LlmResponse, LlmResponseStream, ProviderFactory,
-    ReasoningEffort, Result, StopReason, StreamingModelProvider, ToolDefinition,
+    ChatMessage, ContentBlock, Context, LlmError, LlmModel, LlmResponse, LlmResponseStream,
+    ProviderFactory, ReasoningEffort, Result, StopReason, StreamingModelProvider, ToolDefinition,
 };
+
+pub(crate) fn map_user_content_for_responses(parts: &[ContentBlock]) -> Result<EasyInputContent> {
+    let mut items = Vec::with_capacity(parts.len());
+    for p in parts {
+        match p {
+            ContentBlock::Text { text } => {
+                items.push(InputContent::InputText(InputTextContent {
+                    text: text.clone(),
+                }));
+            }
+            ContentBlock::Image { .. } => {
+                items.push(InputContent::InputImage(InputImageContent {
+                    detail: ImageDetail::Auto,
+                    file_id: None,
+                    image_url: Some(p.as_data_uri().unwrap()),
+                }));
+            }
+            ContentBlock::Audio { .. } => {
+                return Err(LlmError::UnsupportedContent(
+                    "OpenAI Responses does not support audio input".into(),
+                ));
+            }
+        }
+    }
+    Ok(EasyInputContent::ContentList(items))
+}
 
 pub struct OpenAiProvider {
     client: Client<OpenAIConfig>,
@@ -189,7 +216,7 @@ fn build_response_request(model: &str, context: &Context) -> Result<CreateRespon
                 items.push(InputItem::EasyMessage(EasyInputMessage {
                     r#type: MessageType::Message,
                     role: Role::User,
-                    content: EasyInputContent::Text(content.clone()),
+                    content: map_user_content_for_responses(content)?,
                 }));
             }
             ChatMessage::Assistant {
@@ -320,7 +347,7 @@ mod tests {
     fn test_build_request_simple_user_message() {
         let context = Context::new(
             vec![ChatMessage::User {
-                content: "Hello".to_string(),
+                content: vec![ContentBlock::text("Hello")],
                 timestamp: IsoString::now(),
             }],
             vec![],
@@ -334,7 +361,7 @@ mod tests {
 
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["input"][0]["role"], "user");
-        assert_eq!(json["input"][0]["content"], "Hello");
+        assert_eq!(json["input"][0]["content"][0]["text"], "Hello");
     }
 
     #[test]
@@ -346,7 +373,7 @@ mod tests {
                     timestamp: IsoString::now(),
                 },
                 ChatMessage::User {
-                    content: "Hi".to_string(),
+                    content: vec![ContentBlock::text("Hi")],
                     timestamp: IsoString::now(),
                 },
             ],
@@ -367,7 +394,7 @@ mod tests {
         let context = Context::new(
             vec![
                 ChatMessage::User {
-                    content: "Search for rust".to_string(),
+                    content: vec![ContentBlock::text("Search for rust")],
                     timestamp: IsoString::now(),
                 },
                 ChatMessage::Assistant {
@@ -416,7 +443,7 @@ mod tests {
     fn test_build_request_with_reasoning_effort() {
         let mut context = Context::new(
             vec![ChatMessage::User {
-                content: "Think".to_string(),
+                content: vec![ContentBlock::text("Think")],
                 timestamp: IsoString::now(),
             }],
             vec![],
@@ -425,11 +452,27 @@ mod tests {
 
         let req = build_response_request("o3", &context).unwrap();
         let reasoning = req.reasoning.unwrap();
-        assert_eq!(
-            reasoning.effort,
-            Some(OaiReasoningEffort::High)
-        );
+        assert_eq!(reasoning.effort, Some(OaiReasoningEffort::High));
         assert_eq!(reasoning.summary, Some(ReasoningSummary::Auto));
+    }
+
+    #[test]
+    fn test_build_request_with_audio_returns_unsupported_content() {
+        let context = Context::new(
+            vec![ChatMessage::User {
+                content: vec![ContentBlock::Audio {
+                    data: "YXVkaW8=".to_string(),
+                    mime_type: "audio/wav".to_string(),
+                }],
+                timestamp: IsoString::now(),
+            }],
+            vec![],
+        );
+
+        assert!(matches!(
+            build_response_request("gpt-4.1", &context),
+            Err(LlmError::UnsupportedContent(_))
+        ));
     }
 
     #[test]

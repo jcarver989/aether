@@ -2,9 +2,9 @@ use std::time::Duration;
 
 use aether_core::core::{Prompt, agent};
 use aether_core::events::{AgentMessage, UserMessage};
-use llm::ChatMessage;
 use llm::LlmResponse;
 use llm::testing::FakeLlmProvider;
+use llm::{ChatMessage, ContentBlock};
 
 #[tokio::test]
 async fn test_clear_context_resets_history_and_preserves_system_prompt() {
@@ -60,7 +60,7 @@ async fn test_clear_context_resets_history_and_preserves_system_prompt() {
     let has_first_question = messages.iter().any(|m| {
         matches!(
             m,
-            ChatMessage::User { content, .. } if content == "first question"
+            ChatMessage::User { content, .. } if *content == vec![ContentBlock::text("first question")]
         )
     });
     assert!(
@@ -71,7 +71,7 @@ async fn test_clear_context_resets_history_and_preserves_system_prompt() {
     let has_second_question = messages.iter().any(|m| {
         matches!(
             m,
-            ChatMessage::User { content, .. } if content == "second question"
+            ChatMessage::User { content, .. } if *content == vec![ContentBlock::text("second question")]
         )
     });
     assert!(

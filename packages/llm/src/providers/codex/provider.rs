@@ -35,7 +35,7 @@ impl CodexProvider {
     }
 
     fn build_request(&self, context: &Context) -> Result<CreateResponse> {
-        let (system_prompt, input) = map_messages(context.messages());
+        let (system_prompt, input) = map_messages(context.messages())?;
         let tools = if context.tools().is_empty() {
             None
         } else {
@@ -235,6 +235,7 @@ fn to_codex_effort(effort: crate::ReasoningEffort) -> ReasoningEffort {
 mod tests {
     use super::*;
     use crate::ChatMessage;
+    use crate::ContentBlock;
     use crate::ToolDefinition;
     use crate::types::IsoString;
 
@@ -249,7 +250,7 @@ mod tests {
         let provider = create_test_provider();
         let context = Context::new(
             vec![ChatMessage::User {
-                content: "Hello".to_string(),
+                content: vec![ContentBlock::text("Hello")],
                 timestamp: IsoString::now(),
             }],
             vec![],
@@ -278,7 +279,7 @@ mod tests {
                     timestamp: IsoString::now(),
                 },
                 ChatMessage::User {
-                    content: "Hello".to_string(),
+                    content: vec![ContentBlock::text("Hello")],
                     timestamp: IsoString::now(),
                 },
             ],
@@ -313,7 +314,7 @@ mod tests {
         let provider = create_test_provider();
         let context = Context::new(
             vec![ChatMessage::User {
-                content: "Hi".to_string(),
+                content: vec![ContentBlock::text("Hi")],
                 timestamp: IsoString::now(),
             }],
             vec![],
@@ -329,7 +330,7 @@ mod tests {
         let provider = create_test_provider();
         let mut context = Context::new(
             vec![ChatMessage::User {
-                content: "Think hard".to_string(),
+                content: vec![ContentBlock::text("Think hard")],
                 timestamp: IsoString::now(),
             }],
             vec![],
@@ -346,7 +347,7 @@ mod tests {
         let provider = create_test_provider();
         let context = Context::new(
             vec![ChatMessage::User {
-                content: "Hi".to_string(),
+                content: vec![ContentBlock::text("Hi")],
                 timestamp: IsoString::now(),
             }],
             vec![],
@@ -368,7 +369,7 @@ mod tests {
         let provider = create_test_provider();
         let mut context = Context::new(
             vec![ChatMessage::User {
-                content: "Hi".to_string(),
+                content: vec![ContentBlock::text("Hi")],
                 timestamp: IsoString::now(),
             }],
             vec![],
@@ -384,7 +385,7 @@ mod tests {
         let provider = create_test_provider();
         let context = Context::new(
             vec![ChatMessage::User {
-                content: "Hi".to_string(),
+                content: vec![ContentBlock::text("Hi")],
                 timestamp: IsoString::now(),
             }],
             vec![],

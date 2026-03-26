@@ -12,6 +12,7 @@ use tui::Theme;
 pub struct RuntimeState {
     pub session_id: acp::SessionId,
     pub agent_name: String,
+    pub prompt_capabilities: acp::PromptCapabilities,
     pub config_options: Vec<acp::SessionConfigOption>,
     pub auth_methods: Vec<acp::AuthMethod>,
     pub theme: Theme,
@@ -41,6 +42,7 @@ impl RuntimeState {
         Ok(Self {
             session_id: session.session_id,
             agent_name: session.agent_name,
+            prompt_capabilities: session.prompt_capabilities,
             config_options: session.config_options,
             auth_methods: session.auth_methods,
             theme: crate::settings::load_theme(&settings),

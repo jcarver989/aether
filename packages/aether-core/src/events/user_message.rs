@@ -1,8 +1,8 @@
-use llm::{ReasoningEffort, StreamingModelProvider, ToolDefinition};
+use llm::{ContentBlock, ReasoningEffort, StreamingModelProvider, ToolDefinition};
 
 /// Message from the user to the agent.
 pub enum UserMessage {
-    Text { content: String },
+    Text { content: Vec<ContentBlock> },
     Cancel,
     ClearContext,
     SwitchModel(Box<dyn StreamingModelProvider>),
@@ -35,15 +35,17 @@ impl std::fmt::Debug for UserMessage {
 impl UserMessage {
     pub fn text(content: &str) -> Self {
         UserMessage::Text {
-            content: content.to_string(),
+            content: vec![ContentBlock::text(content)],
         }
+    }
+
+    pub fn with_content(content: Vec<ContentBlock>) -> Self {
+        UserMessage::Text { content }
     }
 }
 
 impl From<&str> for UserMessage {
     fn from(value: &str) -> Self {
-        UserMessage::Text {
-            content: value.to_string(),
-        }
+        UserMessage::text(value)
     }
 }
