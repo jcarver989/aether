@@ -131,12 +131,7 @@ impl CredentialStore for OAuthCredentialStore {
 
         Ok(cred.map(|c| {
             let token_response = build_token_response(&c);
-            StoredCredentials {
-                client_id: c.client_id,
-                token_response: Some(token_response),
-                granted_scopes: Vec::new(),
-                token_received_at: None,
-            }
+            build_stored_credentials(c.client_id, Some(token_response))
         }))
     }
 
@@ -207,6 +202,22 @@ async fn spawn_blocking<T: Send + 'static>(
     tokio::task::spawn_blocking(f)
         .await
         .map_err(|err| OAuthError::CredentialStore(format!("credential task failed: {err}")))?
+}
+
+/// Construct a `StoredCredentials` via serde deserialization.
+///
+/// The upstream struct is `#[non_exhaustive]` with no constructor, so this is
+/// the only way to build one from outside the crate.
+fn build_stored_credentials(
+    client_id: String,
+    token_response: Option<OAuthTokenResponse>,
+) -> StoredCredentials {
+    // granted_scopes and token_received_at have #[serde(default)] so we can omit them.
+    serde_json::from_value(serde_json::json!({
+        "client_id": client_id,
+        "token_response": token_response,
+    }))
+    .expect("StoredCredentials deserialization from known-good fields cannot fail")
 }
 
 fn build_token_response(cred: &OAuthCredential) -> OAuthTokenResponse {

@@ -144,11 +144,8 @@ impl McpManager {
     ) -> Result<()> {
         let config = ServerConfig::Http {
             name: name.clone(),
-            config: StreamableHttpClientTransportConfig {
-                uri: base_url.into(),
-                auth_header: Some(auth_header),
-                ..Default::default()
-            },
+            config: StreamableHttpClientTransportConfig::with_uri(base_url)
+                .auth_header(auth_header),
         };
         let params = self.connect_params();
         match McpServerConnection::connect(config, params).await {
