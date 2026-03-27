@@ -29,7 +29,11 @@ pub(crate) fn diff_layout(total_width: usize, delta: i16) -> (usize, usize) {
     let base = (total_width / 3)
         .clamp(20, 28)
         .min(total_width.saturating_sub(4));
-    #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[allow(
+        clippy::cast_possible_wrap,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
     let left = (base as i16 + delta).clamp(12, (total_width / 2) as i16) as usize;
     let right = total_width.saturating_sub(left + 1);
     (left, right)

@@ -238,9 +238,10 @@ impl PromptComposer {
             {
                 continue;
             }
-            let display_name = path
-                .file_name()
-                .map_or_else(|| path.to_string_lossy().into_owned(), |n| n.to_string_lossy().into_owned());
+            let display_name = path.file_name().map_or_else(
+                || path.to_string_lossy().into_owned(),
+                |n| n.to_string_lossy().into_owned(),
+            );
             self.pending_media
                 .push(PromptAttachment { path, display_name });
         }

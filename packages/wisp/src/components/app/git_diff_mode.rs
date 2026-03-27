@@ -2,7 +2,7 @@ use crate::components::file_tree::FileTree;
 use crate::components::git_diff_view::{
     GitDiffView, GitDiffViewMessage, build_patch_lines, diff_layout, should_use_split_patch,
 };
-use crate::components::split_patch_renderer;
+use crate::components::split_patch_renderer::build_split_patch_lines;
 use crate::git_diff::{FileDiff, GitDiffDocument, PatchLineKind};
 use std::path::PathBuf;
 use tui::{Component, Event, Line, ViewContext};
@@ -310,16 +310,10 @@ impl GitDiffViewState {
         } else {
             let use_split_patch =
                 should_use_split_patch(width as usize, self.sidebar_width_delta, file);
-            let (_left_width, right_width) =
-                diff_layout(width as usize, self.sidebar_width_delta);
+            let (_left_width, right_width) = diff_layout(width as usize, self.sidebar_width_delta);
 
             if use_split_patch {
-                let (lines, refs) =
-                    split_patch_renderer::build_split_patch_lines(
-                        file,
-                        right_width,
-                        context,
-                    );
+                let (lines, refs) = build_split_patch_lines(file, right_width, context);
                 self.cached_patch_lines = lines;
                 self.cached_patch_line_refs = refs;
             } else {
