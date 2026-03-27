@@ -179,12 +179,23 @@ pub(crate) fn parse_unified_diff(input: &str) -> Result<Vec<FileDiff>, GitDiffEr
 fn split_diff_files(input: &str) -> Vec<&str> {
     let mut chunks = Vec::new();
     let mut start = None;
+    let mut line_start = 0;
 
-    for (i, _) in input.match_indices("diff --git ") {
-        if let Some(s) = start {
-            chunks.push(&input[s..i]);
+    while line_start < input.len() {
+        let line_end = input[line_start..]
+            .find('\n')
+            .map(|idx| line_start + idx + 1)
+            .unwrap_or(input.len());
+        let line = &input[line_start..line_end];
+
+        if line.starts_with("diff --git ") {
+            if let Some(s) = start {
+                chunks.push(&input[s..line_start]);
+            }
+            start = Some(line_start);
         }
-        start = Some(i);
+
+        line_start = line_end;
     }
 
     if let Some(s) = start {
@@ -601,6 +612,25 @@ index 0000000..abc1234
         assert_eq!(files[0].status, FileStatus::Modified);
         assert_eq!(files[1].path, "b.rs");
         assert_eq!(files[1].status, FileStatus::Added);
+    }
+
+    #[test]
+    fn parse_diff_marker_inside_hunk_line() {
+        let input = "\
+diff --git a/file.rs b/file.rs
+index abc..def 100644
+--- a/file.rs
++++ b/file.rs
+@@ -1,1 +1,2 @@
+ fn main() {
++cannot parse paths from: diff --git /m)
+ }
+";
+        let files = parse_unified_diff(input).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "file.rs");
+        assert_eq!(files[0].status, FileStatus::Modified);
+        assert_eq!(files[0].additions(), 1);
     }
 
     #[test]

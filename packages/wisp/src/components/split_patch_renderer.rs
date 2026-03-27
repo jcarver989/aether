@@ -719,9 +719,19 @@ mod tests {
         let file = test_file(vec![test_hunk(vec![
             pl(PatchLineKind::HunkHeader, "@@ -1,2 +1,3 @@", None, None),
             pl(PatchLineKind::Removed, "shared_call();", Some(1), None),
-            pl(PatchLineKind::Removed, "let old_value = foo();", Some(2), None),
+            pl(
+                PatchLineKind::Removed,
+                "let old_value = foo();",
+                Some(2),
+                None,
+            ),
             pl(PatchLineKind::Added, "shared_call();", None, Some(1)),
-            pl(PatchLineKind::Added, "let new_value = bar();", None, Some(2)),
+            pl(
+                PatchLineKind::Added,
+                "let new_value = bar();",
+                None,
+                Some(2),
+            ),
             pl(PatchLineKind::Added, "extra_call();", None, Some(3)),
         ])]);
         let (lines, _refs) = build_split_patch_lines(&file, 100, &ctx());
