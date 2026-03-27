@@ -202,23 +202,8 @@ async fn test_diagnostics_available_after_edit_without_polling() {
     )
     .await;
 
-    // 5. Wait a bit for rust-analyzer to process, then make a SINGLE call
-    tokio::time::sleep(Duration::from_secs(3)).await;
-
-    let result = call_tool(
-        &client,
-        "lsp_check_errors",
-        serde_json::json!({ "input": { "scope": "file", "filePath": main_rs } }),
-    )
-    .await;
-
-    let errors = result["summary"]["errors"].as_u64().unwrap_or(0);
-    assert!(
-        errors > 0,
-        "Expected diagnostics after edit + single lsp_check_errors call, got 0 errors. \
-         This indicates the daemon returns stale (empty) diagnostics after syncing a changed file. \
-         Full result: {result}"
-    );
+    // 5. Poll until rust-analyzer reports errors for the edited file.
+    poll_diagnostics(&client, Some(&main_rs), has_errors).await;
 }
 
 /// Regression test: after edit_file, calling `lsp_check_errors` in workspace scope
@@ -266,23 +251,8 @@ async fn test_diagnostics_all_files_after_edit() {
     )
     .await;
 
-    // 5. Wait a bit for rust-analyzer to process, then call lsp_check_errors in workspace scope
-    tokio::time::sleep(Duration::from_secs(3)).await;
-
-    let result = call_tool(
-        &client,
-        "lsp_check_errors",
-        serde_json::json!({"input": {"scope": "workspace"}}),
-    )
-    .await;
-
-    let errors = result["summary"]["errors"].as_u64().unwrap_or(0);
-    assert!(
-        errors > 0,
-        "Expected diagnostics after edit + single lsp_check_errors call (workspace scope), \
-         got 0 errors. This indicates the daemon returns stale diagnostics when uri is None. \
-         Full result: {result}"
-    );
+    // 5. Poll workspace diagnostics until rust-analyzer reports errors.
+    poll_diagnostics(&client, None, has_errors).await;
 }
 
 /// Regression test: after edit_file, an immediate workspace-scoped
@@ -306,7 +276,8 @@ async fn test_workspace_diagnostics_after_edit_without_file_check() {
 
     let (_server_handle, client) = connect_lsp(&project).await;
 
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    // Wait for RA to finish initial indexing via workspace-scope polling.
+    poll_diagnostics(&client, None, has_no_errors).await;
 
     call_tool(
         &client,
@@ -326,13 +297,13 @@ async fn test_workspace_diagnostics_after_edit_without_file_check() {
     )
     .await;
 
-    let result = workspace_diagnostics(&client).await;
-    assert!(
-        file_error_count(&result, &main_rs) > 0,
-        "Expected immediate workspace diagnostics after edit_file, got 0 errors. \
-         The daemon should refresh workspace diagnostics in the background without a file-scoped check. \
-         Full result: {result}"
-    );
+    // Poll workspace diagnostics until the edit is picked up by RA.
+    poll_workspace_diagnostics(
+        &client,
+        |result| file_error_count(result, &main_rs) > 0,
+        Duration::from_secs(30),
+    )
+    .await;
 }
 
 /// Regression test: once workspace diagnostics have recorded an error, fixing the
@@ -434,23 +405,8 @@ async fn test_diagnostics_all_files_after_external_edit() {
     )
     .expect("Failed to write file");
 
-    // 5. Wait a bit, then call lsp_check_errors in workspace scope
-    tokio::time::sleep(Duration::from_secs(3)).await;
-
-    let result = call_tool(
-        &client,
-        "lsp_check_errors",
-        serde_json::json!({"input": {"scope": "workspace"}}),
-    )
-    .await;
-
-    let errors = result["summary"]["errors"].as_u64().unwrap_or(0);
-    assert!(
-        errors > 0,
-        "Expected diagnostics after external edit + lsp_check_errors (workspace scope), \
-         got 0 errors. The daemon should sync files from the diagnostics cache, not just \
-         open_documents. Full result: {result}"
-    );
+    // 5. Poll workspace diagnostics until file watcher + RA report errors.
+    poll_diagnostics(&client, None, has_errors).await;
 }
 
 /// Regression test: after an EXTERNAL file edit, a SINGLE workspace-scoped
@@ -491,24 +447,8 @@ async fn test_diagnostics_all_files_after_external_edit_single_call() {
     )
     .expect("Failed to write file");
 
-    // 5. Wait for file watcher + rust-analyzer pipeline
-    tokio::time::sleep(Duration::from_secs(5)).await;
-
-    // 6. Single call — no polling. The cache should already have the errors.
-    let result = call_tool(
-        &client,
-        "lsp_check_errors",
-        serde_json::json!({"input": {"scope": "workspace"}}),
-    )
-    .await;
-
-    let errors = result["summary"]["errors"].as_u64().unwrap_or(0);
-    assert!(
-        errors > 0,
-        "Expected diagnostics after external edit + single lsp_check_errors call (workspace scope, no polling), \
-         got 0 errors. The file watcher should have delivered fresh diagnostics to the cache. \
-         Full result: {result}"
-    );
+    // 5. Poll workspace diagnostics until file watcher + RA report errors.
+    poll_diagnostics(&client, None, has_errors).await;
 }
 
 /// Test: External fs::write → file watcher → diagnostics queryable
@@ -573,10 +513,11 @@ async fn test_external_file_change_produces_diagnostics() {
 /// present in the diagnostics cache) should still appear in workspace scope.
 ///
 /// Unlike every other test in this file, this test does NOT prime the diagnostics
-/// cache by calling `poll_diagnostics` with a file path first. Instead, it waits
-/// for initial indexing to finish, then edits the file externally so the file
-/// watcher fires `didChangeWatchedFiles`. If the daemon only consults
-/// `diagnostics_cache.keys()` for workspace scope, this file will be invisible.
+/// cache by calling `poll_diagnostics` with a file path first. Instead, it polls
+/// workspace-scope diagnostics (which does NOT open documents) until initial
+/// indexing completes, then edits the file externally so the file watcher fires
+/// `didChangeWatchedFiles`. If the daemon only consults `diagnostics_cache.keys()`
+/// for workspace scope, this file will be invisible.
 #[tokio::test]
 async fn test_diagnostics_all_files_discovers_file_watcher_uris() {
     // 1. Create a Cargo project with valid code
@@ -597,11 +538,14 @@ async fn test_diagnostics_all_files_discovers_file_watcher_uris() {
     // 2. Start CodingMcp with LSP enabled
     let (_server_handle, client) = connect_lsp(&project).await;
 
-    // 3. Wait for RA to finish initial indexing WITHOUT priming the cache.
-    //    We do NOT call poll_diagnostics with a file path here — that would
-    //    cause ensure_document_open → didOpen → publishDiagnostics, putting
-    //    main.rs into the diagnostics cache and masking the bug.
-    tokio::time::sleep(Duration::from_secs(10)).await;
+    // 3. Wait for RA to finish initial indexing using workspace-scope polling.
+    //    We use None (workspace scope) instead of Some(path) (file scope) because
+    //    file-scope polling triggers ensure_document_open -> didOpen ->
+    //    publishDiagnostics, which would prime the per-file diagnostics cache
+    //    and mask the bug we're testing. Workspace-scope polling just calls
+    //    wait_for_current_generation() + reads the diagnostics store -- it does
+    //    NOT open any documents.
+    poll_diagnostics(&client, None, has_no_errors).await;
 
     // 4. Edit the file EXTERNALLY to introduce a type error.
     //    The file watcher should fire didChangeWatchedFiles.
@@ -615,23 +559,7 @@ async fn test_diagnostics_all_files_discovers_file_watcher_uris() {
     )
     .expect("Failed to write file");
 
-    // 5. Wait for the file watcher to detect the change and RA to re-index
-    tokio::time::sleep(Duration::from_secs(5)).await;
-
-    // 6. Call lsp_check_errors in workspace scope.
-    //    The daemon should know about main.rs via the file watcher URI set.
-    let result = call_tool(
-        &client,
-        "lsp_check_errors",
-        serde_json::json!({"input": {"scope": "workspace"}}),
-    )
-    .await;
-
-    let errors = result["summary"]["errors"].as_u64().unwrap_or(0);
-    assert!(
-        errors > 0,
-        "Expected diagnostics for file discovered via file watcher in workspace scope, \
-         got 0 errors. The daemon should track URIs from didChangeWatchedFiles, not just \
-         diagnostics_cache keys. Full result: {result}"
-    );
+    // 5. Poll workspace diagnostics until the file watcher detects the change
+    //    and RA reports errors.
+    poll_diagnostics(&client, None, has_errors).await;
 }
