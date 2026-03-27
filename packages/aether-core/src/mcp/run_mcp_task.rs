@@ -175,9 +175,10 @@ async fn execute_mcp_call(
     let handle = client
         .send_cancellable_request(
             CallToolRequest(Request::new(params)),
-            PeerRequestOptions {
-                timeout: Some(timeout),
-                meta: None,
+            {
+                let mut opts = PeerRequestOptions::default();
+                opts.timeout = Some(timeout);
+                opts
             },
         )
         .await

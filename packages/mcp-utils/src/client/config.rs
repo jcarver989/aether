@@ -265,14 +265,12 @@ impl RawMcpServerConfig {
                     .map(|v| expand_env_vars(v))
                     .transpose()?;
 
-                Ok(ServerConfig::Http {
-                    name,
-                    config: StreamableHttpClientTransportConfig {
-                        uri: expand_env_vars(&url)?.into(),
-                        auth_header,
-                        ..Default::default()
-                    },
+                let mut config =
+                    StreamableHttpClientTransportConfig::with_uri(expand_env_vars(&url)?);
+                if let Some(auth) = auth_header {
+                    config = config.auth_header(auth);
                 }
+                Ok(ServerConfig::Http { name, config }
                 .into())
             }
 

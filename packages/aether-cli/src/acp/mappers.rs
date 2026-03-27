@@ -103,11 +103,11 @@ fn http_config(url: String, headers: &[HttpHeader]) -> StreamableHttpClientTrans
         .find(|h| h.name.eq_ignore_ascii_case("authorization"))
         .map(|h| h.value.clone());
 
-    StreamableHttpClientTransportConfig {
-        uri: url.into(),
-        auth_header,
-        ..Default::default()
+    let mut config = StreamableHttpClientTransportConfig::with_uri(url);
+    if let Some(auth) = auth_header {
+        config = config.auth_header(auth);
     }
+    config
 }
 
 /// Converts Aether `AgentMessage` to ACP `SessionUpdate`
