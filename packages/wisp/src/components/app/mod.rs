@@ -187,6 +187,39 @@ impl App {
         }
     }
 
+    async fn submit_prompt(&mut self, user_input: String, attachments: Vec<PromptAttachment>) {
+        let outcome = build_attachment_blocks(&attachments).await;
+        self.conversation_screen.conversation.push_user_message("");
+        self.conversation_screen
+            .conversation
+            .push_user_message(&user_input);
+        for placeholder in &outcome.transcript_placeholders {
+            self.conversation_screen
+                .conversation
+                .push_user_message(placeholder);
+        }
+        for w in outcome.warnings {
+            self.conversation_screen
+                .conversation
+                .push_user_message(&format!("[wisp] {w}"));
+        }
+
+        if let Some(message) = self.media_support_error(&outcome.blocks) {
+            self.conversation_screen.reject_local_prompt(&message);
+            return;
+        }
+
+        let _ = self.prompt_handle.prompt(
+            &self.session_id,
+            &user_input,
+            if outcome.blocks.is_empty() {
+                None
+            } else {
+                Some(outcome.blocks)
+            },
+        );
+    }
+
     async fn handle_conversation_messages(
         &mut self,
         commands: &mut Vec<RendererCommand>,
@@ -198,36 +231,8 @@ impl App {
                     user_input,
                     attachments,
                 } => {
-                    let outcome = build_attachment_blocks(&attachments).await;
-                    self.conversation_screen.conversation.push_user_message("");
-                    self.conversation_screen
-                        .conversation
-                        .push_user_message(&user_input);
-                    for placeholder in &outcome.transcript_placeholders {
-                        self.conversation_screen
-                            .conversation
-                            .push_user_message(placeholder);
-                    }
-                    for w in outcome.warnings {
-                        self.conversation_screen
-                            .conversation
-                            .push_user_message(&format!("[wisp] {w}"));
-                    }
-
-                    if let Some(message) = self.media_support_error(&outcome.blocks) {
-                        self.conversation_screen.reject_local_prompt(&message);
-                        continue;
-                    }
-
-                    let _ = self.prompt_handle.prompt(
-                        &self.session_id,
-                        &user_input,
-                        if outcome.blocks.is_empty() {
-                            None
-                        } else {
-                            Some(outcome.blocks)
-                        },
-                    );
+                    self.conversation_screen.waiting_for_response = true;
+                    self.submit_prompt(user_input, attachments).await;
                 }
                 ConversationScreenMessage::ClearScreen => {
                     commands.push(RendererCommand::ClearScreen);
@@ -373,13 +378,13 @@ impl App {
                 self.git_diff_mode_mut().complete_load().await;
             }
             ScreenRouterMessage::SendPrompt { user_input } => {
-                self.conversation_screen.conversation.push_user_message("");
-                self.conversation_screen
-                    .conversation
-                    .push_user_message(&user_input);
-                let _ = self
-                    .prompt_handle
-                    .prompt(&self.session_id, &user_input, None);
+                if self.conversation_screen.is_waiting() {
+                    return;
+                }
+
+                self.conversation_screen.waiting_for_response = true;
+                self.submit_prompt(user_input, Vec::new()).await;
+                self.screen_router.close_git_diff();
             }
         }
         let _ = commands;
@@ -1047,6 +1052,65 @@ mod tests {
         assert!(
             app.conversation_screen.waiting_for_response,
             "Esc should NOT cancel a running prompt while git diff mode is active"
+        );
+    }
+
+    #[tokio::test]
+    async fn git_diff_submit_sends_prompt_and_closes_diff_when_idle() {
+        use acp_utils::client::PromptCommand;
+
+        let (mut app, mut rx) = make_app_with_config_recording(&[]);
+        app.screen_router.enter_git_diff_for_test();
+
+        let mut commands = Vec::new();
+        app.handle_screen_router_message(
+            &mut commands,
+            ScreenRouterMessage::SendPrompt {
+                user_input: "Looks good".to_string(),
+            },
+        )
+        .await;
+
+        assert!(
+            !app.screen_router.is_git_diff(),
+            "successful submit should exit git diff mode"
+        );
+        assert!(
+            app.conversation_screen.waiting_for_response,
+            "submit should transition into waiting state"
+        );
+
+        let cmd = rx.try_recv().expect("expected Prompt command to be sent");
+        match cmd {
+            PromptCommand::Prompt { text, .. } => {
+                assert!(text.contains("Looks good"));
+            }
+            other => panic!("expected Prompt command, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn git_diff_submit_while_waiting_is_ignored_and_keeps_diff_open() {
+        let (mut app, mut rx) = make_app_with_config_recording(&[]);
+        app.conversation_screen.waiting_for_response = true;
+        app.screen_router.enter_git_diff_for_test();
+
+        let mut commands = Vec::new();
+        app.handle_screen_router_message(
+            &mut commands,
+            ScreenRouterMessage::SendPrompt {
+                user_input: "Needs follow-up".to_string(),
+            },
+        )
+        .await;
+
+        assert!(
+            app.screen_router.is_git_diff(),
+            "blocked submit should keep git diff mode open"
+        );
+        assert!(
+            rx.try_recv().is_err(),
+            "no prompt should be sent while waiting"
         );
     }
 

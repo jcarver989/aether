@@ -29,13 +29,19 @@ impl ScreenRouter {
 
     pub fn toggle_git_diff(&mut self) -> Option<ScreenRouterMessage> {
         if self.is_git_diff() {
-            self.git_diff_mode.close();
-            self.screen_mode = ScreenMode::Conversation;
+            self.close_git_diff();
             None
         } else {
             self.screen_mode = ScreenMode::GitDiff;
             self.git_diff_mode.begin_open();
             Some(ScreenRouterMessage::LoadGitDiff)
+        }
+    }
+
+    pub fn close_git_diff(&mut self) {
+        if self.is_git_diff() {
+            self.git_diff_mode.close();
+            self.screen_mode = ScreenMode::Conversation;
         }
     }
 
@@ -64,16 +70,13 @@ impl Component for ScreenRouter {
         for msg in git_messages {
             match msg {
                 GitDiffViewMessage::Close => {
-                    self.git_diff_mode.close();
-                    self.screen_mode = ScreenMode::Conversation;
+                    self.close_git_diff();
                 }
                 GitDiffViewMessage::Refresh => {
                     self.git_diff_mode.begin_refresh();
                     router_messages.push(ScreenRouterMessage::RefreshGitDiff);
                 }
                 GitDiffViewMessage::SubmitPrompt(user_input) => {
-                    self.git_diff_mode.close();
-                    self.screen_mode = ScreenMode::Conversation;
                     router_messages.push(ScreenRouterMessage::SendPrompt { user_input });
                 }
             }

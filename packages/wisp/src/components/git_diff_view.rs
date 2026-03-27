@@ -263,8 +263,7 @@ impl GitDiffView<'_> {
         if self.state.queued_comments.is_empty() {
             return vec![];
         }
-        let comments = std::mem::take(&mut self.state.queued_comments);
-        let prompt = format_review_prompt(&comments);
+        let prompt = format_review_prompt(&self.state.queued_comments);
         vec![GitDiffViewMessage::SubmitPrompt(prompt)]
     }
 
@@ -896,6 +895,11 @@ mod tests {
             m,
             GitDiffViewMessage::SubmitPrompt(_)
         )));
+        assert_eq!(
+            view.state.queued_comments.len(),
+            1,
+            "submit should not clear queued comments before send is accepted"
+        );
     }
 
     #[tokio::test]
