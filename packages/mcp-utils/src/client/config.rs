@@ -270,8 +270,7 @@ impl RawMcpServerConfig {
                 if let Some(auth) = auth_header {
                     config = config.auth_header(auth);
                 }
-                Ok(ServerConfig::Http { name, config }
-                .into())
+                Ok(ServerConfig::Http { name, config }.into())
             }
 
             RawMcpServerConfig::InMemory { args, input } => {

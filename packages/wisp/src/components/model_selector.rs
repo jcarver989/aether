@@ -776,7 +776,10 @@ mod tests {
         let ctx = ViewContext::new((80, 10));
         let frame = s.render(&ctx);
         let text: String = frame.lines().iter().map(|l| l.plain_text()).collect();
-        assert!(text.contains("img"), "focused row should show img indicator");
+        assert!(
+            text.contains("img"),
+            "focused row should show img indicator"
+        );
         assert!(
             text.contains("audio"),
             "focused row should show audio indicator"

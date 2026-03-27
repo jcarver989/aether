@@ -173,14 +173,11 @@ async fn execute_mcp_call(
     use rmcp::service::PeerRequestOptions;
 
     let handle = client
-        .send_cancellable_request(
-            CallToolRequest(Request::new(params)),
-            {
-                let mut opts = PeerRequestOptions::default();
-                opts.timeout = Some(timeout);
-                opts
-            },
-        )
+        .send_cancellable_request(CallToolRequest(Request::new(params)), {
+            let mut opts = PeerRequestOptions::default();
+            opts.timeout = Some(timeout);
+            opts
+        })
         .await
         .map_err(|e| {
             ToolCallError::from_request(request, format!("Failed to send tool request: {e}"))

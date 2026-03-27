@@ -70,7 +70,7 @@ pub use runtime::{MouseCapture, TerminalSession, spawn_terminal_event_task};
 
 // &str text utilities
 pub use rendering::soft_wrap::{
-    display_width_text, pad_text_to_width, truncate_line, truncate_text,
+    display_width_text, pad_text_to_width, soft_wrap_line, truncate_line, truncate_text,
 };
 
 // Span type
@@ -86,6 +86,11 @@ pub use diffs::diff::highlight_diff;
 
 #[cfg(feature = "syntax")]
 pub use diffs::split_diff::render_diff;
+#[cfg(feature = "syntax")]
+pub use diffs::split_diff::{
+    GUTTER_WIDTH, SEPARATOR, SEPARATOR_WIDTH, blank_panel as split_blank_panel,
+    render_cell as split_render_cell,
+};
 
 #[cfg(feature = "syntax")]
 pub use syntax_highlighting::SyntaxHighlighter;

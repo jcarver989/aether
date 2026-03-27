@@ -233,19 +233,16 @@ impl PromptComposer {
             if !matches!(kind, AttachmentKind::Image | AttachmentKind::Audio) {
                 continue;
             }
-            if let Some(canon) = std::fs::canonicalize(&path).ok() {
-                if !existing.insert(canon) {
-                    continue;
-                }
+            if let Ok(canon) = std::fs::canonicalize(&path)
+                && !existing.insert(canon)
+            {
+                continue;
             }
             let display_name = path
                 .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| path.to_string_lossy().into_owned());
-            self.pending_media.push(PromptAttachment {
-                path,
-                display_name,
-            });
+                .map_or_else(|| path.to_string_lossy().into_owned(), |n| n.to_string_lossy().into_owned());
+            self.pending_media
+                .push(PromptAttachment { path, display_name });
         }
 
         self.pending_media.len() > before
@@ -281,8 +278,7 @@ impl Component for PromptComposer {
             Event::Paste(text) => {
                 self.close_all();
                 let added = parse_dropped_file_paths(text)
-                    .map(|paths| self.add_dropped_media(paths))
-                    .unwrap_or(false);
+                    .is_some_and(|paths| self.add_dropped_media(paths));
                 if !added {
                     self.text_input.insert_paste(text);
                 }
@@ -573,9 +569,7 @@ mod tests {
     #[tokio::test]
     async fn paste_ordinary_text_inserts_into_prompt() {
         let mut composer = PromptComposer::default();
-        composer
-            .on_event(&Event::Paste("hello world".into()))
-            .await;
+        composer.on_event(&Event::Paste("hello world".into())).await;
 
         assert!(composer.pending_media().is_empty());
         assert_eq!(composer.buffer(), "hello world");
@@ -638,10 +632,12 @@ mod tests {
         type_chars(&mut composer, "describe this").await;
 
         let msgs = composer.on_event(&key(KeyCode::Enter)).await.unwrap();
-        let [PromptComposerMessage::SubmitRequested {
-            user_input,
-            attachments,
-        }] = msgs.as_slice()
+        let [
+            PromptComposerMessage::SubmitRequested {
+                user_input,
+                attachments,
+            },
+        ] = msgs.as_slice()
         else {
             panic!("expected submit request");
         };
@@ -677,10 +673,12 @@ mod tests {
             .await;
 
         let msgs = composer.on_event(&key(KeyCode::Enter)).await.unwrap();
-        let [PromptComposerMessage::SubmitRequested {
-            user_input,
-            attachments,
-        }] = msgs.as_slice()
+        let [
+            PromptComposerMessage::SubmitRequested {
+                user_input,
+                attachments,
+            },
+        ] = msgs.as_slice()
         else {
             panic!("expected submit request");
         };

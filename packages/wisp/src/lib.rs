@@ -139,10 +139,10 @@ async fn run_app(
             }
         }
 
-        let overlay = app.has_settings_overlay();
-        if last_mouse_capture != overlay {
-            renderer.apply_commands(vec![RendererCommand::SetMouseCapture(overlay)])?;
-            last_mouse_capture = overlay;
+        let capture = app.needs_mouse_capture();
+        if last_mouse_capture != capture {
+            renderer.apply_commands(vec![RendererCommand::SetMouseCapture(capture)])?;
+            last_mouse_capture = capture;
         }
     }
 }

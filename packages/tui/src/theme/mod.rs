@@ -56,11 +56,16 @@ pub struct Theme {
     info: Color,
     secondary: Color,
 
+    // Layout colors
+    sidebar_bg: Color,
+
     // Diff colors
     diff_added_fg: Color,
     diff_removed_fg: Color,
     diff_added_bg: Color,
     diff_removed_bg: Color,
+    diff_added_highlight_bg: Color,
+    diff_removed_highlight_bg: Color,
 
     // Cached syntect theme for syntax highlighting (parsed once at construction)
     #[cfg(feature = "syntax")]
@@ -87,10 +92,13 @@ pub struct ThemeBuilder {
     error: Option<Color>,
     info: Option<Color>,
     secondary: Option<Color>,
+    sidebar_bg: Option<Color>,
     diff_added_fg: Option<Color>,
     diff_removed_fg: Option<Color>,
     diff_added_bg: Option<Color>,
     diff_removed_bg: Option<Color>,
+    diff_added_highlight_bg: Option<Color>,
+    diff_removed_highlight_bg: Option<Color>,
 }
 
 impl ThemeBuilder {
@@ -179,6 +187,11 @@ impl ThemeBuilder {
         self
     }
 
+    pub fn sidebar_bg(mut self, color: Color) -> Self {
+        self.sidebar_bg = Some(color);
+        self
+    }
+
     pub fn diff_added_fg(mut self, color: Color) -> Self {
         self.diff_added_fg = Some(color);
         self
@@ -196,6 +209,16 @@ impl ThemeBuilder {
 
     pub fn diff_removed_bg(mut self, color: Color) -> Self {
         self.diff_removed_bg = Some(color);
+        self
+    }
+
+    pub fn diff_added_highlight_bg(mut self, color: Color) -> Self {
+        self.diff_added_highlight_bg = Some(color);
+        self
+    }
+
+    pub fn diff_removed_highlight_bg(mut self, color: Color) -> Self {
+        self.diff_removed_highlight_bg = Some(color);
         self
     }
 
@@ -239,6 +262,9 @@ impl Theme {
             secondary: b
                 .secondary
                 .ok_or(ThemeBuildError::MissingField("secondary"))?,
+            sidebar_bg: b
+                .sidebar_bg
+                .ok_or(ThemeBuildError::MissingField("sidebar_bg"))?,
             diff_added_fg: b
                 .diff_added_fg
                 .ok_or(ThemeBuildError::MissingField("diff_added_fg"))?,
@@ -251,6 +277,12 @@ impl Theme {
             diff_removed_bg: b
                 .diff_removed_bg
                 .ok_or(ThemeBuildError::MissingField("diff_removed_bg"))?,
+            diff_added_highlight_bg: b
+                .diff_added_highlight_bg
+                .ok_or(ThemeBuildError::MissingField("diff_added_highlight_bg"))?,
+            diff_removed_highlight_bg: b
+                .diff_removed_highlight_bg
+                .ok_or(ThemeBuildError::MissingField("diff_removed_highlight_bg"))?,
             #[cfg(feature = "syntax")]
             syntect_theme: Arc::new(syntax::parse_default_syntect_theme()),
         })
@@ -274,6 +306,10 @@ impl Theme {
 
     pub fn code_bg(&self) -> Color {
         self.code_bg
+    }
+
+    pub fn sidebar_bg(&self) -> Color {
+        self.sidebar_bg
     }
 
     pub fn accent(&self) -> Color {
@@ -351,16 +387,37 @@ impl Theme {
     pub fn diff_removed_fg(&self) -> Color {
         self.diff_removed_fg
     }
+
+    pub fn diff_added_highlight_bg(&self) -> Color {
+        self.diff_added_highlight_bg
+    }
+
+    pub fn diff_removed_highlight_bg(&self) -> Color {
+        self.diff_removed_highlight_bg
+    }
 }
 
-/// Darken a color to ~20% brightness for use as a subtle background.
+/// Darken a color to ~30% brightness for use as a subtle background.
 #[allow(clippy::cast_possible_truncation)]
 fn darken_color(color: Color) -> Color {
     match color {
         Color::Rgb { r, g, b } => Color::Rgb {
-            r: (u16::from(r) * 20 / 100) as u8,
-            g: (u16::from(g) * 20 / 100) as u8,
-            b: (u16::from(b) * 20 / 100) as u8,
+            r: (u16::from(r) * 30 / 100) as u8,
+            g: (u16::from(g) * 30 / 100) as u8,
+            b: (u16::from(b) * 30 / 100) as u8,
+        },
+        other => other,
+    }
+}
+
+/// Brighten a color to ~50% brightness for word-level diff highlights.
+#[allow(clippy::cast_possible_truncation)]
+fn emphasize_color(color: Color) -> Color {
+    match color {
+        Color::Rgb { r, g, b } => Color::Rgb {
+            r: (u16::from(r) * 50 / 100) as u8,
+            g: (u16::from(g) * 50 / 100) as u8,
+            b: (u16::from(b) * 50 / 100) as u8,
         },
         other => other,
     }
@@ -421,9 +478,9 @@ mod tests {
         assert_eq!(
             dark,
             Color::Rgb {
-                r: 40,
-                g: 20,
-                b: 10
+                r: 60,
+                g: 30,
+                b: 15
             }
         );
     }
@@ -452,10 +509,17 @@ mod tests {
                 g: 0,
                 b: 128,
             })
+            .sidebar_bg(Color::Rgb {
+                r: 30,
+                g: 30,
+                b: 30,
+            })
             .diff_added_fg(Color::Rgb { r: 0, g: 255, b: 0 })
             .diff_removed_fg(Color::Rgb { r: 255, g: 0, b: 0 })
             .diff_added_bg(Color::Rgb { r: 0, g: 20, b: 0 })
             .diff_removed_bg(Color::Rgb { r: 20, g: 0, b: 0 })
+            .diff_added_highlight_bg(Color::Rgb { r: 0, g: 40, b: 0 })
+            .diff_removed_highlight_bg(Color::Rgb { r: 40, g: 0, b: 0 })
             .build()
             .unwrap();
         assert_eq!(theme.primary(), Color::Black);
