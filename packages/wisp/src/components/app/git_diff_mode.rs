@@ -1,9 +1,11 @@
-use crate::components::git_diff_view::{GitDiffView, GitDiffViewMessage, build_patch_lines};
+use crate::components::file_tree::FileTree;
+use crate::components::git_diff_view::{
+    GitDiffView, GitDiffViewMessage, build_patch_lines, diff_layout, should_use_split_patch,
+};
+use crate::components::split_patch_renderer;
 use crate::git_diff::{FileDiff, GitDiffDocument, PatchLineKind};
 use std::path::PathBuf;
-#[cfg(test)]
-use tui::MouseEvent;
-use tui::{Component, Event, Line, MouseEventKind, ViewContext};
+use tui::{Component, Event, Line, ViewContext};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScreenMode {
@@ -53,7 +55,11 @@ pub struct GitDiffViewState {
     pub(crate) comment_buffer: String,
     pub(crate) comment_cursor: usize,
     pub(crate) queued_comments: Vec<QueuedComment>,
+    pub(crate) file_tree: Option<FileTree>,
+    pub(crate) file_list_scroll: usize,
+    pub(crate) sidebar_width_delta: i16,
     cached_for_file: Option<usize>,
+    cached_for_width: Option<u16>,
 }
 
 impl GitDiffViewState {
@@ -69,12 +75,17 @@ impl GitDiffViewState {
             comment_buffer: String::new(),
             comment_cursor: 0,
             queued_comments: Vec::new(),
+            file_tree: None,
+            file_list_scroll: 0,
+            sidebar_width_delta: 0,
             cached_for_file: None,
+            cached_for_width: None,
         }
     }
 
     pub(crate) fn invalidate_patch_cache(&mut self) {
         self.cached_for_file = None;
+        self.cached_for_width = None;
         self.cached_patch_lines.clear();
         self.cached_patch_line_refs.clear();
     }
@@ -138,6 +149,23 @@ impl GitDiffViewState {
         if self.focus != PatchFocus::FileList {
             return false;
         }
+
+        if let Some(tree) = &mut self.file_tree {
+            let prev_file = tree.selected_file_index();
+            tree.navigate(delta);
+            let new_file = tree.selected_file_index();
+            if let Some(idx) = new_file
+                && Some(idx) != prev_file.or(Some(self.selected_file))
+            {
+                self.selected_file = idx;
+                self.cursor_line = 0;
+                self.patch_scroll = 0;
+                self.invalidate_patch_cache();
+                return true;
+            }
+            return prev_file != new_file;
+        }
+
         let file_count = self.file_count();
         if file_count == 0 {
             return false;
@@ -153,6 +181,41 @@ impl GitDiffViewState {
         changed
     }
 
+    pub(crate) fn tree_collapse_or_parent(&mut self) {
+        if let Some(tree) = &mut self.file_tree {
+            tree.collapse_or_parent();
+        }
+    }
+
+    pub(crate) fn tree_expand_or_enter(&mut self) -> bool {
+        let Some(tree) = &mut self.file_tree else {
+            return true;
+        };
+        let is_file = tree.expand_or_enter();
+        if is_file
+            && let Some(idx) = tree.selected_file_index()
+            && idx != self.selected_file
+        {
+            self.selected_file = idx;
+            self.cursor_line = 0;
+            self.patch_scroll = 0;
+            self.invalidate_patch_cache();
+        }
+        is_file
+    }
+
+    pub(crate) fn ensure_file_list_visible(&mut self, viewport_height: usize) {
+        let Some(tree) = &self.file_tree else {
+            return;
+        };
+        let selected = tree.selected_visible();
+        if selected < self.file_list_scroll {
+            self.file_list_scroll = selected;
+        } else if selected >= self.file_list_scroll + viewport_height {
+            self.file_list_scroll = selected.saturating_sub(viewport_height - 1);
+        }
+    }
+
     pub(crate) fn move_cursor(&mut self, delta: isize) -> bool {
         if self.focus != PatchFocus::Patch {
             return false;
@@ -165,19 +228,6 @@ impl GitDiffViewState {
         };
         let changed = next != self.cursor_line;
         self.cursor_line = next;
-        changed
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn scroll_patch(&mut self, delta: isize) -> bool {
-        let max = self.max_patch_scroll();
-        let next = if delta.is_negative() {
-            self.patch_scroll.saturating_sub(delta.unsigned_abs())
-        } else {
-            (self.patch_scroll + delta.unsigned_abs()).min(max)
-        };
-        let changed = next != self.patch_scroll;
-        self.patch_scroll = next;
         changed
     }
 
@@ -244,7 +294,9 @@ impl GitDiffViewState {
     }
 
     pub(crate) fn ensure_patch_cache(&mut self, context: &ViewContext) {
-        if self.cached_for_file == Some(self.selected_file) {
+        let width = context.size.width;
+        if self.cached_for_file == Some(self.selected_file) && self.cached_for_width == Some(width)
+        {
             return;
         }
 
@@ -256,11 +308,28 @@ impl GitDiffViewState {
             self.cached_patch_lines = Vec::new();
             self.cached_patch_line_refs = Vec::new();
         } else {
-            let (lines, refs) = build_patch_lines(file, context);
-            self.cached_patch_lines = lines;
-            self.cached_patch_line_refs = refs;
+            let use_split_patch =
+                should_use_split_patch(width as usize, self.sidebar_width_delta, file);
+            let (_left_width, right_width) =
+                diff_layout(width as usize, self.sidebar_width_delta);
+
+            if use_split_patch {
+                let (lines, refs) =
+                    split_patch_renderer::build_split_patch_lines(
+                        file,
+                        right_width,
+                        context,
+                    );
+                self.cached_patch_lines = lines;
+                self.cached_patch_line_refs = refs;
+            } else {
+                let (lines, refs) = build_patch_lines(file, right_width, context);
+                self.cached_patch_lines = lines;
+                self.cached_patch_line_refs = refs;
+            }
         }
         self.cached_for_file = Some(self.selected_file);
+        self.cached_for_width = Some(width);
     }
 
     #[allow(dead_code)]
@@ -272,6 +341,8 @@ impl GitDiffViewState {
         }
 
         let file_count = doc.files.len();
+        self.file_tree = Some(FileTree::from_files(&doc.files));
+        self.file_list_scroll = 0;
         self.load_state = GitDiffLoadState::Ready(doc);
         self.selected_file = self.selected_file.min(file_count.saturating_sub(1));
         self.invalidate_patch_cache();
@@ -365,29 +436,18 @@ impl GitDiffMode {
         outcome.unwrap_or_default()
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn on_mouse_event(&mut self, event: &Event) {
-        if let Event::Mouse(mouse) = event {
-            match mouse.kind {
-                MouseEventKind::ScrollUp => {
-                    self.state.scroll_patch(-3);
-                }
-                MouseEventKind::ScrollDown => {
-                    self.state.scroll_patch(3);
-                }
-                _ => {}
-            }
-        }
-    }
-
     pub(crate) fn render_lines(&self, context: &ViewContext) -> Vec<Line> {
         GitDiffView::render_from_state(&self.state, context)
     }
 
     pub(crate) fn refresh_caches(&mut self, context: &ViewContext) {
         self.state.ensure_patch_cache(context);
+        if let Some(tree) = &mut self.state.file_tree {
+            tree.ensure_cache();
+        }
         let viewport_height = (context.size.height as usize).saturating_sub(2);
         self.state.ensure_cursor_visible(viewport_height);
+        self.state.ensure_file_list_visible(viewport_height);
     }
 
     pub(crate) fn is_comment_input(&self) -> bool {
@@ -544,20 +604,6 @@ mod tests {
         assert_eq!(mode.state.selected_file_path(), Some("b.rs"));
         assert_eq!(mode.state.focus, PatchFocus::Patch);
         assert_eq!(mode.state.patch_scroll, 0);
-    }
-
-    #[test]
-    fn mouse_scroll_moves_patch_scroll() {
-        let mut mode = mode_with(&["a.rs"]);
-        mode.state.focus = PatchFocus::Patch;
-        mode.state.cached_patch_lines = vec![Line::new("a"), Line::new("b"), Line::new("c")];
-        mode.on_mouse_event(&Event::Mouse(MouseEvent {
-            kind: MouseEventKind::ScrollDown,
-            column: 0,
-            row: 0,
-            modifiers: tui::KeyModifiers::NONE,
-        }));
-        assert_eq!(mode.state.patch_scroll, 2);
     }
 
     #[test]

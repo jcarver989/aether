@@ -134,7 +134,7 @@ fn patch_lines_have_syntax_highlighted_spans() {
     let doc = make_test_doc();
     let context = ViewContext::new((100, 24));
     let file = &doc.files[0];
-    let (patch_lines, _refs) = build_patch_lines(file, &context);
+    let (patch_lines, _refs) = build_patch_lines(file, 100, &context);
 
     let term = render_lines(&patch_lines, 100, 24);
     let output = term.get_lines();
@@ -146,11 +146,14 @@ fn patch_lines_have_syntax_highlighted_spans() {
         output[1]
     );
 
-    // Added line should have diff_added_bg
-    let style = term.style_of_text(3, "new()").unwrap();
-    assert_eq!(
-        style.bg,
-        Some(context.theme.diff_added_bg()),
-        "Added line should have diff_added_bg"
+    // Added code spans should retain the diff background.
+    let added_line = &patch_lines[3];
+    assert!(
+        added_line
+            .spans()
+            .iter()
+            .skip(1)
+            .any(|span| span.style().bg == Some(context.theme.diff_added_bg())),
+        "added code spans should keep diff_added_bg"
     );
 }

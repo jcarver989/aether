@@ -83,6 +83,10 @@ impl App {
         self.settings_overlay.is_some()
     }
 
+    pub fn needs_mouse_capture(&self) -> bool {
+        self.settings_overlay.is_some() || self.screen_router.is_git_diff()
+    }
+
     pub fn wants_tick(&self) -> bool {
         self.conversation_screen.wants_tick()
     }
@@ -551,7 +555,11 @@ impl Component for App {
                 self.conversation_screen.on_tick(now);
             }
             Event::Mouse(_) => {
-                if self.settings_overlay.is_some() {
+                if self.screen_router.is_git_diff() {
+                    for msg in self.screen_router.on_event(event).await.unwrap_or_default() {
+                        self.handle_screen_router_message(&mut commands, msg).await;
+                    }
+                } else if self.settings_overlay.is_some() {
                     self.handle_settings_overlay_event(&mut commands, event)
                         .await;
                 }
@@ -992,6 +1000,18 @@ mod tests {
 
         send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
         assert!(!app.screen_router.is_git_diff(), "should close git diff");
+    }
+
+    #[tokio::test]
+    async fn needs_mouse_capture_in_git_diff() {
+        let mut app = make_app();
+        assert!(!app.needs_mouse_capture());
+
+        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
+        assert!(app.needs_mouse_capture());
+
+        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
+        assert!(!app.needs_mouse_capture());
     }
 
     #[tokio::test]

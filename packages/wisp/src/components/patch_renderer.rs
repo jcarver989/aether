@@ -1,9 +1,10 @@
 use crate::components::app::git_diff_mode::PatchLineRef;
 use crate::git_diff::{FileDiff, PatchLineKind};
-use tui::{Color, Line, Span, Style, ViewContext};
+use tui::{Color, Line, Span, Style, ViewContext, soft_wrap_line};
 
 pub fn build_patch_lines(
     file: &FileDiff,
+    right_width: usize,
     context: &ViewContext,
 ) -> (Vec<Line>, Vec<Option<PatchLineRef>>) {
     let theme = &context.theme;
@@ -31,7 +32,10 @@ pub fn build_patch_lines(
 
             match pl.kind {
                 PatchLineKind::HunkHeader => {
-                    line.push_with_style(&pl.text, Style::fg(theme.info()).bold());
+                    line.push_with_style(
+                        &pl.text,
+                        Style::fg(theme.info()).bold().bg_color(theme.code_bg()),
+                    );
                 }
                 PatchLineKind::Context => {
                     let old_str = format_line_no(pl.old_line_no, gutter_width);
@@ -64,11 +68,20 @@ pub fn build_patch_lines(
                 }
             }
 
-            patch_lines.push(line);
-            patch_refs.push(Some(PatchLineRef {
-                hunk_index: hunk_idx,
-                line_index: line_idx,
-            }));
+            #[allow(clippy::cast_possible_truncation)]
+            let wrapped = soft_wrap_line(&line, right_width as u16);
+            for (i, mut wrapped_line) in wrapped.into_iter().enumerate() {
+                wrapped_line.extend_bg_to_width(right_width);
+                patch_lines.push(wrapped_line);
+                if i == 0 {
+                    patch_refs.push(Some(PatchLineRef {
+                        hunk_index: hunk_idx,
+                        line_index: line_idx,
+                    }));
+                } else {
+                    patch_refs.push(None);
+                }
+            }
         }
     }
 
@@ -79,7 +92,7 @@ pub(crate) fn lang_hint_from_path(path: &str) -> &str {
     path.rsplit('.').next().unwrap_or("")
 }
 
-fn append_syntax_spans(
+pub(crate) fn append_syntax_spans(
     line: &mut Line,
     text: &str,
     lang_hint: &str,
@@ -102,14 +115,14 @@ fn append_syntax_spans(
     }
 }
 
-fn format_line_no(line_no: Option<usize>, width: usize) -> String {
+pub(crate) fn format_line_no(line_no: Option<usize>, width: usize) -> String {
     match line_no {
         Some(n) => format!("{n:>width$}"),
         None => " ".repeat(width),
     }
 }
 
-fn digit_count(mut n: usize) -> usize {
+pub(crate) fn digit_count(mut n: usize) -> usize {
     if n == 0 {
         return 1;
     }
@@ -124,6 +137,122 @@ fn digit_count(mut n: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::git_diff::{FileDiff, FileStatus, Hunk, PatchLine};
+    use tui::display_width_text;
+
+    fn make_file(lines: Vec<PatchLine>) -> FileDiff {
+        FileDiff {
+            old_path: Some("test.rs".to_string()),
+            path: "test.rs".to_string(),
+            status: FileStatus::Modified,
+            hunks: vec![Hunk {
+                header: "@@ -1,1 +1,1 @@".to_string(),
+                old_start: 1,
+                old_count: 1,
+                new_start: 1,
+                new_count: 1,
+                lines,
+            }],
+            binary: false,
+        }
+    }
+
+    #[test]
+    fn long_lines_soft_wrapped_to_right_width() {
+        let long_content = "x".repeat(200);
+        let file = make_file(vec![
+            PatchLine {
+                kind: PatchLineKind::HunkHeader,
+                text: "@@ -1,1 +1,1 @@".to_string(),
+                old_line_no: None,
+                new_line_no: None,
+            },
+            PatchLine {
+                kind: PatchLineKind::Added,
+                text: long_content,
+                old_line_no: None,
+                new_line_no: Some(1),
+            },
+        ]);
+        let context = ViewContext::new((120, 24));
+        let right_width = 60;
+        let (lines, refs) = build_patch_lines(&file, right_width, &context);
+
+        // The long line should have wrapped into multiple visual lines
+        assert!(
+            lines.len() > 2,
+            "long line should wrap, got {} lines",
+            lines.len()
+        );
+
+        // No visual line should exceed right_width
+        for (i, line) in lines.iter().enumerate() {
+            let w = line.display_width();
+            assert!(
+                w <= right_width,
+                "line {i} width {w} exceeds right_width {right_width}: {}",
+                line.plain_text()
+            );
+        }
+
+        // First wrapped line gets the ref, continuations get None
+        assert!(refs[1].is_some(), "first wrapped line should have a ref");
+        for i in 2..lines.len() {
+            assert!(
+                refs[i].is_none(),
+                "continuation line {i} should have None ref"
+            );
+        }
+    }
+
+    #[test]
+    fn short_lines_not_wrapped() {
+        let file = make_file(vec![
+            PatchLine {
+                kind: PatchLineKind::HunkHeader,
+                text: "@@ -1,1 +1,1 @@".to_string(),
+                old_line_no: None,
+                new_line_no: None,
+            },
+            PatchLine {
+                kind: PatchLineKind::Context,
+                text: "short".to_string(),
+                old_line_no: Some(1),
+                new_line_no: Some(1),
+            },
+        ]);
+        let context = ViewContext::new((120, 24));
+        let (lines, refs) = build_patch_lines(&file, 80, &context);
+
+        assert_eq!(lines.len(), 2, "short lines should not wrap");
+        assert!(refs[0].is_some());
+        assert!(refs[1].is_some());
+    }
+
+    #[test]
+    fn wrapped_lines_extend_bg_to_width() {
+        let long_content = "x".repeat(200);
+        let file = make_file(vec![PatchLine {
+            kind: PatchLineKind::Added,
+            text: long_content,
+            old_line_no: None,
+            new_line_no: Some(1),
+        }]);
+        let context = ViewContext::new((120, 24));
+        let right_width = 60;
+        let (lines, _) = build_patch_lines(&file, right_width, &context);
+
+        // All lines from the added line should have consistent width due to bg extension
+        for line in &lines {
+            let w = display_width_text(&line.plain_text());
+            assert_eq!(
+                w,
+                right_width,
+                "line should be padded to right_width: {}",
+                line.plain_text()
+            );
+        }
+    }
 
     #[test]
     fn digit_count_works() {

@@ -26,6 +26,9 @@ pub struct SplitDiffCell {
     pub tag: DiffTag,
     pub content: String,
     pub line_number: Option<usize>,
+    /// Byte offset ranges within `content` that should be emphasized
+    /// (word-level diff highlights).
+    pub highlights: Vec<(usize, usize)>,
 }
 
 /// A preview of changed lines for an edit operation.

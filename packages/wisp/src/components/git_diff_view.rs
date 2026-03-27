@@ -1,9 +1,13 @@
 use crate::components::app::git_diff_mode::{QueuedComment, format_review_prompt};
 use crate::components::app::{GitDiffLoadState, GitDiffViewState, PatchFocus};
-use crate::components::file_list_renderer::render_file_list_cell;
+use crate::components::file_list_renderer::{render_file_list_cell, render_file_tree_cell};
+use crate::components::file_tree::FileTree;
 pub use crate::components::patch_renderer::build_patch_lines;
 use crate::git_diff::{FileDiff, FileStatus, PatchLineKind};
-use tui::{Component, Event, Frame, KeyCode, Line, Style, ViewContext, truncate_text};
+use tui::{
+    Component, Event, Frame, KeyCode, Line, MouseEvent, MouseEventKind, Style, ViewContext,
+    truncate_text,
+};
 
 pub enum GitDiffViewMessage {
     Close,
@@ -21,6 +25,27 @@ impl GitDiffView<'_> {
     }
 }
 
+pub(crate) fn diff_layout(total_width: usize, delta: i16) -> (usize, usize) {
+    let base = (total_width / 3)
+        .clamp(20, 28)
+        .min(total_width.saturating_sub(4));
+    #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let left = (base as i16 + delta).clamp(12, (total_width / 2) as i16) as usize;
+    let right = total_width.saturating_sub(left + 1);
+    (left, right)
+}
+
+pub(crate) fn should_use_split_patch(total_width: usize, delta: i16, file: &FileDiff) -> bool {
+    let (_left_width, right_width) = diff_layout(total_width, delta);
+    let has_removals = file
+        .hunks
+        .iter()
+        .flat_map(|h| &h.lines)
+        .any(|line| line.kind == PatchLineKind::Removed);
+
+    right_width >= 80 && has_removals
+}
+
 fn render_git_diff_state(state: &GitDiffViewState, context: &ViewContext) -> Vec<Line> {
     let theme = &context.theme;
     let total_width = context.size.width as usize;
@@ -28,10 +53,7 @@ fn render_git_diff_state(state: &GitDiffViewState, context: &ViewContext) -> Vec
         return vec![Line::new("Too narrow")];
     }
 
-    let left_width = (total_width / 3)
-        .clamp(20, 28)
-        .min(total_width.saturating_sub(4));
-    let right_width = total_width.saturating_sub(left_width + 1);
+    let (left_width, right_width) = diff_layout(total_width, state.sidebar_width_delta);
     let available_height = context.size.height as usize;
 
     match &state.load_state {
@@ -69,67 +91,10 @@ impl Component for GitDiffView<'_> {
     type Message = GitDiffViewMessage;
 
     async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
-        let Event::Key(key) = event else {
-            return None;
-        };
-
-        if self.state.focus == PatchFocus::CommentInput {
-            return Some(self.on_comment_input(key.code));
-        }
-
-        match key.code {
-            KeyCode::Esc => Some(vec![GitDiffViewMessage::Close]),
-            KeyCode::Char('r') => Some(vec![GitDiffViewMessage::Refresh]),
-            KeyCode::Char('h') | KeyCode::Left => {
-                self.state.set_focus(PatchFocus::FileList);
-                Some(vec![])
-            }
-            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
-                self.state.set_focus(PatchFocus::Patch);
-                Some(vec![])
-            }
-            KeyCode::Char('j') | KeyCode::Down => {
-                self.navigate_down();
-                Some(vec![])
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                self.navigate_up();
-                Some(vec![])
-            }
-            KeyCode::Char('g') => {
-                self.state.move_cursor_to_start();
-                Some(vec![])
-            }
-            KeyCode::Char('G') => {
-                self.state.move_cursor_to_end();
-                Some(vec![])
-            }
-            KeyCode::PageDown => {
-                self.state.move_cursor(20);
-                Some(vec![])
-            }
-            KeyCode::PageUp => {
-                self.state.move_cursor(-20);
-                Some(vec![])
-            }
-            KeyCode::Char('n') => {
-                self.state.jump_next_hunk();
-                Some(vec![])
-            }
-            KeyCode::Char('p') => {
-                self.state.jump_prev_hunk();
-                Some(vec![])
-            }
-            KeyCode::Char('c') => {
-                self.enter_comment_mode();
-                Some(vec![])
-            }
-            KeyCode::Char('s') => Some(self.submit_review()),
-            KeyCode::Char('u') => {
-                self.state.queued_comments.pop();
-                Some(vec![])
-            }
-            _ => Some(vec![]),
+        match event {
+            Event::Mouse(mouse) => Some(self.on_mouse_event(*mouse)),
+            Event::Key(key) => Some(self.on_key_event(key.code)),
+            _ => None,
         }
     }
 
@@ -139,6 +104,117 @@ impl Component for GitDiffView<'_> {
 }
 
 impl GitDiffView<'_> {
+    fn on_key_event(&mut self, code: KeyCode) -> Vec<GitDiffViewMessage> {
+        if self.state.focus == PatchFocus::CommentInput {
+            return self.on_comment_input(code);
+        }
+
+        match code {
+            KeyCode::Esc => vec![GitDiffViewMessage::Close],
+            KeyCode::Char('r') => vec![GitDiffViewMessage::Refresh],
+            KeyCode::Char('h') | KeyCode::Left => {
+                if self.state.focus == PatchFocus::FileList {
+                    self.state.tree_collapse_or_parent();
+                } else {
+                    self.state.set_focus(PatchFocus::FileList);
+                }
+                vec![]
+            }
+            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
+                if self.state.focus == PatchFocus::FileList {
+                    if self.state.tree_expand_or_enter() {
+                        self.state.set_focus(PatchFocus::Patch);
+                    }
+                } else {
+                    self.state.set_focus(PatchFocus::Patch);
+                }
+                vec![]
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.navigate_down();
+                vec![]
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.navigate_up();
+                vec![]
+            }
+            KeyCode::Char('g') => {
+                self.state.move_cursor_to_start();
+                vec![]
+            }
+            KeyCode::Char('G') => {
+                self.state.move_cursor_to_end();
+                vec![]
+            }
+            KeyCode::PageDown => {
+                self.state.move_cursor(20);
+                vec![]
+            }
+            KeyCode::PageUp => {
+                self.state.move_cursor(-20);
+                vec![]
+            }
+            KeyCode::Char('n') => {
+                self.state.jump_next_hunk();
+                vec![]
+            }
+            KeyCode::Char('p') => {
+                self.state.jump_prev_hunk();
+                vec![]
+            }
+            KeyCode::Char('c') => {
+                self.enter_comment_mode();
+                vec![]
+            }
+            KeyCode::Char('s') => self.submit_review(),
+            KeyCode::Char('u') => {
+                self.state.queued_comments.pop();
+                vec![]
+            }
+            KeyCode::Char('<') => {
+                self.state.sidebar_width_delta -= 4;
+                self.state.invalidate_patch_cache();
+                vec![]
+            }
+            KeyCode::Char('>') => {
+                self.state.sidebar_width_delta += 4;
+                self.state.invalidate_patch_cache();
+                vec![]
+            }
+            _ => vec![],
+        }
+    }
+
+    fn on_mouse_event(&mut self, mouse: MouseEvent) -> Vec<GitDiffViewMessage> {
+        match mouse.kind {
+            MouseEventKind::ScrollUp => {
+                match self.state.focus {
+                    PatchFocus::FileList => {
+                        self.state.select_relative(-1);
+                    }
+                    PatchFocus::Patch => {
+                        self.state.move_cursor(-3);
+                    }
+                    PatchFocus::CommentInput => {}
+                }
+                vec![]
+            }
+            MouseEventKind::ScrollDown => {
+                match self.state.focus {
+                    PatchFocus::FileList => {
+                        self.state.select_relative(1);
+                    }
+                    PatchFocus::Patch => {
+                        self.state.move_cursor(3);
+                    }
+                    PatchFocus::CommentInput => {}
+                }
+                vec![]
+            }
+            _ => vec![],
+        }
+    }
+
     fn navigate_down(&mut self) {
         match self.state.focus {
             PatchFocus::FileList => {
@@ -254,7 +330,23 @@ fn render_ready(
         available_height
     };
 
-    let row_count = content_height.max(files.len());
+    let visible_entries = state
+        .file_tree
+        .as_ref()
+        .map(FileTree::visible_entries)
+        .unwrap_or_default();
+    let tree_selected = state
+        .file_tree
+        .as_ref()
+        .map_or(0, FileTree::selected_visible);
+    let file_scroll = state.file_list_scroll;
+
+    let file_list_len = if visible_entries.is_empty() {
+        files.len()
+    } else {
+        visible_entries.len()
+    };
+    let row_count = content_height.max(file_list_len);
     let mut rows = Vec::with_capacity(available_height);
 
     for i in 0..row_count {
@@ -275,15 +367,37 @@ fn render_ready(
             );
             let padded = truncate_text(&indicator, left_width);
             let pad = left_width.saturating_sub(padded.chars().count());
-            line.push_with_style(padded.as_ref(), Style::fg(theme.accent()));
+            line.push_with_style(
+                padded.as_ref(),
+                Style::fg(theme.accent()).bg_color(theme.sidebar_bg()),
+            );
             if pad > 0 {
-                line.push_text(" ".repeat(pad));
+                line.push_with_style(
+                    " ".repeat(pad),
+                    Style::default().bg_color(theme.sidebar_bg()),
+                );
+            }
+        } else if !visible_entries.is_empty() {
+            let scrolled_i = i + file_scroll;
+            if let Some(entry) = visible_entries.get(scrolled_i) {
+                render_file_tree_cell(
+                    &mut line,
+                    entry,
+                    scrolled_i == tree_selected,
+                    left_width,
+                    theme,
+                );
+            } else {
+                line.push_with_style(
+                    " ".repeat(left_width),
+                    Style::default().bg_color(theme.sidebar_bg()),
+                );
             }
         } else {
             render_file_list_cell(&mut line, files, i, selected, left_width, theme);
         }
 
-        line.push_with_style("\u{2502}", Style::fg(theme.text_secondary()));
+        line.push_with_style(" ", Style::default().bg_color(theme.code_bg()));
         render_patch_cell(
             &mut line,
             selected_file,
@@ -300,25 +414,39 @@ fn render_ready(
     }
 
     if show_comment_bar {
-        let mut bar = Line::default();
-        let label = format!("Comment: {}", state.comment_buffer);
-        let truncated = truncate_text(&label, left_width + 1 + right_width);
-        bar.push_with_style(
-            truncated.as_ref(),
-            Style::fg(theme.text_primary()).bg_color(theme.highlight_bg()),
-        );
-        let bar_width = truncated.chars().count();
-        let total = left_width + 1 + right_width;
-        if bar_width < total {
-            bar.push_with_style(
-                " ".repeat(total - bar_width),
-                Style::default().bg_color(theme.highlight_bg()),
-            );
-        }
-        rows.push(bar);
+        rows.push(render_comment_bar(
+            &state.comment_buffer,
+            left_width,
+            right_width,
+            theme,
+        ));
     }
 
     rows
+}
+
+fn render_comment_bar(
+    comment_buffer: &str,
+    left_width: usize,
+    right_width: usize,
+    theme: &tui::Theme,
+) -> Line {
+    let mut bar = Line::default();
+    let label = format!("Comment: {comment_buffer}");
+    let total = left_width + 1 + right_width;
+    let truncated = truncate_text(&label, total);
+    bar.push_with_style(
+        truncated.as_ref(),
+        Style::fg(theme.text_primary()).bg_color(theme.highlight_bg()),
+    );
+    let bar_width = truncated.chars().count();
+    if bar_width < total {
+        bar.push_with_style(
+            " ".repeat(total - bar_width),
+            Style::default().bg_color(theme.highlight_bg()),
+        );
+    }
+    bar
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -392,8 +520,11 @@ fn render_message_layout(
     let mut rows = Vec::with_capacity(available_height);
     for i in 0..available_height {
         let mut line = Line::default();
-        line.push_text(" ".repeat(left_width));
-        line.push_with_style("\u{2502}", Style::fg(theme.text_secondary()));
+        line.push_with_style(
+            " ".repeat(left_width),
+            Style::default().bg_color(theme.sidebar_bg()),
+        );
+        line.push_with_style(" ", Style::default().bg_color(theme.code_bg()));
         if i == 0 {
             line.push_with_style(message, Style::fg(theme.text_secondary()));
         }
@@ -465,7 +596,7 @@ mod tests {
     use super::*;
     use crate::git_diff::{FileDiff, FileStatus, GitDiffDocument, Hunk, PatchLine, PatchLineKind};
     use std::path::PathBuf;
-    use tui::{KeyEvent, KeyModifiers};
+    use tui::{KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
@@ -562,6 +693,19 @@ mod tests {
         state
     }
 
+    #[test]
+    fn split_patch_requires_width_109_with_default_sidebar() {
+        let doc = make_test_doc();
+        assert!(!should_use_split_patch(108, 0, &doc.files[0]));
+        assert!(should_use_split_patch(109, 0, &doc.files[0]));
+    }
+
+    #[test]
+    fn split_patch_requires_removals_even_when_wide() {
+        let doc = make_test_doc();
+        assert!(!should_use_split_patch(140, 0, &doc.files[1]));
+    }
+
     fn queued_comment(line_text: &str, comment: &str, kind: PatchLineKind) -> QueuedComment {
         QueuedComment {
             file_path: "a.rs".to_string(),
@@ -578,6 +722,20 @@ mod tests {
         view.on_event(&Event::Key(key(code)))
             .await
             .unwrap_or_default()
+    }
+
+    async fn send_mouse(
+        view: &mut GitDiffView<'_>,
+        kind: MouseEventKind,
+    ) -> Vec<GitDiffViewMessage> {
+        view.on_event(&Event::Mouse(MouseEvent {
+            kind,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        }))
+        .await
+        .unwrap_or_default()
     }
 
     fn has_msg(msgs: &[GitDiffViewMessage], pred: fn(&GitDiffViewMessage) -> bool) -> bool {
@@ -804,5 +962,135 @@ mod tests {
         assert_eq!(comment.comment, "test review");
         assert!(comment.hunk_text.contains("+    new();"));
         assert!(comment.hunk_text.contains("-    old();"));
+    }
+
+    #[tokio::test]
+    async fn mouse_scroll_down_in_file_list_selects_next() {
+        let mut state = make_view_state(make_test_doc());
+        assert_eq!(state.selected_file, 0);
+        let mut view = GitDiffView { state: &mut state };
+        send_mouse(&mut view, MouseEventKind::ScrollDown).await;
+        assert_eq!(view.state.selected_file, 1);
+    }
+
+    #[tokio::test]
+    async fn mouse_scroll_up_in_patch_moves_cursor() {
+        let mut state = make_state_with_cache();
+        state.focus = PatchFocus::Patch;
+        state.cursor_line = 4;
+        let mut view = GitDiffView { state: &mut state };
+        send_mouse(&mut view, MouseEventKind::ScrollUp).await;
+        assert_eq!(view.state.cursor_line, 1);
+    }
+
+    #[tokio::test]
+    async fn mouse_scroll_during_comment_input_is_noop() {
+        let mut state = make_state_with_cache();
+        state.focus = PatchFocus::CommentInput;
+        state.cursor_line = 2;
+        let original_cursor = state.cursor_line;
+        let original_file = state.selected_file;
+        let mut view = GitDiffView { state: &mut state };
+        send_mouse(&mut view, MouseEventKind::ScrollDown).await;
+        assert_eq!(view.state.cursor_line, original_cursor);
+        assert_eq!(view.state.selected_file, original_file);
+        assert_eq!(view.state.focus, PatchFocus::CommentInput);
+    }
+
+    fn simple_hunks() -> Vec<Hunk> {
+        use PatchLineKind::*;
+        let h = "@@ -1,1 +1,1 @@";
+        vec![hunk(
+            h,
+            (1, 1),
+            (1, 1),
+            vec![
+                patch_line(HunkHeader, h, None, None),
+                patch_line(Context, "line", Some(1), Some(1)),
+            ],
+        )]
+    }
+
+    fn make_tree_doc() -> GitDiffDocument {
+        GitDiffDocument {
+            repo_root: PathBuf::from("/tmp/test"),
+            files: vec![
+                file_diff("src/a.rs", None, FileStatus::Modified, simple_hunks()),
+                file_diff("src/b.rs", None, FileStatus::Added, simple_hunks()),
+                file_diff("lib/c.rs", None, FileStatus::Modified, simple_hunks()),
+            ],
+        }
+    }
+
+    fn make_tree_state() -> GitDiffViewState {
+        GitDiffViewState::new(GitDiffLoadState::Ready(make_tree_doc()))
+    }
+
+    #[tokio::test]
+    async fn h_in_file_list_collapses_directory() {
+        let mut state = make_tree_state();
+        state.file_tree = Some(crate::components::file_tree::FileTree::from_files(
+            &make_tree_doc().files,
+        ));
+        // Tree: lib/ (dir), c.rs, src/ (dir), a.rs, b.rs
+        // Select "src/" dir (visible index 2)
+        state.file_tree.as_mut().unwrap().navigate(2);
+        let entries_before = state.file_tree.as_ref().unwrap().visible_entries().len();
+        assert_eq!(entries_before, 5);
+
+        let mut view = GitDiffView { state: &mut state };
+        send_key(&mut view, KeyCode::Char('h')).await;
+
+        // src/ should be collapsed, hiding a.rs and b.rs
+        let entries_after = view
+            .state
+            .file_tree
+            .as_ref()
+            .unwrap()
+            .visible_entries()
+            .len();
+        assert_eq!(entries_after, 3); // lib/, c.rs, src/ (collapsed)
+    }
+
+    #[tokio::test]
+    async fn enter_on_directory_expands_it() {
+        let mut state = make_tree_state();
+        state.file_tree = Some(crate::components::file_tree::FileTree::from_files(
+            &make_tree_doc().files,
+        ));
+        // Collapse src/ first
+        state.file_tree.as_mut().unwrap().navigate(2);
+        state.file_tree.as_mut().unwrap().collapse_or_parent();
+        assert_eq!(state.file_tree.as_ref().unwrap().visible_entries().len(), 3);
+
+        let mut view = GitDiffView { state: &mut state };
+        send_key(&mut view, KeyCode::Enter).await;
+
+        // Should expand, stay in FileList
+        assert_eq!(view.state.focus, PatchFocus::FileList);
+        assert_eq!(
+            view.state
+                .file_tree
+                .as_ref()
+                .unwrap()
+                .visible_entries()
+                .len(),
+            5
+        );
+    }
+
+    #[tokio::test]
+    async fn enter_on_file_switches_to_patch() {
+        let mut state = make_tree_state();
+        state.file_tree = Some(crate::components::file_tree::FileTree::from_files(
+            &make_tree_doc().files,
+        ));
+        // Navigate to c.rs (visible index 1, which is a file)
+        state.file_tree.as_mut().unwrap().navigate(1);
+
+        let mut view = GitDiffView { state: &mut state };
+        send_key(&mut view, KeyCode::Enter).await;
+
+        assert_eq!(view.state.focus, PatchFocus::Patch);
     }
 }

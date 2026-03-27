@@ -1,4 +1,4 @@
-use super::{Color, Theme, darken_color};
+use super::{Color, Theme, darken_color, emphasize_color};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -130,6 +130,11 @@ impl From<&syntect::highlighting::Theme> for Theme {
             .or_else(|| resolve_scope_fg(syntect, "storage.type"))
             .unwrap_or(accent);
 
+        let (bg, highlight_bg, highlight_fg, inline_code_bg) =
+            resolve_bg_colors(syntect, syntect_bg, fg);
+
+        let sidebar_bg = nudge_toward_fg(bg, fg);
+
         let diff_added_fg = resolve_scope_fg(syntect, "markup.inserted.diff")
             .or_else(|| resolve_scope_fg(syntect, "markup.inserted"))
             .or_else(|| resolve_scope_fg(syntect, "string"))
@@ -138,30 +143,6 @@ impl From<&syntect::highlighting::Theme> for Theme {
         let diff_removed_fg = resolve_scope_fg(syntect, "markup.deleted.diff")
             .or_else(|| resolve_scope_fg(syntect, "markup.deleted"))
             .unwrap_or(accent);
-
-        let bg = syntect
-            .settings
-            .background
-            .map_or(DEFAULT_BG, color_from_syntect);
-
-        let highlight_bg = syntect
-            .settings
-            .line_highlight
-            .or(syntect.settings.selection)
-            .map_or(DEFAULT_HIGHLIGHT_BG, |c| composite_over(c, syntect_bg));
-
-        let highlight_fg = syntect
-            .settings
-            .selection_foreground
-            .map_or(fg, color_from_syntect);
-
-        let inline_code_bg = syntect
-            .settings
-            .background
-            .map_or(DEFAULT_CODE_BG, color_from_syntect);
-
-        let added_bg = darken_color(diff_added_fg);
-        let removed_bg = darken_color(diff_removed_fg);
 
         Self {
             fg,
@@ -181,13 +162,46 @@ impl From<&syntect::highlighting::Theme> for Theme {
             error,
             info,
             secondary,
+            sidebar_bg,
             diff_added_fg,
             diff_removed_fg,
-            diff_added_bg: added_bg,
-            diff_removed_bg: removed_bg,
+            diff_added_bg: darken_color(diff_added_fg),
+            diff_removed_bg: darken_color(diff_removed_fg),
+            diff_added_highlight_bg: emphasize_color(diff_added_fg),
+            diff_removed_highlight_bg: emphasize_color(diff_removed_fg),
             syntect_theme: Arc::new(syntect.clone()),
         }
     }
+}
+
+#[allow(clippy::similar_names)]
+fn resolve_bg_colors(
+    syntect: &syntect::highlighting::Theme,
+    syntect_bg: syntect::highlighting::Color,
+    fg: Color,
+) -> (Color, Color, Color, Color) {
+    let bg = syntect
+        .settings
+        .background
+        .map_or(DEFAULT_BG, color_from_syntect);
+
+    let highlight_bg = syntect
+        .settings
+        .line_highlight
+        .or(syntect.settings.selection)
+        .map_or(DEFAULT_HIGHLIGHT_BG, |c| composite_over(c, syntect_bg));
+
+    let highlight_fg = syntect
+        .settings
+        .selection_foreground
+        .map_or(fg, color_from_syntect);
+
+    let inline_code_bg = syntect
+        .settings
+        .background
+        .map_or(DEFAULT_CODE_BG, color_from_syntect);
+
+    (bg, highlight_bg, highlight_fg, inline_code_bg)
 }
 
 /// Resolve the foreground color for a scope string against the theme.
@@ -233,6 +247,35 @@ fn derive_text_secondary(theme: &syntect::highlighting::Theme) -> Color {
         r: blend(fg.r, bg.r),
         g: blend(fg.g, bg.g),
         b: blend(fg.b, bg.b),
+    }
+}
+
+/// Nudge a background color ~5% toward the foreground to produce a
+/// subtly distinct sidebar background.
+#[allow(clippy::cast_possible_truncation)]
+fn nudge_toward_fg(bg: Color, fg: Color) -> Color {
+    match (bg, fg) {
+        (
+            Color::Rgb {
+                r: br,
+                g: bg_g,
+                b: bb,
+            },
+            Color::Rgb {
+                r: fr,
+                g: fg_g,
+                b: fb,
+            },
+        ) => {
+            let blend =
+                |b: u8, f: u8| -> u8 { ((u16::from(b) * 95 + u16::from(f) * 5) / 100) as u8 };
+            Color::Rgb {
+                r: blend(br, fr),
+                g: blend(bg_g, fg_g),
+                b: blend(bb, fb),
+            }
+        }
+        _ => bg,
     }
 }
 

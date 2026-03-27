@@ -31,10 +31,7 @@ pub fn parse_dropped_file_paths(pasted: &str) -> Option<Vec<PathBuf>> {
     }
 
     // Validate all paths exist and are files
-    let valid: Vec<PathBuf> = paths
-        .into_iter()
-        .filter(|p| p.is_file())
-        .collect();
+    let valid: Vec<PathBuf> = paths.into_iter().filter(|p| p.is_file()).collect();
 
     if valid.is_empty() {
         return None;
