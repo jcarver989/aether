@@ -22,7 +22,7 @@
     {
       "name": "Smart",
       "description": "ZAI GLM-5 with high reasoning",
-      "model": "zai:glm-5",
+      "model": "zai:glm-5.1",
       "reasoningEffort": "high",
       "userInvocable": true,
       "agentInvocable": false,
