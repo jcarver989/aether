@@ -1,4 +1,4 @@
-use super::{Color, Theme, darken_color, emphasize_color};
+use super::{Color, Theme, darken_color};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -167,8 +167,6 @@ impl From<&syntect::highlighting::Theme> for Theme {
             diff_removed_fg,
             diff_added_bg: darken_color(diff_added_fg),
             diff_removed_bg: darken_color(diff_removed_fg),
-            diff_added_highlight_bg: emphasize_color(diff_added_fg),
-            diff_removed_highlight_bg: emphasize_color(diff_removed_fg),
             syntect_theme: Arc::new(syntect.clone()),
         }
     }

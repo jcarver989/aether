@@ -1,7 +1,7 @@
 use crate::components::app::git_diff_mode::PatchLineRef;
 use crate::components::patch_renderer::lang_hint_from_path;
 use crate::git_diff::{FileDiff, PatchLine, PatchLineKind};
-use similar::{ChangeTag, DiffOp as SimilarDiffOp, TextDiff};
+use similar::{DiffOp as SimilarDiffOp, TextDiff};
 use tui::{
     DiffTag, GUTTER_WIDTH, Line, SEPARATOR, SEPARATOR_WIDTH, SplitDiffCell, Style, ViewContext,
     split_blank_panel, split_render_cell,
@@ -47,12 +47,7 @@ pub fn build_split_patch_lines(
                         line_index: *line_idx,
                     }));
                 }
-                PairedRow::Split {
-                    left,
-                    right,
-                    left_highlights,
-                    right_highlights,
-                } => {
+                PairedRow::Split { left, right } => {
                     let left_cell = left.as_ref().map(|s| SplitDiffCell {
                         tag: match s.kind {
                             PatchLineKind::Removed => DiffTag::Removed,
@@ -60,7 +55,6 @@ pub fn build_split_patch_lines(
                         },
                         content: s.text.to_string(),
                         line_number: s.line_no,
-                        highlights: left_highlights.clone(),
                     });
                     let right_cell = right.as_ref().map(|s| SplitDiffCell {
                         tag: match s.kind {
@@ -69,7 +63,6 @@ pub fn build_split_patch_lines(
                         },
                         content: s.text.to_string(),
                         line_number: s.line_no,
-                        highlights: right_highlights.clone(),
                     });
 
                     let left_rendered =
@@ -137,8 +130,6 @@ enum PairedRow<'a> {
     Split {
         left: Option<SideInfo<'a>>,
         right: Option<SideInfo<'a>>,
-        left_highlights: HighlightRanges,
-        right_highlights: HighlightRanges,
     },
 }
 
@@ -170,8 +161,6 @@ fn pair_hunk_lines(lines: &[PatchLine]) -> Vec<PairedRow<'_>> {
                         line_no: pl.new_line_no,
                         line_idx: i,
                     }),
-                    left_highlights: vec![],
-                    right_highlights: vec![],
                 });
                 i += 1;
             }
@@ -202,8 +191,6 @@ fn pair_hunk_lines(lines: &[PatchLine]) -> Vec<PairedRow<'_>> {
 
     rows
 }
-
-type HighlightRanges = Vec<(usize, usize)>;
 
 fn side_info(line: &PatchLine, line_idx: usize) -> SideInfo<'_> {
     let line_no = match line.kind {
@@ -237,8 +224,6 @@ fn pair_changed_block<'a>(removed: &[SideInfo<'a>], added: &[SideInfo<'a>]) -> V
                     rows.push(split_row(
                         Some(removed[old_index + offset]),
                         Some(added[new_index + offset]),
-                        vec![],
-                        vec![],
                     ));
                 }
             }
@@ -246,14 +231,14 @@ fn pair_changed_block<'a>(removed: &[SideInfo<'a>], added: &[SideInfo<'a>]) -> V
                 old_index, old_len, ..
             } => {
                 for side in &removed[old_index..old_index + old_len] {
-                    rows.push(split_row(Some(*side), None, vec![], vec![]));
+                    rows.push(split_row(Some(*side), None));
                 }
             }
             SimilarDiffOp::Insert {
                 new_index, new_len, ..
             } => {
                 for side in &added[new_index..new_index + new_len] {
-                    rows.push(split_row(None, Some(*side), vec![], vec![]));
+                    rows.push(split_row(None, Some(*side)));
                 }
             }
             SimilarDiffOp::Replace {
@@ -263,29 +248,18 @@ fn pair_changed_block<'a>(removed: &[SideInfo<'a>], added: &[SideInfo<'a>]) -> V
                 new_len,
             } => {
                 let pair_len = old_len.min(new_len);
-                let allow_inline_highlights = old_len == new_len;
 
                 for offset in 0..pair_len {
                     let left = removed[old_index + offset];
                     let right = added[new_index + offset];
-                    let (left_highlights, right_highlights) = if allow_inline_highlights {
-                        compute_word_highlights(Some(&left), Some(&right))
-                    } else {
-                        (vec![], vec![])
-                    };
-                    rows.push(split_row(
-                        Some(left),
-                        Some(right),
-                        left_highlights,
-                        right_highlights,
-                    ));
+                    rows.push(split_row(Some(left), Some(right)));
                 }
 
                 for side in &removed[old_index + pair_len..old_index + old_len] {
-                    rows.push(split_row(Some(*side), None, vec![], vec![]));
+                    rows.push(split_row(Some(*side), None));
                 }
                 for side in &added[new_index + pair_len..new_index + new_len] {
-                    rows.push(split_row(None, Some(*side), vec![], vec![]));
+                    rows.push(split_row(None, Some(*side)));
                 }
             }
         }
@@ -294,73 +268,8 @@ fn pair_changed_block<'a>(removed: &[SideInfo<'a>], added: &[SideInfo<'a>]) -> V
     rows
 }
 
-fn split_row<'a>(
-    left: Option<SideInfo<'a>>,
-    right: Option<SideInfo<'a>>,
-    left_highlights: HighlightRanges,
-    right_highlights: HighlightRanges,
-) -> PairedRow<'a> {
-    PairedRow::Split {
-        left,
-        right,
-        left_highlights,
-        right_highlights,
-    }
-}
-
-fn compute_word_highlights(
-    left: Option<&SideInfo>,
-    right: Option<&SideInfo>,
-) -> (HighlightRanges, HighlightRanges) {
-    let (Some(l), Some(r)) = (left, right) else {
-        return (vec![], vec![]);
-    };
-    if l.kind != PatchLineKind::Removed || r.kind != PatchLineKind::Added {
-        return (vec![], vec![]);
-    }
-
-    let diff = TextDiff::from_chars(l.text, r.text);
-    let mut left_hl = Vec::new();
-    let mut right_hl = Vec::new();
-    let mut old_pos = 0usize;
-    let mut new_pos = 0usize;
-
-    for change in diff.iter_all_changes() {
-        let len = change.value().len();
-        match change.tag() {
-            ChangeTag::Equal => {
-                old_pos += len;
-                new_pos += len;
-            }
-            ChangeTag::Delete => {
-                left_hl.push((old_pos, old_pos + len));
-                old_pos += len;
-            }
-            ChangeTag::Insert => {
-                right_hl.push((new_pos, new_pos + len));
-                new_pos += len;
-            }
-        }
-    }
-
-    (merge_ranges(left_hl), merge_ranges(right_hl))
-}
-
-fn merge_ranges(mut ranges: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
-    if ranges.len() <= 1 {
-        return ranges;
-    }
-    ranges.sort_by_key(|r| r.0);
-    let mut merged = vec![ranges[0]];
-    for &(start, end) in &ranges[1..] {
-        let last = merged.last_mut().unwrap();
-        if start <= last.1 {
-            last.1 = last.1.max(end);
-        } else {
-            merged.push((start, end));
-        }
-    }
-    merged
+fn split_row<'a>(left: Option<SideInfo<'a>>, right: Option<SideInfo<'a>>) -> PairedRow<'a> {
+    PairedRow::Split { left, right }
 }
 
 #[cfg(test)]
@@ -506,190 +415,6 @@ mod tests {
         // The paired row ref should point to the Added line (index 2 in the hunk)
         let paired_ref = refs[1].as_ref().unwrap();
         assert_eq!(paired_ref.line_index, 2, "should reference the Added line");
-    }
-
-    #[test]
-    fn word_highlights_computed_for_paired_lines() {
-        let left = SideInfo {
-            kind: PatchLineKind::Removed,
-            text: "let x = foo();",
-            line_no: Some(1),
-            line_idx: 0,
-        };
-        let right = SideInfo {
-            kind: PatchLineKind::Added,
-            text: "let x = bar();",
-            line_no: Some(1),
-            line_idx: 1,
-        };
-        let (left_hl, right_hl) = compute_word_highlights(Some(&left), Some(&right));
-        // "foo" (bytes 8..11) differs from "bar" (bytes 8..11)
-        assert_eq!(left_hl, vec![(8, 11)]);
-        assert_eq!(right_hl, vec![(8, 11)]);
-    }
-
-    #[test]
-    fn no_highlights_for_context_lines() {
-        let left = SideInfo {
-            kind: PatchLineKind::Context,
-            text: "same line",
-            line_no: Some(1),
-            line_idx: 0,
-        };
-        let right = SideInfo {
-            kind: PatchLineKind::Context,
-            text: "same line",
-            line_no: Some(1),
-            line_idx: 0,
-        };
-        let (left_hl, right_hl) = compute_word_highlights(Some(&left), Some(&right));
-        assert!(left_hl.is_empty());
-        assert!(right_hl.is_empty());
-    }
-
-    #[test]
-    fn no_highlights_when_unpaired() {
-        let left = SideInfo {
-            kind: PatchLineKind::Removed,
-            text: "deleted",
-            line_no: Some(1),
-            line_idx: 0,
-        };
-        let (left_hl, right_hl) = compute_word_highlights(Some(&left), None);
-        assert!(left_hl.is_empty());
-        assert!(right_hl.is_empty());
-    }
-
-    #[test]
-    fn ambiguous_multi_line_block_skips_word_highlights() {
-        let file = test_file(vec![test_hunk(vec![
-            pl(PatchLineKind::HunkHeader, "@@ -1,2 +1,2 @@", None, None),
-            pl(
-                PatchLineKind::Removed,
-                "patch_lines.push(line);",
-                Some(1),
-                None,
-            ),
-            pl(
-                PatchLineKind::Removed,
-                "patch_refs.push(Some(PatchLineRef {",
-                Some(2),
-                None,
-            ),
-            pl(
-                PatchLineKind::Added,
-                "patch_refs.push(Some(PatchLineRef {",
-                None,
-                Some(1),
-            ),
-            pl(
-                PatchLineKind::Added,
-                "patch_lines.push(line);",
-                None,
-                Some(2),
-            ),
-        ])]);
-        let context = ctx();
-        let (lines, _refs) = build_split_patch_lines(&file, 100, &context);
-        let removed_highlight = context.theme.diff_removed_highlight_bg();
-        let added_highlight = context.theme.diff_added_highlight_bg();
-
-        let has_word_highlight = lines.iter().skip(1).any(|line| {
-            line.spans().iter().any(|span| {
-                matches!(
-                    span.style().bg,
-                    Some(bg) if bg == removed_highlight || bg == added_highlight
-                )
-            })
-        });
-
-        assert!(
-            !has_word_highlight,
-            "ambiguous multi-line blocks should not render word highlights"
-        );
-    }
-
-    #[test]
-    fn straightforward_multi_line_block_keeps_word_highlights() {
-        let file = test_file(vec![test_hunk(vec![
-            pl(PatchLineKind::HunkHeader, "@@ -1,2 +1,2 @@", None, None),
-            pl(PatchLineKind::Removed, "let alpha = foo();", Some(1), None),
-            pl(PatchLineKind::Removed, "let beta = baz();", Some(2), None),
-            pl(PatchLineKind::Added, "let alpha = bar();", None, Some(1)),
-            pl(PatchLineKind::Added, "let beta = qux();", None, Some(2)),
-        ])]);
-        let context = ctx();
-        let (lines, _refs) = build_split_patch_lines(&file, 100, &context);
-        let removed_highlight = context.theme.diff_removed_highlight_bg();
-        let added_highlight = context.theme.diff_added_highlight_bg();
-
-        let highlight_rows = lines
-            .iter()
-            .skip(1)
-            .filter(|line| {
-                line.spans().iter().any(|span| {
-                    matches!(
-                        span.style().bg,
-                        Some(bg) if bg == removed_highlight || bg == added_highlight
-                    )
-                })
-            })
-            .count();
-
-        assert_eq!(
-            highlight_rows, 2,
-            "each paired row should retain word highlights for straightforward replacements"
-        );
-    }
-
-    #[test]
-    fn reflowed_multi_line_block_skips_word_highlights() {
-        let file = test_file(vec![test_hunk(vec![
-            pl(PatchLineKind::HunkHeader, "@@ -1,3 +1,2 @@", None, None),
-            pl(
-                PatchLineKind::Removed,
-                ".send_cancellable_request(",
-                Some(1),
-                None,
-            ),
-            pl(
-                PatchLineKind::Removed,
-                "CallToolRequest(Request::new(params)),",
-                Some(2),
-                None,
-            ),
-            pl(PatchLineKind::Removed, "{", Some(3), None),
-            pl(
-                PatchLineKind::Added,
-                ".send_cancellable_request(CallToolRequest(Request::new(params)), {",
-                None,
-                Some(1),
-            ),
-            pl(
-                PatchLineKind::Added,
-                "let mut opts = PeerRequestOptions::default();",
-                None,
-                Some(2),
-            ),
-        ])]);
-        let context = ctx();
-        let (lines, _refs) = build_split_patch_lines(&file, 100, &context);
-        let removed_highlight = context.theme.diff_removed_highlight_bg();
-        let added_highlight = context.theme.diff_added_highlight_bg();
-
-        let has_word_highlight = lines.iter().skip(1).any(|line| {
-            line.spans().iter().any(|span| {
-                matches!(
-                    span.style().bg,
-                    Some(bg) if bg == removed_highlight || bg == added_highlight
-                )
-            })
-        });
-
-        assert!(
-            !has_word_highlight,
-            "reflowed multi-line blocks should not render word highlights"
-        );
     }
 
     #[test]

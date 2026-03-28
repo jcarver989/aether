@@ -1,4 +1,4 @@
-use super::{Color, Theme, darken_color, emphasize_color, lighten_color};
+use super::{Color, Theme, darken_color, lighten_color};
 
 impl Theme {
     /// Catppuccin Mocha theme (dark, high contrast).
@@ -104,8 +104,6 @@ impl Theme {
             .diff_removed_fg(RED)
             .diff_added_bg(darken_color(GREEN))
             .diff_removed_bg(darken_color(RED))
-            .diff_added_highlight_bg(emphasize_color(GREEN))
-            .diff_removed_highlight_bg(emphasize_color(RED))
             .build()
             .expect("built-in catppuccin_mocha theme has all fields")
     }
@@ -203,8 +201,6 @@ impl Theme {
             .diff_removed_fg(RED)
             .diff_added_bg(lighten_color(GREEN))
             .diff_removed_bg(lighten_color(RED))
-            .diff_added_highlight_bg(lighten_color(GREEN))
-            .diff_removed_highlight_bg(lighten_color(RED))
             .build()
             .expect("built-in light theme has all fields")
     }
