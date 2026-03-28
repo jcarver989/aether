@@ -65,6 +65,8 @@ struct ProviderConfig {
     dev_id: &'static str,
     /// models.dev provider ID to read models from (defaults to `dev_id` when `None`)
     source_dev_id: Option<&'static str>,
+    /// Additional models.dev keys whose models are merged into this provider
+    extra_source_ids: &'static [&'static str],
     /// Only include models whose ID passes this filter (None = include all)
     model_filter: Option<fn(&str) -> bool>,
     /// Our Rust enum name (e.g. "Gemini")
@@ -93,6 +95,7 @@ impl ProviderConfig {
         Self {
             dev_id,
             source_dev_id: None,
+            extra_source_ids: &[],
             model_filter: None,
             enum_name,
             parser_name,
@@ -131,6 +134,7 @@ const PROVIDERS: &[ProviderConfig] = &[
     ProviderConfig {
         dev_id: "codex",
         source_dev_id: Some("openai"),
+        extra_source_ids: &[],
         model_filter: Some(|id| id.contains("codex") || id.starts_with("gpt-5.4")),
         enum_name: "Codex",
         parser_name: "codex",
@@ -174,7 +178,10 @@ const PROVIDERS: &[ProviderConfig] = &[
         "OpenRouter",
         Some("OPENROUTER_API_KEY"),
     ),
-    ProviderConfig::standard("zai", "ZAi", "zai", "ZAI", Some("ZAI_API_KEY")),
+    ProviderConfig {
+        extra_source_ids: &["zai-coding-plan"],
+        ..ProviderConfig::standard("zai", "ZAi", "zai", "ZAI", Some("ZAI_API_KEY"))
+    },
     ProviderConfig::standard("amazon-bedrock", "Bedrock", "bedrock", "AWS Bedrock", None),
 ];
 
@@ -227,42 +234,55 @@ fn build_provider_models(data: &ModelsDevData) -> Result<ProviderModels, String>
             .get(json_key)
             .ok_or_else(|| format!("Provider '{json_key}' not found in models.dev data"))?;
 
-        let mut models: Vec<ModelInfo> = provider_data
-            .models
-            .values()
-            .filter(|m| m.tool_call == Some(true))
-            .filter(|m| !is_alias(&m.id))
-            .filter(|m| cfg.model_filter.is_none_or(|f| f(&m.id)))
-            .map(|m| {
-                let reasoning_levels = if m.reasoning.unwrap_or(false) {
-                    cfg.default_reasoning_levels
-                        .iter()
-                        .map(|s| (*s).to_string())
-                        .collect()
-                } else {
-                    Vec::new()
-                };
-                let input_modalities = m
-                    .modalities
-                    .as_ref()
-                    .map(|md| md.input.clone())
-                    .unwrap_or_else(|| vec!["text".to_string()]);
-                ModelInfo {
-                    variant_name: model_id_to_variant(&m.id),
-                    model_id: m.id.clone(),
-                    display_name: m.name.clone(),
-                    context_window: m.limit.as_ref().map_or(0, |l| l.context),
-                    reasoning_levels,
-                    input_modalities,
-                }
-            })
-            .collect();
+        let mut models: Vec<ModelInfo> =
+            collect_models_from(cfg, &provider_data.models);
+
+        for &extra_key in cfg.extra_source_ids {
+            if let Some(extra_data) = data.get(extra_key) {
+                let extra = collect_models_from(cfg, &extra_data.models);
+                let existing_ids: std::collections::HashSet<String> =
+                    models.iter().map(|m| m.model_id.clone()).collect();
+                models.extend(extra.into_iter().filter(|m| !existing_ids.contains(&m.model_id)));
+            }
+        }
 
         models.sort_by(|a, b| a.model_id.cmp(&b.model_id));
         provider_models.insert(cfg.dev_id, models);
     }
 
     Ok(provider_models)
+}
+
+fn collect_models_from(cfg: &ProviderConfig, models: &HashMap<String, ModelData>) -> Vec<ModelInfo> {
+    models
+        .values()
+        .filter(|m| m.tool_call == Some(true))
+        .filter(|m| !is_alias(&m.id))
+        .filter(|m| cfg.model_filter.is_none_or(|f| f(&m.id)))
+        .map(|m| {
+            let reasoning_levels = if m.reasoning.unwrap_or(false) {
+                cfg.default_reasoning_levels
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let input_modalities = m
+                .modalities
+                .as_ref()
+                .map(|md| md.input.clone())
+                .unwrap_or_else(|| vec!["text".to_string()]);
+            ModelInfo {
+                variant_name: model_id_to_variant(&m.id),
+                model_id: m.id.clone(),
+                display_name: m.name.clone(),
+                context_window: m.limit.as_ref().map_or(0, |l| l.context),
+                reasoning_levels,
+                input_modalities,
+            }
+        })
+        .collect()
 }
 
 /// Returns true for "latest" alias IDs that just point to another model
@@ -1295,8 +1315,78 @@ mod tests {
                     "models": {}
                 })
             });
+            for &extra in cfg.extra_source_ids {
+                root.entry(extra.to_string()).or_insert_with(|| {
+                    json!({
+                        "id": extra,
+                        "name": extra,
+                        "env": [],
+                        "models": {}
+                    })
+                });
+            }
         }
         Value::Object(root)
+    }
+
+    #[test]
+    fn extra_source_ids_merges_models_into_provider() {
+        let mut data = minimal_models_dev_json();
+        let root = data.as_object_mut().unwrap();
+
+        // Add a model to the zai-coding-plan extra source that doesn't exist in zai
+        let extra = root.get_mut("zai-coding-plan").unwrap().as_object_mut().unwrap();
+        extra.insert(
+            "models".to_string(),
+            json!({
+                "extra-model": {
+                    "id": "extra-model",
+                    "name": "Extra Model",
+                    "tool_call": true,
+                    "limit": {"context": 4000, "output": 0}
+                }
+            }),
+        );
+
+        let source = generate_from_value(&data);
+        // The extra model should appear under ZAi
+        assert!(source.contains("\"extra-model\" => Ok(Self::ExtraModel),"));
+    }
+
+    #[test]
+    fn extra_source_ids_does_not_duplicate_existing_models() {
+        let mut data = minimal_models_dev_json();
+        let root = data.as_object_mut().unwrap();
+
+        // Add same model ID to both zai and zai-coding-plan
+        let zai = root.get_mut("zai").unwrap().as_object_mut().unwrap();
+        zai.insert(
+            "models".to_string(),
+            json!({
+                "shared-model": {
+                    "id": "shared-model",
+                    "name": "Shared Model",
+                    "tool_call": true,
+                    "limit": {"context": 1000, "output": 0}
+                }
+            }),
+        );
+        let extra = root.get_mut("zai-coding-plan").unwrap().as_object_mut().unwrap();
+        extra.insert(
+            "models".to_string(),
+            json!({
+                "shared-model": {
+                    "id": "shared-model",
+                    "name": "Shared Model Duplicate",
+                    "tool_call": true,
+                    "limit": {"context": 2000, "output": 0}
+                }
+            }),
+        );
+
+        let source = generate_from_value(&data);
+        let from_str_matches = source.matches("\"shared-model\" => Ok(Self::SharedModel),").count();
+        assert_eq!(from_str_matches, 1);
     }
 
     #[test]
