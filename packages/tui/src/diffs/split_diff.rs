@@ -4,7 +4,6 @@ use crate::rendering::render_context::ViewContext;
 use crate::rendering::soft_wrap::soft_wrap_line;
 use crate::span::Span;
 use crate::style::Style;
-use crossterm::style::Color;
 
 use crate::{DiffPreview, DiffTag, SplitDiffCell};
 
@@ -119,7 +118,7 @@ pub fn render_cell(
         .highlighter()
         .highlight(&cell.content, lang_hint, theme);
 
-    let mut content_line = if let Some(hl_line) = highlighted.first() {
+    let content_line = if let Some(hl_line) = highlighted.first() {
         let mut styled_content = Line::default();
         for span in hl_line.spans() {
             let mut span_style = span.style();
@@ -148,15 +147,6 @@ pub fn render_cell(
         Line::with_style(&cell.content, style)
     };
 
-    // Apply word-level diff highlights
-    if !cell.highlights.is_empty() {
-        let highlight_bg = match cell.tag {
-            DiffTag::Removed => theme.diff_removed_highlight_bg(),
-            DiffTag::Added | DiffTag::Context => theme.diff_added_highlight_bg(),
-        };
-        content_line = apply_highlights(&content_line, &cell.highlights, highlight_bg);
-    }
-
     // content_width is derived from terminal width (u16), so it always fits in u16
     #[allow(clippy::cast_possible_truncation)]
     let wrapped = soft_wrap_line(&content_line, content_width as u16);
@@ -182,48 +172,6 @@ pub fn render_cell(
         .collect()
 }
 
-fn apply_highlights(line: &Line, highlights: &[(usize, usize)], highlight_bg: Color) -> Line {
-    let mut result = Line::default();
-    let mut byte_pos = 0usize;
-    let mut hl_idx = 0;
-
-    for span in line.spans() {
-        let span_text = span.text();
-        let span_start = byte_pos;
-        let span_end = byte_pos + span_text.len();
-        let base_style = span.style();
-
-        let mut pos = span_start;
-        while pos < span_end {
-            while hl_idx < highlights.len() && highlights[hl_idx].1 <= pos {
-                hl_idx += 1;
-            }
-
-            if hl_idx < highlights.len() && highlights[hl_idx].0 <= pos {
-                let chunk_end = highlights[hl_idx].1.min(span_end);
-                let slice = &span_text[pos - span_start..chunk_end - span_start];
-                let mut style = base_style;
-                style.bg = Some(highlight_bg);
-                result.push_span(Span::with_style(slice, style));
-                pos = chunk_end;
-            } else {
-                let next_boundary = if hl_idx < highlights.len() {
-                    highlights[hl_idx].0.min(span_end)
-                } else {
-                    span_end
-                };
-                let slice = &span_text[pos - span_start..next_boundary - span_start];
-                result.push_span(Span::with_style(slice, base_style));
-                pos = next_boundary;
-            }
-        }
-
-        byte_pos = span_end;
-    }
-
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,7 +195,6 @@ mod tests {
             tag: DiffTag::Removed,
             content: content.to_string(),
             line_number: Some(line_num),
-            highlights: vec![],
         }
     }
 
@@ -256,7 +203,6 @@ mod tests {
             tag: DiffTag::Added,
             content: content.to_string(),
             line_number: Some(line_num),
-            highlights: vec![],
         }
     }
 
@@ -431,13 +377,11 @@ mod tests {
                 tag: DiffTag::Context,
                 content: "hello".to_string(),
                 line_number: Some(42),
-                highlights: vec![],
             }),
             right: Some(SplitDiffCell {
                 tag: DiffTag::Context,
                 content: "hello".to_string(),
                 line_number: Some(42),
-                highlights: vec![],
             }),
         }]);
         let ctx = test_context_with_width(100);
@@ -474,7 +418,6 @@ mod tests {
                 tag: DiffTag::Removed,
                 content: "old".to_string(),
                 line_number: None,
-                highlights: vec![],
             }),
             right: None,
         }]);
@@ -487,32 +430,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn apply_highlights_splits_spans_correctly() {
-        let bg = Color::Rgb { r: 0, g: 100, b: 0 };
-        let base_style = Style::fg(Color::White);
-        let mut line = Line::default();
-        line.push_with_style("hello world", base_style);
-
-        // Highlight "world" (bytes 6..11)
-        let result = apply_highlights(&line, &[(6, 11)], bg);
-        let spans: Vec<_> = result
-            .spans()
-            .iter()
-            .map(|s| (s.text().to_string(), s.style()))
-            .collect();
-        assert_eq!(spans.len(), 2);
-        assert_eq!(spans[0].0, "hello ");
-        assert_eq!(spans[0].1.bg, None);
-        assert_eq!(spans[1].0, "world");
-        assert_eq!(spans[1].1.bg, Some(bg));
-    }
-
-    #[test]
-    fn apply_highlights_empty_is_noop() {
-        let mut line = Line::default();
-        line.push_with_style("unchanged", Style::fg(Color::White));
-        let result = apply_highlights(&line, &[], Color::Red);
-        assert_eq!(result.plain_text(), "unchanged");
-    }
 }

@@ -125,6 +125,11 @@ impl ModelSelector {
         self.combobox.query()
     }
 
+    /// Returns the value of the currently focused model entry.
+    pub fn focused_value(&self) -> Option<String> {
+        self.combobox.selected().map(|e| e.value.clone())
+    }
+
     #[cfg(test)]
     pub fn selected_count(&self) -> usize {
         self.selected_models.len()

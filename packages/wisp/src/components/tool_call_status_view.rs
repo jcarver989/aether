@@ -224,13 +224,11 @@ fn process_diff_op(op: DiffOp, old: &[&str], new: &[&str], s: &mut DiffBuildStat
                         tag: DiffTag::Context,
                         content: content.clone(),
                         line_number: Some(s.old_line_num),
-                        highlights: vec![],
                     }),
                     right: Some(SplitDiffCell {
                         tag: DiffTag::Context,
                         content,
                         line_number: Some(s.new_line_num),
-                        highlights: vec![],
                     }),
                 });
             }
@@ -253,7 +251,6 @@ fn process_diff_op(op: DiffOp, old: &[&str], new: &[&str], s: &mut DiffBuildStat
                         tag: DiffTag::Removed,
                         content,
                         line_number: Some(s.old_line_num),
-                        highlights: vec![],
                     }),
                     right: None,
                 });
@@ -278,7 +275,6 @@ fn process_diff_op(op: DiffOp, old: &[&str], new: &[&str], s: &mut DiffBuildStat
                         tag: DiffTag::Added,
                         content,
                         line_number: Some(s.new_line_num),
-                        highlights: vec![],
                     }),
                 });
             }
@@ -311,7 +307,6 @@ fn process_diff_op(op: DiffOp, old: &[&str], new: &[&str], s: &mut DiffBuildStat
                         tag: DiffTag::Removed,
                         content: get_line(old, old_index + i).to_string(),
                         line_number: Some(s.old_line_num),
-                        highlights: vec![],
                     }
                 });
                 let right = (i < new_len).then(|| {
@@ -320,7 +315,6 @@ fn process_diff_op(op: DiffOp, old: &[&str], new: &[&str], s: &mut DiffBuildStat
                         tag: DiffTag::Added,
                         content: get_line(new, new_index + i).to_string(),
                         line_number: Some(s.new_line_num),
-                        highlights: vec![],
                     }
                 });
                 s.rows.push(SplitDiffRow { left, right });
