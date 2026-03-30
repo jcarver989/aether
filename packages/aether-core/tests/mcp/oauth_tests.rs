@@ -89,10 +89,7 @@ async fn http_server_without_handler_returns_error() {
     let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
     let mut manager = mcp_utils::client::McpManager::new(elicitation_tx, None);
 
-    let config = StreamableHttpClientTransportConfig {
-        uri: "http://localhost:19999/mcp".into(),
-        ..Default::default()
-    };
+    let config = StreamableHttpClientTransportConfig::with_uri("http://localhost:19999/mcp");
     let result = manager
         .add_mcp(
             ServerConfig::Http {
@@ -112,10 +109,7 @@ async fn http_server_with_handler_stashes_needs_oauth_on_failure() {
     let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
     let mut manager = mcp_utils::client::McpManager::new(elicitation_tx, Some(Arc::new(handler)));
 
-    let config = StreamableHttpClientTransportConfig {
-        uri: "http://localhost:19999/mcp".into(),
-        ..Default::default()
-    };
+    let config = StreamableHttpClientTransportConfig::with_uri("http://localhost:19999/mcp");
     let result = manager
         .add_mcp(
             ServerConfig::Http {
@@ -151,18 +145,12 @@ async fn add_mcps_continues_on_oauth_failure() {
     let configs = vec![
         ServerConfig::Http {
             name: "failing_server_1".to_string(),
-            config: StreamableHttpClientTransportConfig {
-                uri: "http://localhost:19998/mcp".into(),
-                ..Default::default()
-            },
+            config: StreamableHttpClientTransportConfig::with_uri("http://localhost:19998/mcp"),
         }
         .into(),
         ServerConfig::Http {
             name: "failing_server_2".to_string(),
-            config: StreamableHttpClientTransportConfig {
-                uri: "http://localhost:19997/mcp".into(),
-                ..Default::default()
-            },
+            config: StreamableHttpClientTransportConfig::with_uri("http://localhost:19997/mcp"),
         }
         .into(),
     ];
@@ -218,10 +206,7 @@ async fn tool_proxy_with_failing_http_surfaces_needs_oauth() {
             fake_mcp("local", FakeMcpServer::new()),
             ServerConfig::Http {
                 name: "remote".to_string(),
-                config: StreamableHttpClientTransportConfig {
-                    uri: "http://localhost:19999/mcp".into(),
-                    ..Default::default()
-                },
+                config: StreamableHttpClientTransportConfig::with_uri("http://localhost:19999/mcp"),
             },
         ],
     }];
@@ -270,10 +255,7 @@ async fn tool_proxy_partial_connection_works() {
             fake_mcp("working", FakeMcpServer::new()),
             ServerConfig::Http {
                 name: "broken".to_string(),
-                config: StreamableHttpClientTransportConfig {
-                    uri: "http://localhost:19999/mcp".into(),
-                    ..Default::default()
-                },
+                config: StreamableHttpClientTransportConfig::with_uri("http://localhost:19999/mcp"),
             },
         ],
     }];
