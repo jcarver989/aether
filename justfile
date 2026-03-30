@@ -78,21 +78,21 @@ release:
     cargo publish -p aether-agent-core
     # Upper-tier
     cargo publish -p aether-project
-    cargo publish -p wisp
+    cargo publish -p aether-wisp
     cargo publish -p aether-mcp-servers
     # Top-level
     cargo publish -p aether-agent-cli
 
-# Dry-run publish all crates in dependency order
+# Dry-run publish all crates (validates packaging, skips dep resolution)
 release-dry-run:
     #!/usr/bin/env bash
     set -euo pipefail
     for pkg in aether-utils aether-llm-codegen aether-tui aether-lspd \
                aether-llm aether-mcp-utils aether-acp-utils \
-               aether-agent-core aether-project wisp aether-mcp-servers \
+               aether-agent-core aether-project aether-wisp aether-mcp-servers \
                aether-agent-cli; do
         echo "--- dry-run: $pkg ---"
-        cargo publish -p "$pkg" --dry-run --allow-dirty
+        cargo publish -p "$pkg" --dry-run --allow-dirty --no-verify
     done
 
 # Clean everything
