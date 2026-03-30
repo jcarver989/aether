@@ -48,6 +48,7 @@ dependencies = [
  "aether-mcp-utils",
  "aether-project",
  "aether-tui",
+ "aether-wisp",
  "agent-client-protocol",
  "async-trait",
  "clap",
@@ -63,7 +64,6 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "uuid",
- "wisp",
 ]
 
 [[package]]
@@ -264,6 +264,31 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "aether-wisp"
+version = "0.1.0"
+dependencies = [
+ "aether-acp-utils",
+ "aether-tui",
+ "aether-utils",
+ "agent-client-protocol",
+ "base64",
+ "chrono",
+ "clap",
+ "ignore",
+ "mime_guess",
+ "serde",
+ "serde_json",
+ "similar",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "unicode-width",
+ "url",
 ]
 
 [[package]]
@@ -5808,31 +5833,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a90e88e4667264a994d34e6d1ab2d26d398dcdca8b7f52bec8668957517fc7d8"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "wisp"
-version = "0.1.0"
-dependencies = [
- "aether-acp-utils",
- "aether-tui",
- "aether-utils",
- "agent-client-protocol",
- "base64",
- "chrono",
- "clap",
- "ignore",
- "mime_guess",
- "serde",
- "serde_json",
- "similar",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "unicode-width",
- "url",
 ]
 
 [[package]]
