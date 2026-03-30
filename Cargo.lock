@@ -3,24 +3,6 @@
 version = 4
 
 [[package]]
-name = "acp_utils"
-version = "0.1.0"
-dependencies = [
- "agent-client-protocol",
- "async-trait",
- "mcp_utils",
- "rmcp",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
- "tracing",
- "utils",
-]
-
-[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -38,20 +20,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "aether-acp-utils"
+version = "0.1.0"
+dependencies = [
+ "aether-mcp-utils",
+ "aether-utils",
+ "agent-client-protocol",
+ "async-trait",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "aether-agent-cli"
 version = "0.1.0"
 dependencies = [
- "acp_utils",
+ "aether-acp-utils",
  "aether-agent-core",
+ "aether-llm",
+ "aether-mcp-servers",
+ "aether-mcp-utils",
  "aether-project",
+ "aether-tui",
  "agent-client-protocol",
  "async-trait",
  "clap",
  "dirs",
  "futures",
- "llm",
- "mcp-servers",
- "mcp_utils",
  "rmcp",
  "serde",
  "serde_json",
@@ -61,7 +62,6 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
- "tui",
  "uuid",
  "wisp",
 ]
@@ -70,16 +70,17 @@ dependencies = [
 name = "aether-agent-core"
 version = "0.1.0"
 dependencies = [
- "acp_utils",
+ "aether-acp-utils",
  "aether-agent-core",
+ "aether-llm",
+ "aether-mcp-utils",
+ "aether-utils",
  "agent-client-protocol",
  "async-openai",
  "chrono",
  "clap",
  "futures",
  "glob",
- "llm",
- "mcp_utils",
  "reqwest 0.13.2",
  "rmcp",
  "schemars",
@@ -92,7 +93,48 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "tracing-subscriber",
- "utils",
+]
+
+[[package]]
+name = "aether-llm"
+version = "0.1.0"
+dependencies = [
+ "aether-llm-codegen",
+ "aether-utils",
+ "async-openai",
+ "async-stream",
+ "async-trait",
+ "aws-config",
+ "aws-sdk-bedrockruntime",
+ "aws-smithy-types",
+ "base64",
+ "chrono",
+ "eventsource-stream",
+ "futures",
+ "keyring",
+ "oauth2",
+ "reqwest 0.13.2",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "aether-llm-codegen"
+version = "0.1.0"
+dependencies = [
+ "aether-utils",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -120,13 +162,30 @@ dependencies = [
 ]
 
 [[package]]
-name = "aether-project"
+name = "aether-mcp-servers"
 version = "0.1.0"
 dependencies = [
  "aether-agent-core",
+ "aether-llm",
+ "aether-lspd",
+ "aether-mcp-servers",
+ "aether-mcp-utils",
+ "aether-project",
+ "aether-utils",
+ "chrono",
+ "clap",
+ "dom_smoothie",
+ "futures",
  "glob",
  "globset",
- "llm",
+ "grep",
+ "htmd",
+ "ignore",
+ "lsp-types",
+ "regex",
+ "reqwest 0.13.2",
+ "rmcp",
+ "schemars",
  "serde",
  "serde_json",
  "serde_yml",
@@ -134,7 +193,77 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "utils",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "aether-mcp-utils"
+version = "0.1.0"
+dependencies = [
+ "aether-llm",
+ "aether-utils",
+ "futures",
+ "regex",
+ "reqwest 0.13.2",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "aether-project"
+version = "0.1.0"
+dependencies = [
+ "aether-agent-core",
+ "aether-llm",
+ "aether-utils",
+ "glob",
+ "globset",
+ "serde",
+ "serde_json",
+ "serde_yml",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "aether-tui"
+version = "0.1.0"
+dependencies = [
+ "aether-tui",
+ "crossterm",
+ "nucleo",
+ "pulldown-cmark",
+ "serde_json",
+ "syntect",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "two-face",
+ "unicode-width",
+]
+
+[[package]]
+name = "aether-utils"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yml",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1284,13 +1413,13 @@ name = "crucible"
 version = "0.1.0"
 dependencies = [
  "aether-agent-core",
+ "aether-llm",
+ "aether-mcp-utils",
  "async-trait",
  "axum",
  "chrono",
  "clap",
  "futures",
- "llm",
- "mcp_utils",
  "owo-colors",
  "schemars",
  "serde",
@@ -2772,48 +2901,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 
 [[package]]
-name = "llm"
-version = "0.1.0"
-dependencies = [
- "async-openai",
- "async-stream",
- "async-trait",
- "aws-config",
- "aws-sdk-bedrockruntime",
- "aws-smithy-types",
- "base64",
- "chrono",
- "eventsource-stream",
- "futures",
- "keyring",
- "llm-codegen",
- "oauth2",
- "reqwest 0.13.2",
- "rmcp",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tracing",
- "url",
- "utils",
- "uuid",
-]
-
-[[package]]
-name = "llm-codegen"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "tempfile",
- "utils",
-]
-
-[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2912,62 +2999,6 @@ name = "matchit"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
-
-[[package]]
-name = "mcp-servers"
-version = "0.1.0"
-dependencies = [
- "aether-agent-core",
- "aether-lspd",
- "aether-project",
- "chrono",
- "clap",
- "dom_smoothie",
- "futures",
- "glob",
- "globset",
- "grep",
- "htmd",
- "ignore",
- "llm",
- "lsp-types",
- "mcp-servers",
- "mcp_utils",
- "regex",
- "reqwest 0.13.2",
- "rmcp",
- "schemars",
- "serde",
- "serde_json",
- "serde_yml",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "url",
- "utils",
- "uuid",
-]
-
-[[package]]
-name = "mcp_utils"
-version = "0.1.0"
-dependencies = [
- "futures",
- "llm",
- "regex",
- "reqwest 0.13.2",
- "rmcp",
- "schemars",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "utils",
-]
 
 [[package]]
 name = "memchr"
@@ -5038,23 +5069,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
-name = "tui"
-version = "0.1.0"
-dependencies = [
- "crossterm",
- "nucleo",
- "pulldown-cmark",
- "serde_json",
- "syntect",
- "tempfile",
- "tokio",
- "tracing",
- "tui",
- "two-face",
- "unicode-width",
-]
-
-[[package]]
 name = "two-face"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5160,20 +5174,6 @@ name = "utf8parse"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
-
-[[package]]
-name = "utils"
-version = "0.1.0"
-dependencies = [
- "futures",
- "regex",
- "serde",
- "serde_json",
- "serde_yml",
- "tempfile",
- "tokio",
- "tracing",
-]
 
 [[package]]
 name = "uuid"
@@ -5814,7 +5814,9 @@ dependencies = [
 name = "wisp"
 version = "0.1.0"
 dependencies = [
- "acp_utils",
+ "aether-acp-utils",
+ "aether-tui",
+ "aether-utils",
  "agent-client-protocol",
  "base64",
  "chrono",
@@ -5829,10 +5831,8 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
- "tui",
  "unicode-width",
  "url",
- "utils",
 ]
 
 [[package]]

@@ -15,16 +15,15 @@ A lightweight, composable terminal UI library for building full-screen CLI apps.
 
 The library provides composable building blocks — your app owns its event loop and state machine.
 
-```rust
-use tui::{Component, Cursor, Event, Frame, KeyCode, Layout, Line, Renderer, TerminalSession, ViewContext};
-use tui::spawn_terminal_event_task;
+```rust,no_run
+use tui::{Component, Event, Frame, KeyCode, Line, ViewContext};
 
 // Define your app state and use Component for child widgets
 struct MyWidget { count: i32 }
 
 impl Component for MyWidget {
     type Message = ();
-async fn on_event(&mut self, event: &Event) -> Option<Vec<()>> {
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<()>> {
         if let Event::Key(key) = event {
             match key.code {
                 KeyCode::Char('j') => self.count += 1,
@@ -34,8 +33,8 @@ async fn on_event(&mut self, event: &Event) -> Option<Vec<()>> {
         }
         Some(vec![])
     }
-    fn render(&self, _ctx: &ViewContext) -> Vec<Line> {
-        vec![Line::new(format!("Count: {}", self.count))]
+    fn render(&mut self, _ctx: &ViewContext) -> Frame {
+        Frame::new(vec![Line::new(format!("Count: {}", self.count))])
     }
 }
 ```

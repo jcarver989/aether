@@ -1,8 +1,21 @@
 [package]
-name = "llm"
+name = "aether-llm"
 version = "0.1.0"
 edition = "2024"
-publish = false
+description = "Multi-provider LLM abstraction layer for the Aether AI agent framework"
+license = "MIT"
+repository = "https://github.com/contextbridge/aether"
+readme = "README.md"
+keywords = ["llm", "ai", "aether", "openai", "anthropic"]
+categories = ["api-bindings", "asynchronous"]
+
+[lib]
+name = "llm"
+path = "src/lib.rs"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lints]
 workspace = true
@@ -36,7 +49,7 @@ serde_json = { workspace = true }
 
 tracing = { workspace = true }
 
-utils = { path = "../utils" }
+utils = { package = "aether-utils", path = "../utils", version = "0.1.0" }
 
 # OAuth/Codex deps
 rmcp = { workspace = true, optional = true }
@@ -46,7 +59,7 @@ keyring = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
 
 [build-dependencies]
-llm-codegen = { path = "../llm-codegen" }
+llm-codegen = { package = "aether-llm-codegen", path = "../llm-codegen", version = "0.1.0" }
 
 [dev-dependencies]
 tempfile = { workspace = true }

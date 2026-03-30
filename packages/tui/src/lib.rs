@@ -1,12 +1,4 @@
-//! A lightweight terminal UI rendering and widget library.
-//!
-//! `tui` provides composable primitives for building full-screen terminal
-//! applications:
-//!
-//! - **[`Component`]** — Trait for reusable UI widgets with event handling
-//! - **[`Frame`]** — A rendered frame of lines with cursor position
-//! - **[`Renderer`]** — Efficient diff-based terminal renderer
-//! - **[`TerminalSession`]** — Terminal lifecycle management
+#![doc = include_str!("../README.md")]
 
 // Core modules - always available
 pub(crate) mod components;

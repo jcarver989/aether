@@ -2,15 +2,24 @@
 name = "aether-project"
 version = "0.1.0"
 edition = "2024"
-publish = false
+description = "Project-local configuration and agent discovery for the Aether AI agent framework"
+license = "MIT"
+repository = "https://github.com/contextbridge/aether"
+readme = "README.md"
+keywords = ["aether", "agent", "configuration"]
+categories = ["development-tools"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lints]
 workspace = true
 
 [dependencies]
-aether-core = { package = "aether-agent-core", path = "../aether-core" }
-llm = { path = "../llm" }
-utils = { path = "../utils" }
+aether-core = { package = "aether-agent-core", path = "../aether-core", version = "0.1.0" }
+llm = { package = "aether-llm", path = "../llm", version = "0.1.0" }
+utils = { package = "aether-utils", path = "../utils", version = "0.1.0" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yml = { workspace = true }

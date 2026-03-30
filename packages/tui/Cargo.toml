@@ -1,13 +1,17 @@
 [package]
-name = "tui"
+name = "aether-tui"
 version = "0.1.0"
 edition = "2024"
-publish = false
 description = "A lightweight terminal UI rendering library for building rich CLI applications"
 license = "MIT"
 repository = "https://github.com/contextbridge/aether"
+readme = "README.md"
 keywords = ["tui", "terminal", "cli", "ui", "component"]
 categories = ["command-line-interface"]
+
+[lib]
+name = "tui"
+path = "src/lib.rs"
 
 [package.metadata.docs.rs]
 all-features = true
@@ -40,7 +44,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-tui = { path = ".", features = ["testing"] }
+tui = { package = "aether-tui", path = ".", features = ["testing"] }
 tempfile.workspace = true
 crossterm = { workspace = true }
 tokio = { workspace = true }

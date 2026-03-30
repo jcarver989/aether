@@ -36,11 +36,11 @@ tracing-subscriber = { workspace = true }
 clap = { workspace = true }
 thiserror = { workspace = true }
 agent-client-protocol = { workspace = true }
-acp_utils = { path = "../acp-utils", default-features = false }
+acp_utils = { package = "aether-acp-utils", path = "../acp-utils", default-features = false, version = "0.1.0" }
 glob = { workspace = true }
-mcp_utils = { path = "../mcp-utils"}
-llm = { path = "../llm" }
-utils = { path = "../utils" }
+mcp_utils = { package = "aether-mcp-utils", path = "../mcp-utils", version = "0.1.0" }
+llm = { package = "aether-llm", path = "../llm", version = "0.1.0" }
+utils = { package = "aether-utils", path = "../utils", version = "0.1.0" }
 
 [features]
 testing = []

@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 pub mod display_meta;
 pub mod status;
 pub mod testing;

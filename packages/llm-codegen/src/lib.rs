@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write;

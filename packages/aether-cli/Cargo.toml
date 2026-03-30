@@ -25,14 +25,14 @@ name = "aether"
 path = "src/main.rs"
 
 [dependencies]
-aether-core = { package = "aether-agent-core", path = "../aether-core" }
-aether-project = { path = "../aether-project" }
-llm = { path = "../llm", features = ["bedrock", "codex"] }
-mcp_utils = { path = "../mcp-utils" }
-mcp-servers = { path = "../mcp-servers", features = ["all"] }
-wisp = { path = "../wisp" }
-tui = { path = "../tui", default-features = false }
-acp_utils = { path = "../acp-utils", features = ["server"] }
+aether-core = { package = "aether-agent-core", path = "../aether-core", version = "0.1.0" }
+aether-project = { path = "../aether-project", version = "0.1.0" }
+llm = { package = "aether-llm", path = "../llm", features = ["bedrock", "codex"], version = "0.1.0" }
+mcp_utils = { package = "aether-mcp-utils", path = "../mcp-utils", version = "0.1.0" }
+mcp-servers = { package = "aether-mcp-servers", path = "../mcp-servers", features = ["all"], version = "0.1.0" }
+wisp = { path = "../wisp", version = "0.1.0" }
+tui = { package = "aether-tui", path = "../tui", default-features = false, version = "0.1.0" }
+acp_utils = { package = "aether-acp-utils", path = "../acp-utils", features = ["server"], version = "0.1.0" }
 agent-client-protocol = { workspace = true }
 rmcp = { workspace = true }
 tokio = { workspace = true }

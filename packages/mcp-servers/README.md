@@ -45,7 +45,7 @@ Each server key must match a factory registered with `McpBuilder::register_in_me
 
 To register factories and load the config:
 
-```rust
+```rust,ignore
 use aether_core::mcp::mcp;
 use futures::FutureExt;
 use mcp_servers::{CodingMcp, SkillsMcp, SubAgentsMcp, TasksMcp};
@@ -82,7 +82,7 @@ mcp-servers = { path = "../mcp-servers", default-features = false, features = ["
 
 Create and start servers directly:
 
-```rust
+```rust,ignore
 use mcp_servers::{CodingMcp, SkillsMcp, TasksMcp};
 use rmcp::ServiceExt;
 

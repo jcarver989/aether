@@ -1,8 +1,21 @@
 [package]
-name = "mcp-servers"
+name = "aether-mcp-servers"
 version = "0.1.0"
 edition = "2024"
-publish = false
+description = "Built-in MCP tool servers for the Aether AI agent framework"
+license = "MIT"
+repository = "https://github.com/contextbridge/aether"
+readme = "README.md"
+keywords = ["mcp", "aether", "agent", "tools"]
+categories = ["development-tools"]
+
+[lib]
+name = "mcp_servers"
+path = "src/lib.rs"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lints]
 workspace = true
@@ -64,9 +77,9 @@ tokio = { workspace = true }
 rmcp = { workspace = true }
 schemars = { workspace = true }
 clap = { workspace = true, features = ["env"] }
-mcp_utils = { path = "../mcp-utils" }
-utils = { path = "../utils" }
-aether-lspd = { path = "../aether-lspd", optional = true }
+mcp_utils = { package = "aether-mcp-utils", path = "../mcp-utils", version = "0.1.0" }
+utils = { package = "aether-utils", path = "../utils", version = "0.1.0" }
+aether-lspd = { path = "../aether-lspd", optional = true, version = "0.1.0" }
 futures = { workspace = true, optional = true }
 glob = { workspace = true, optional = true }
 globset = { workspace = true, optional = true }
@@ -90,14 +103,14 @@ serde_yml = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 
 # subagents feature
-aether-core = { package = "aether-agent-core", path = "../aether-core", optional = true }
-aether-project = { path = "../aether-project", optional = true }
-llm = { path = "../llm", optional = true }
+aether-core = { package = "aether-agent-core", path = "../aether-core", optional = true, version = "0.1.0" }
+aether-project = { path = "../aether-project", optional = true, version = "0.1.0" }
+llm = { package = "aether-llm", path = "../llm", optional = true, version = "0.1.0" }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-aether-lspd = { path = "../aether-lspd", features = ["testing"] }
-mcp-servers = { path = ".", features = ["test-helpers"] }
+aether-lspd = { path = "../aether-lspd", features = ["testing"], version = "0.1.0" }
+mcp-servers = { package = "aether-mcp-servers", path = ".", features = ["test-helpers"] }
 
 [[bin]]
 name = "mcp-servers-stdio"

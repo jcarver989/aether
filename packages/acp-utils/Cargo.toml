@@ -1,8 +1,21 @@
 [package]
-name = "acp_utils"
+name = "aether-acp-utils"
 version = "0.1.0"
 edition = "2024"
-publish = false
+description = "Agent Client Protocol (ACP) utilities for the Aether AI agent framework"
+license = "MIT"
+repository = "https://github.com/contextbridge/aether"
+readme = "README.md"
+keywords = ["acp", "aether", "agent", "protocol"]
+categories = ["api-bindings", "asynchronous"]
+
+[lib]
+name = "acp_utils"
+path = "src/lib.rs"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lints]
 workspace = true
@@ -17,10 +30,10 @@ agent-client-protocol = { workspace = true }
 rmcp = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-mcp_utils = { path = "../mcp-utils", default-features = false }
+mcp_utils = { package = "aether-mcp-utils", path = "../mcp-utils", default-features = false, version = "0.1.0" }
 tokio = { workspace = true }
 tracing = { workspace = true }
-utils = { path = "../utils" }
+utils = { package = "aether-utils", path = "../utils", version = "0.1.0" }
 async-trait = { workspace = true }
 
 # Optional (feature-gated)

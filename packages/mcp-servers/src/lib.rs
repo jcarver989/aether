@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 #[cfg(any(feature = "all", feature = "subagents"))]
 pub mod setup;
 #[cfg(any(feature = "all", feature = "subagents"))]
