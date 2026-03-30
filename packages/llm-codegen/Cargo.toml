@@ -1,8 +1,21 @@
 [package]
-name = "llm-codegen"
+name = "aether-llm-codegen"
 version = "0.1.0"
 edition = "2024"
-publish = false
+description = "Code generation utilities for the Aether LLM provider layer"
+license = "MIT"
+repository = "https://github.com/contextbridge/aether"
+readme = "README.md"
+keywords = ["aether", "llm", "codegen"]
+categories = ["development-tools"]
+
+[lib]
+name = "llm_codegen"
+path = "src/lib.rs"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lints]
 workspace = true
@@ -13,4 +26,4 @@ serde_json = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-utils = { path = "../utils" }
+utils = { package = "aether-utils", path = "../utils", version = "0.1.0" }

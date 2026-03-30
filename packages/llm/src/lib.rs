@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 pub mod alloyed;
 pub mod catalog;
 mod chat_message;

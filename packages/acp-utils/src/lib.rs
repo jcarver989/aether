@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 pub mod config_meta;
 pub mod config_option_id;
 pub mod content;

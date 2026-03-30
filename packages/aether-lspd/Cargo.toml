@@ -3,7 +3,15 @@ name = "aether-lspd"
 version = "0.1.0"
 edition = "2024"
 description = "LSP daemon for sharing language servers across multiple agents"
-publish = false
+license = "MIT"
+repository = "https://github.com/contextbridge/aether"
+readme = "README.md"
+keywords = ["lsp", "language-server", "aether", "agent"]
+categories = ["development-tools"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 testing = ["dep:tempfile"]

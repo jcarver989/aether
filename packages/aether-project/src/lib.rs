@@ -1,11 +1,4 @@
-//! Project-local `.aether/` configuration handling.
-//!
-//! This crate owns project-local `.aether/` semantics:
-//! - `.aether/settings.json` DTOs
-//! - Parsing and validation
-//! - Path normalization relative to project root
-//! - Resolved catalog/runtime input types
-//! - MCP precedence resolution
+#![doc = include_str!("../README.md")]
 
 mod catalog;
 mod error;

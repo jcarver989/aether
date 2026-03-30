@@ -1,8 +1,21 @@
 [package]
-name = "mcp_utils"
+name = "aether-mcp-utils"
 version = "0.1.0"
 edition = "2024"
-publish = false
+description = "MCP client and server utilities for the Aether AI agent framework"
+license = "MIT"
+repository = "https://github.com/contextbridge/aether"
+readme = "README.md"
+keywords = ["mcp", "aether", "agent", "tools"]
+categories = ["api-bindings", "asynchronous"]
+
+[lib]
+name = "mcp_utils"
+path = "src/lib.rs"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lints]
 workspace = true
@@ -25,10 +38,10 @@ serde = { workspace = true }
 tokio = { workspace = true }
 rmcp = { workspace = true }
 tracing = { workspace = true }
-utils = { path = "../utils" }
+utils = { package = "aether-utils", path = "../utils", version = "0.1.0" }
 
 # client-only deps
-llm = { path = "../llm", optional = true }
+llm = { package = "aether-llm", path = "../llm", optional = true, version = "0.1.0" }
 serde_json = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, optional = true }
