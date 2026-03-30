@@ -38,7 +38,7 @@ aether-agent-core = "0.1"
 
 ### Minimal Agent (No Tools)
 
-```rust,ignore
+```rust,no_run
 use aether_core::core::{AgentMessage, Prompt, UserMessage, agent};
 use llm::providers::openrouter::OpenRouterProvider;
 use std::io::{self, Write};
@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
    // 2. Create an Agent
     let (tx, mut rx, _handle) = agent(llm) // <-- Give it an LLM
-        .prompt(Prompt::text("You are a helpful assistant.")) // <-- Give it a system prompt
+        .system_prompt(Prompt::text("You are a helpful assistant.")) // <-- Give it a system prompt
         .spawn() // <-- Spawn it into a tokio task
         .await?;
 
@@ -92,7 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("Agent cancelled");
                 break;
             }
-            Some(ContextCompactionStarted { .. }) | Some(ContextCompactionResult { .. }) | Some(ContextUsageUpdate { .. }) | Some(AutoContinue { .. }) => {}
+            _ => {}
             None => break,
         }
     }
@@ -130,7 +130,7 @@ You are Mr. BotBot, a kickass coding agent equipped with SOTA filesystem and web
 
 And bring Mr. `BotBot` to life!
 
-```rust,ignore
+```rust,no_run
 use aether_core::core::{AgentMessage, UserMessage, Prompt, agent};
 use aether_core::mcp::{mcp, McpSpawnResult};
 use llm::providers::openrouter::OpenRouterProvider;
@@ -147,6 +147,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         command_tx: mcp_tx,
         elicitation_rx: _,
         handle: _mcp_handle,
+        ..
     } = mcp()
         .from_json_file("mcp.json") // <-- Load MCP servers from JSON
         .await?
@@ -155,7 +156,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 2. Create Agent
     let (tx, mut rx, _handle) = agent(llm)
-        .prompt(Prompt::agents_md()) // <-- Load system prompt from AGENTS.md (recursively searches parent directories)
+        .system_prompt(Prompt::from_globs(vec!["AGENTS.md".into()], ".".into())) // <-- Load system prompt from AGENTS.md
         .tools(mcp_tx, tools) // <-- Give the agent MCP tools
         .spawn()
         .await?;
@@ -201,7 +202,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("Agent cancelled");
                 break;
             }
-            Some(ContextCompactionStarted { .. }) | Some(ContextCompactionResult { .. }) | Some(ContextUsageUpdate { .. }) | Some(AutoContinue { .. }) => {}
+            _ => {}
             None => break,
         }
     }
