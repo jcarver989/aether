@@ -3,11 +3,11 @@ title: Sessions
 description: Session persistence, resume, and management.
 ---
 
-Wisp sessions represent a conversation with an agent. Each session has its own message history, configuration state, and working directory.
+Sessions represent a conversation with an agent. Each session has its own message history, configuration state, and working directory.
 
 ## How sessions work
 
-Sessions are managed by the agent, not by Wisp. When you start Wisp, it asks the agent to create a new session. The agent stores the session state — messages, config, and context — and Wisp renders it.
+Sessions are managed by the agent, not the terminal UI. When you start Aether, it asks the agent to create a new session. The agent stores the session state — messages, config, and context — and the UI renders it.
 
 ## Starting a new session
 
@@ -37,8 +37,8 @@ Each session tracks:
 | Config selections | Model, reasoning effort, mode, etc. |
 | Conversation history | Full message history (stored by agent) |
 
-When you switch sessions, Wisp restores the configuration options that were active in that session.
+When you switch sessions, the configuration options that were active in that session are restored.
 
 ## Multiple sessions
 
-You can have many sessions stored by the agent. Use `/resume` to switch between them. Only one session is active at a time in a Wisp instance.
+You can have many sessions stored by the agent. Use `/resume` to switch between them. Only one session is active at a time.

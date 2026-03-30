@@ -1,13 +1,13 @@
 ---
 title: Settings & Themes
-description: Configure Wisp appearance and agent options.
+description: Configure appearance and agent options in the terminal UI.
 ---
 
 import { FileTree } from '@astrojs/starlight/components';
 
-Wisp has two layers of settings: its own UI preferences (themes), and agent configuration options (models, reasoning, servers) that the agent advertises through ACP.
+The terminal UI has two layers of settings: its own UI preferences (themes), and agent configuration options (models, reasoning, servers) that the agent advertises through ACP.
 
-## Wisp settings
+## UI settings
 
 Stored in `~/.wisp/settings.json`:
 
@@ -38,7 +38,7 @@ Themes are TextMate `.tmTheme` files. Place them in `~/.wisp/themes/` and refere
     - nord.tmTheme
 </FileTree>
 
-Wisp uses the theme to color the entire UI: conversation text, syntax highlighting, diff rendering, status line, and overlays.
+The theme colors the entire UI: conversation text, syntax highlighting, diff rendering, status line, and overlays.
 
 ## Settings overlay
 
@@ -50,18 +50,18 @@ Open with `/settings`. The overlay shows all configurable options:
 - **MCP servers** — View connected servers and their status
 - **Provider logins** — Authenticate with providers that require it
 
-These options are advertised by the agent — Wisp discovers them at session start. Different agents may expose different options.
+These options are advertised by the agent — the terminal UI discovers them at session start. Different agents may expose different options.
 
 ## How agent config works
 
-Wisp doesn't know about models or reasoning levels directly. Instead:
+The terminal UI doesn't know about models or reasoning levels directly. Instead:
 
 1. The agent sends `SessionConfigOption` entries describing available settings
-2. Wisp renders them in the settings overlay
-3. When you change a value, Wisp sends the selection back to the agent
+2. The UI renders them in the settings overlay
+3. When you change a value, the selection is sent back to the agent
 4. The agent applies the change
 
-This means Wisp works with any ACP agent without knowing its specific configuration schema. The `Tab` (reasoning) and `Shift+Tab` (mode) shortcuts cycle through the most common agent-provided options.
+The `Tab` (reasoning) and `Shift+Tab` (mode) shortcuts cycle through the most common agent-provided options.
 
 ## Authentication
 
@@ -70,4 +70,4 @@ Some agents or MCP servers require authentication. The settings overlay shows:
 - **Provider logins** — Start OAuth flows or enter API keys
 - **MCP server auth** — Authenticate individual MCP servers
 
-Authentication state is managed by the agent, not stored by Wisp.
+Authentication state is managed by the agent, not stored locally.
