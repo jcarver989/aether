@@ -868,6 +868,77 @@ mod tests {
         assert_eq!(view.state.focus, PatchFocus::CommentInput);
     }
 
+    #[test]
+    fn hunk_offsets_account_for_soft_wrapped_lines() {
+        use PatchLineKind::*;
+
+        let long_line = "x".repeat(200);
+        let h1 = "@@ -1,2 +1,2 @@";
+        let h2 = "@@ -10,1 +10,1 @@";
+        let doc = GitDiffDocument {
+            repo_root: PathBuf::from("/tmp/test"),
+            files: vec![file_diff(
+                "a.rs",
+                None,
+                FileStatus::Modified,
+                vec![
+                    hunk(
+                        h1,
+                        (1, 2),
+                        (1, 2),
+                        vec![
+                            patch_line(HunkHeader, h1, None, None),
+                            patch_line(Added, &long_line, None, Some(1)),
+                            patch_line(Context, "short", Some(2), Some(2)),
+                        ],
+                    ),
+                    hunk(
+                        h2,
+                        (10, 1),
+                        (10, 1),
+                        vec![
+                            patch_line(HunkHeader, h2, None, None),
+                            patch_line(Context, "end", Some(10), Some(10)),
+                        ],
+                    ),
+                ],
+            )],
+        };
+
+        let mut state = make_view_state(doc);
+        state.ensure_patch_cache(&ViewContext::new((60, 24)));
+
+        let offsets = state.selected_hunk_offsets();
+        assert_eq!(offsets.len(), 2, "should find two hunks");
+
+        // The second hunk offset must match where it actually appears
+        // in cached_patch_line_refs, not the unwrapped line count.
+        let second_hunk_ref_pos = state
+            .cached_patch_line_refs
+            .iter()
+            .position(|r| matches!(r, Some(r) if r.hunk_index == 1))
+            .expect("hunk 1 should exist in refs");
+        assert_eq!(offsets[1], second_hunk_ref_pos);
+
+        // The long line wraps, so the wrapped offset must be larger
+        // than what the old unwrapped calculation would have produced (3 + 1 = 4).
+        assert!(
+            offsets[1] > 4,
+            "second hunk offset {} should exceed unwrapped count (4) due to soft-wrapping",
+            offsets[1]
+        );
+
+        // Verify jump_next_hunk lands on the correct wrapped position.
+        state.focus = PatchFocus::Patch;
+        state.cursor_line = 0;
+        assert!(state.jump_next_hunk());
+        assert_eq!(state.cursor_line, second_hunk_ref_pos);
+
+        // And jump_prev_hunk returns to the first hunk.
+        assert!(state.jump_prev_hunk());
+        assert_eq!(state.cursor_line, 0);
+    }
+
     fn simple_hunks() -> Vec<Hunk> {
         use PatchLineKind::*;
         let h = "@@ -1,1 +1,1 @@";
