@@ -5,7 +5,7 @@ use crate::theme::Theme;
 #[cfg(feature = "syntax")]
 use crate::syntax_highlighting::SyntaxHighlighter;
 
-/// Environment passed to render methods: terminal size, theme.
+#[doc = include_str!("../docs/view_context.md")]
 #[derive(Clone)]
 pub struct ViewContext {
     pub size: Size,

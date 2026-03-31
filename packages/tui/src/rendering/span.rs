@@ -1,6 +1,6 @@
 use super::style::Style;
 
-/// A contiguous run of text sharing a single [`Style`].
+#[doc = include_str!("../docs/span.md")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Span {
     pub(crate) text: String,

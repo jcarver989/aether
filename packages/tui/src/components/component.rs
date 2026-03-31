@@ -3,7 +3,7 @@ use crossterm::event::{KeyEvent, KeyEventKind, MouseEvent};
 use crate::rendering::frame::Frame;
 use crate::rendering::render_context::{Size, ViewContext};
 
-/// Events that a [`Widget`] can handle.
+#[doc = include_str!("../docs/event.md")]
 pub enum Event {
     Key(KeyEvent),
     Paste(String),
@@ -30,7 +30,7 @@ impl TryFrom<crossterm::event::Event> for Event {
     }
 }
 
-/// A component that can process events and emit typed messages.
+#[doc = include_str!("../docs/component.md")]
 pub trait Component {
     /// The message type emitted by this widget.
     type Message;

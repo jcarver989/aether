@@ -6,10 +6,7 @@ use super::soft_wrap;
 use super::span::Span;
 use super::style::Style;
 
-/// A single line of styled terminal output, composed of [`Span`]s.
-///
-/// ANSI escape codes are emitted only when [`to_ansi_string`](Line::to_ansi_string)
-/// is called, keeping the data model free of formatting concerns.
+#[doc = include_str!("../docs/line.md")]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Line {
     spans: Vec<Span>,

@@ -14,6 +14,7 @@ pub enum SelectListMessage {
     Select(usize),
 }
 
+#[doc = include_str!("../docs/select_list.md")]
 pub struct SelectList<T: SelectItem> {
     items: Vec<T>,
     selected_index: usize,

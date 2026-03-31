@@ -17,15 +17,7 @@ pub enum RendererCommand {
     SetMouseCapture(bool),
 }
 
-/// Pure TUI renderer with frame diffing and terminal state management.
-///
-/// Uses relative cursor movement (`MoveUp` + `\r`) to navigate back to the
-/// start of the managed region. This avoids absolute row tracking, which breaks
-/// when the terminal scrolls content upward.
-///
-/// **Cursor invariant:** After every render or `push_to_scrollback`, the
-/// cursor sits at the end of the last managed line unless explicitly
-/// repositioned afterward.
+#[doc = include_str!("../docs/renderer.md")]
 pub struct Renderer<W: Write> {
     terminal: TerminalScreen<W>,
     size: Size,

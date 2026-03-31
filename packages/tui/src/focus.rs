@@ -1,28 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-/// Tracks which child in a list of focusable items is currently focused.
-///
-/// A `FocusRing` is a simple index tracker with wrap-around cycling. Parent
-/// components own it and use it to:
-/// - Track which child is focused
-/// - Handle Tab/BackTab navigation
-/// - Query focus state for rendering (e.g. `ring.is_focused(i)`)
-///
-/// # Example
-///
-/// ```
-/// use tui::FocusRing;
-///
-/// let mut ring = FocusRing::new(3);
-/// assert_eq!(ring.focused(), 0);
-///
-/// ring.focus_next();
-/// assert_eq!(ring.focused(), 1);
-///
-/// ring.focus_next();
-/// ring.focus_next();
-/// assert_eq!(ring.focused(), 0); // wraps around
-/// ```
+#[doc = include_str!("docs/focus_ring.md")]
 pub struct FocusRing {
     focused: usize,
     len: usize,

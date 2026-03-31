@@ -23,6 +23,7 @@ pub enum PickerKey {
     Other,
 }
 
+#[doc = include_str!("docs/combobox.md")]
 pub struct Combobox<T: Searchable + Send + Sync + 'static> {
     fuzzy: FuzzyMatcher<T>,
     selected_index: usize,

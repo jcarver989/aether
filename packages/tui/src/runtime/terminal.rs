@@ -15,6 +15,7 @@ pub enum MouseCapture {
     Enabled,
 }
 
+#[doc = include_str!("../docs/terminal_session.md")]
 pub struct TerminalSession {
     enable_bracketed_paste: bool,
     mouse_capture: MouseCapture,
