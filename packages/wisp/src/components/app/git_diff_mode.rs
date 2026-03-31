@@ -36,8 +36,6 @@ pub struct PatchLineRef {
 #[derive(Debug, Clone)]
 pub struct QueuedComment {
     pub file_path: String,
-    pub hunk_index: usize,
-    pub hunk_text: String,
     pub line_text: String,
     pub line_number: Option<usize>,
     pub line_kind: PatchLineKind,
@@ -443,32 +441,19 @@ pub(crate) fn format_review_prompt(comments: &[QueuedComment]) -> String {
     for (file_path, file_comments) in &file_groups {
         write!(prompt, "\n## `{file_path}`\n").unwrap();
 
-        let mut hunk_groups: Vec<(usize, &str, Vec<&QueuedComment>)> = Vec::new();
         for comment in file_comments {
-            if let Some(group) = hunk_groups.iter_mut().find(|(idx, _, _)| *idx == comment.hunk_index) {
-                group.2.push(comment);
-            } else {
-                hunk_groups.push((comment.hunk_index, &comment.hunk_text, vec![comment]));
-            }
-        }
-
-        for (_, hunk_text, hunk_comments) in &hunk_groups {
-            write!(prompt, "\n```diff\n{hunk_text}\n```\n").unwrap();
-
-            for comment in hunk_comments {
-                let kind_label = match comment.line_kind {
-                    PatchLineKind::Added => "added",
-                    PatchLineKind::Removed => "removed",
-                    PatchLineKind::Context => "context",
-                    PatchLineKind::HunkHeader => "header",
-                    PatchLineKind::Meta => "meta",
-                };
-                let line_ref = match comment.line_number {
-                    Some(n) => format!("Line {n} ({kind_label})"),
-                    None => kind_label.to_string(),
-                };
-                write!(prompt, "\n**{line_ref}:** `{}`\n> {}\n", comment.line_text, comment.comment).unwrap();
-            }
+            let kind_label = match comment.line_kind {
+                PatchLineKind::Added => "added",
+                PatchLineKind::Removed => "removed",
+                PatchLineKind::Context => "context",
+                PatchLineKind::HunkHeader => "header",
+                PatchLineKind::Meta => "meta",
+            };
+            let line_ref = match comment.line_number {
+                Some(n) => format!("Line {n} ({kind_label})"),
+                None => kind_label.to_string(),
+            };
+            write!(prompt, "\n**{line_ref}:** `{}`\n> {}\n", comment.line_text, comment.comment).unwrap();
         }
     }
 
@@ -530,7 +515,6 @@ mod tests {
 
     fn comment(
         file: &str,
-        hunk_text: &str,
         line_text: &str,
         line_number: usize,
         kind: PatchLineKind,
@@ -538,8 +522,6 @@ mod tests {
     ) -> QueuedComment {
         QueuedComment {
             file_path: file.to_string(),
-            hunk_index: 0,
-            hunk_text: hunk_text.to_string(),
             line_text: line_text.to_string(),
             line_number: Some(line_number),
             line_kind: kind,
@@ -563,17 +545,16 @@ mod tests {
 
     #[test]
     fn format_review_prompt_groups_by_file() {
-        let hunk = "@@ -1,3 +1,3 @@\n fn main() {\n-    old();\n+    new();\n }";
         let comments = vec![
-            comment("src/foo.rs", hunk, "    new();", 2, PatchLineKind::Added, "Looks risky"),
-            comment("src/foo.rs", hunk, "    old();", 2, PatchLineKind::Removed, "Why remove this?"),
-            comment("src/bar.rs", "@@ -1 +1 @@\n+new_line", "new_line", 1, PatchLineKind::Added, "Needs a test"),
+            comment("src/foo.rs", "    new();", 2, PatchLineKind::Added, "Looks risky"),
+            comment("src/foo.rs", "    old();", 2, PatchLineKind::Removed, "Why remove this?"),
+            comment("src/bar.rs", "new_line", 1, PatchLineKind::Added, "Needs a test"),
         ];
 
         let prompt = format_review_prompt(&comments);
         assert!(prompt.contains("## `src/foo.rs`"), "should have foo.rs header");
         assert!(prompt.contains("## `src/bar.rs`"), "should have bar.rs header");
-        assert_eq!(prompt.matches("```diff").count(), 2, "one hunk per file group");
+        assert!(!prompt.contains("```diff"), "should not include diff blocks");
         for expected in
             ["Looks risky", "Why remove this?", "Needs a test", "Line 2 (added)", "Line 2 (removed)", "Line 1 (added)"]
         {

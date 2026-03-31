@@ -466,42 +466,10 @@ fn build_queued_comment(state: &GitDiffViewState) -> Option<QueuedComment> {
     let hunk = file.hunks.get(patch_ref.hunk_index)?;
     let patch_line = hunk.lines.get(patch_ref.line_index)?;
 
-    // Reconstruct hunk text as unified diff
-    let mut hunk_text = String::new();
-    for pl in &hunk.lines {
-        match pl.kind {
-            PatchLineKind::Context => {
-                hunk_text.push(' ');
-                hunk_text.push_str(&pl.text);
-                hunk_text.push('\n');
-            }
-            PatchLineKind::Added => {
-                hunk_text.push('+');
-                hunk_text.push_str(&pl.text);
-                hunk_text.push('\n');
-            }
-            PatchLineKind::Removed => {
-                hunk_text.push('-');
-                hunk_text.push_str(&pl.text);
-                hunk_text.push('\n');
-            }
-            PatchLineKind::HunkHeader | PatchLineKind::Meta => {
-                hunk_text.push_str(&pl.text);
-                hunk_text.push('\n');
-            }
-        }
-    }
-    // Trim trailing newline
-    if hunk_text.ends_with('\n') {
-        hunk_text.pop();
-    }
-
     let line_number = patch_line.new_line_no.or(patch_line.old_line_no);
 
     Some(QueuedComment {
         file_path: file.path.clone(),
-        hunk_index: patch_ref.hunk_index,
-        hunk_text,
         line_text: patch_line.text.clone(),
         line_number,
         line_kind: patch_line.kind,
@@ -606,8 +574,6 @@ mod tests {
     fn queued_comment(line_text: &str, comment: &str, kind: PatchLineKind) -> QueuedComment {
         QueuedComment {
             file_path: "a.rs".to_string(),
-            hunk_index: 0,
-            hunk_text: "hunk".to_string(),
             line_text: line_text.to_string(),
             line_number: Some(1),
             line_kind: kind,
@@ -826,13 +792,10 @@ mod tests {
 
         let comment = build_queued_comment(&state).unwrap();
         assert_eq!(comment.file_path, "a.rs");
-        assert_eq!(comment.hunk_index, 0);
         assert_eq!(comment.line_text, "    new();");
         assert_eq!(comment.line_kind, PatchLineKind::Added);
         assert_eq!(comment.line_number, Some(2));
         assert_eq!(comment.comment, "test review");
-        assert!(comment.hunk_text.contains("+    new();"));
-        assert!(comment.hunk_text.contains("-    old();"));
     }
 
     #[tokio::test]
