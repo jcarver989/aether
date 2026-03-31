@@ -128,7 +128,7 @@ impl CodexProvider {
 }
 
 impl ProviderFactory for CodexProvider {
-    fn from_env() -> Result<Self> {
+    async fn from_env() -> Result<Self> {
         let store = OAuthCredentialStore::new(super::PROVIDER_ID);
         let token_manager = CodexTokenManager::new(store, super::PROVIDER_ID);
         Ok(Self::new(token_manager))

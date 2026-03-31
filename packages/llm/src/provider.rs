@@ -1,5 +1,6 @@
 use crate::LlmModel;
 use crate::Result as LlmResult;
+use std::future::Future;
 use std::pin::Pin;
 use tokio_stream::Stream;
 
@@ -16,7 +17,7 @@ pub type LlmResponseStream = Pin<Box<dyn Stream<Item = LlmResult<LlmResponse>> +
 #[doc = include_str!("docs/provider_factory.md")]
 pub trait ProviderFactory: Sized {
     /// Create provider from environment variables and default configuration
-    fn from_env() -> super::Result<Self>;
+    fn from_env() -> impl Future<Output = LlmResult<Self>> + Send;
 
     /// Set or update the model for this provider (builder pattern)
     fn with_model(self, model: &str) -> Self;

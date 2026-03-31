@@ -161,7 +161,7 @@ impl AnthropicProvider {
 }
 
 impl ProviderFactory for AnthropicProvider {
-    fn from_env() -> Result<Self> {
+    async fn from_env() -> Result<Self> {
         Self::new(None)
     }
 

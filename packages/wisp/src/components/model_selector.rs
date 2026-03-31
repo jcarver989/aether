@@ -119,6 +119,14 @@ impl ModelSelector {
         self.combobox.selected().map(|e| e.value.clone())
     }
 
+    pub fn selected_values(&self) -> &HashSet<String> {
+        &self.selected_models
+    }
+
+    pub fn reasoning_effort(&self) -> Option<ReasoningEffort> {
+        self.reasoning_effort
+    }
+
     #[cfg(test)]
     pub fn selected_count(&self) -> usize {
         self.selected_models.len()

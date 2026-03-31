@@ -30,7 +30,7 @@ impl OpenRouterProvider {
 }
 
 impl ProviderFactory for OpenRouterProvider {
-    fn from_env() -> Result<Self> {
+    async fn from_env() -> Result<Self> {
         let api_key = std::env::var("OPENROUTER_API_KEY")
             .map_err(|_| LlmError::MissingApiKey("OPENROUTER_API_KEY".to_string()))?;
 

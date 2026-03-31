@@ -106,6 +106,7 @@ impl RuntimeBuilder {
 
         let filtered_tools = mcp.spec.tools.apply(mcp.tool_definitions);
         let mut agent_builder = AgentBuilder::from_spec(&mcp.spec, vec![])
+            .await
             .map_err(|e| CliError::AgentError(e.to_string()))?
             .tools(mcp.mcp_tx.clone(), filtered_tools);
 
