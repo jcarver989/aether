@@ -12,7 +12,7 @@ const { title, description, border = true } = Astro.props;
 ]}>
     <div class="order-2 lg:order-none">
         <h4 class="font-mono text-lg text-accent-500 font-semibold mb-2">{title}</h4>
-        <p class="text-gray-400 text-sm leading-relaxed" set:html={description} />
+        <div class="text-gray-400 text-sm leading-relaxed" set:html={description} />
     </div>
     <div class="min-w-0">
         <slot />

@@ -17,7 +17,7 @@ export const initCode = `$ aether init
 ✓ Created mcp.json
 ✓ Created AGENTS.md`;
 
-export const showPromptCode = `$ aether show-prompt -a Smart
+export const showPromptCode = `$ aether show-prompt -a Build
 
 ---
 Prompt chars:            0
@@ -28,8 +28,8 @@ MCP tools:               0`;
 export const promptsCode = `{
   "agents": [
     {
-      "name": "Smart",
-      "model": "zai:glm-5",
+      "name": "Build",
+      "model": "zai:glm-5.1",
       "reasoningEffort": "high",
       "prompts": ["SYSTEM.md", "AGENTS.md"]
     }
@@ -44,7 +44,7 @@ export const agentsPromptCode = `# Agents
 Use the Explorer agent to search code.
 ...`;
 
-export const showPromptCmd = `$ aether show-prompt -a Smart`;
+export const showPromptCmd = `$ aether show-prompt -a Build`;
 
 export const showPromptOutput = `# System Prompt
 You are an expert senior Rust engineer.
@@ -63,41 +63,37 @@ MCP tools:               0`;
 export const llmCloudCode = `{
   "agents": [
     {
-      "name": "Smart",
-      "model": "zai:glm-5",
+      "name": "Plan",
+      "model": "codex:gpt-5.4",
       "reasoningEffort": "high"
+    },
+    {
+      "name": "Build",
+      "model": "zai:glm-5.1"
+    },
+    {
+      "name": "Fast",
+      "model": "openrouter:minimax/minimax-m2.7"
     }
   ]
 }`;
 
 export const llmLocalCode = `{
   "agents": [
-    {
-      "name": "Smart",
-      "model": "zai:glm-5",
-      "reasoningEffort": "high"
-    },
+    ...
     {
       "name": "Local",
-      "model": "llamacpp:qwen3"
+      "model": "llamacpp:unsloth/Qwen3.5-9B-GGUF"
     }
   ]
 }`;
 
 export const llmAlloyCode = `{
   "agents": [
-    {
-      "name": "Smart",
-      "model": "zai:glm-5",
-      "reasoningEffort": "high"
-    },
-    {
-      "name": "Local",
-      "model": "llamacpp:qwen3"
-    },
+    ...
     {
       "name": "Alloy",
-      "model": "zai:glm-5,llamacpp:qwen3"
+      "model": "zai:glm-5.1,llamacpp:unsloth/Qwen3.5-9B-GGUF"
     }
   ]
 }`;
@@ -105,52 +101,32 @@ export const llmAlloyCode = `{
 export const toolsWireCode = `{
   "agents": [
     {
-      "name": "Smart",
-      "model": "zai:glm-5",
-      "reasoningEffort": "high",
+      "name": "Build",
+      "model": "zai:glm-5.1",
       "prompts": ["SYSTEM.md", "AGENTS.md"],
       "mcpServers": "mcp.json"
     }
   ]
 }`;
 
-export const toolsCodingCode = `{
-  "servers": {
-    "coding": { "type": "in-memory" }
-  }
-}`;
-
-export const toolsSkillsCode = `{
-  "servers": {
-    "coding": { "type": "in-memory" },
-    "skills": { "type": "in-memory" }
-  }
-}`;
-
-export const toolsSubagentsCode = `{
+export const toolsBuiltinCode = `{
   "servers": {
     "coding":    { "type": "in-memory" },
-    "skills":    { "type": "in-memory" },
-    "subagents": { "type": "in-memory" }
-  }
-}`;
-
-export const toolsProxyCode = `{
-  "servers": {
-    "coding":    { "type": "in-memory" },
+    "lsp":       { "type": "in-memory" },
     "skills":    { "type": "in-memory" },
     "subagents": { "type": "in-memory" },
-    "proxy": {
-      "type": "in-memory",
-      "input": {
-        "servers": {
-          "chrome-devtools": {
-            "type": "stdio",
-            "command": "npx",
-            "args": ["chrome-devtools-mcp"]
-          }
-        }
-      }
+    "tasks":     { "type": "in-memory" },
+    "survey":    { "type": "in-memory" },
+    "proxy":     { "type": "in-memory", "input": { ... } }
+  }
+}`;
+
+export const toolsExternalCode = `{
+  "servers": {
+    ...
+    "linear": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp"
     }
   }
 }`;
@@ -158,9 +134,7 @@ export const toolsProxyCode = `{
 {/* ── Run anywhere ── */}
 
 export const runTuiCode = `$ aether`;
-
-export const runHeadlessCode = `$ aether headless -a Smart "refactor auth"`;
-
+export const runHeadlessCode = `$ aether headless "refactor auth"`;
 export const runAcpCode = `$ aether acp`;
 
 
@@ -171,18 +145,20 @@ export const runAcpCode = `$ aether acp`;
 <section class="py-20">
     <div class="mx-auto max-w-350">
         <div class="text-center mb-16">
-            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Getting started is easy as `install`, `init`, `run`</h2>
+            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Get up and running in ~5 minutes</h2>
             <p class="text-gray-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">From install to running agent &mdash; everything is plain config files and markdown.</p>
         </div>
         <div class="flex flex-col gap-16">
             <ToolShowcaseItem title="1. Install" description="Install the CLI from crates.io.">
                 <Code code={installCode} lang="sh" title="terminal" />
             </ToolShowcaseItem>
-            <ToolShowcaseItem title="2. Init" description="Scaffold config files, tools, and a default agent prompt.">
+            <ToolShowcaseItem title="2. Create your 1st agent" description="Scaffold config files, tools, and a default agent prompt.">
                 <Code code={initCode} lang="sh" title="terminal" />
             </ToolShowcaseItem>
-            <ToolShowcaseItem title="3. Run" description="Launch the interactive TUI, run headless for scripts and CI, or expose over ACP for editor integration." border={false}>
-                <Code code={runTuiCode} lang="sh" title="terminal" />
+            <ToolShowcaseItem title="3. Run it your way: TUI, IDE/editor or headless" description="Launch the interactive TUI, run headless for scripts and CI, or expose over ACP for editor integration." border={false}>
+                <Code code={runTuiCode} lang="sh" title="Interactive TUI" />
+                <Code code={runAcpCode} lang="sh" title="Editor/IDE (via ACP)" />
+                <Code code={runHeadlessCode} lang="sh" title="Headless" />
             </ToolShowcaseItem>
         </div>
     </div>
@@ -191,19 +167,19 @@ export const runAcpCode = `$ aether acp`;
 <section class="px-16 py-20">
     <div class="mx-auto max-w-350">
         <div class="text-center mb-16">
-            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Use any LLM, local or remote</h2>
-            <p class="text-gray-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">Anthropic, OpenAI, OpenRouter, DeepSeek, Moonshot, Zai, LlamaCpp and more. Plus, you can bring your own.</p>
+            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Use any LLM, cloud or local</h2>
+            <p class="text-gray-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">Plus, you can bring your own.</p>
         </div>
         <TerminalDemo id="llm-player" src="/demos/llm-demo.cast" class="mx-auto max-w-4xl mb-12" />
         <div class="flex flex-col gap-6">
-            <ToolShowcaseItem title="Cloud" description="100+ cloud providers through one unified interface &mdash; OpenAI, Anthropic, DeepSeek, OpenRouter, Bedrock, and more. Configurable reasoning effort per agent.">
-                <Code code={llmCloudCode} lang="json" title=".aether/settings.json" meta="ins={3-7}" />
+            <ToolShowcaseItem title="Cloud" description="Anthropic, OpenAI, OpenRouter, DeepSeek, Moonshot, Zai, LlamaCpp and more are supported out of the box.">
+                <Code code={llmCloudCode} lang="json" title=".aether/settings.json" meta="ins={3-15}" />
             </ToolShowcaseItem>
-            <ToolShowcaseItem title="Local" description="Run fully offline with llama.cpp, Ollama, or any local inference server. Same config format, no code changes.">
-                <Code code={llmLocalCode} lang="json" title=".aether/settings.json" meta="ins={8-11}" />
+            <ToolShowcaseItem title="Local" description="Run local models with llama.cpp or Ollama.">
+                <Code code={llmLocalCode} lang="json" title=".aether/settings.json" meta="ins={4-7}" />
             </ToolShowcaseItem>
-            <ToolShowcaseItem title="Alloyed" description="Comma-separate models to create an alloy &mdash; requests round-robin across providers each turn. Mix cloud reasoning with local speed in a single agent." border={false}>
-                <Code code={llmAlloyCode} lang="json" title=".aether/settings.json" meta="ins={12-15}" />
+            <ToolShowcaseItem title="Combine models by alloying them together" description="Combine the strengths of multiple models by round-robining between them each conversation turn. You can even mix cloud and local models together." border={false}>
+                <Code code={llmAlloyCode} lang="json" title=".aether/settings.json" meta="ins={4-7}" />
             </ToolShowcaseItem>
         </div>
     </div>
@@ -212,19 +188,19 @@ export const runAcpCode = `$ aether acp`;
 <section class="px-16 py-20">
     <div class="mx-auto max-w-350">
         <div class="text-center mb-16">
-            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Build a system prompt</h2>
+            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Control every token in your agent's prompt</h2>
             <p class="text-gray-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">Start with a blank slate and add only what you need.</p>
         </div>
         <div class="flex flex-col gap-6">
             <ToolShowcaseItem title="Start with a blank slate" description="Agents begin with no system prompt or tools.">
                 <Code code={showPromptCode} lang="sh" title="terminal" />
             </ToolShowcaseItem>
-            <ToolShowcaseItem title="Compose your system prompt" description="Add a prompts array to pull in markdown files &mdash; system instructions, agent guides, whatever you want.">
+            <ToolShowcaseItem title="Use any markdown files you want" description="Add a prompts array to pull in markdown files &mdash; system instructions, agent guides, whatever you want.">
                 <Code code={promptsCode} lang="json" title=".aether/settings.json" meta="ins={7}" />
                 <Code code={systemPromptCode} lang="md" title="SYSTEM.md" />
                 <Code code={agentsPromptCode} lang="md" title="AGENTS.md" />
             </ToolShowcaseItem>
-            <ToolShowcaseItem title="Measure" description="So you don't waste tokens." border={false}>
+            <ToolShowcaseItem title="View the fully rendered system prompt with a single command" description="So you don't waste tokens." border={false}>
                 <Code code={showPromptCmd} lang="sh" title="terminal" />
                 <Code code={showPromptOutput} lang="md" title="output" />
             </ToolShowcaseItem>
@@ -235,42 +211,16 @@ export const runAcpCode = `$ aether acp`;
 <section class="px-16 py-20">
     <div class="mx-auto max-w-350">
         <div class="text-center mb-16">
-            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Connect tools</h2>
+            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Connect any tools you want (via MCP)</h2>
             <p class="text-gray-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">Aether agents get tools exclusively via MCP. Add what you need, nothing more.</p>
         </div>
         <div class="flex flex-col gap-6">
-            <ToolShowcaseItem title="Coding" description="Point the agent at an MCP config, then add servers. Coding gives you file I/O, regex grep, bash execution, web fetch, and full LSP integration out of the box.">
-                <Code code={toolsWireCode} lang="json" title=".aether/settings.json" meta="ins={8}" />
-                <Code code={toolsCodingCode} lang="json" title="mcp.json" meta="ins={3}" />
+            <ToolShowcaseItem title="Batteries included MCPs" description='Aether includes several built-in MCP servers you can optionally enable. They run in a custom in-memory transport. <ul class="mt-3 space-y-1 text-gray-400 text-sm list-none pl-0"><li><code class="text-white">coding</code> — file I/O, grep, bash, and web fetch</li><li><code class="text-white">lsp</code> — language-aware completions and diagnostics</li><li><code class="text-white">skills</code> — reusable domain knowledge as slash commands</li><li><code class="text-white">subagents</code> — spawn parallel child agents with their own models and tools</li><li><code class="text-white">tasks</code> — persistent task tracking across turns</li><li><code class="text-white">survey</code> — allow the agent to ask you questions with structured output</li><li><code class="text-white">proxy</code> — prevent tool bloat via progressive discovery</li></ul>'>
+                <Code code={toolsWireCode} lang="json" title=".aether/settings.json" meta="ins={7}" />
+                <Code code={toolsBuiltinCode} lang="json" title="mcp.json" meta="ins={3-9}" />
             </ToolShowcaseItem>
-            <ToolShowcaseItem title="Skills" description="Reusable domain knowledge packaged as skill directories with progressive disclosure. Define slash commands as markdown with YAML frontmatter.">
-                <Code code={toolsSkillsCode} lang="json" title="mcp.json" meta="ins={4}" />
-            </ToolShowcaseItem>
-            <ToolShowcaseItem title="Sub-agents" description="Spawn child agents that execute in parallel. Each gets its own model, prompts, and tools. Decompose tasks across multiple agents, then collect structured results.">
-                <Code code={toolsSubagentsCode} lang="json" title="mcp.json" meta="ins={5}" />
-            </ToolShowcaseItem>
-            <ToolShowcaseItem title="Proxy" description="Plug in any external MCP server without bloating context. The proxy replaces all nested tool schemas with a single routing tool and writes definitions to disk &mdash; the agent browses them via the filesystem instead. 100 tools in context becomes 1, saving 90%+ on schema tokens every turn." border={false}>
-                <Code code={toolsProxyCode} lang="json" title="mcp.json" meta="ins={6-17}" />
-            </ToolShowcaseItem>
-        </div>
-    </div>
-</section>
-
-<section class="px-16 py-20">
-    <div class="mx-auto max-w-350">
-        <div class="text-center mb-16">
-            <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Run anywhere</h2>
-            <p class="text-gray-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">Interactive TUI, headless CLI for scripts and CI, or ACP server for editor integration.</p>
-        </div>
-        <div class="flex flex-col gap-6">
-            <ToolShowcaseItem title="Interactive TUI" description="Rich terminal UI with markdown rendering, syntax highlighting, inline diffs, and live tool status. Switch agents, cycle reasoning levels, and pick files or commands inline.">
-                <Code code={runTuiCode} lang="sh" title="terminal" />
-            </ToolShowcaseItem>
-            <ToolShowcaseItem title="Headless CLI" description="Single-prompt mode for scripts and CI. Pipe input, choose output format (text, JSON, pretty), and run inside Docker sandboxes for isolation.">
-                <Code code={runHeadlessCode} lang="sh" title="terminal" />
-            </ToolShowcaseItem>
-            <ToolShowcaseItem title="ACP server" description="Expose your agent over the Agent Client Protocol for editor integration. Multi-session support, session persistence, and bi-directional streaming &mdash; works with Zed and any ACP client." border={false}>
-                <Code code={runAcpCode} lang="sh" title="terminal" />
+            <ToolShowcaseItem title="Any MCP server" description="Plug in any external MCP server via stdio, SSE, or streamable HTTP. Remote server OAuth credentials are stored securley in your keychain." border={false}>
+                <Code code={toolsExternalCode} lang="json" title="mcp.json" meta="ins={4-8}" />
             </ToolShowcaseItem>
         </div>
     </div>
