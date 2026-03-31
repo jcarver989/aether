@@ -45,9 +45,8 @@ impl DaemonHarness {
         let _ = fs::remove_file(&sock_path);
         let _ = fs::remove_file(&lock_path);
 
-        let _client = LspClient::connect(workspace_root, language)
-            .await
-            .map_err(|e| HarnessError::SpawnFailed(e.to_string()))?;
+        let _client =
+            LspClient::connect(workspace_root, language).await.map_err(|e| HarnessError::SpawnFailed(e.to_string()))?;
 
         Ok(Self {
             socket_path: sock_path,
@@ -59,9 +58,7 @@ impl DaemonHarness {
 
     /// Connect a client to the running daemon
     pub async fn connect(&self) -> Result<LspClient, HarnessError> {
-        LspClient::connect(&self.workspace_root, self.language)
-            .await
-            .map_err(HarnessError::ClientError)
+        LspClient::connect(&self.workspace_root, self.language).await.map_err(HarnessError::ClientError)
     }
 
     /// Kill the daemon by reading PID from lockfile and sending SIGTERM
@@ -69,10 +66,8 @@ impl DaemonHarness {
         let pid_str = fs::read_to_string(&self.lockfile_path)
             .map_err(|e| HarnessError::KillFailed(format!("Failed to read lockfile: {e}")))?;
 
-        let pid: i32 = pid_str
-            .trim()
-            .parse()
-            .map_err(|e| HarnessError::KillFailed(format!("Failed to parse PID: {e}")))?;
+        let pid: i32 =
+            pid_str.trim().parse().map_err(|e| HarnessError::KillFailed(format!("Failed to parse PID: {e}")))?;
 
         #[cfg(unix)]
         {
@@ -81,9 +76,7 @@ impl DaemonHarness {
                 let err = std::io::Error::last_os_error();
 
                 if err.raw_os_error() != Some(libc::ESRCH) {
-                    return Err(HarnessError::KillFailed(format!(
-                        "kill({pid}, SIGTERM) failed: {err}"
-                    )));
+                    return Err(HarnessError::KillFailed(format!("kill({pid}, SIGTERM) failed: {err}")));
                 }
             }
         }

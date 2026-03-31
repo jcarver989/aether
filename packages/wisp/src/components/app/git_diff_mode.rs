@@ -94,8 +94,7 @@ impl GitDiffViewState {
         let GitDiffLoadState::Ready(doc) = &self.load_state else {
             return None;
         };
-        doc.files
-            .get(self.selected_file.min(doc.files.len().saturating_sub(1)))
+        doc.files.get(self.selected_file.min(doc.files.len().saturating_sub(1)))
     }
 
     pub(crate) fn selected_file_path(&self) -> Option<&str> {
@@ -111,10 +110,10 @@ impl GitDiffViewState {
 
     pub(crate) fn max_patch_scroll(&self) -> usize {
         if let Some(file) = self.selected_file() {
-            let total_lines = self.cached_patch_lines.len().max(
-                file.hunks.iter().map(|h| h.lines.len()).sum::<usize>()
-                    + file.hunks.len().saturating_sub(1),
-            );
+            let total_lines = self
+                .cached_patch_lines
+                .len()
+                .max(file.hunks.iter().map(|h| h.lines.len()).sum::<usize>() + file.hunks.len().saturating_sub(1));
             return total_lines.saturating_sub(1);
         }
         0
@@ -269,12 +268,7 @@ impl GitDiffViewState {
             return false;
         }
         let current = self.cursor_line;
-        if let Some(&prev) = self
-            .selected_hunk_offsets()
-            .iter()
-            .rev()
-            .find(|&&o| o < current)
-        {
+        if let Some(&prev) = self.selected_hunk_offsets().iter().rev().find(|&&o| o < current) {
             let changed = prev != self.cursor_line;
             self.cursor_line = prev;
             return changed;
@@ -295,8 +289,7 @@ impl GitDiffViewState {
 
     pub(crate) fn ensure_patch_cache(&mut self, context: &ViewContext) {
         let width = context.size.width;
-        if self.cached_for_file == Some(self.selected_file) && self.cached_for_width == Some(width)
-        {
+        if self.cached_for_file == Some(self.selected_file) && self.cached_for_width == Some(width) {
             return;
         }
 
@@ -308,8 +301,7 @@ impl GitDiffViewState {
             self.cached_patch_lines = Vec::new();
             self.cached_patch_line_refs = Vec::new();
         } else {
-            let use_split_patch =
-                should_use_split_patch(width as usize, self.sidebar_width_delta, file);
+            let use_split_patch = should_use_split_patch(width as usize, self.sidebar_width_delta, file);
             let (_left_width, right_width) = diff_layout(width as usize, self.sidebar_width_delta);
 
             if use_split_patch {
@@ -344,14 +336,8 @@ impl GitDiffViewState {
         if let Some(restore) = restore {
             self.focus = restore.focus;
             self.patch_scroll = 0;
-            if let (Some(path), GitDiffLoadState::Ready(doc)) =
-                (&restore.selected_path, &self.load_state)
-            {
-                self.selected_file = doc
-                    .files
-                    .iter()
-                    .position(|file| file.path == *path)
-                    .unwrap_or(0);
+            if let (Some(path), GitDiffLoadState::Ready(doc)) = (&restore.selected_path, &self.load_state) {
+                self.selected_file = doc.files.iter().position(|file| file.path == *path).unwrap_or(0);
             }
         }
     }
@@ -397,21 +383,16 @@ impl GitDiffMode {
 
     #[allow(dead_code)]
     pub(crate) async fn complete_load(&mut self) {
-        match crate::git_diff::load_git_diff(&self.working_dir, self.cached_repo_root.as_deref())
-            .await
-        {
+        match crate::git_diff::load_git_diff(&self.working_dir, self.cached_repo_root.as_deref()).await {
             Ok(doc) => {
                 if self.cached_repo_root.is_none() {
                     self.cached_repo_root = Some(doc.repo_root.clone());
                 }
-                self.state
-                    .apply_loaded_document(doc, self.pending_restore.take());
+                self.state.apply_loaded_document(doc, self.pending_restore.take());
             }
             Err(error) => {
                 self.pending_restore = None;
-                self.state.load_state = GitDiffLoadState::Error {
-                    message: error.to_string(),
-                };
+                self.state.load_state = GitDiffLoadState::Error { message: error.to_string() };
                 self.state.invalidate_patch_cache();
             }
         }
@@ -423,9 +404,7 @@ impl GitDiffMode {
     }
 
     pub(crate) async fn on_key_event(&mut self, event: &Event) -> Vec<GitDiffViewMessage> {
-        let mut view = GitDiffView {
-            state: &mut self.state,
-        };
+        let mut view = GitDiffView { state: &mut self.state };
         let outcome = view.on_event(event).await;
         outcome.unwrap_or_default()
     }
@@ -460,10 +439,7 @@ pub(crate) fn format_review_prompt(comments: &[QueuedComment]) -> String {
 
     let mut file_groups: Vec<(&str, Vec<&QueuedComment>)> = Vec::new();
     for comment in comments {
-        if let Some(group) = file_groups
-            .iter_mut()
-            .find(|(path, _)| *path == comment.file_path)
-        {
+        if let Some(group) = file_groups.iter_mut().find(|(path, _)| *path == comment.file_path) {
             group.1.push(comment);
         } else {
             file_groups.push((&comment.file_path, vec![comment]));
@@ -475,10 +451,7 @@ pub(crate) fn format_review_prompt(comments: &[QueuedComment]) -> String {
 
         let mut hunk_groups: Vec<(usize, &str, Vec<&QueuedComment>)> = Vec::new();
         for comment in file_comments {
-            if let Some(group) = hunk_groups
-                .iter_mut()
-                .find(|(idx, _, _)| *idx == comment.hunk_index)
-            {
+            if let Some(group) = hunk_groups.iter_mut().find(|(idx, _, _)| *idx == comment.hunk_index) {
                 group.2.push(comment);
             } else {
                 hunk_groups.push((comment.hunk_index, &comment.hunk_text, vec![comment]));
@@ -500,12 +473,7 @@ pub(crate) fn format_review_prompt(comments: &[QueuedComment]) -> String {
                     Some(n) => format!("Line {n} ({kind_label})"),
                     None => kind_label.to_string(),
                 };
-                write!(
-                    prompt,
-                    "\n**{line_ref}:** `{}`\n> {}\n",
-                    comment.line_text, comment.comment
-                )
-                .unwrap();
+                write!(prompt, "\n**{line_ref}:** `{}`\n> {}\n", comment.line_text, comment.comment).unwrap();
             }
         }
     }
@@ -592,8 +560,7 @@ mod tests {
         mode.state.focus = PatchFocus::Patch;
         mode.begin_refresh();
 
-        mode.state
-            .apply_loaded_document(make_doc(&["c.rs", "b.rs"]), mode.pending_restore.take());
+        mode.state.apply_loaded_document(make_doc(&["c.rs", "b.rs"]), mode.pending_restore.take());
 
         assert_eq!(mode.state.selected_file_path(), Some("b.rs"));
         assert_eq!(mode.state.focus, PatchFocus::Patch);
@@ -604,54 +571,18 @@ mod tests {
     fn format_review_prompt_groups_by_file() {
         let hunk = "@@ -1,3 +1,3 @@\n fn main() {\n-    old();\n+    new();\n }";
         let comments = vec![
-            comment(
-                "src/foo.rs",
-                hunk,
-                "    new();",
-                2,
-                PatchLineKind::Added,
-                "Looks risky",
-            ),
-            comment(
-                "src/foo.rs",
-                hunk,
-                "    old();",
-                2,
-                PatchLineKind::Removed,
-                "Why remove this?",
-            ),
-            comment(
-                "src/bar.rs",
-                "@@ -1 +1 @@\n+new_line",
-                "new_line",
-                1,
-                PatchLineKind::Added,
-                "Needs a test",
-            ),
+            comment("src/foo.rs", hunk, "    new();", 2, PatchLineKind::Added, "Looks risky"),
+            comment("src/foo.rs", hunk, "    old();", 2, PatchLineKind::Removed, "Why remove this?"),
+            comment("src/bar.rs", "@@ -1 +1 @@\n+new_line", "new_line", 1, PatchLineKind::Added, "Needs a test"),
         ];
 
         let prompt = format_review_prompt(&comments);
-        assert!(
-            prompt.contains("## `src/foo.rs`"),
-            "should have foo.rs header"
-        );
-        assert!(
-            prompt.contains("## `src/bar.rs`"),
-            "should have bar.rs header"
-        );
-        assert_eq!(
-            prompt.matches("```diff").count(),
-            2,
-            "one hunk per file group"
-        );
-        for expected in [
-            "Looks risky",
-            "Why remove this?",
-            "Needs a test",
-            "Line 2 (added)",
-            "Line 2 (removed)",
-            "Line 1 (added)",
-        ] {
+        assert!(prompt.contains("## `src/foo.rs`"), "should have foo.rs header");
+        assert!(prompt.contains("## `src/bar.rs`"), "should have bar.rs header");
+        assert_eq!(prompt.matches("```diff").count(), 2, "one hunk per file group");
+        for expected in
+            ["Looks risky", "Why remove this?", "Needs a test", "Line 2 (added)", "Line 2 (removed)", "Line 1 (added)"]
+        {
             assert!(prompt.contains(expected), "missing: {expected}");
         }
     }

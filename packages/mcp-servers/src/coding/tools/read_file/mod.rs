@@ -52,9 +52,7 @@ pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, Fi
 
     // Validate offset is 1-indexed
     if offset == 0 {
-        return Err(FileError::InvalidOffset {
-            path: args.file_path,
-        });
+        return Err(FileError::InvalidOffset { path: args.file_path });
     }
 
     let start_idx = (offset - 1).min(total_lines);
@@ -67,12 +65,7 @@ pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, Fi
         .map(|(i, line)| {
             let line_num = offset + i;
             if line.len() > MAX_LINE_LENGTH {
-                format!(
-                    "{:5}\t{}... [truncated, {} chars total]",
-                    line_num,
-                    &line[..MAX_LINE_LENGTH],
-                    line.len()
-                )
+                format!("{:5}\t{}... [truncated, {} chars total]", line_num, &line[..MAX_LINE_LENGTH], line.len())
             } else {
                 format!("{line_num:5}\t{line}")
             }
@@ -81,10 +74,7 @@ pub async fn read_file_contents(args: ReadFileArgs) -> Result<ReadFileResult, Fi
 
     let formatted_content = lines_with_numbers.join("\n");
 
-    let display_meta = ToolDisplayMeta::new(
-        "Read file",
-        format!("{}, {total_lines} lines", basename(&args.file_path)),
-    );
+    let display_meta = ToolDisplayMeta::new("Read file", format!("{}, {total_lines} lines", basename(&args.file_path)));
 
     Ok(ReadFileResult {
         status: "success".to_string(),

@@ -97,10 +97,6 @@ impl<T: OpenAiChatProvider + Send + Sync> StreamingModelProvider for T {
 
     fn display_name(&self) -> String {
         let model = self.model();
-        if model.is_empty() {
-            self.provider_name().to_string()
-        } else {
-            format!("{} ({model})", self.provider_name())
-        }
+        if model.is_empty() { self.provider_name().to_string() } else { format!("{} ({model})", self.provider_name()) }
     }
 }

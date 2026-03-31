@@ -82,17 +82,9 @@ impl Form {
             }
 
             let is_active = self.focus.is_focused(i);
-            let indicator = if field.kind.is_answered() {
-                "✓ "
-            } else {
-                "□ "
-            };
+            let indicator = if field.kind.is_answered() { "✓ " } else { "□ " };
 
-            let style = if is_active {
-                Style::fg(primary).bold()
-            } else {
-                Style::fg(muted)
-            };
+            let style = if is_active { Style::fg(primary).bold() } else { Style::fg(muted) };
             line.push_with_style(format!("{indicator}{}", field.label), style);
         }
 
@@ -100,11 +92,7 @@ impl Form {
         if !self.fields.is_empty() {
             line.push_styled(" · ", muted);
         }
-        let submit_style = if self.is_on_submit_tab() {
-            Style::fg(success).bold()
-        } else {
-            Style::fg(muted)
-        };
+        let submit_style = if self.is_on_submit_tab() { Style::fg(success).bold() } else { Style::fg(muted) };
         line.push_with_style("Submit", submit_style);
 
         line
@@ -151,17 +139,11 @@ impl Form {
     }
 
     fn render_submit_summary(&self, context: &ViewContext) -> Vec<Line> {
-        let mut lines = vec![Line::with_style(
-            "Review & Submit",
-            Style::fg(context.theme.text_primary()).bold(),
-        )];
+        let mut lines = vec![Line::with_style("Review & Submit", Style::fg(context.theme.text_primary()).bold())];
         lines.push(Line::default());
 
         for field in &self.fields {
-            let mut line = Line::with_style(
-                format!("{}: ", field.label),
-                Style::fg(context.theme.text_secondary()),
-            );
+            let mut line = Line::with_style(format!("{}: ", field.label), Style::fg(context.theme.text_secondary()));
             let value_lines = field.kind.render_field(context, false);
             if let Some(first) = value_lines.first() {
                 line.append_line(first);
@@ -184,16 +166,10 @@ impl Form {
         };
 
         let hints = match &field.kind {
-            FormFieldKind::Text(_) | FormFieldKind::Number(_) => {
-                "Type your answer · Tab to navigate · Esc to cancel"
-            }
+            FormFieldKind::Text(_) | FormFieldKind::Number(_) => "Type your answer · Tab to navigate · Esc to cancel",
             FormFieldKind::Boolean(_) => "Space to toggle · Tab to navigate · Esc to cancel",
-            FormFieldKind::SingleSelect(_) => {
-                "↑↓ to select · Tab to navigate · Enter to confirm · Esc to cancel"
-            }
-            FormFieldKind::MultiSelect(_) => {
-                "Space to toggle · ↑↓ to move · Tab to navigate · Esc to cancel"
-            }
+            FormFieldKind::SingleSelect(_) => "↑↓ to select · Tab to navigate · Enter to confirm · Esc to cancel",
+            FormFieldKind::MultiSelect(_) => "Space to toggle · ↑↓ to move · Tab to navigate · Esc to cancel",
         };
 
         Line::styled(hints, muted)
@@ -289,10 +265,7 @@ impl Component for Form {
     }
 
     fn render(&mut self, context: &ViewContext) -> Frame {
-        let mut lines = vec![Line::with_style(
-            &self.message,
-            Style::fg(context.theme.text_primary()).bold(),
-        )];
+        let mut lines = vec![Line::with_style(&self.message, Style::fg(context.theme.text_primary()).bold())];
         lines.push(Line::default());
         lines.push(self.render_tab_bar(context));
         lines.push(Line::default());
@@ -322,16 +295,8 @@ mod tests {
                 required: true,
                 kind: FormFieldKind::SingleSelect(RadioSelect::new(
                     vec![
-                        SelectOption {
-                            value: "rust".into(),
-                            title: "Rust".into(),
-                            description: None,
-                        },
-                        SelectOption {
-                            value: "ts".into(),
-                            title: "TypeScript".into(),
-                            description: None,
-                        },
+                        SelectOption { value: "rust".into(), title: "Rust".into(), description: None },
+                        SelectOption { value: "ts".into(), title: "TypeScript".into(), description: None },
                     ],
                     0,
                 )),
@@ -350,16 +315,8 @@ mod tests {
                 required: false,
                 kind: FormFieldKind::MultiSelect(MultiSelect::new(
                     vec![
-                        SelectOption {
-                            value: "a".into(),
-                            title: "Alpha".into(),
-                            description: None,
-                        },
-                        SelectOption {
-                            value: "b".into(),
-                            title: "Beta".into(),
-                            description: None,
-                        },
+                        SelectOption { value: "a".into(), title: "Alpha".into(), description: None },
+                        SelectOption { value: "b".into(), title: "Beta".into(), description: None },
                     ],
                     vec![false, false],
                 )),
@@ -405,26 +362,15 @@ mod tests {
 
         // Focus is on field 0 (Language / RadioSelect)
         let frame = form.render(&context);
-        let text: String = frame
-            .lines()
-            .iter()
-            .map(|l| l.plain_text())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let text: String = frame.lines().iter().map(|l| l.plain_text()).collect::<Vec<_>>().join("\n");
         // The active field's options should be visible
         assert!(text.contains("Rust"), "active field options not visible");
-        assert!(
-            text.contains("TypeScript"),
-            "active field options not visible"
-        );
+        assert!(text.contains("TypeScript"), "active field options not visible");
         // The non-active fields' expanded content should NOT be visible
         // (MultiSelect options Alpha/Beta should not appear as expanded options)
         // But the tab bar mentions "Features", so just check that the expanded
         // checkbox options aren't rendered
-        assert!(
-            !text.contains("Alpha"),
-            "inactive field content should not appear"
-        );
+        assert!(!text.contains("Alpha"), "inactive field content should not appear");
     }
 
     #[tokio::test]
@@ -444,10 +390,7 @@ mod tests {
         let mut form = Form::new("Survey".to_string(), sample_fields());
         // Navigate to submit tab (index 3)
         form.focus.focus(3);
-        let msgs = form
-            .on_event(&Event::Key(key(KeyCode::Enter)))
-            .await
-            .unwrap();
+        let msgs = form.on_event(&Event::Key(key(KeyCode::Enter))).await.unwrap();
         assert!(msgs.iter().any(|m| matches!(m, FormMessage::Submit)));
     }
 
@@ -503,21 +446,13 @@ mod tests {
     #[test]
     fn is_answered_multi_select() {
         let none_selected = FormFieldKind::MultiSelect(MultiSelect::new(
-            vec![SelectOption {
-                value: "a".into(),
-                title: "A".into(),
-                description: None,
-            }],
+            vec![SelectOption { value: "a".into(), title: "A".into(), description: None }],
             vec![false],
         ));
         assert!(!none_selected.is_answered());
 
         let some_selected = FormFieldKind::MultiSelect(MultiSelect::new(
-            vec![SelectOption {
-                value: "a".into(),
-                title: "A".into(),
-                description: None,
-            }],
+            vec![SelectOption { value: "a".into(), title: "A".into(), description: None }],
             vec![true],
         ));
         assert!(some_selected.is_answered());
@@ -534,11 +469,7 @@ mod tests {
     async fn backtab_moves_backward() {
         let mut form = Form::new("Survey".to_string(), sample_fields());
         form.focus.focus(2);
-        form.on_event(&Event::Key(KeyEvent::new(
-            KeyCode::BackTab,
-            KeyModifiers::SHIFT,
-        )))
-        .await;
+        form.on_event(&Event::Key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))).await;
         assert_eq!(form.focus.focused(), 1);
     }
 
@@ -548,12 +479,7 @@ mod tests {
         form.focus.focus(3); // Submit tab
         let context = ViewContext::new((80, 24));
         let frame = form.render(&context);
-        let text: String = frame
-            .lines()
-            .iter()
-            .map(|l| l.plain_text())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let text: String = frame.lines().iter().map(|l| l.plain_text()).collect::<Vec<_>>().join("\n");
         assert!(text.contains("Review & Submit"));
         assert!(text.contains("Language:"));
         assert!(text.contains("Name:"));

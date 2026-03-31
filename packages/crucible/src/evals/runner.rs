@@ -19,23 +19,13 @@ use crate::server;
 use crate::storage::{EvalResult, ResultsStore};
 
 /// Result of running a single eval task
-type EvalTaskResult =
-    Result<Vec<(EvalAssertion, EvalAssertionResult)>, Box<dyn std::error::Error + Send + Sync>>;
+type EvalTaskResult = Result<Vec<(EvalAssertion, EvalAssertionResult)>, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Output from a spawned eval task
-type EvalTaskOutput = (
-    Eval,
-    Uuid,
-    EvalTaskResult,
-    Duration,
-    Option<broadcast::Sender<server::SseEvent>>,
-);
+type EvalTaskOutput = (Eval, Uuid, EvalTaskResult, Duration, Option<broadcast::Sender<server::SseEvent>>);
 
 /// Server handles returned from `start_axum_server`
-type ServerHandles = (
-    Option<JoinHandle<()>>,
-    Option<broadcast::Sender<server::SseEvent>>,
-);
+type ServerHandles = (Option<JoinHandle<()>>, Option<broadcast::Sender<server::SseEvent>>);
 
 /// Context for spawning a single eval task
 struct EvalTaskContext<R, T, J> {
@@ -66,12 +56,7 @@ where
 {
     /// Create a new `EvalRunner` with the given agent runner and results store
     pub fn new(runner: R, results_store: T) -> Self {
-        Self {
-            output_dir: None,
-            agent_prompt: None,
-            runner,
-            results_store,
-        }
+        Self { output_dir: None, agent_prompt: None, runner, results_store }
     }
 
     /// Set the output directory for logs and results
@@ -107,11 +92,7 @@ where
         }
 
         let run_id = Uuid::new_v4();
-        println!(
-            "\n{} {}",
-            "Run ID:".bold(),
-            run_id.to_string().bright_cyan()
-        );
+        println!("\n{} {}", "Run ID:".bold(), run_id.to_string().bright_cyan());
 
         let agent_prompt = self.agent_prompt;
         let runner = Arc::new(self.runner);
@@ -168,12 +149,7 @@ where
         }
 
         if config.serve {
-            println!(
-                "\n{}",
-                "Server is still running. Press Ctrl+C to exit."
-                    .bold()
-                    .green()
-            );
+            println!("\n{}", "Server is still running. Press Ctrl+C to exit.".bold().green());
 
             // Waits indefinitely until user hits Ctrl+C to exit
             tokio::signal::ctrl_c().await?;
@@ -189,12 +165,9 @@ where
     fn setup_tracing(
         store_layer: Box<dyn tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let env_filter =
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+        let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
-        let fmt_layer = tracing_subscriber::fmt::layer()
-            .with_writer(std::io::stdout)
-            .pretty();
+        let fmt_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stdout).pretty();
 
         tracing_subscriber::registry()
             .with(store_layer)
@@ -205,42 +178,26 @@ where
 
     /// Capture git diffs (agent and reference) for `GitRepo` working directories
     fn capture_git_diffs(eval: &Eval, report: &mut EvalResult) {
-        if let WorkingDirectory::GitRepo {
-            path,
-            start_commit,
-            gold_commit,
-            ..
-        } = &eval.working_directory
-        {
+        if let WorkingDirectory::GitRepo { path, start_commit, gold_commit, .. } = &eval.working_directory {
             use crate::storage::{DiffStats, GitDiff};
             let repo = crate::git_repo::GitRepo::from_path(path);
 
             // Capture agent diff (unstaged changes)
             if let Ok(agent_diff_str) = repo.diff_unstaged() {
                 let stats = DiffStats::from_diff(&agent_diff_str);
-                report.set_agent_diff(GitDiff {
-                    diff: agent_diff_str,
-                    stats,
-                });
+                report.set_agent_diff(GitDiff { diff: agent_diff_str, stats });
             }
 
             // Capture reference diff (gold/human solution)
             if let Ok(gold_diff_str) = repo.diff(start_commit, gold_commit) {
                 let stats = DiffStats::from_diff(&gold_diff_str);
-                report.set_reference_diff(GitDiff {
-                    diff: gold_diff_str,
-                    stats,
-                });
+                report.set_reference_diff(GitDiff { diff: gold_diff_str, stats });
             }
         }
     }
 
     /// Spawn a single eval task with tracing instrumentation
-    fn spawn_eval_task<J>(
-        eval: Eval,
-        eval_id: Uuid,
-        task_ctx: EvalTaskContext<R, T, J>,
-    ) -> JoinHandle<EvalTaskOutput>
+    fn spawn_eval_task<J>(eval: Eval, eval_id: Uuid, task_ctx: EvalTaskContext<R, T, J>) -> JoinHandle<EvalTaskOutput>
     where
         J: StreamingModelProvider + 'static,
     {
@@ -263,17 +220,11 @@ where
 
                 // Broadcast eval started event
                 if let Some(tx) = &sse_tx {
-                    let _ = tx.send(server::SseEvent::EvalStarted {
-                        run_id,
-                        eval_id,
-                        name: eval_name.clone(),
-                    });
+                    let _ = tx.send(server::SseEvent::EvalStarted { run_id, eval_id, name: eval_name.clone() });
                 }
 
                 let start = Instant::now();
-                let result = eval
-                    .run(runner.as_ref(), judge_llm, agents_prompt.as_deref())
-                    .await;
+                let result = eval.run(runner.as_ref(), judge_llm, agents_prompt.as_deref()).await;
                 let duration = start.elapsed();
                 (eval, eval_id, result, duration, sse_tx)
             }
@@ -282,11 +233,7 @@ where
     }
 
     /// Handle the result of a single eval task
-    async fn on_eval_result(
-        task_result: Result<EvalTaskOutput, JoinError>,
-        results_store: &Arc<T>,
-        run_id: Uuid,
-    ) {
+    async fn on_eval_result(task_result: Result<EvalTaskOutput, JoinError>, results_store: &Arc<T>, run_id: Uuid) {
         match task_result {
             Ok((eval, eval_id, Ok(eval_results), _duration, sse_tx)) => {
                 let mut report = EvalResult::completed(&eval, eval_id, &eval_results[..]);

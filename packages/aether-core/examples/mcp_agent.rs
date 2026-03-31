@@ -20,35 +20,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         command_tx: mcp_tx,
         elicitation_rx: _,
         handle: _mcp_handle,
-    } = mcp()
-        .from_json_file("examples/mcp.json")
-        .await?
-        .spawn()
-        .await?;
+    } = mcp().from_json_file("examples/mcp.json").await?.spawn().await?;
 
     let (tx, mut rx, _handle) = agent(llm)
-        .system_prompt(Prompt::text(
-            "You are a helpful assistant with access to web browsing tools via Playwright.",
-        ))
+        .system_prompt(Prompt::text("You are a helpful assistant with access to web browsing tools via Playwright."))
         .tools(mcp_tx, tools)
         .spawn()
         .await?;
 
-    tx.send(UserMessage::text(
-        "Visit https://contextbridge.ai and tell me what you see",
-    ))
-    .await?;
+    tx.send(UserMessage::text("Visit https://contextbridge.ai and tell me what you see")).await?;
 
     loop {
         use AgentMessage::{
-            AutoContinue, Cancelled, ContextCleared, ContextCompactionResult,
-            ContextCompactionStarted, ContextUsageUpdate, Done, Error, ModelSwitched, Text,
-            Thought, ToolCall, ToolCallUpdate, ToolError, ToolProgress, ToolResult,
+            AutoContinue, Cancelled, ContextCleared, ContextCompactionResult, ContextCompactionStarted,
+            ContextUsageUpdate, Done, Error, ModelSwitched, Text, Thought, ToolCall, ToolCallUpdate, ToolError,
+            ToolProgress, ToolResult,
         };
         match rx.recv().await {
-            Some(Text {
-                chunk, is_complete, ..
-            }) => {
+            Some(Text { chunk, is_complete, .. }) => {
                 if is_complete {
                     println!();
                 } else {
@@ -66,21 +55,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(ToolError { error, .. }) => {
                 eprintln!("\nTool '{}' failed: {}", error.name, error.error);
             }
-            Some(ToolProgress {
-                request,
-                progress,
-                total,
-                message,
-            }) => {
-                let msg = message
-                    .as_ref()
-                    .map(|m| format!("{m} "))
-                    .unwrap_or_default();
+            Some(ToolProgress { request, progress, total, message }) => {
+                let msg = message.as_ref().map(|m| format!("{m} ")).unwrap_or_default();
                 let total_str = total.map(|t| format!("/{t}")).unwrap_or_default();
-                println!(
-                    "\nTool '{}' progress: {}{}{}",
-                    request.name, msg, progress, total_str
-                );
+                println!("\nTool '{}' progress: {}{}{}", request.name, msg, progress, total_str);
             }
             Some(Done) => {
                 println!("\nAgent finished");
@@ -97,35 +75,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(ContextCompactionStarted { message_count }) => {
                 println!("Context compaction started: {message_count} messages");
             }
-            Some(ContextCompactionResult {
-                messages_removed, ..
-            }) => {
+            Some(ContextCompactionResult { messages_removed, .. }) => {
                 println!("Context compacted: {messages_removed} messages removed");
             }
-            Some(ContextUsageUpdate {
-                usage_ratio,
-                tokens_used,
-                context_limit,
-            }) => match (usage_ratio, context_limit) {
-                (Some(usage_ratio), Some(context_limit)) => {
-                    println!(
-                        "Context usage: {:.1}% ({}/{} tokens)",
-                        usage_ratio * 100.0,
-                        tokens_used,
-                        context_limit
-                    );
+            Some(ContextUsageUpdate { usage_ratio, tokens_used, context_limit }) => {
+                match (usage_ratio, context_limit) {
+                    (Some(usage_ratio), Some(context_limit)) => {
+                        println!(
+                            "Context usage: {:.1}% ({}/{} tokens)",
+                            usage_ratio * 100.0,
+                            tokens_used,
+                            context_limit
+                        );
+                    }
+                    _ => {
+                        println!("Context usage: unknown limit ({tokens_used} tokens used)");
+                    }
                 }
-                _ => {
-                    println!("Context usage: unknown limit ({tokens_used} tokens used)");
-                }
-            },
-            Some(AutoContinue {
-                attempt,
-                max_attempts,
-            }) => {
-                println!(
-                    "Auto-continuing: attempt {attempt}/{max_attempts} (LLM stopped due to length)"
-                );
+            }
+            Some(AutoContinue { attempt, max_attempts }) => {
+                println!("Auto-continuing: attempt {attempt}/{max_attempts} (LLM stopped due to length)");
             }
             Some(ModelSwitched { previous, new }) => {
                 println!("Model switched: {previous} -> {new}");

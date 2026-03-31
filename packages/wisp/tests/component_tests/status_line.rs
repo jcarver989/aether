@@ -7,25 +7,15 @@ use wisp::components::status_line::StatusLine;
 fn mode_option(value: impl Into<String>, name: impl Into<String>) -> SessionConfigOption {
     let value = value.into();
     let name = name.into();
-    SessionConfigOption::select(
-        "mode",
-        "Mode",
-        value.clone(),
-        vec![acp::SessionConfigSelectOption::new(value, name)],
-    )
-    .category(SessionConfigOptionCategory::Mode)
+    SessionConfigOption::select("mode", "Mode", value.clone(), vec![acp::SessionConfigSelectOption::new(value, name)])
+        .category(SessionConfigOptionCategory::Mode)
 }
 
 fn model_option(value: impl Into<String>, name: impl Into<String>) -> SessionConfigOption {
     let value = value.into();
     let name = name.into();
-    SessionConfigOption::select(
-        "model",
-        "Model",
-        value.clone(),
-        vec![acp::SessionConfigSelectOption::new(value, name)],
-    )
-    .category(SessionConfigOptionCategory::Model)
+    SessionConfigOption::select("model", "Model", value.clone(), vec![acp::SessionConfigSelectOption::new(value, name)])
+        .category(SessionConfigOptionCategory::Model)
 }
 
 fn reasoning_option(value: impl Into<String>) -> SessionConfigOption {
@@ -54,14 +44,7 @@ struct StatusBuilder<'a> {
 
 impl<'a> StatusBuilder<'a> {
     fn new(name: &'a str) -> Self {
-        Self {
-            name,
-            options: vec![],
-            ctx_pct: None,
-            waiting: false,
-            unhealthy: 0,
-            width: 80,
-        }
+        Self { name, options: vec![], ctx_pct: None, waiting: false, unhealthy: 0, width: 80 }
     }
 
     fn model(mut self, m: &str) -> Self {
@@ -134,10 +117,7 @@ fn renders_without_model_when_none() {
 
 #[test]
 fn renders_context_usage() {
-    let line = StatusBuilder::new("aether")
-        .model("gpt-4o")
-        .ctx_pct(72)
-        .line();
+    let line = StatusBuilder::new("aether").model("gpt-4o").ctx_pct(72).line();
     assert!(line.contains("ctx") && line.contains("72%"));
 
     // Shows 100% when no value
@@ -145,11 +125,7 @@ fn renders_context_usage() {
     assert!(line.contains("ctx") && line.contains("100%"));
 
     // Works when waiting
-    let line = StatusBuilder::new("aether")
-        .model("gpt-4o")
-        .ctx_pct(72)
-        .waiting()
-        .line();
+    let line = StatusBuilder::new("aether").model("gpt-4o").ctx_pct(72).waiting().line();
     assert!(line.contains("ctx") && line.contains("72%"));
 }
 
@@ -161,10 +137,7 @@ fn renders_agent_name_when_waiting_without_model() {
 
 #[test]
 fn renders_unhealthy_servers() {
-    let line = StatusBuilder::new("aether")
-        .model("gpt-4o")
-        .unhealthy(1)
-        .line();
+    let line = StatusBuilder::new("aether").model("gpt-4o").unhealthy(1).line();
     assert!(line.contains("1 server needs auth"));
 
     let line = StatusBuilder::new("aether").unhealthy(3).line();
@@ -176,21 +149,14 @@ fn renders_unhealthy_servers() {
 
 #[test]
 fn renders_both_context_and_unhealthy() {
-    let line = StatusBuilder::new("aether")
-        .ctx_pct(50)
-        .unhealthy(2)
-        .width(120)
-        .line();
+    let line = StatusBuilder::new("aether").ctx_pct(50).unhealthy(2).width(120).line();
     assert!(line.contains("ctx") && line.contains("50%"));
     assert!(line.contains("2 servers unhealthy"));
 }
 
 #[test]
 fn renders_agent_mode_model_in_order() {
-    let line = StatusBuilder::new("wisp")
-        .mode("planner", "Planner")
-        .model("gpt-4o")
-        .line();
+    let line = StatusBuilder::new("wisp").mode("planner", "Planner").model("gpt-4o").line();
     let agent_pos = line.find("wisp").unwrap();
     let mode_pos = line.find("Planner").unwrap();
     let model_pos = line.find("gpt-4o").unwrap();
@@ -200,29 +166,14 @@ fn renders_agent_mode_model_in_order() {
 #[test]
 fn renders_elements_with_correct_colors() {
     let ctx = ViewContext::new((80, 24));
-    let (_, term) = StatusBuilder::new("wisp")
-        .mode("planner", "Planner")
-        .model("gpt-4o")
-        .render();
+    let (_, term) = StatusBuilder::new("wisp").mode("planner", "Planner").model("gpt-4o").render();
 
-    assert_eq!(
-        term.style_of_text(0, "wisp").unwrap().fg,
-        Some(ctx.theme.info())
-    );
-    assert_eq!(
-        term.style_of_text(0, "Planner").unwrap().fg,
-        Some(ctx.theme.secondary())
-    );
-    assert_eq!(
-        term.style_of_text(0, "gpt-4o").unwrap().fg,
-        Some(ctx.theme.success())
-    );
+    assert_eq!(term.style_of_text(0, "wisp").unwrap().fg, Some(ctx.theme.info()));
+    assert_eq!(term.style_of_text(0, "Planner").unwrap().fg, Some(ctx.theme.secondary()));
+    assert_eq!(term.style_of_text(0, "gpt-4o").unwrap().fg, Some(ctx.theme.success()));
 
     // All three should be distinct
-    let colors: Vec<_> = ["wisp", "Planner", "gpt-4o"]
-        .iter()
-        .map(|s| term.style_of_text(0, s).map(|s| s.fg))
-        .collect();
+    let colors: Vec<_> = ["wisp", "Planner", "gpt-4o"].iter().map(|s| term.style_of_text(0, s).map(|s| s.fg)).collect();
     assert_ne!(colors[0], colors[1]);
     assert_ne!(colors[1], colors[2]);
     assert_ne!(colors[0], colors[2]);
@@ -231,18 +182,12 @@ fn renders_elements_with_correct_colors() {
 #[test]
 fn renders_reasoning_bar() {
     // Medium effort
-    let line = StatusBuilder::new("wisp")
-        .model("gpt-4o")
-        .reasoning("medium")
-        .line();
+    let line = StatusBuilder::new("wisp").model("gpt-4o").reasoning("medium").line();
     assert!(line.contains("reasoning [■■·]"));
     assert!(line.find("gpt-4o").unwrap() < line.find("reasoning").unwrap());
 
     // None effort shows empty bar
-    let line = StatusBuilder::new("wisp")
-        .model("gpt-4o")
-        .reasoning("none")
-        .line();
+    let line = StatusBuilder::new("wisp").model("gpt-4o").reasoning("none").line();
     assert!(line.contains("reasoning [···]"));
 
     // No model = no reasoning bar even with reasoning set
@@ -253,12 +198,6 @@ fn renders_reasoning_bar() {
 #[test]
 fn renders_reasoning_bar_high_with_success_color() {
     let ctx = ViewContext::new((80, 24));
-    let (_, term) = StatusBuilder::new("wisp")
-        .model("gpt-4o")
-        .reasoning("high")
-        .render();
-    assert_eq!(
-        term.style_of_text(0, "■").unwrap().fg,
-        Some(ctx.theme.success())
-    );
+    let (_, term) = StatusBuilder::new("wisp").model("gpt-4o").reasoning("high").render();
+    assert_eq!(term.style_of_text(0, "■").unwrap().fg, Some(ctx.theme.success()));
 }

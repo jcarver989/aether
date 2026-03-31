@@ -3,8 +3,7 @@ use llm::LlmResponse;
 use llm::providers::openai::streaming::process_completion_stream;
 use llm::providers::openai_compatible;
 use llm::providers::openai_compatible::types::{
-    ChatCompletionStreamChoice, ChatCompletionStreamResponse, ChatCompletionStreamResponseDelta,
-    Usage,
+    ChatCompletionStreamChoice, ChatCompletionStreamResponse, ChatCompletionStreamResponseDelta, Usage,
 };
 use tokio_stream::StreamExt;
 
@@ -13,38 +12,32 @@ use tokio_stream::StreamExt;
 async fn test_openrouter_negative_token_handling() {
     // OpenRouter sometimes returns negative token counts
     // Our conversion should handle this by clamping to 0
-    let stream_items = vec![Ok::<ChatCompletionStreamResponse, std::io::Error>(
-        ChatCompletionStreamResponse {
-            id: "gen-123".to_string(),
-            choices: vec![ChatCompletionStreamChoice {
-                index: 0,
-                delta: ChatCompletionStreamResponseDelta {
-                    role: None,
-                    content: None,
-                    reasoning_content: None,
-                    tool_calls: None,
-                },
-                finish_reason: Some(openai_compatible::types::FinishReason::Stop),
-                logprobs: None,
-            }],
-            created: 1_234_567_890,
-            model: "openai/gpt-3.5-turbo".to_string(),
-            system_fingerprint: None,
-            object: "chat.completion.chunk".to_string(),
-            usage: Some(Usage {
-                prompt_tokens: -5, // Negative value
-                completion_tokens: 10,
-                total_tokens: 5,
-                prompt_tokens_details: None,
-            }),
-        },
-    )];
+    let stream_items = vec![Ok::<ChatCompletionStreamResponse, std::io::Error>(ChatCompletionStreamResponse {
+        id: "gen-123".to_string(),
+        choices: vec![ChatCompletionStreamChoice {
+            index: 0,
+            delta: ChatCompletionStreamResponseDelta {
+                role: None,
+                content: None,
+                reasoning_content: None,
+                tool_calls: None,
+            },
+            finish_reason: Some(openai_compatible::types::FinishReason::Stop),
+            logprobs: None,
+        }],
+        created: 1_234_567_890,
+        model: "openai/gpt-3.5-turbo".to_string(),
+        system_fingerprint: None,
+        object: "chat.completion.chunk".to_string(),
+        usage: Some(Usage {
+            prompt_tokens: -5, // Negative value
+            completion_tokens: 10,
+            total_tokens: 5,
+            prompt_tokens_details: None,
+        }),
+    })];
 
-    let stream = tokio_stream::iter(
-        stream_items
-            .into_iter()
-            .map(|r| r.map(std::convert::Into::into)),
-    );
+    let stream = tokio_stream::iter(stream_items.into_iter().map(|r| r.map(std::convert::Into::into)));
     let mut processed_stream = Box::pin(process_completion_stream(stream));
 
     let mut events = Vec::new();
@@ -56,20 +49,13 @@ async fn test_openrouter_negative_token_handling() {
     let usage_events: Vec<_> = events
         .iter()
         .filter_map(|e| match e {
-            LlmResponse::Usage {
-                input_tokens,
-                output_tokens,
-                ..
-            } => Some((input_tokens, output_tokens)),
+            LlmResponse::Usage { input_tokens, output_tokens, .. } => Some((input_tokens, output_tokens)),
             _ => None,
         })
         .collect();
 
     assert_eq!(usage_events.len(), 1);
-    assert_eq!(
-        *usage_events[0].0, 0,
-        "Negative input tokens should be clamped to 0"
-    );
+    assert_eq!(*usage_events[0].0, 0, "Negative input tokens should be clamped to 0");
     assert_eq!(*usage_events[0].1, 10, "Output tokens should be 10");
 }
 
@@ -137,11 +123,7 @@ async fn test_openrouter_usage_in_separate_final_chunk() {
     ];
 
     // Convert to standard OpenAI format and process
-    let stream = tokio_stream::iter(
-        stream_items
-            .into_iter()
-            .map(|r| r.map(std::convert::Into::into)),
-    );
+    let stream = tokio_stream::iter(stream_items.into_iter().map(|r| r.map(std::convert::Into::into)));
     let mut processed_stream = Box::pin(process_completion_stream(stream));
 
     let mut events = Vec::new();
@@ -153,11 +135,7 @@ async fn test_openrouter_usage_in_separate_final_chunk() {
     let usage_events: Vec<_> = events
         .iter()
         .filter_map(|e| match e {
-            LlmResponse::Usage {
-                input_tokens,
-                output_tokens,
-                ..
-            } => Some((*input_tokens, *output_tokens)),
+            LlmResponse::Usage { input_tokens, output_tokens, .. } => Some((*input_tokens, *output_tokens)),
             _ => None,
         })
         .collect();
@@ -192,9 +170,7 @@ fn test_openrouter_request_serialization() {
     let request = OpenRouterChatRequest {
         model: "openai/gpt-3.5-turbo".to_string(),
         messages: vec![CompatibleChatMessage::User {
-            content: llm::providers::openai_compatible::types::UserContent::Text(
-                "Hello".to_string(),
-            ),
+            content: llm::providers::openai_compatible::types::UserContent::Text("Hello".to_string()),
         }],
         stream: Some(true),
         tools: None,
@@ -248,13 +224,9 @@ fn test_openrouter_from_compatible_request_includes_cache_control() {
     let compatible = CompatibleChatRequest {
         model: "zhipu/glm-5".to_string(),
         messages: vec![
-            CompatibleChatMessage::System {
-                content: "You are helpful.".to_string(),
-            },
+            CompatibleChatMessage::System { content: "You are helpful.".to_string() },
             CompatibleChatMessage::User {
-                content: llm::providers::openai_compatible::types::UserContent::Text(
-                    "Hello".to_string(),
-                ),
+                content: llm::providers::openai_compatible::types::UserContent::Text("Hello".to_string()),
             },
         ],
         stream: Some(true),

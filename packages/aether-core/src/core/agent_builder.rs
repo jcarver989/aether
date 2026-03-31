@@ -184,17 +184,13 @@ impl AgentBuilder {
         if !self.prompts.is_empty() {
             let system_content = Prompt::build_all(&self.prompts).await?;
             if !system_content.is_empty() {
-                messages.push(ChatMessage::System {
-                    content: system_content,
-                    timestamp: IsoString::now(),
-                });
+                messages.push(ChatMessage::System { content: system_content, timestamp: IsoString::now() });
             }
         }
 
         messages.extend(self.initial_messages);
 
-        let (user_message_tx, user_message_rx) =
-            mpsc::channel::<UserMessage>(self.channel_capacity);
+        let (user_message_tx, user_message_rx) = mpsc::channel::<UserMessage>(self.channel_capacity);
 
         let (message_tx, agent_message_rx) = mpsc::channel::<AgentMessage>(self.channel_capacity);
 
@@ -214,13 +210,7 @@ impl AgentBuilder {
 
         let agent_handle = tokio::spawn(agent.run());
 
-        Ok((
-            user_message_tx,
-            agent_message_rx,
-            AgentHandle {
-                handle: agent_handle,
-            },
-        ))
+        Ok((user_message_tx, agent_message_rx, AgentHandle { handle: agent_handle }))
     }
 }
 
@@ -231,9 +221,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_agent_handle_is_finished() {
-        let handle = AgentHandle {
-            handle: tokio::spawn(async {}),
-        };
+        let handle = AgentHandle { handle: tokio::spawn(async {}) };
         handle.await_completion().await;
     }
 

@@ -12,11 +12,7 @@ pub struct Spinner {
 
 impl Spinner {
     pub fn new(frames: &'static [char]) -> Self {
-        Self {
-            tick: 0,
-            visible: false,
-            frames,
-        }
+        Self { tick: 0, visible: false, frames }
     }
 
     pub fn braille() -> Self {

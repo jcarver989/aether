@@ -1,18 +1,8 @@
 use crate::git_diff::{FileDiff, FileStatus};
 
 pub enum FileTreeNode {
-    Directory {
-        name: String,
-        children: Vec<FileTreeNode>,
-        expanded: bool,
-    },
-    File {
-        file_index: usize,
-        name: String,
-        status: FileStatus,
-        additions: usize,
-        deletions: usize,
-    },
+    Directory { name: String, children: Vec<FileTreeNode>, expanded: bool },
+    File { file_index: usize, name: String, status: FileStatus, additions: usize, deletions: usize },
 }
 
 #[derive(Debug, Clone)]
@@ -23,17 +13,8 @@ pub struct FileTreeEntry {
 
 #[derive(Debug, Clone)]
 pub enum FileTreeEntryKind {
-    Directory {
-        name: String,
-        expanded: bool,
-    },
-    File {
-        file_index: usize,
-        name: String,
-        status: FileStatus,
-        additions: usize,
-        deletions: usize,
-    },
+    Directory { name: String, expanded: bool },
+    File { file_index: usize, name: String, status: FileStatus, additions: usize, deletions: usize },
 }
 
 pub struct FileTree {
@@ -54,11 +35,7 @@ impl FileTree {
         sort_tree(&mut roots);
         compress_paths(&mut roots);
 
-        let mut tree = Self {
-            roots,
-            selected_visible: 0,
-            cached_entries: None,
-        };
+        let mut tree = Self { roots, selected_visible: 0, cached_entries: None };
         tree.ensure_cache();
         tree
     }
@@ -80,12 +57,10 @@ impl FileTree {
 
     pub fn selected_file_index(&self) -> Option<usize> {
         let entries = self.visible_entries();
-        entries
-            .get(self.selected_visible)
-            .and_then(|e| match &e.kind {
-                FileTreeEntryKind::File { file_index, .. } => Some(*file_index),
-                FileTreeEntryKind::Directory { .. } => None,
-            })
+        entries.get(self.selected_visible).and_then(|e| match &e.kind {
+            FileTreeEntryKind::File { file_index, .. } => Some(*file_index),
+            FileTreeEntryKind::Directory { .. } => None,
+        })
     }
 
     pub fn navigate(&mut self, delta: isize) {
@@ -125,9 +100,7 @@ impl FileTree {
         };
 
         match &entry.kind {
-            FileTreeEntryKind::Directory {
-                expanded: false, ..
-            } => {
+            FileTreeEntryKind::Directory { expanded: false, .. } => {
                 toggle_at(&mut self.roots, self.selected_visible);
                 self.invalidate_cache();
                 false
@@ -158,12 +131,7 @@ impl FileTree {
     }
 }
 
-fn insert_into_tree(
-    nodes: &mut Vec<FileTreeNode>,
-    parts: &[&str],
-    file_index: usize,
-    file: &FileDiff,
-) {
+fn insert_into_tree(nodes: &mut Vec<FileTreeNode>, parts: &[&str], file_index: usize, file: &FileDiff) {
     if parts.len() == 1 {
         nodes.push(FileTreeNode::File {
             file_index,
@@ -176,20 +144,14 @@ fn insert_into_tree(
     }
 
     let dir_name = parts[0];
-    let existing = nodes
-        .iter_mut()
-        .find(|n| matches!(n, FileTreeNode::Directory { name, .. } if name == dir_name));
+    let existing = nodes.iter_mut().find(|n| matches!(n, FileTreeNode::Directory { name, .. } if name == dir_name));
 
     if let Some(FileTreeNode::Directory { children, .. }) = existing {
         insert_into_tree(children, &parts[1..], file_index, file);
     } else {
         let mut children = Vec::new();
         insert_into_tree(&mut children, &parts[1..], file_index, file);
-        nodes.push(FileTreeNode::Directory {
-            name: dir_name.to_string(),
-            children,
-            expanded: true,
-        });
+        nodes.push(FileTreeNode::Directory { name: dir_name.to_string(), children, expanded: true });
     }
 }
 
@@ -197,9 +159,7 @@ fn sort_tree(nodes: &mut [FileTreeNode]) {
     nodes.sort_by(|a, b| {
         let a_is_dir = matches!(a, FileTreeNode::Directory { .. });
         let b_is_dir = matches!(b, FileTreeNode::Directory { .. });
-        b_is_dir
-            .cmp(&a_is_dir)
-            .then_with(|| node_name(a).cmp(node_name(b)))
+        b_is_dir.cmp(&a_is_dir).then_with(|| node_name(a).cmp(node_name(b)))
     });
     for node in nodes.iter_mut() {
         if let FileTreeNode::Directory { children, .. } = node {
@@ -249,17 +209,10 @@ fn node_name(node: &FileTreeNode) -> &str {
 
 fn collect_visible(node: &FileTreeNode, depth: usize, entries: &mut Vec<FileTreeEntry>) {
     match node {
-        FileTreeNode::Directory {
-            name,
-            children,
-            expanded,
-        } => {
+        FileTreeNode::Directory { name, children, expanded } => {
             entries.push(FileTreeEntry {
                 depth,
-                kind: FileTreeEntryKind::Directory {
-                    name: name.clone(),
-                    expanded: *expanded,
-                },
+                kind: FileTreeEntryKind::Directory { name: name.clone(), expanded: *expanded },
             });
             if *expanded {
                 for child in children {
@@ -267,13 +220,7 @@ fn collect_visible(node: &FileTreeNode, depth: usize, entries: &mut Vec<FileTree
                 }
             }
         }
-        FileTreeNode::File {
-            file_index,
-            name,
-            status,
-            additions,
-            deletions,
-        } => {
+        FileTreeNode::File { file_index, name, status, additions, deletions } => {
             entries.push(FileTreeEntry {
                 depth,
                 kind: FileTreeEntryKind::File {
@@ -302,11 +249,7 @@ fn toggle_at_inner(nodes: &mut [FileTreeNode], target: usize, counter: &mut usiz
             return true;
         }
         *counter += 1;
-        if let FileTreeNode::Directory {
-            children,
-            expanded: true,
-            ..
-        } = node
+        if let FileTreeNode::Directory { children, expanded: true, .. } = node
             && toggle_at_inner(children, target, counter)
         {
             return true;
@@ -320,10 +263,9 @@ fn find_parent_dir(entries: &[FileTreeEntry], idx: usize) -> Option<usize> {
     if current_depth == 0 {
         return None;
     }
-    (0..idx).rev().find(|&i| {
-        entries[i].depth < current_depth
-            && matches!(entries[i].kind, FileTreeEntryKind::Directory { .. })
-    })
+    (0..idx)
+        .rev()
+        .find(|&i| entries[i].depth < current_depth && matches!(entries[i].kind, FileTreeEntryKind::Directory { .. }))
 }
 
 #[cfg(test)]
@@ -379,22 +321,14 @@ mod tests {
 
     #[test]
     fn from_files_groups_by_directory() {
-        let files = vec![
-            modified("src/a.rs"),
-            modified("src/b.rs"),
-            modified("lib/c.rs"),
-        ];
+        let files = vec![modified("src/a.rs"), modified("src/b.rs"), modified("lib/c.rs")];
         let tree = FileTree::from_files(&files);
         let entries = tree.visible_entries();
         // lib/ dir, c.rs, src/ dir, a.rs, b.rs = 5 entries
         assert_eq!(entries.len(), 5);
-        assert!(
-            matches!(&entries[0].kind, FileTreeEntryKind::Directory { name, .. } if name == "lib")
-        );
+        assert!(matches!(&entries[0].kind, FileTreeEntryKind::Directory { name, .. } if name == "lib"));
         assert!(matches!(&entries[1].kind, FileTreeEntryKind::File { name, .. } if name == "c.rs"));
-        assert!(
-            matches!(&entries[2].kind, FileTreeEntryKind::Directory { name, .. } if name == "src")
-        );
+        assert!(matches!(&entries[2].kind, FileTreeEntryKind::Directory { name, .. } if name == "src"));
         assert!(matches!(&entries[3].kind, FileTreeEntryKind::File { name, .. } if name == "a.rs"));
         assert!(matches!(&entries[4].kind, FileTreeEntryKind::File { name, .. } if name == "b.rs"));
     }

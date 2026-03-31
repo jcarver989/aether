@@ -15,10 +15,7 @@ const POLL_TIMEOUT: Duration = Duration::from_secs(60);
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 pub fn test_client_info() -> ClientInfo {
-    ClientInfo::new(
-        Default::default(),
-        Implementation::new("lsp-e2e-test", "0.1.0"),
-    )
+    ClientInfo::new(Default::default(), Implementation::new("lsp-e2e-test", "0.1.0"))
 }
 
 /// Connect a `CodingMcp` server to a test project with LSP enabled.
@@ -27,14 +24,9 @@ pub fn test_client_info() -> ClientInfo {
 /// alive (bind it to `_server_handle`) for the connection to stay open.
 pub async fn connect_lsp(
     project: &impl TestProject,
-) -> (
-    rmcp::service::RunningService<rmcp::RoleServer, CodingMcp>,
-    RunningService<RoleClient, ClientInfo>,
-) {
+) -> (rmcp::service::RunningService<rmcp::RoleServer, CodingMcp>, RunningService<RoleClient, ClientInfo>) {
     let server = CodingMcp::new().with_lsp(project.root().to_path_buf());
-    connect(server, test_client_info())
-        .await
-        .expect("Failed to connect")
+    connect(server, test_client_info()).await.expect("Failed to connect")
 }
 
 /// Call an MCP tool and parse the JSON response from the first text content block.
@@ -43,9 +35,7 @@ pub async fn call_tool(
     name: &str,
     args: serde_json::Value,
 ) -> serde_json::Value {
-    try_call_tool(client, name, args)
-        .await
-        .unwrap_or_else(|| panic!("Tool '{name}' did not return valid JSON"))
+    try_call_tool(client, name, args).await.unwrap_or_else(|| panic!("Tool '{name}' did not return valid JSON"))
 }
 
 /// Try to call an MCP tool and parse JSON. Returns `None` if the tool returns
@@ -57,10 +47,7 @@ pub async fn try_call_tool(
 ) -> Option<serde_json::Value> {
     let name_owned = name.to_string();
     let result = match client
-        .call_tool(
-            CallToolRequestParams::new(name_owned)
-                .with_arguments(args.as_object().unwrap().clone()),
-        )
+        .call_tool(CallToolRequestParams::new(name_owned).with_arguments(args.as_object().unwrap().clone()))
         .await
     {
         Ok(r) => r,
@@ -128,10 +115,7 @@ pub async fn poll_lsp_tool(
 
     panic!(
         "poll_lsp_tool({tool_name}) timed out after {POLL_TIMEOUT:?}. Last result: {}",
-        last_result
-            .as_ref()
-            .map(|r| r.to_string())
-            .unwrap_or_else(|| "(no valid response)".to_string())
+        last_result.as_ref().map(|r| r.to_string()).unwrap_or_else(|| "(no valid response)".to_string())
     );
 }
 

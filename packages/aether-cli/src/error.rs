@@ -14,10 +14,7 @@ pub enum CliError {
 impl Display for CliError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NoPrompt => write!(
-                f,
-                "No prompt provided. Pass a prompt as an argument or pipe via stdin."
-            ),
+            Self::NoPrompt => write!(f, "No prompt provided. Pass a prompt as an argument or pipe via stdin."),
             Self::ConflictingArgs(e) => write!(f, "{e}"),
             Self::ModelError(e) => write!(f, "Model error: {e}"),
             Self::McpError(e) => write!(f, "MCP error: {e}"),

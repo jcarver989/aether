@@ -76,10 +76,7 @@ impl LanguageId {
     ///
     /// Returns `PlainText` for files with no extension or unknown extensions.
     pub fn from_path(path: &Path) -> Self {
-        path.extension()
-            .and_then(|e| e.to_str())
-            .and_then(Self::from_extension)
-            .unwrap_or(Self::PlainText)
+        path.extension().and_then(|e| e.to_str()).and_then(Self::from_extension).unwrap_or(Self::PlainText)
     }
 
     pub fn primary_extension(self) -> Option<&'static str> {
@@ -135,11 +132,7 @@ pub struct LspConfig {
 
 impl LspConfig {
     pub fn new(command: impl Into<String>) -> Self {
-        Self {
-            command: command.into(),
-            args: Vec::new(),
-            languages: Vec::new(),
-        }
+        Self { command: command.into(), args: Vec::new(), languages: Vec::new() }
     }
 
     pub fn with_args(mut self, args: Vec<String>) -> Self {
@@ -167,31 +160,15 @@ struct LanguageSpec {
 }
 
 const SERVER_SPECS: &[ServerSpec] = &[
-    ServerSpec {
-        kind: ServerKind::RustAnalyzer,
-        command: "rust-analyzer",
-        args: &[],
-    },
+    ServerSpec { kind: ServerKind::RustAnalyzer, command: "rust-analyzer", args: &[] },
     ServerSpec {
         kind: ServerKind::TypeScriptLanguageServer,
         command: "typescript-language-server",
         args: &["--stdio"],
     },
-    ServerSpec {
-        kind: ServerKind::Pyright,
-        command: "pyright-langserver",
-        args: &["--stdio"],
-    },
-    ServerSpec {
-        kind: ServerKind::Gopls,
-        command: "gopls",
-        args: &[],
-    },
-    ServerSpec {
-        kind: ServerKind::Clangd,
-        command: "clangd",
-        args: &[],
-    },
+    ServerSpec { kind: ServerKind::Pyright, command: "pyright-langserver", args: &["--stdio"] },
+    ServerSpec { kind: ServerKind::Gopls, command: "gopls", args: &[] },
+    ServerSpec { kind: ServerKind::Clangd, command: "clangd", args: &[] },
 ];
 
 const LANGUAGE_SPECS: &[LanguageSpec] = &[
@@ -447,29 +424,19 @@ static CONFIG_MAP: LazyLock<HashMap<LanguageId, LspConfig>> = LazyLock::new(|| {
         .iter()
         .filter_map(|spec| {
             let server_kind = spec.server_kind?;
-            let server = SERVER_SPECS
-                .iter()
-                .find(|server| server.kind == server_kind)?;
+            let server = SERVER_SPECS.iter().find(|server| server.kind == server_kind)?;
             Some((
                 spec.metadata.id,
                 LspConfig::new(server.command)
                     .with_args(server.args.iter().map(|arg| (*arg).to_string()).collect())
-                    .with_languages(
-                        languages_by_server
-                            .get(&server_kind)
-                            .cloned()
-                            .unwrap_or_default(),
-                    ),
+                    .with_languages(languages_by_server.get(&server_kind).cloned().unwrap_or_default()),
             ))
         })
         .collect()
 });
 
 pub(crate) fn server_kind_for_language(id: LanguageId) -> Option<ServerKind> {
-    LANGUAGE_SPECS
-        .iter()
-        .find(|spec| spec.metadata.id == id)
-        .and_then(|spec| spec.server_kind)
+    LANGUAGE_SPECS.iter().find(|spec| spec.metadata.id == id).and_then(|spec| spec.server_kind)
 }
 
 pub(crate) fn socket_identity_for_language(id: LanguageId) -> &'static str {
@@ -496,10 +463,7 @@ pub(crate) fn resolved_config_for_language(language: LanguageId) -> Option<LspCo
 }
 
 pub(crate) fn from_extension(ext: &str) -> Option<LanguageId> {
-    LANGUAGE_SPECS
-        .iter()
-        .find(|spec| spec.metadata.extensions.contains(&ext))
-        .map(|spec| spec.metadata.id)
+    LANGUAGE_SPECS.iter().find(|spec| spec.metadata.extensions.contains(&ext)).map(|spec| spec.metadata.id)
 }
 
 pub fn metadata_for(id: LanguageId) -> Option<&'static LanguageMetadata> {
@@ -507,22 +471,14 @@ pub fn metadata_for(id: LanguageId) -> Option<&'static LanguageMetadata> {
 }
 
 pub fn from_lsp_id(lsp_id: &str) -> Option<LanguageId> {
-    LANGUAGE_SPECS
-        .iter()
-        .find(|spec| spec.metadata.id.as_str() == lsp_id)
-        .map(|spec| spec.metadata.id)
+    LANGUAGE_SPECS.iter().find(|spec| spec.metadata.id.as_str() == lsp_id).map(|spec| spec.metadata.id)
 }
 
 pub fn extensions_for_alias(alias: &str) -> Vec<&'static str> {
     let lower = alias.to_lowercase();
     LANGUAGE_SPECS
         .iter()
-        .filter(|spec| {
-            spec.metadata
-                .aliases
-                .iter()
-                .any(|candidate| *candidate == lower)
-        })
+        .filter(|spec| spec.metadata.aliases.iter().any(|candidate| *candidate == lower))
         .flat_map(|spec| spec.metadata.extensions.iter().copied())
         .collect()
 }
@@ -549,14 +505,8 @@ mod tests {
 
     #[test]
     fn c_family_shares_server_kind() {
-        assert_eq!(
-            server_kind_for_language(LanguageId::C),
-            server_kind_for_language(LanguageId::Cpp)
-        );
-        assert_eq!(
-            socket_identity_for_language(LanguageId::C),
-            socket_identity_for_language(LanguageId::Cpp)
-        );
+        assert_eq!(server_kind_for_language(LanguageId::C), server_kind_for_language(LanguageId::Cpp));
+        assert_eq!(socket_identity_for_language(LanguageId::C), socket_identity_for_language(LanguageId::Cpp));
     }
 
     #[test]
@@ -571,10 +521,7 @@ mod tests {
     #[test]
     fn from_lsp_id_resolves_known_languages() {
         assert_eq!(from_lsp_id("rust"), Some(LanguageId::Rust));
-        assert_eq!(
-            from_lsp_id("typescriptreact"),
-            Some(LanguageId::TypeScriptReact)
-        );
+        assert_eq!(from_lsp_id("typescriptreact"), Some(LanguageId::TypeScriptReact));
         assert_eq!(from_lsp_id("unknown"), None);
     }
 
@@ -634,10 +581,7 @@ mod tests {
         ];
 
         for variant in variants {
-            assert!(
-                metadata_for(variant).is_some(),
-                "Missing metadata for {variant:?}"
-            );
+            assert!(metadata_for(variant).is_some(), "Missing metadata for {variant:?}");
         }
     }
 
@@ -650,32 +594,17 @@ mod tests {
     #[test]
     fn language_id_from_extension() {
         assert_eq!(LanguageId::from_extension("rs"), Some(LanguageId::Rust));
-        assert_eq!(
-            LanguageId::from_extension("tsx"),
-            Some(LanguageId::TypeScriptReact)
-        );
+        assert_eq!(LanguageId::from_extension("tsx"), Some(LanguageId::TypeScriptReact));
         assert_eq!(LanguageId::from_extension("xyz"), None);
     }
 
     #[test]
     fn language_id_from_path() {
         assert_eq!(LanguageId::from_path(Path::new("foo.rs")), LanguageId::Rust);
-        assert_eq!(
-            LanguageId::from_path(Path::new("bar.py")),
-            LanguageId::Python
-        );
-        assert_eq!(
-            LanguageId::from_path(Path::new("baz.tsx")),
-            LanguageId::TypeScriptReact
-        );
-        assert_eq!(
-            LanguageId::from_path(Path::new("unknown.xyz")),
-            LanguageId::PlainText
-        );
-        assert_eq!(
-            LanguageId::from_path(Path::new("no_extension")),
-            LanguageId::PlainText
-        );
+        assert_eq!(LanguageId::from_path(Path::new("bar.py")), LanguageId::Python);
+        assert_eq!(LanguageId::from_path(Path::new("baz.tsx")), LanguageId::TypeScriptReact);
+        assert_eq!(LanguageId::from_path(Path::new("unknown.xyz")), LanguageId::PlainText);
+        assert_eq!(LanguageId::from_path(Path::new("no_extension")), LanguageId::PlainText);
     }
 
     #[test]

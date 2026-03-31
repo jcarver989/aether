@@ -19,8 +19,7 @@ fn create_test_files(files: &[(&str, &str)]) -> TempDir {
     for (path, content) in files {
         let full_path = temp_dir.path().join(path);
         if let Some(parent) = full_path.parent() {
-            fs::create_dir_all(parent)
-                .unwrap_or_else(|_| panic!("Failed to create directory for {path}"));
+            fs::create_dir_all(parent).unwrap_or_else(|_| panic!("Failed to create directory for {path}"));
         }
         fs::write(&full_path, content).unwrap_or_else(|_| panic!("Failed to write file {path}"));
     }
@@ -35,14 +34,10 @@ async fn create_test_client(
     rmcp::service::RunningService<rmcp::RoleClient, rmcp::model::ClientInfo>,
 ) {
     let server_service = SkillsMcp::new(test_dir.to_path_buf());
-    let client_info = ClientInfo::new(
-        Default::default(),
-        Implementation::new("test-client", "0.1.0"),
-    );
+    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
 
-    let (server_handle, client) = connect(server_service, client_info)
-        .await
-        .expect("Failed to connect MCP server and client");
+    let (server_handle, client) =
+        connect(server_service, client_info).await.expect("Failed to connect MCP server and client");
 
     (server_handle, client)
 }
@@ -56,23 +51,15 @@ fn parse_tool_result(result: &rmcp::model::CallToolResult) -> serde_json::Value 
 #[tokio::test]
 async fn test_load_from_nested_directories() {
     let test_files = vec![
-        (
-            "skill-1/SKILL.md",
-            "---\ndescription: First skill\n---\nThis is skill 1 content",
-        ),
-        (
-            "skill-2/SKILL.md",
-            "---\ndescription: Second skill\n---\nThis is skill 2 content",
-        ),
+        ("skill-1/SKILL.md", "---\ndescription: First skill\n---\nThis is skill 1 content"),
+        ("skill-2/SKILL.md", "---\ndescription: Second skill\n---\nThis is skill 2 content"),
         ("illegal-flat-skill.md", "This should be ignored"),
     ];
 
     let temp_dir = create_test_files(&test_files);
 
     let skills_with_dirs: Vec<(PathBuf, MarkdownFile<TestFrontmatter>)> =
-        MarkdownFile::from_nested_dirs(temp_dir.path(), "SKILL.md")
-            .await
-            .expect("Failed to load skills");
+        MarkdownFile::from_nested_dirs(temp_dir.path(), "SKILL.md").await.expect("Failed to load skills");
 
     assert_eq!(skills_with_dirs.len(), 2);
 
@@ -134,37 +121,19 @@ async fn test_load_skills_tool() {
 
     let skill1 = files.iter().find(|s| s["name"] == "skill-1").unwrap();
     assert_eq!(skill1["path"], "SKILL.md");
-    assert!(
-        skill1["content"]
-            .as_str()
-            .unwrap()
-            .contains("This is the content for skill 1")
-    );
+    assert!(skill1["content"].as_str().unwrap().contains("This is the content for skill 1"));
 
     let skill2 = files.iter().find(|s| s["name"] == "skill-2").unwrap();
-    assert!(
-        skill2["content"]
-            .as_str()
-            .unwrap()
-            .contains("This is the content for skill 2.")
-    );
+    assert!(skill2["content"].as_str().unwrap().contains("This is the content for skill 2."));
 
     let skill3 = files.iter().find(|s| s["name"] == "skill-3").unwrap();
-    assert!(
-        skill3["content"]
-            .as_str()
-            .unwrap()
-            .contains("This is skill 3")
-    );
+    assert!(skill3["content"].as_str().unwrap().contains("This is skill 3"));
 }
 
 #[tokio::test]
 async fn test_load_skills_with_missing() {
     let test_files = vec![
-        (
-            "skills/skill-1/SKILL.md",
-            "---\ndescription: First skill\nagent-invocable: true\n---\n# Skill 1\n\nContent.",
-        ),
+        ("skills/skill-1/SKILL.md", "---\ndescription: First skill\nagent-invocable: true\n---\n# Skill 1\n\nContent."),
         (
             "skills/skill-2/SKILL.md",
             "---\ndescription: Second skill\nagent-invocable: true\n---\n# Skill 2\n\nContent.",
@@ -206,10 +175,7 @@ async fn test_load_skills_with_missing() {
     assert!(skill2["error"].is_null());
 
     // nonexistent-skill should have error
-    let missing = files
-        .iter()
-        .find(|s| s["name"] == "nonexistent-skill")
-        .unwrap();
+    let missing = files.iter().find(|s| s["name"] == "nonexistent-skill").unwrap();
     assert!(missing["content"].is_null());
     assert!(missing["error"].as_str().unwrap().contains("not found"));
 }
@@ -221,14 +187,8 @@ async fn test_load_auxiliary_file() {
             "skills/test-skill/SKILL.md",
             "---\ndescription: Test skill\nagent-invocable: true\n---\n# Main\n\nSee [traits](./traits.md).",
         ),
-        (
-            "skills/test-skill/traits.md",
-            "# Traits\n\nTraits content here.",
-        ),
-        (
-            "skills/test-skill/references/REF.md",
-            "# Reference\n\nReference content.",
-        ),
+        ("skills/test-skill/traits.md", "# Traits\n\nTraits content here."),
+        ("skills/test-skill/references/REF.md", "# Reference\n\nReference content."),
     ];
 
     let temp_dir = create_test_files(&test_files);
@@ -276,22 +236,14 @@ async fn test_load_auxiliary_file() {
     let aux_file = &parsed_aux["files"][0];
 
     assert_eq!(aux_file["path"], "traits.md");
-    assert!(
-        aux_file["content"]
-            .as_str()
-            .unwrap()
-            .contains("Traits content")
-    );
+    assert!(aux_file["content"].as_str().unwrap().contains("Traits content"));
     // available_files should be absent (skipped when empty) for non-SKILL.md
     assert!(aux_file.get("availableFiles").is_none());
 }
 
 #[tokio::test]
 async fn test_reject_traversal() {
-    let test_files = vec![(
-        "skills/test-skill/SKILL.md",
-        "---\ndescription: Test\nagent-invocable: true\n---\n# Test",
-    )];
+    let test_files = vec![("skills/test-skill/SKILL.md", "---\ndescription: Test\nagent-invocable: true\n---\n# Test")];
 
     let temp_dir = create_test_files(&test_files);
     let (_server_handle, client) = create_test_client(temp_dir.path()).await;
@@ -318,10 +270,7 @@ async fn test_reject_traversal() {
 
 #[tokio::test]
 async fn test_reject_absolute_path() {
-    let test_files = vec![(
-        "skills/test-skill/SKILL.md",
-        "---\ndescription: Test\nagent-invocable: true\n---\n# Test",
-    )];
+    let test_files = vec![("skills/test-skill/SKILL.md", "---\ndescription: Test\nagent-invocable: true\n---\n# Test")];
 
     let temp_dir = create_test_files(&test_files);
     let (_server_handle, client) = create_test_client(temp_dir.path()).await;

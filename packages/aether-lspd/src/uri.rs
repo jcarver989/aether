@@ -7,11 +7,8 @@ use std::path::Path;
 ///
 /// Relative paths are resolved against the current working directory.
 pub fn path_to_uri(path: &Path) -> Result<Uri, String> {
-    let absolute = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir().unwrap_or_default().join(path)
-    };
+    let absolute =
+        if path.is_absolute() { path.to_path_buf() } else { std::env::current_dir().unwrap_or_default().join(path) };
     // Canonicalize to resolve symlinks (e.g. /var → /private/var on macOS).
     // This ensures URIs match what language servers like rust-analyzer produce.
     let absolute = absolute.canonicalize().unwrap_or(absolute);
@@ -25,9 +22,7 @@ pub fn path_to_uri(path: &Path) -> Result<Uri, String> {
     #[cfg(not(windows))]
     let uri_str = format!("file://{}", absolute.display());
 
-    uri_str
-        .parse()
-        .map_err(|e| format!("Invalid path '{}': {e}", absolute.display()))
+    uri_str.parse().map_err(|e| format!("Invalid path '{}': {e}", absolute.display()))
 }
 
 /// Convert an LSP `file://` URI to a file path string.

@@ -4,14 +4,8 @@ use mcp_utils::client::{McpServerConfig, ServerConfig};
 
 /// Build a `ToolProxy` config wrapping one or more fake in-memory servers.
 fn tool_proxy_with_fakes(proxy_name: &str, servers: Vec<(&str, FakeMcpServer)>) -> McpServerConfig {
-    let nested: Vec<ServerConfig> = servers
-        .into_iter()
-        .map(|(name, server)| fake_mcp(name, server))
-        .collect();
-    McpServerConfig::ToolProxy {
-        name: proxy_name.to_string(),
-        servers: nested,
-    }
+    let nested: Vec<ServerConfig> = servers.into_iter().map(|(name, server)| fake_mcp(name, server)).collect();
+    McpServerConfig::ToolProxy { name: proxy_name.to_string(), servers: nested }
 }
 
 #[tokio::test]
@@ -30,11 +24,7 @@ async fn test_tool_proxy_exposes_only_call_tool() {
     // The proxy should expose exactly one tool: proxy__call_tool
     assert_eq!(tool_definitions.len(), 1);
     assert_eq!(tool_definitions[0].name, "proxy__call_tool");
-    assert!(
-        tool_definitions[0]
-            .description
-            .contains("Execute a tool on a nested MCP server")
-    );
+    assert!(tool_definitions[0].description.contains("Execute a tool on a nested MCP server"));
 }
 
 #[tokio::test]
@@ -50,10 +40,8 @@ async fn test_tool_proxy_instructions_mention_tool_directory() {
         handle: _,
     } = mcp().with_servers(vec![config]).spawn().await.unwrap();
 
-    let proxy_instr = instructions
-        .iter()
-        .find(|i| i.server_name == "ext")
-        .expect("Expected instructions from tool-proxy 'ext'");
+    let proxy_instr =
+        instructions.iter().find(|i| i.server_name == "ext").expect("Expected instructions from tool-proxy 'ext'");
 
     assert!(
         proxy_instr.instructions.contains("tool-proxy"),
@@ -92,16 +80,8 @@ async fn test_tool_proxy_does_not_expose_nested_server_tools() {
 
     // The agent should NOT see individual tools like math__add_numbers
     for td in &tool_definitions {
-        assert!(
-            !td.name.contains("add_numbers"),
-            "Nested tool should not be exposed: {}",
-            td.name
-        );
-        assert!(
-            !td.name.contains("divide_numbers"),
-            "Nested tool should not be exposed: {}",
-            td.name
-        );
+        assert!(!td.name.contains("add_numbers"), "Nested tool should not be exposed: {}", td.name);
+        assert!(!td.name.contains("divide_numbers"), "Nested tool should not be exposed: {}", td.name);
     }
 
     // Only the proxy's call_tool
@@ -129,10 +109,7 @@ async fn test_tool_proxy_does_not_leak_nested_instructions() {
     );
 
     // Only the proxy should have instructions
-    assert!(
-        instructions.iter().any(|i| i.server_name == "noleak"),
-        "Proxy 'noleak' should have instructions"
-    );
+    assert!(instructions.iter().any(|i| i.server_name == "noleak"), "Proxy 'noleak' should have instructions");
 }
 
 #[tokio::test]
@@ -153,13 +130,9 @@ async fn test_tool_proxy_writes_tool_files_to_disk() {
         .find(|i| i.server_name == "filetest")
         .expect("Expected instructions from tool-proxy 'filetest'");
 
-    let tool_dir = extract_tool_dir(&proxy_instr.instructions)
-        .expect("Should find tool directory in instructions");
+    let tool_dir = extract_tool_dir(&proxy_instr.instructions).expect("Should find tool directory in instructions");
     let tool_dir = std::path::Path::new(&tool_dir);
-    assert!(
-        tool_dir.exists(),
-        "Tool directory should exist: {tool_dir:?}"
-    );
+    assert!(tool_dir.exists(), "Tool directory should exist: {tool_dir:?}");
 
     // Should have a "math" subdirectory
     let math_dir = tool_dir.join("math");
@@ -180,12 +153,7 @@ async fn test_tool_proxy_writes_tool_files_to_disk() {
     let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
     assert_eq!(parsed["name"], "add_numbers");
     assert_eq!(parsed["server"], "math");
-    assert!(
-        parsed["description"]
-            .as_str()
-            .unwrap()
-            .contains("Adds two numbers")
-    );
+    assert!(parsed["description"].as_str().unwrap().contains("Adds two numbers"));
 
     // Cleanup
     let _ = std::fs::remove_dir_all(tool_dir);
@@ -215,21 +183,11 @@ async fn test_tool_proxy_call_tool_routes_to_nested_server() {
     })
     .to_string();
 
-    let request = llm::ToolCallRequest {
-        id: "test_call_1".to_string(),
-        name: "routing__call_tool".to_string(),
-        arguments,
-    };
+    let request =
+        llm::ToolCallRequest { id: "test_call_1".to_string(), name: "routing__call_tool".to_string(), arguments };
 
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(10);
-    command_tx
-        .send(McpCommand::ExecuteTool {
-            request,
-            timeout: Duration::from_secs(10),
-            tx: event_tx,
-        })
-        .await
-        .unwrap();
+    command_tx.send(McpCommand::ExecuteTool { request, timeout: Duration::from_secs(10), tx: event_tx }).await.unwrap();
 
     // Collect events until we get Complete
     let mut result_text = String::new();
@@ -244,10 +202,7 @@ async fn test_tool_proxy_call_tool_routes_to_nested_server() {
     }
 
     // The result should contain the sum (7)
-    assert!(
-        result_text.contains('7'),
-        "Expected result to contain sum of 3+4=7, got: {result_text}"
-    );
+    assert!(result_text.contains('7'), "Expected result to contain sum of 3+4=7, got: {result_text}");
 
     // Cleanup
     cleanup_tool_dir(&instructions, "routing");
@@ -276,21 +231,11 @@ async fn test_tool_proxy_call_tool_unknown_server_returns_error() {
     })
     .to_string();
 
-    let request = llm::ToolCallRequest {
-        id: "test_call_2".to_string(),
-        name: "unknown-srv__call_tool".to_string(),
-        arguments,
-    };
+    let request =
+        llm::ToolCallRequest { id: "test_call_2".to_string(), name: "unknown-srv__call_tool".to_string(), arguments };
 
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(10);
-    command_tx
-        .send(McpCommand::ExecuteTool {
-            request,
-            timeout: Duration::from_secs(10),
-            tx: event_tx,
-        })
-        .await
-        .unwrap();
+    command_tx.send(McpCommand::ExecuteTool { request, timeout: Duration::from_secs(10), tx: event_tx }).await.unwrap();
 
     while let Some(event) = event_rx.recv().await {
         if let ToolExecutionEvent::Complete { result, .. } = event {
@@ -306,10 +251,7 @@ async fn test_tool_proxy_call_tool_unknown_server_returns_error() {
                     );
                 }
                 Ok(r) => {
-                    panic!(
-                        "Expected error for unknown server, got success: {}",
-                        r.result
-                    );
+                    panic!("Expected error for unknown server, got success: {}", r.result);
                 }
             }
             break;
@@ -321,13 +263,8 @@ async fn test_tool_proxy_call_tool_unknown_server_returns_error() {
 
 #[tokio::test]
 async fn test_tool_proxy_multiple_nested_servers() {
-    let config = tool_proxy_with_fakes(
-        "multi",
-        vec![
-            ("server_a", FakeMcpServer::new()),
-            ("server_b", FakeMcpServer::new()),
-        ],
-    );
+    let config =
+        tool_proxy_with_fakes("multi", vec![("server_a", FakeMcpServer::new()), ("server_b", FakeMcpServer::new())]);
 
     let McpSpawnResult {
         tool_definitions,
@@ -343,10 +280,7 @@ async fn test_tool_proxy_multiple_nested_servers() {
     assert_eq!(tool_definitions[0].name, "multi__call_tool");
 
     // Verify both server directories exist
-    let proxy_instr = instructions
-        .iter()
-        .find(|i| i.server_name == "multi")
-        .expect("Expected instructions");
+    let proxy_instr = instructions.iter().find(|i| i.server_name == "multi").expect("Expected instructions");
 
     let tool_dir = extract_tool_dir(&proxy_instr.instructions).expect("Should find tool directory");
     let tool_dir = std::path::Path::new(&tool_dir);
@@ -375,16 +309,10 @@ async fn test_tool_proxy_server_status_shows_connected() {
     } = mcp().with_servers(vec![config]).spawn().await.unwrap();
 
     // The proxy itself should show as Connected with tool_count=1 (just call_tool)
-    let proxy_status = server_statuses
-        .iter()
-        .find(|s| s.name == "status-test")
-        .expect("Expected proxy status entry");
+    let proxy_status = server_statuses.iter().find(|s| s.name == "status-test").expect("Expected proxy status entry");
 
     assert!(
-        matches!(
-            proxy_status.status,
-            mcp_utils::status::McpServerStatus::Connected { tool_count: 1 }
-        ),
+        matches!(proxy_status.status, mcp_utils::status::McpServerStatus::Connected { tool_count: 1 }),
         "Expected Connected with 1 tool, got: {:?}",
         proxy_status.status
     );

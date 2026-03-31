@@ -24,11 +24,7 @@ impl TaskId {
 
     /// Get the root task ID (strips subtask suffix if present)
     pub fn root(&self) -> TaskId {
-        if let Some(dot_pos) = self.0.find('.') {
-            TaskId(self.0[..dot_pos].to_string())
-        } else {
-            self.clone()
-        }
+        if let Some(dot_pos) = self.0.find('.') { TaskId(self.0[..dot_pos].to_string()) } else { self.clone() }
     }
 
     /// Check if this is a root task (no parent)
@@ -38,9 +34,7 @@ impl TaskId {
 
     /// Get the parent task ID if this is a subtask
     pub fn parent(&self) -> Option<TaskId> {
-        self.0
-            .rfind('.')
-            .map(|dot_pos| TaskId(self.0[..dot_pos].to_string()))
+        self.0.rfind('.').map(|dot_pos| TaskId(self.0[..dot_pos].to_string()))
     }
 
     /// Get the raw string representation
@@ -217,8 +211,7 @@ impl Task {
 
     /// Check if the task can be started (all dependencies completed)
     pub fn is_ready(&self, completed_tasks: &[&TaskId]) -> bool {
-        self.status == TaskStatus::Pending
-            && self.deps.iter().all(|dep| completed_tasks.contains(&dep))
+        self.status == TaskStatus::Pending && self.deps.iter().all(|dep| completed_tasks.contains(&dep))
     }
 
     /// Update the task's `updated_at` timestamp
@@ -422,22 +415,10 @@ mod tests {
     #[test]
     fn test_task_status_serialization() {
         // Test that TaskStatus serializes to camelCase
-        assert_eq!(
-            serde_json::to_string(&TaskStatus::Pending).unwrap(),
-            "\"pending\""
-        );
-        assert_eq!(
-            serde_json::to_string(&TaskStatus::InProgress).unwrap(),
-            "\"inProgress\""
-        );
-        assert_eq!(
-            serde_json::to_string(&TaskStatus::Completed).unwrap(),
-            "\"completed\""
-        );
-        assert_eq!(
-            serde_json::to_string(&TaskStatus::Blocked).unwrap(),
-            "\"blocked\""
-        );
+        assert_eq!(serde_json::to_string(&TaskStatus::Pending).unwrap(), "\"pending\"");
+        assert_eq!(serde_json::to_string(&TaskStatus::InProgress).unwrap(), "\"inProgress\"");
+        assert_eq!(serde_json::to_string(&TaskStatus::Completed).unwrap(), "\"completed\"");
+        assert_eq!(serde_json::to_string(&TaskStatus::Blocked).unwrap(), "\"blocked\"");
     }
 
     #[test]

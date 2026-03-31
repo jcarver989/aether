@@ -2,10 +2,7 @@ use super::reasoning_bar::reasoning_bar;
 use crate::settings::types::SettingsChange;
 use std::cmp::Ordering;
 use std::collections::HashSet;
-use tui::{
-    Combobox, Component, Event, Frame, Line, MouseEventKind, PickerKey, Searchable, ViewContext,
-    classify_key,
-};
+use tui::{Combobox, Component, Event, Frame, Line, MouseEventKind, PickerKey, Searchable, ViewContext, classify_key};
 use utils::ReasoningEffort;
 
 #[derive(Debug, Clone)]
@@ -19,9 +16,7 @@ pub struct ModelEntry {
 
 impl ModelEntry {
     fn provider_key(&self) -> &str {
-        self.value
-            .split_once(':')
-            .map_or("Other", |(provider, _)| provider)
+        self.value.split_once(':').map_or("Other", |(provider, _)| provider)
     }
 
     fn provider_label(&self) -> String {
@@ -35,18 +30,13 @@ impl ModelEntry {
         }
 
         let mut chars = key.chars();
-        let first = chars
-            .next()
-            .map(|c| c.to_uppercase().to_string())
-            .unwrap_or_default();
+        let first = chars.next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
         let rest = chars.as_str().to_lowercase();
         format!("{first}{rest}")
     }
 
     fn model_label(&self) -> &str {
-        self.name
-            .split_once(" / ")
-            .map_or(self.name.as_str(), |(_, model)| model)
+        self.name.split_once(" / ").map_or(self.name.as_str(), |(_, model)| model)
     }
 }
 
@@ -97,9 +87,8 @@ impl ModelSelector {
         current_selection: Option<&str>,
         current_reasoning_effort: Option<&str>,
     ) -> Self {
-        let selected_models: HashSet<String> = current_selection
-            .map(|s| s.split(',').map(|p| p.trim().to_string()).collect())
-            .unwrap_or_default();
+        let selected_models: HashSet<String> =
+            current_selection.map(|s| s.split(',').map(|p| p.trim().to_string()).collect()).unwrap_or_default();
 
         let reasoning = current_reasoning_effort.and_then(|s| s.parse().ok());
 
@@ -159,16 +148,8 @@ impl ModelSelector {
     fn confirm(&self) -> Vec<SettingsChange> {
         let mut changes = Vec::new();
         if !self.selected_models.is_empty() && self.selected_models != self.original_models {
-            let joined = self
-                .selected_models
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(",");
-            changes.push(SettingsChange {
-                config_id: self.config_id.clone(),
-                new_value: joined,
-            });
+            let joined = self.selected_models.iter().cloned().collect::<Vec<_>>().join(",");
+            changes.push(SettingsChange { config_id: self.config_id.clone(), new_value: joined });
         }
         if self.reasoning_effort != self.original_reasoning_effort {
             changes.push(SettingsChange {
@@ -182,11 +163,7 @@ impl ModelSelector {
 
 impl ModelSelector {
     pub fn update_viewport(&mut self, max_height: usize) {
-        let header_lines = if self.selected_models.is_empty() {
-            2
-        } else {
-            4
-        };
+        let header_lines = if self.selected_models.is_empty() { 2 } else { 4 };
         let available = max_height.saturating_sub(header_lines);
 
         let mut max_items = available;
@@ -194,11 +171,7 @@ impl ModelSelector {
             self.combobox.set_max_visible(max_items.max(1));
             let matches = self.combobox.visible_matches_with_selection();
             let groups = count_provider_groups(&matches);
-            let interstitial = if groups > 0 {
-                groups + groups.saturating_sub(1)
-            } else {
-                0
-            };
+            let interstitial = if groups > 0 { groups + groups.saturating_sub(1) } else { 0 };
             let needed = max_items + interstitial;
             if needed <= available {
                 break;
@@ -250,10 +223,8 @@ impl Component for ModelSelector {
                 if let Some(entry) = self.combobox.selected()
                     && !entry.reasoning_levels.is_empty()
                 {
-                    self.reasoning_effort = ReasoningEffort::cycle_within(
-                        self.reasoning_effort,
-                        &entry.reasoning_levels,
-                    );
+                    self.reasoning_effort =
+                        ReasoningEffort::cycle_within(self.reasoning_effort, &entry.reasoning_levels);
                 }
                 Some(vec![])
             }
@@ -311,28 +282,19 @@ impl Component for ModelSelector {
                     if !item_lines.is_empty() {
                         item_lines.push(Line::new(String::new()));
                     }
-                    item_lines.push(Line::styled(
-                        format!("  {}", entry.provider_label()),
-                        context.theme.text_secondary(),
-                    ));
+                    item_lines
+                        .push(Line::styled(format!("  {}", entry.provider_label()), context.theme.text_secondary()));
                     last_provider = Some(provider);
                 }
 
-                let check = if selected.contains(&entry.value) {
-                    "[x] "
-                } else {
-                    "[ ] "
-                };
+                let check = if selected.contains(&entry.value) { "[x] " } else { "[ ] " };
 
                 let label = format!("{check}{}", entry.model_label());
                 if *is_focused {
                     let mut line = Line::with_style(label, context.theme.selected_row_style());
-                    let indicator_style = context
-                        .theme
-                        .selected_row_style_with_fg(context.theme.highlight_fg());
+                    let indicator_style = context.theme.selected_row_style_with_fg(context.theme.highlight_fg());
                     if !entry.reasoning_levels.is_empty() {
-                        let bar =
-                            reasoning_bar(self.reasoning_effort, entry.reasoning_levels.len());
+                        let bar = reasoning_bar(self.reasoning_effort, entry.reasoning_levels.len());
                         line.push_with_style(format!("    {bar}"), indicator_style);
                     }
                     let caps = capability_tags(entry.supports_image, entry.supports_audio);
@@ -385,11 +347,7 @@ mod tests {
 
     fn make_items() -> Vec<ModelEntry> {
         vec![
-            entry(
-                "anthropic:claude-sonnet-4-5",
-                "Anthropic / Claude Sonnet 4.5",
-                vec![],
-            ),
+            entry("anthropic:claude-sonnet-4-5", "Anthropic / Claude Sonnet 4.5", vec![]),
             entry("deepseek:deepseek-chat", "DeepSeek / DeepSeek Chat", vec![]),
             entry("gemini:gemini-2.5-pro", "Google / Gemini 2.5 Pro", vec![]),
         ]
@@ -399,11 +357,7 @@ mod tests {
         ModelSelector::new(make_items(), "model".to_string(), None, None)
     }
 
-    fn sel(
-        items: Vec<ModelEntry>,
-        selected: Option<&str>,
-        reasoning: Option<&str>,
-    ) -> ModelSelector {
+    fn sel(items: Vec<ModelEntry>, selected: Option<&str>, reasoning: Option<&str>) -> ModelSelector {
         ModelSelector::new(items, "model".to_string(), selected, reasoning)
     }
 
@@ -436,27 +390,15 @@ mod tests {
 
     fn make_reasoning_items() -> Vec<ModelEntry> {
         vec![
-            entry(
-                "anthropic:claude-opus-4-6",
-                "Anthropic / Claude Opus 4.6",
-                reasoning_3(),
-            ),
+            entry("anthropic:claude-opus-4-6", "Anthropic / Claude Opus 4.6", reasoning_3()),
             entry("deepseek:deepseek-chat", "DeepSeek / DeepSeek Chat", vec![]),
         ]
     }
 
     fn make_mixed_reasoning_items() -> Vec<ModelEntry> {
         vec![
-            entry(
-                "codex:gpt-5.4-codex",
-                "Codex / GPT-5.4 Codex",
-                reasoning_4(),
-            ),
-            entry(
-                "anthropic:claude-opus-4-6",
-                "Anthropic / Claude Opus 4.6",
-                reasoning_3(),
-            ),
+            entry("codex:gpt-5.4-codex", "Codex / GPT-5.4 Codex", reasoning_4()),
+            entry("anthropic:claude-opus-4-6", "Anthropic / Claude Opus 4.6", reasoning_3()),
         ]
     }
 
@@ -465,11 +407,7 @@ mod tests {
             .into_iter()
             .map(|v| {
                 let (prov, model) = v.split_once(':').unwrap();
-                entry(
-                    v,
-                    &format!("{} / {}", prov.to_uppercase(), model.to_uppercase()),
-                    vec![],
-                )
+                entry(v, &format!("{} / {}", prov.to_uppercase(), model.to_uppercase()), vec![])
             })
             .collect()
     }
@@ -498,27 +436,15 @@ mod tests {
         send(&mut s, k(KeyCode::Char('2'))).await;
 
         assert_eq!(s.query(), "Kimi 2");
-        assert_eq!(
-            s.selected_count(),
-            0,
-            "space should not select the focused model"
-        );
+        assert_eq!(s.selected_count(), 0, "space should not select the focused model");
     }
 
     #[test]
     fn confirm_returns_empty_when_nothing_changed() {
         for (items, selected, reasoning) in [
             (make_items(), None, None),
-            (
-                make_items(),
-                Some("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"),
-                None,
-            ),
-            (
-                make_reasoning_items(),
-                Some("anthropic:claude-opus-4-6"),
-                Some("high"),
-            ),
+            (make_items(), Some("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"), None),
+            (make_reasoning_items(), Some("anthropic:claude-opus-4-6"), Some("high")),
         ] {
             let s = sel(items, selected, reasoning);
             assert!(s.confirm().is_empty());
@@ -541,19 +467,12 @@ mod tests {
         send(&mut s, k(KeyCode::Enter)).await;
         send(&mut s, k(KeyCode::Down)).await;
         send(&mut s, k(KeyCode::Enter)).await;
-        assert_confirm_models(
-            &s.confirm(),
-            &["anthropic:claude-sonnet-4-5", "deepseek:deepseek-chat"],
-        );
+        assert_confirm_models(&s.confirm(), &["anthropic:claude-sonnet-4-5", "deepseek:deepseek-chat"]);
     }
 
     #[test]
     fn pre_selected_values_from_current_selection() {
-        let s = sel(
-            make_items(),
-            Some("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"),
-            None,
-        );
+        let s = sel(make_items(), Some("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"), None);
         assert_eq!(s.selected_count(), 2);
     }
 
@@ -577,10 +496,7 @@ mod tests {
         let msgs = send(&mut s, k(KeyCode::Esc)).await.unwrap();
         match msgs.as_slice() {
             [ModelSelectorMessage::Done(changes)] => {
-                assert_confirm_models(
-                    changes,
-                    &["anthropic:claude-sonnet-4-5", "deepseek:deepseek-chat"],
-                );
+                assert_confirm_models(changes, &["anthropic:claude-sonnet-4-5", "deepseek:deepseek-chat"]);
             }
             other => panic!("expected Done with model change, got: {other:?}"),
         }
@@ -591,21 +507,13 @@ mod tests {
         let mut s = sel(make_items(), Some("anthropic:claude-sonnet-4-5"), None);
         send(&mut s, k(KeyCode::Down)).await;
         send(&mut s, k(KeyCode::Enter)).await;
-        assert_confirm_models(
-            &s.confirm(),
-            &["anthropic:claude-sonnet-4-5", "deepseek:deepseek-chat"],
-        );
+        assert_confirm_models(&s.confirm(), &["anthropic:claude-sonnet-4-5", "deepseek:deepseek-chat"]);
     }
 
     #[test]
     fn reasoning_cycle_within_wraps() {
         let levels = &[Low, Medium, High];
-        let expected = [
-            (None, Some(Low)),
-            (Some(Low), Some(Medium)),
-            (Some(Medium), Some(High)),
-            (Some(High), None),
-        ];
+        let expected = [(None, Some(Low)), (Some(Low), Some(Medium)), (Some(Medium), Some(High)), (Some(High), None)];
         for (input, output) in expected {
             assert_eq!(ReasoningEffort::cycle_within(input, levels), output);
         }
@@ -615,17 +523,9 @@ mod tests {
     async fn tab_cycles_reasoning_levels() {
         let cases: Vec<(Vec<ModelEntry>, usize, Vec<Option<ReasoningEffort>>)> = vec![
             // 3-level model (first item, no Down needed)
-            (
-                make_reasoning_items(),
-                0,
-                vec![None, Some(Low), Some(Medium), Some(High), None],
-            ),
+            (make_reasoning_items(), 0, vec![None, Some(Low), Some(Medium), Some(High), None]),
             // 4-level model (Anthropic first, Codex second, need 1 Down)
-            (
-                make_mixed_reasoning_items(),
-                1,
-                vec![None, Some(Low), Some(Medium), Some(High), Some(Xhigh), None],
-            ),
+            (make_mixed_reasoning_items(), 1, vec![None, Some(Low), Some(Medium), Some(High), Some(Xhigh), None]),
         ];
         for (items, downs, expected_sequence) in cases {
             let mut s = sel(items, None, None);
@@ -658,20 +558,12 @@ mod tests {
         let changes = s.confirm();
         assert_eq!(changes.len(), 2, "expected model + reasoning changes");
         assert!(changes.iter().any(|c| c.config_id == "model"));
-        assert!(
-            changes
-                .iter()
-                .any(|c| c.config_id == "reasoning_effort" && c.new_value == "low")
-        );
+        assert!(changes.iter().any(|c| c.config_id == "reasoning_effort" && c.new_value == "low"));
     }
 
     #[tokio::test]
     async fn confirm_returns_only_reasoning_when_only_reasoning_changed() {
-        let mut s = sel(
-            make_reasoning_items(),
-            Some("anthropic:claude-opus-4-6"),
-            None,
-        );
+        let mut s = sel(make_reasoning_items(), Some("anthropic:claude-opus-4-6"), None);
         send(&mut s, k(KeyCode::Tab)).await;
         send(&mut s, k(KeyCode::Tab)).await;
 
@@ -686,22 +578,12 @@ mod tests {
         let mut s = make_selector();
         let first = s.combobox.selected().unwrap().value.clone();
 
-        let mouse = |kind| {
-            Event::Mouse(MouseEvent {
-                kind,
-                column: 0,
-                row: 0,
-                modifiers: KeyModifiers::NONE,
-            })
-        };
+        let mouse = |kind| Event::Mouse(MouseEvent { kind, column: 0, row: 0, modifiers: KeyModifiers::NONE });
 
         let outcome = s.on_event(&mouse(MouseEventKind::ScrollDown)).await;
         assert!(outcome.is_some(), "mouse scroll should be consumed");
         let second = s.combobox.selected().unwrap().value.clone();
-        assert_ne!(
-            first, second,
-            "scroll down should move to a different model"
-        );
+        assert_ne!(first, second, "scroll down should move to a different model");
 
         s.on_event(&mouse(MouseEventKind::ScrollUp)).await;
         let back = s.combobox.selected().unwrap().value.clone();
@@ -718,11 +600,7 @@ mod tests {
         assert_eq!(s.reasoning_effort, Some(Xhigh));
 
         send(&mut s, k(KeyCode::Up)).await; // Back to Anthropic (3 levels)
-        assert_eq!(
-            s.reasoning_effort,
-            Some(High),
-            "xhigh should clamp to high on a 3-level model"
-        );
+        assert_eq!(s.reasoning_effort, Some(High), "xhigh should clamp to high on a 3-level model");
     }
 
     #[tokio::test]
@@ -738,10 +616,7 @@ mod tests {
             let frame = s.render(&ctx);
             let lines = frame.lines();
             assert!(
-                lines.iter().any(|l| l
-                    .spans()
-                    .iter()
-                    .any(|span| span.style().bg == Some(highlight_bg))),
+                lines.iter().any(|l| l.spans().iter().any(|span| span.style().bg == Some(highlight_bg))),
                 "focused item must be visible after scrolling down, got: {:?}",
                 lines.iter().map(|l| l.plain_text()).collect::<Vec<_>>()
             );
@@ -781,14 +656,8 @@ mod tests {
         let ctx = ViewContext::new((80, 10));
         let frame = s.render(&ctx);
         let text: String = frame.lines().iter().map(|l| l.plain_text()).collect();
-        assert!(
-            text.contains("img"),
-            "focused row should show img indicator"
-        );
-        assert!(
-            text.contains("audio"),
-            "focused row should show audio indicator"
-        );
+        assert!(text.contains("img"), "focused row should show img indicator");
+        assert!(text.contains("audio"), "focused row should show audio indicator");
     }
 
     #[test]
@@ -810,10 +679,7 @@ mod tests {
             let text = line.plain_text();
             if text.contains("M2") {
                 assert!(!text.contains("img"), "unfocused row should not show img");
-                assert!(
-                    !text.contains("audio"),
-                    "unfocused row should not show audio"
-                );
+                assert!(!text.contains("audio"), "unfocused row should not show audio");
             }
         }
     }

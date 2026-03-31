@@ -75,10 +75,7 @@ pub async fn execute_lsp_workspace_search(
     let mut all_results: Vec<WorkspaceSymbolResult> = Vec::new();
 
     for client in &clients {
-        let symbols = client
-            .workspace_symbol(input.query.clone())
-            .await
-            .map_err(|e| e.to_string())?;
+        let symbols = client.workspace_symbol(input.query.clone()).await.map_err(|e| e.to_string())?;
 
         for sym in symbols {
             let location = LocationResult::from_location(&sym.location);
@@ -93,13 +90,7 @@ pub async fn execute_lsp_workspace_search(
 
     // Deduplicate by (name, file_path, start_line)
     let mut seen = HashSet::new();
-    all_results.retain(|r| {
-        seen.insert((
-            r.name.clone(),
-            r.location.file_path.clone(),
-            r.location.start_line,
-        ))
-    });
+    all_results.retain(|r| seen.insert((r.name.clone(), r.location.file_path.clone(), r.location.start_line)));
 
     let total_count = all_results.len();
     let truncated = input.limit.is_some_and(|l| total_count > l);
@@ -109,18 +100,14 @@ pub async fn execute_lsp_workspace_search(
 
     // Enrich with context lines if requested
     if let Some(n) = input.context_lines.filter(|&n| n > 0) {
-        let mut locations: Vec<LocationResult> =
-            all_results.iter().map(|r| r.location.clone()).collect();
+        let mut locations: Vec<LocationResult> = all_results.iter().map(|r| r.location.clone()).collect();
         enrich_locations(&mut locations, n).await;
         for (result, enriched) in all_results.iter_mut().zip(locations) {
             result.location = enriched;
         }
     }
 
-    let display_meta = ToolDisplayMeta::new(
-        "LSP search",
-        format!("'{}' ({total_count} results)", input.query),
-    );
+    let display_meta = ToolDisplayMeta::new("LSP search", format!("'{}' ({total_count} results)", input.query));
 
     Ok(LspWorkspaceSearchOutput {
         query: input.query,

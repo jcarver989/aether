@@ -27,14 +27,9 @@ pub struct SearchNotesOutput {
     pub results: Vec<NoteResult>,
 }
 
-pub fn search_notes(
-    input: &SearchNotesInput,
-    notes_dir: &Path,
-) -> Result<SearchNotesOutput, NoteError> {
+pub fn search_notes(input: &SearchNotesInput, notes_dir: &Path) -> Result<SearchNotesOutput, NoteError> {
     if !notes_dir.is_dir() {
-        return Ok(SearchNotesOutput {
-            results: Vec::new(),
-        });
+        return Ok(SearchNotesOutput { results: Vec::new() });
     }
 
     let query = input.query.trim().to_lowercase();
@@ -73,12 +68,7 @@ pub fn search_notes(
         let tag_matches = fm.tags.iter().any(|t| t.to_lowercase() == query);
 
         if topic_matches || tag_matches {
-            results.push(NoteResult {
-                topic: fm.topic,
-                tags: fm.tags,
-                updated: fm.updated,
-                content: body.to_string(),
-            });
+            results.push(NoteResult { topic: fm.topic, tags: fm.tags, updated: fm.updated, content: body.to_string() });
         }
     }
 
@@ -113,9 +103,7 @@ mod tests {
             "---\ntopic: testing\ntags:\n- rust\nupdated: \"2026-02-14\"\n---\nTest content.",
         );
 
-        let input = SearchNotesInput {
-            query: "agent".to_string(),
-        };
+        let input = SearchNotesInput { query: "agent".to_string() };
         let output = search_notes(&input, &notes_dir).unwrap();
         assert_eq!(output.results.len(), 1);
         assert_eq!(output.results[0].topic, "agent-spec");
@@ -138,9 +126,7 @@ mod tests {
             "---\ntopic: mcp-setup\ntags:\n- aether\nupdated: \"2026-02-14\"\n---\nContent B.",
         );
 
-        let input = SearchNotesInput {
-            query: "aether".to_string(),
-        };
+        let input = SearchNotesInput { query: "aether".to_string() };
         let output = search_notes(&input, &notes_dir).unwrap();
         assert_eq!(output.results.len(), 2);
     }
@@ -156,15 +142,11 @@ mod tests {
             "---\ntopic: Agent-Spec\ntags:\n- Aether\nupdated: \"2026-02-15\"\n---\nContent.",
         );
 
-        let input = SearchNotesInput {
-            query: "AGENT".to_string(),
-        };
+        let input = SearchNotesInput { query: "AGENT".to_string() };
         let output = search_notes(&input, &notes_dir).unwrap();
         assert_eq!(output.results.len(), 1);
 
-        let input = SearchNotesInput {
-            query: "aether".to_string(),
-        };
+        let input = SearchNotesInput { query: "aether".to_string() };
         let output = search_notes(&input, &notes_dir).unwrap();
         assert_eq!(output.results.len(), 1);
     }
@@ -175,9 +157,7 @@ mod tests {
         let notes_dir = temp_dir.path().join("notes");
         // Don't create the directory
 
-        let input = SearchNotesInput {
-            query: "anything".to_string(),
-        };
+        let input = SearchNotesInput { query: "anything".to_string() };
         let output = search_notes(&input, &notes_dir).unwrap();
         assert!(output.results.is_empty());
     }
@@ -193,9 +173,7 @@ mod tests {
             "---\ntopic: agent-spec\ntags:\n- aether\nupdated: \"2026-02-15\"\n---\nContent.",
         );
 
-        let input = SearchNotesInput {
-            query: "nonexistent".to_string(),
-        };
+        let input = SearchNotesInput { query: "nonexistent".to_string() };
         let output = search_notes(&input, &notes_dir).unwrap();
         assert!(output.results.is_empty());
     }
@@ -212,9 +190,7 @@ mod tests {
             "---\ntopic: agent-spec\ntags: []\nupdated: \"2026-02-15\"\n---\nContent.",
         );
 
-        let input = SearchNotesInput {
-            query: "agent".to_string(),
-        };
+        let input = SearchNotesInput { query: "agent".to_string() };
         let output = search_notes(&input, &notes_dir).unwrap();
         assert_eq!(output.results.len(), 1);
     }
@@ -231,9 +207,7 @@ mod tests {
             "---\ntopic: good-note\ntags: []\nupdated: \"2026-02-15\"\n---\nGood content.",
         );
 
-        let input = SearchNotesInput {
-            query: "good".to_string(),
-        };
+        let input = SearchNotesInput { query: "good".to_string() };
         let output = search_notes(&input, &notes_dir).unwrap();
         assert_eq!(output.results.len(), 1);
         assert_eq!(output.results[0].topic, "good-note");

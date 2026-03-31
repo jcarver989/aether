@@ -21,15 +21,9 @@ impl<T: DeserializeOwned + Send + 'static> MarkdownFile<T> {
         match split_frontmatter(&raw_content) {
             Some((yaml_str, body)) => {
                 let frontmatter = serde_yml::from_str(yaml_str).ok();
-                Ok(Self {
-                    frontmatter,
-                    content: body.to_string(),
-                })
+                Ok(Self { frontmatter, content: body.to_string() })
             }
-            None => Ok(Self {
-                frontmatter: None,
-                content: raw_content.trim().to_string(),
-            }),
+            None => Ok(Self { frontmatter: None, content: raw_content.trim().to_string() }),
         }
     }
 
@@ -62,17 +56,11 @@ impl<T: DeserializeOwned + Send + 'static> MarkdownFile<T> {
     /// Load all markdown files from a directory
     pub async fn from_dir(dir: &PathBuf) -> Result<Vec<(PathBuf, Self)>, io::Error> {
         if !dir.exists() {
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("Directory not found: {}", dir.display()),
-            ));
+            return Err(io::Error::new(io::ErrorKind::NotFound, format!("Directory not found: {}", dir.display())));
         }
 
         if !dir.is_dir() {
-            return Err(io::Error::new(
-                io::ErrorKind::NotADirectory,
-                format!("Not a directory: {}", dir.display()),
-            ));
+            return Err(io::Error::new(io::ErrorKind::NotADirectory, format!("Not a directory: {}", dir.display())));
         }
 
         let parse_tasks: Vec<_> = Self::list(dir)?

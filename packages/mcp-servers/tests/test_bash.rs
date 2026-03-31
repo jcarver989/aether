@@ -1,7 +1,5 @@
 use mcp_servers::coding::error::BashError;
-use mcp_servers::coding::tools::bash::{
-    BashInput, BashResult, execute_command, read_background_bash,
-};
+use mcp_servers::coding::tools::bash::{BashInput, BashResult, execute_command, read_background_bash};
 use std::time::Duration;
 
 #[tokio::test]
@@ -28,12 +26,7 @@ async fn test_basic_command() {
 
 #[tokio::test]
 async fn test_command_with_exit_code() {
-    let args = BashInput {
-        command: "exit 42".to_string(),
-        timeout: None,
-        description: None,
-        run_in_background: None,
-    };
+    let args = BashInput { command: "exit 42".to_string(), timeout: None, description: None, run_in_background: None };
 
     let result = execute_command(args).await.unwrap();
 
@@ -166,12 +159,7 @@ async fn test_background_process_with_timeout() {
 
 #[tokio::test]
 async fn test_rm_command_blocked() {
-    let args = BashInput {
-        command: "rm".to_string(),
-        timeout: None,
-        description: None,
-        run_in_background: None,
-    };
+    let args = BashInput { command: "rm".to_string(), timeout: None, description: None, run_in_background: None };
 
     let result = execute_command(args).await;
     assert!(result.is_err());
@@ -209,9 +197,7 @@ async fn test_read_background_bash() {
 #[tokio::test]
 async fn test_read_background_bash_with_filter() {
     let args = BashInput {
-        command:
-            "echo 'ERROR: something went wrong'; echo 'INFO: all good'; echo 'ERROR: another issue'"
-                .to_string(),
+        command: "echo 'ERROR: something went wrong'; echo 'INFO: all good'; echo 'ERROR: another issue'".to_string(),
         timeout: None,
         description: None,
         run_in_background: Some(true),
@@ -224,9 +210,7 @@ async fn test_read_background_bash_with_filter() {
             // Wait a bit for output to be generated
             tokio::time::sleep(Duration::from_millis(100)).await;
 
-            let (result, _) = read_background_bash(handle, Some("ERROR".to_string()))
-                .await
-                .unwrap();
+            let (result, _) = read_background_bash(handle, Some("ERROR".to_string())).await.unwrap();
 
             assert!(result.output.contains("ERROR: something went wrong"));
             assert!(result.output.contains("ERROR: another issue"));

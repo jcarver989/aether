@@ -8,10 +8,7 @@ include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 pub fn available_models() -> Vec<LlmModel> {
     LlmModel::all()
         .iter()
-        .filter(|m| {
-            m.required_env_var()
-                .is_none_or(|var| std::env::var(var).is_ok())
-        })
+        .filter(|m| m.required_env_var().is_none_or(|var| std::env::var(var).is_ok()))
         .cloned()
         .collect()
 }
@@ -32,19 +29,14 @@ mod tests {
     fn display_fromstr_roundtrip_all_catalog_models() {
         for model in LlmModel::all() {
             let s = model.to_string();
-            let parsed: LlmModel = s
-                .parse()
-                .unwrap_or_else(|e| panic!("Failed to parse '{s}' back to LlmModel: {e}"));
+            let parsed: LlmModel = s.parse().unwrap_or_else(|e| panic!("Failed to parse '{s}' back to LlmModel: {e}"));
             assert_eq!(&parsed, model, "roundtrip failed for '{s}'");
         }
     }
 
     #[test]
     fn display_fromstr_roundtrip_dynamic_providers() {
-        let cases = [
-            LlmModel::Ollama("llama3.2".to_string()),
-            LlmModel::LlamaCpp("my-model".to_string()),
-        ];
+        let cases = [LlmModel::Ollama("llama3.2".to_string()), LlmModel::LlamaCpp("my-model".to_string())];
         for model in &cases {
             let s = model.to_string();
             let parsed: LlmModel = s.parse().unwrap();
@@ -57,9 +49,7 @@ mod tests {
         let anthropic: LlmModel = "anthropic:claude-opus-4-6".parse().unwrap();
         assert_eq!(anthropic.provider_display_name(), "Anthropic");
 
-        let bedrock: LlmModel = "bedrock:anthropic.claude-3-5-haiku-20241022-v1:0"
-            .parse()
-            .unwrap();
+        let bedrock: LlmModel = "bedrock:anthropic.claude-3-5-haiku-20241022-v1:0".parse().unwrap();
         assert_eq!(bedrock.provider_display_name(), "AWS Bedrock");
 
         let zai: LlmModel = "zai:glm-4.5".parse().unwrap();

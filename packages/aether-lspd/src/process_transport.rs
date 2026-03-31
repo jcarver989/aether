@@ -1,17 +1,13 @@
 use crate::error::{DaemonError, DaemonResult};
 use crate::file_watcher::{FileWatcherBatch, FileWatcherHandle};
 use crate::protocol::{LspErrorResponse, LspNotification};
-use lsp_types::notification::{
-    DidChangeWatchedFiles, Initialized, Notification, PublishDiagnostics,
-};
-use lsp_types::request::{
-    Initialize, RegisterCapability, Request, UnregisterCapability, WorkDoneProgressCreate,
-};
+use lsp_types::notification::{DidChangeWatchedFiles, Initialized, Notification, PublishDiagnostics};
+use lsp_types::request::{Initialize, RegisterCapability, Request, UnregisterCapability, WorkDoneProgressCreate};
 use lsp_types::{
     CallHierarchyClientCapabilities, ClientCapabilities, DidChangeWatchedFilesClientCapabilities,
-    GeneralClientCapabilities, GotoCapability, HoverClientCapabilities, InitializeParams,
-    MarkupKind, PublishDiagnosticsClientCapabilities, RegistrationParams,
-    TextDocumentClientCapabilities, WorkspaceClientCapabilities,
+    GeneralClientCapabilities, GotoCapability, HoverClientCapabilities, InitializeParams, MarkupKind,
+    PublishDiagnosticsClientCapabilities, RegistrationParams, TextDocumentClientCapabilities,
+    WorkspaceClientCapabilities,
 };
 use lsp_types::{DocumentSymbolClientCapabilities, DynamicRegistrationClientCapabilities};
 use serde_json::Value;
@@ -73,14 +69,10 @@ impl ProcessTransport {
             .spawn()
             .map_err(|e| DaemonError::LspSpawnFailed(format!("{command}: {e}")))?;
 
-        let stdin = process
-            .stdin
-            .take()
-            .ok_or_else(|| DaemonError::LspSpawnFailed("Failed to capture stdin".into()))?;
-        let stdout = process
-            .stdout
-            .take()
-            .ok_or_else(|| DaemonError::LspSpawnFailed("Failed to capture stdout".into()))?;
+        let stdin =
+            process.stdin.take().ok_or_else(|| DaemonError::LspSpawnFailed("Failed to capture stdin".into()))?;
+        let stdout =
+            process.stdout.take().ok_or_else(|| DaemonError::LspSpawnFailed("Failed to capture stdout".into()))?;
 
         let (command_tx, command_rx) = mpsc::channel(100);
         let (event_tx, event_rx) = mpsc::channel(100);
@@ -103,36 +95,19 @@ impl ProcessTransport {
         Ok((Self { command_tx }, event_rx))
     }
 
-    pub(crate) async fn request_raw(
-        &self,
-        method: &str,
-        params: Value,
-    ) -> Result<Value, LspErrorResponse> {
+    pub(crate) async fn request_raw(&self, method: &str, params: Value) -> Result<Value, LspErrorResponse> {
         let (response_tx, response_rx) = oneshot::channel();
-        let request = TransportRequest {
-            method: method.to_string(),
-            params,
-            response_tx,
-        };
+        let request = TransportRequest { method: method.to_string(), params, response_tx };
         self.command_tx
             .send(TransportCommand::Request(request))
             .await
-            .map_err(|_| LspErrorResponse {
-                code: -1,
-                message: "LSP transport closed".into(),
-            })?;
+            .map_err(|_| LspErrorResponse { code: -1, message: "LSP transport closed".into() })?;
 
-        response_rx.await.map_err(|_| LspErrorResponse {
-            code: -1,
-            message: "Response channel closed".into(),
-        })?
+        response_rx.await.map_err(|_| LspErrorResponse { code: -1, message: "Response channel closed".into() })?
     }
 
     pub(crate) async fn send_notification(&self, notification: LspNotification) {
-        let _ = self
-            .command_tx
-            .send(TransportCommand::Notification(notification))
-            .await;
+        let _ = self.command_tx.send(TransportCommand::Notification(notification)).await;
     }
 
     pub(crate) async fn shutdown(&self) {
@@ -187,18 +162,12 @@ impl ProcessTransportActor {
                 if let Err(err) = self.send_request(id, &request.method, request.params).await
                     && let Some(tx) = self.pending.remove(&id)
                 {
-                    let _ = tx.send(Err(LspErrorResponse {
-                        code: -1,
-                        message: err.to_string(),
-                    }));
+                    let _ = tx.send(Err(LspErrorResponse { code: -1, message: err.to_string() }));
                 }
                 true
             }
             TransportCommand::Notification(notification) => {
-                if let Err(err) =
-                    send_notification(&mut self.stdin, &notification.method, notification.params)
-                        .await
-                {
+                if let Err(err) = send_notification(&mut self.stdin, &notification.method, notification.params).await {
                     tracing::warn!(%err, "Failed to forward LSP notification");
                 }
                 true
@@ -211,8 +180,8 @@ impl ProcessTransportActor {
     }
 
     async fn initialize(&mut self, root_path: &Path) -> std::io::Result<()> {
-        let root_uri = crate::path_to_uri(root_path)
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
+        let root_uri =
+            crate::path_to_uri(root_path).map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
 
         let capabilities = ClientCapabilities {
             general: Some(GeneralClientCapabilities::default()),
@@ -221,17 +190,9 @@ impl ProcessTransportActor {
                     related_information: Some(true),
                     ..Default::default()
                 }),
-                definition: Some(GotoCapability {
-                    dynamic_registration: Some(false),
-                    link_support: Some(true),
-                }),
-                implementation: Some(GotoCapability {
-                    dynamic_registration: Some(false),
-                    link_support: Some(true),
-                }),
-                references: Some(DynamicRegistrationClientCapabilities {
-                    dynamic_registration: Some(false),
-                }),
+                definition: Some(GotoCapability { dynamic_registration: Some(false), link_support: Some(true) }),
+                implementation: Some(GotoCapability { dynamic_registration: Some(false), link_support: Some(true) }),
+                references: Some(DynamicRegistrationClientCapabilities { dynamic_registration: Some(false) }),
                 hover: Some(HoverClientCapabilities {
                     dynamic_registration: Some(false),
                     content_format: Some(vec![MarkupKind::Markdown, MarkupKind::PlainText]),
@@ -240,9 +201,7 @@ impl ProcessTransportActor {
                     hierarchical_document_symbol_support: Some(true),
                     ..Default::default()
                 }),
-                call_hierarchy: Some(CallHierarchyClientCapabilities {
-                    dynamic_registration: Some(false),
-                }),
+                call_hierarchy: Some(CallHierarchyClientCapabilities { dynamic_registration: Some(false) }),
                 ..Default::default()
             }),
             workspace: Some(WorkspaceClientCapabilities {
@@ -263,27 +222,18 @@ impl ProcessTransportActor {
             ..Default::default()
         };
 
-        self.send_request(
-            INITIALIZE_REQUEST_ID,
-            Initialize::METHOD,
-            serde_json::to_value(&params).unwrap(),
-        )
-        .await?;
+        self.send_request(INITIALIZE_REQUEST_ID, Initialize::METHOD, serde_json::to_value(&params).unwrap()).await?;
 
         while let Some(message) = read_lsp_message(&mut self.reader).await? {
             if message.get("id").and_then(Value::as_i64) == Some(INITIALIZE_REQUEST_ID) {
-                send_notification(&mut self.stdin, Initialized::METHOD, serde_json::json!({}))
-                    .await?;
+                send_notification(&mut self.stdin, Initialized::METHOD, serde_json::json!({})).await?;
                 return Ok(());
             }
 
             self.handle_lsp_message(message).await;
         }
 
-        Err(std::io::Error::new(
-            std::io::ErrorKind::UnexpectedEof,
-            "LSP closed during initialization",
-        ))
+        Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "LSP closed during initialization"))
     }
 
     async fn handle_lsp_message(&mut self, message: Value) {
@@ -327,11 +277,8 @@ impl ProcessTransportActor {
                             .and_then(Value::as_i64)
                             .and_then(|code| i32::try_from(code).ok())
                             .unwrap_or(-1);
-                        let message = error
-                            .get("message")
-                            .and_then(Value::as_str)
-                            .unwrap_or("Unknown error")
-                            .to_string();
+                        let message =
+                            error.get("message").and_then(Value::as_str).unwrap_or("Unknown error").to_string();
                         Err(LspErrorResponse { code, message })
                     } else {
                         Ok(message.get("result").cloned().unwrap_or(Value::Null))
@@ -342,10 +289,7 @@ impl ProcessTransportActor {
             (false, Some(method)) if method == PublishDiagnostics::METHOD => {
                 let params = message.get("params").cloned().unwrap_or(Value::Null);
                 if let Ok(diagnostics) = serde_json::from_value(params) {
-                    let _ = self
-                        .event_tx
-                        .send(TransportEvent::PublishedDiagnostics(diagnostics))
-                        .await;
+                    let _ = self.event_tx.send(TransportEvent::PublishedDiagnostics(diagnostics)).await;
                 }
             }
             _ => {}
@@ -353,16 +297,13 @@ impl ProcessTransportActor {
     }
 
     async fn handle_register_capability(&mut self, id: &Value, params: &Value) {
-        if let Ok(registration_params) =
-            serde_json::from_value::<RegistrationParams>(params.clone())
-        {
+        if let Ok(registration_params) = serde_json::from_value::<RegistrationParams>(params.clone()) {
             for registration in &registration_params.registrations {
                 if registration.method == DidChangeWatchedFiles::METHOD
                     && let Some(options) = &registration.register_options
                     && let Ok(watchers) = parse_file_system_watchers(options)
                 {
-                    self.watcher
-                        .register_watchers(registration.id.clone(), watchers);
+                    self.watcher.register_watchers(registration.id.clone(), watchers);
                 }
             }
         }
@@ -371,9 +312,7 @@ impl ProcessTransportActor {
     }
 
     async fn handle_unregister_capability(&mut self, id: &Value, params: &Value) {
-        if let Ok(unregistration_params) =
-            serde_json::from_value::<lsp_types::UnregistrationParams>(params.clone())
-        {
+        if let Ok(unregistration_params) = serde_json::from_value::<lsp_types::UnregistrationParams>(params.clone()) {
             for registration in &unregistration_params.unregisterations {
                 if registration.method == DidChangeWatchedFiles::METHOD {
                     self.watcher.unregister(registration.id.clone());
@@ -405,17 +344,12 @@ impl ProcessTransportActor {
 
     fn cleanup_pending(&mut self) {
         for (_, tx) in self.pending.drain() {
-            let _ = tx.send(Err(LspErrorResponse {
-                code: -1,
-                message: "LSP transport closed".into(),
-            }));
+            let _ = tx.send(Err(LspErrorResponse { code: -1, message: "LSP transport closed".into() }));
         }
     }
 }
 
-fn parse_file_system_watchers(
-    opts: &Value,
-) -> Result<Vec<lsp_types::FileSystemWatcher>, serde_json::Error> {
+fn parse_file_system_watchers(opts: &Value) -> Result<Vec<lsp_types::FileSystemWatcher>, serde_json::Error> {
     #[derive(serde::Deserialize)]
     struct WatcherOptions {
         watchers: Vec<lsp_types::FileSystemWatcher>,
@@ -425,11 +359,7 @@ fn parse_file_system_watchers(
     Ok(parsed.watchers)
 }
 
-async fn send_notification(
-    stdin: &mut ChildStdin,
-    method: &str,
-    params: Value,
-) -> std::io::Result<()> {
+async fn send_notification(stdin: &mut ChildStdin, method: &str, params: Value) -> std::io::Result<()> {
     let msg = serde_json::json!({
         "jsonrpc": "2.0",
         "method": method,
@@ -458,16 +388,13 @@ async fn read_lsp_message(reader: &mut BufReader<ChildStdout>) -> std::io::Resul
         }
     }
 
-    let content_length = content_length.ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, "Missing Content-Length")
-    })?;
+    let content_length =
+        content_length.ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Missing Content-Length"))?;
 
     let mut buf = vec![0u8; content_length];
     reader.read_exact(&mut buf).await?;
 
-    serde_json::from_slice(&buf)
-        .map(Some)
-        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
+    serde_json::from_slice(&buf).map(Some).map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
 }
 
 async fn write_lsp_message(stdin: &mut ChildStdin, msg: &Value) -> std::io::Result<()> {

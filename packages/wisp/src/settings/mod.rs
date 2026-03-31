@@ -3,9 +3,7 @@ pub mod overlay;
 pub(crate) mod picker;
 pub mod types;
 
-use crate::components::provider_login::{
-    ProviderLoginEntry, ProviderLoginStatus, provider_login_summary,
-};
+use crate::components::provider_login::{ProviderLoginEntry, ProviderLoginStatus, provider_login_summary};
 use crate::components::server_status::server_status_summary;
 use acp_utils::notifications::McpServerStatusEntry;
 use acp_utils::settings::SettingsStore;
@@ -32,11 +30,7 @@ pub struct ThemeSettings {
 }
 
 pub fn wisp_home() -> Option<PathBuf> {
-    Some(
-        SettingsStore::new("WISP_HOME", ".wisp")?
-            .home()
-            .to_path_buf(),
-    )
+    Some(SettingsStore::new("WISP_HOME", ".wisp")?.home().to_path_buf())
 }
 
 pub fn themes_dir_path() -> Option<PathBuf> {
@@ -125,11 +119,7 @@ pub(crate) fn build_login_entries(auth_methods: &[AuthMethod]) -> Vec<ProviderLo
             } else {
                 ProviderLoginStatus::NeedsLogin
             };
-            ProviderLoginEntry {
-                method_id: m.id().0.to_string(),
-                name: m.name().to_string(),
-                status,
-            }
+            ProviderLoginEntry { method_id: m.id().0.to_string(), name: m.name().to_string(), status }
         })
         .collect()
 }
@@ -164,9 +154,7 @@ pub(crate) fn decorate_menu(
     }
 }
 
-pub(crate) fn process_config_changes(
-    changes: Vec<types::SettingsChange>,
-) -> Vec<overlay::SettingsMessage> {
+pub(crate) fn process_config_changes(changes: Vec<types::SettingsChange>) -> Vec<overlay::SettingsMessage> {
     use acp_utils::config_option_id::THEME_CONFIG_ID;
 
     let mut messages = Vec::new();
@@ -192,11 +180,7 @@ pub(crate) fn process_config_changes(
 
 fn theme_file_from_picker_value(value: &str) -> Option<String> {
     let trimmed = value.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
+    if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
 }
 
 pub(crate) fn cycle_quick_option(
@@ -205,9 +189,7 @@ pub(crate) fn cycle_quick_option(
     use crate::components::status_line::is_cycleable_mode_option;
     use agent_client_protocol::{SessionConfigKind, SessionConfigSelectOptions};
 
-    let option = config_options
-        .iter()
-        .find(|option| is_cycleable_mode_option(option))?;
+    let option = config_options.iter().find(|option| is_cycleable_mode_option(option))?;
 
     let SessionConfigKind::Select(ref select) = option.kind else {
         return None;
@@ -221,14 +203,9 @@ pub(crate) fn cycle_quick_option(
         return None;
     }
 
-    let current_index = options
-        .iter()
-        .position(|entry| entry.value == select.current_value)
-        .unwrap_or(0);
+    let current_index = options.iter().position(|entry| entry.value == select.current_value).unwrap_or(0);
     let next_index = (current_index + 1) % options.len();
-    options
-        .get(next_index)
-        .map(|next| (option.id.0.to_string(), next.value.0.to_string()))
+    options.get(next_index).map(|next| (option.id.0.to_string(), next.value.0.to_string()))
 }
 
 pub(crate) fn cycle_reasoning_option(
@@ -245,28 +222,18 @@ pub(crate) fn cycle_reasoning_option(
 
     let current = extract_reasoning_effort(config_options);
     let next = ReasoningEffort::cycle_within(current, &levels);
-    Some((
-        ConfigOptionId::ReasoningEffort.as_str().to_string(),
-        ReasoningEffort::config_str(next).to_string(),
-    ))
+    Some((ConfigOptionId::ReasoningEffort.as_str().to_string(), ReasoningEffort::config_str(next).to_string()))
 }
 
 pub(crate) fn unhealthy_server_count(statuses: &[McpServerStatusEntry]) -> usize {
     use acp_utils::notifications::McpServerStatus;
 
-    statuses
-        .iter()
-        .filter(|status| !matches!(status.status, McpServerStatus::Connected { .. }))
-        .count()
+    statuses.iter().filter(|status| !matches!(status.status, McpServerStatus::Connected { .. })).count()
 }
 
 pub fn save_settings(settings: &WispSettings) -> std::io::Result<()> {
-    let store = SettingsStore::new("WISP_HOME", ".wisp").ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "Unable to resolve Wisp settings path",
-        )
-    })?;
+    let store = SettingsStore::new("WISP_HOME", ".wisp")
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Unable to resolve Wisp settings path"))?;
 
     store.save(settings)
 }
@@ -281,10 +248,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn change(config_id: &str, new_value: &str) -> types::SettingsChange {
-        types::SettingsChange {
-            config_id: config_id.to_string(),
-            new_value: new_value.to_string(),
-        }
+        types::SettingsChange { config_id: config_id.to_string(), new_value: new_value.to_string() }
     }
 
     fn with_themes_dir(f: impl FnOnce(&std::path::Path)) {
@@ -299,11 +263,7 @@ mod tests {
     fn round_trip_serde() {
         let temp_dir = TempDir::new().unwrap();
         let store = SettingsStore::from_path(temp_dir.path());
-        let settings = WispSettings {
-            theme: ThemeSettings {
-                file: Some("my-theme.json".to_string()),
-            },
-        };
+        let settings = WispSettings { theme: ThemeSettings { file: Some("my-theme.json".to_string()) } };
         store.save(&settings).unwrap();
         assert_eq!(store.load_or_create::<WispSettings>(), settings);
     }
@@ -311,10 +271,7 @@ mod tests {
     #[test]
     fn resolve_theme_file_path_allows_basename_only() {
         for rejected in ["", "../escape.json", "subdir/theme.json"] {
-            assert!(
-                resolve_theme_file_path(rejected).is_none(),
-                "should reject {rejected:?}"
-            );
+            assert!(resolve_theme_file_path(rejected).is_none(), "should reject {rejected:?}");
         }
         #[cfg(windows)]
         assert!(resolve_theme_file_path("..\\escape.json").is_none());
@@ -351,11 +308,7 @@ mod tests {
             ("catppuccin.tmTheme", Some("catppuccin.tmTheme")),
             ("  spaced.tmTheme  ", Some("spaced.tmTheme")),
         ] {
-            assert_eq!(
-                theme_file_from_picker_value(input),
-                expected.map(String::from),
-                "input: {input:?}"
-            );
+            assert_eq!(theme_file_from_picker_value(input), expected.map(String::from), "input: {input:?}");
         }
     }
 
@@ -368,25 +321,14 @@ mod tests {
             fs::write(themes.join("custom.tmTheme"), CUSTOM_TMTHEME).unwrap();
 
             with_wisp_home(themes.parent().unwrap(), || {
-                let messages =
-                    process_config_changes(vec![change(THEME_CONFIG_ID, "custom.tmTheme")]);
+                let messages = process_config_changes(vec![change(THEME_CONFIG_ID, "custom.tmTheme")]);
                 let theme = messages.iter().find_map(|m| match m {
                     overlay::SettingsMessage::SetTheme(t) => Some(t),
                     _ => None,
                 });
                 assert!(theme.is_some(), "should produce SetTheme message");
-                assert_eq!(
-                    theme.unwrap().text_primary(),
-                    Color::Rgb {
-                        r: 0x11,
-                        g: 0x22,
-                        b: 0x33
-                    }
-                );
-                assert_eq!(
-                    load_or_create_settings().theme.file.as_deref(),
-                    Some("custom.tmTheme")
-                );
+                assert_eq!(theme.unwrap().text_primary(), Color::Rgb { r: 0x11, g: 0x22, b: 0x33 });
+                assert_eq!(load_or_create_settings().theme.file.as_deref(), Some("custom.tmTheme"));
             });
         });
     }
@@ -395,12 +337,7 @@ mod tests {
     fn process_theme_change_persists_default_as_none() {
         let temp_dir = TempDir::new().unwrap();
         with_wisp_home(temp_dir.path(), || {
-            save_settings(&WispSettings {
-                theme: ThemeSettings {
-                    file: Some("old.tmTheme".to_string()),
-                },
-            })
-            .unwrap();
+            save_settings(&WispSettings { theme: ThemeSettings { file: Some("old.tmTheme".to_string()) } }).unwrap();
             let _ = process_config_changes(vec![change(THEME_CONFIG_ID, "   ")]);
             assert_eq!(load_or_create_settings().theme.file, None);
         });

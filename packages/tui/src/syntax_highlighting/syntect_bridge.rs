@@ -4,19 +4,14 @@ use syntect::parsing::{SyntaxReference, SyntaxSet};
 
 use crate::style::Style;
 
-pub(crate) fn find_syntax_for_hint<'a>(
-    syntax_set: &'a SyntaxSet,
-    hint: &str,
-) -> Option<&'a SyntaxReference> {
+pub(crate) fn find_syntax_for_hint<'a>(syntax_set: &'a SyntaxSet, hint: &str) -> Option<&'a SyntaxReference> {
     if hint.is_empty() {
         return None;
     }
 
     let normalized = normalize_lang_hint(hint);
 
-    syntax_set
-        .find_syntax_by_extension(normalized)
-        .or_else(|| syntax_set.find_syntax_by_token(normalized))
+    syntax_set.find_syntax_by_extension(normalized).or_else(|| syntax_set.find_syntax_by_token(normalized))
 }
 
 fn normalize_lang_hint(hint: &str) -> &str {
@@ -40,11 +35,7 @@ fn normalize_lang_hint(hint: &str) -> &str {
 }
 
 pub(crate) fn syntect_to_wisp_style(s: syntect::highlighting::Style) -> Style {
-    let fg = Color::Rgb {
-        r: s.foreground.r,
-        g: s.foreground.g,
-        b: s.foreground.b,
-    };
+    let fg = Color::Rgb { r: s.foreground.r, g: s.foreground.g, b: s.foreground.b };
 
     let mut style = Style::fg(fg);
     if s.font_style.contains(FontStyle::BOLD) {
@@ -66,19 +57,13 @@ mod tests {
     #[test]
     fn typescript_grammar_is_loaded() {
         let ss = two_face::syntax::extra_newlines();
-        assert!(
-            ss.find_syntax_by_extension("ts").is_some(),
-            "TypeScript grammar should be found by extension 'ts'"
-        );
+        assert!(ss.find_syntax_by_extension("ts").is_some(), "TypeScript grammar should be found by extension 'ts'");
     }
 
     #[test]
     fn tsx_grammar_is_loaded() {
         let ss = two_face::syntax::extra_newlines();
-        assert!(
-            ss.find_syntax_by_extension("tsx").is_some(),
-            "TSX grammar should be found by extension 'tsx'"
-        );
+        assert!(ss.find_syntax_by_extension("tsx").is_some(), "TSX grammar should be found by extension 'tsx'");
     }
 
     #[test]
@@ -105,10 +90,7 @@ mod tests {
     fn javascript_still_resolves() {
         let ss = two_face::syntax::extra_newlines();
         for hint in &["js", "javascript", "jsx"] {
-            assert!(
-                find_syntax_for_hint(&ss, hint).is_some(),
-                "should resolve hint '{hint}'"
-            );
+            assert!(find_syntax_for_hint(&ss, hint).is_some(), "should resolve hint '{hint}'");
         }
     }
 

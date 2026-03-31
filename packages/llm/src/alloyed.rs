@@ -12,10 +12,7 @@ pub struct AlloyedModelProvider {
 
 impl AlloyedModelProvider {
     pub fn new(providers: Vec<Box<dyn StreamingModelProvider>>) -> Self {
-        Self {
-            providers,
-            current_provider_index: AtomicUsize::new(0),
-        }
+        Self { providers, current_provider_index: AtomicUsize::new(0) }
     }
 
     fn get_current_provider(&self) -> Option<&dyn StreamingModelProvider> {
@@ -30,8 +27,7 @@ impl AlloyedModelProvider {
         if self.providers.is_empty() {
             return None;
         }
-        let index =
-            self.current_provider_index.fetch_add(1, Ordering::Relaxed) % self.providers.len();
+        let index = self.current_provider_index.fetch_add(1, Ordering::Relaxed) % self.providers.len();
         Some(self.providers[index].as_ref())
     }
 }
@@ -45,8 +41,7 @@ impl StreamingModelProvider for AlloyedModelProvider {
     }
 
     fn model(&self) -> Option<crate::LlmModel> {
-        self.get_current_provider()
-            .and_then(super::provider::StreamingModelProvider::model)
+        self.get_current_provider().and_then(super::provider::StreamingModelProvider::model)
     }
 
     fn display_name(&self) -> String {
@@ -114,8 +109,7 @@ mod tests {
     fn test_alloyed_provider_display_name_multiple() {
         let fake_provider1 = FakeLlmProvider::new(vec![vec![LlmResponse::done()]]);
         let fake_provider2 = FakeLlmProvider::new(vec![vec![LlmResponse::done()]]);
-        let provider =
-            AlloyedModelProvider::new(vec![Box::new(fake_provider1), Box::new(fake_provider2)]);
+        let provider = AlloyedModelProvider::new(vec![Box::new(fake_provider1), Box::new(fake_provider2)]);
 
         // Should cycle through individual provider names
         assert_eq!(provider.display_name(), "Fake LLM"); // First call
@@ -126,8 +120,7 @@ mod tests {
     fn test_alloyed_provider_cycling() {
         let fake_provider1 = FakeLlmProvider::new(vec![vec![LlmResponse::done()]]);
         let fake_provider2 = FakeLlmProvider::new(vec![vec![LlmResponse::done()]]);
-        let provider =
-            AlloyedModelProvider::new(vec![Box::new(fake_provider1), Box::new(fake_provider2)]);
+        let provider = AlloyedModelProvider::new(vec![Box::new(fake_provider1), Box::new(fake_provider2)]);
 
         let context = Context::new(vec![], vec![]);
 
@@ -151,8 +144,7 @@ mod tests {
     fn test_display_name_doesnt_advance_counter() {
         let fake_provider1 = FakeLlmProvider::new(vec![vec![LlmResponse::done()]]);
         let fake_provider2 = FakeLlmProvider::new(vec![vec![LlmResponse::done()]]);
-        let provider =
-            AlloyedModelProvider::new(vec![Box::new(fake_provider1), Box::new(fake_provider2)]);
+        let provider = AlloyedModelProvider::new(vec![Box::new(fake_provider1), Box::new(fake_provider2)]);
 
         // Calling display_name multiple times should return the same result
         let name1 = provider.display_name();
@@ -166,9 +158,7 @@ mod tests {
 
     #[test]
     fn test_context_window_unknown_if_any_provider_unknown() {
-        let known = FixedContextProvider {
-            context_window: Some(200_000),
-        };
+        let known = FixedContextProvider { context_window: Some(200_000) };
         let unknown = FakeLlmProvider::new(vec![vec![LlmResponse::done()]]);
         let provider = AlloyedModelProvider::new(vec![Box::new(known), Box::new(unknown)]);
         assert_eq!(provider.context_window(), None);
@@ -176,12 +166,8 @@ mod tests {
 
     #[test]
     fn test_context_window_uses_min_of_known_providers() {
-        let p1 = FixedContextProvider {
-            context_window: Some(200_000),
-        };
-        let p2 = FixedContextProvider {
-            context_window: Some(128_000),
-        };
+        let p1 = FixedContextProvider { context_window: Some(200_000) };
+        let p2 = FixedContextProvider { context_window: Some(128_000) };
         let provider = AlloyedModelProvider::new(vec![Box::new(p1), Box::new(p2)]);
         assert_eq!(provider.context_window(), Some(128_000));
     }

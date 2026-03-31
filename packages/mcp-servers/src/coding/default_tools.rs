@@ -1,10 +1,9 @@
 use super::error::CodingError;
 use super::{
-    BackgroundProcessHandle, BashInput, BashResult, EditFileArgs, EditFileResponse, FindInput,
-    FindOutput, GrepInput, GrepOutput, ListFilesArgs, ListFilesResult, ReadBackgroundBashOutput,
-    ReadFileArgs, ReadFileResult, WriteFileArgs, WriteFileResponse, edit_file_contents,
-    execute_command, find_files_by_name, list_files, perform_grep, read_background_bash,
-    read_file_contents, tools_trait::CodingTools, write_file_contents,
+    BackgroundProcessHandle, BashInput, BashResult, EditFileArgs, EditFileResponse, FindInput, FindOutput, GrepInput,
+    GrepOutput, ListFilesArgs, ListFilesResult, ReadBackgroundBashOutput, ReadFileArgs, ReadFileResult, WriteFileArgs,
+    WriteFileResponse, edit_file_contents, execute_command, find_files_by_name, list_files, perform_grep,
+    read_background_bash, read_file_contents, tools_trait::CodingTools, write_file_contents,
 };
 
 /// Default implementation that uses local filesystem operations.
@@ -47,9 +46,7 @@ impl CodingTools for DefaultCodingTools {
         handle: BackgroundProcessHandle,
         filter: Option<String>,
     ) -> Result<(ReadBackgroundBashOutput, Option<BackgroundProcessHandle>), CodingError> {
-        read_background_bash(handle, filter)
-            .await
-            .map_err(CodingError::from)
+        read_background_bash(handle, filter).await.map_err(CodingError::from)
     }
 
     async fn grep(&self, args: GrepInput) -> Result<GrepOutput, CodingError> {

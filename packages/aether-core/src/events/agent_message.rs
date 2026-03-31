@@ -1,6 +1,5 @@
 use acp_utils::notifications::{
-    SubAgentEvent, SubAgentToolCallUpdate, SubAgentToolError, SubAgentToolRequest,
-    SubAgentToolResult,
+    SubAgentEvent, SubAgentToolCallUpdate, SubAgentToolError, SubAgentToolRequest, SubAgentToolResult,
 };
 use llm::{ToolCallError, ToolCallRequest, ToolCallResult};
 use mcp_utils::display_meta::ToolResultMeta;
@@ -111,33 +110,19 @@ impl From<&AgentMessage> for SubAgentEvent {
                     arguments: request.arguments.clone(),
                 },
             },
-            AgentMessage::ToolCallUpdate {
-                tool_call_id,
-                chunk,
-                ..
-            } => SubAgentEvent::ToolCallUpdate {
-                update: SubAgentToolCallUpdate {
-                    id: tool_call_id.clone(),
-                    chunk: chunk.clone(),
-                },
+            AgentMessage::ToolCallUpdate { tool_call_id, chunk, .. } => SubAgentEvent::ToolCallUpdate {
+                update: SubAgentToolCallUpdate { id: tool_call_id.clone(), chunk: chunk.clone() },
             },
-            AgentMessage::ToolResult {
-                result,
-                result_meta,
-                ..
-            } => SubAgentEvent::ToolResult {
+            AgentMessage::ToolResult { result, result_meta, .. } => SubAgentEvent::ToolResult {
                 result: SubAgentToolResult {
                     id: result.id.clone(),
                     name: result.name.clone(),
                     result_meta: result_meta.clone(),
                 },
             },
-            AgentMessage::ToolError { error, .. } => SubAgentEvent::ToolError {
-                error: SubAgentToolError {
-                    id: error.id.clone(),
-                    name: error.name.clone(),
-                },
-            },
+            AgentMessage::ToolError { error, .. } => {
+                SubAgentEvent::ToolError { error: SubAgentToolError { id: error.id.clone(), name: error.name.clone() } }
+            }
             AgentMessage::Done => SubAgentEvent::Done,
             _ => SubAgentEvent::Other,
         }
@@ -224,10 +209,7 @@ mod tests {
         let json = serde_json::to_value(&msg).unwrap();
         let tool_result = &json["ToolResult"];
         assert_eq!(tool_result["result_meta"]["display"]["title"], "Read file");
-        assert_eq!(
-            tool_result["result_meta"]["display"]["value"],
-            "Cargo.toml, 156 lines"
-        );
+        assert_eq!(tool_result["result_meta"]["display"]["value"], "Cargo.toml, 156 lines");
 
         let parsed: AgentMessage = serde_json::from_value(json).unwrap();
         assert_eq!(parsed, msg);

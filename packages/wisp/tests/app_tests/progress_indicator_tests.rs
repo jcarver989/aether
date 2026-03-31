@@ -14,11 +14,7 @@ async fn test_spinner_visible_after_prompt_submit() {
 
     let lines = renderer.writer().get_lines();
     let has_interrupt = lines.iter().any(|l| l.contains("esc to interrupt"));
-    assert!(
-        has_interrupt,
-        "Progress indicator should be visible after prompt submit.\nBuffer:\n{}",
-        lines.join("\n")
-    );
+    assert!(has_interrupt, "Progress indicator should be visible after prompt submit.\nBuffer:\n{}", lines.join("\n"));
 }
 
 #[tokio::test]
@@ -34,9 +30,9 @@ async fn test_spinner_persists_on_session_update() {
     press_enter(&mut renderer).await;
 
     renderer
-        .on_session_update(acp::SessionUpdate::AgentMessageChunk(
-            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("Hi"))),
-        ))
+        .on_session_update(acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
+            acp::TextContent::new("Hi"),
+        ))))
         .unwrap();
 
     let lines = renderer.writer().get_lines();
@@ -61,14 +57,8 @@ async fn test_spinner_disappears_on_prompt_done() {
     renderer.on_prompt_done().unwrap();
 
     let lines = renderer.writer().get_lines();
-    let has_braille = lines
-        .iter()
-        .any(|l| "⠒⠮⠷⢷⡾⣯⣽⣿⣭⢯".chars().any(|c| l.contains(c)));
-    assert!(
-        !has_braille,
-        "Spinner should disappear after prompt done.\nBuffer:\n{}",
-        lines.join("\n")
-    );
+    let has_braille = lines.iter().any(|l| "⠒⠮⠷⢷⡾⣯⣽⣿⣭⢯".chars().any(|c| l.contains(c)));
+    assert!(!has_braille, "Spinner should disappear after prompt done.\nBuffer:\n{}", lines.join("\n"));
 }
 
 #[tokio::test]
@@ -98,10 +88,7 @@ async fn test_on_tick_advances_animation() {
 
     let lines_after: Vec<String> = renderer.writer().get_lines();
 
-    assert_ne!(
-        lines_before, lines_after,
-        "on_tick should advance the animation and produce a different frame"
-    );
+    assert_ne!(lines_before, lines_after, "on_tick should advance the animation and produce a different frame");
 }
 
 #[tokio::test]
@@ -117,8 +104,5 @@ async fn test_on_tick_noop_when_not_waiting() {
 
     let lines_after: Vec<String> = renderer.writer().get_lines();
 
-    assert_eq!(
-        lines_before, lines_after,
-        "on_tick should be a no-op when not waiting for response"
-    );
+    assert_eq!(lines_before, lines_after, "on_tick should be a no-op when not waiting for response");
 }

@@ -12,31 +12,11 @@ pub(super) fn parse_default_syntect_theme() -> syntect::highlighting::Theme {
         .expect("embedded catppuccin-mocha.tmTheme is valid")
 }
 
-const DEFAULT_FG: Color = Color::Rgb {
-    r: 0xBF,
-    g: 0xBD,
-    b: 0xB6,
-};
-const DEFAULT_BG: Color = Color::Rgb {
-    r: 0x1E,
-    g: 0x1E,
-    b: 0x2E,
-};
-const DEFAULT_CODE_BG: Color = Color::Rgb {
-    r: 40,
-    g: 40,
-    b: 40,
-};
-const DEFAULT_ACCENT: Color = Color::Rgb {
-    r: 255,
-    g: 215,
-    b: 0,
-};
-const DEFAULT_HIGHLIGHT_BG: Color = Color::Rgb {
-    r: 0x1a,
-    g: 0x4a,
-    b: 0x50,
-};
+const DEFAULT_FG: Color = Color::Rgb { r: 0xBF, g: 0xBD, b: 0xB6 };
+const DEFAULT_BG: Color = Color::Rgb { r: 0x1E, g: 0x1E, b: 0x2E };
+const DEFAULT_CODE_BG: Color = Color::Rgb { r: 40, g: 40, b: 40 };
+const DEFAULT_ACCENT: Color = Color::Rgb { r: 255, g: 215, b: 0 };
+const DEFAULT_HIGHLIGHT_BG: Color = Color::Rgb { r: 0x1a, g: 0x4a, b: 0x50 };
 
 impl Theme {
     /// Return the cached syntect theme for syntax highlighting.
@@ -52,10 +32,7 @@ impl Theme {
         match ThemeSet::get_theme(path) {
             Ok(syntect_theme) => Self::from(&syntect_theme),
             Err(e) => {
-                warn!(
-                    "Failed to load theme from {}: {e}. Falling back to defaults.",
-                    path.display()
-                );
+                warn!("Failed to load theme from {}: {e}. Falling back to defaults.", path.display());
                 Self::default()
             }
         }
@@ -65,20 +42,10 @@ impl Theme {
 impl From<&syntect::highlighting::Theme> for Theme {
     #[allow(clippy::similar_names)]
     fn from(syntect: &syntect::highlighting::Theme) -> Self {
-        let syntect_bg = syntect
-            .settings
-            .background
-            .unwrap_or(syntect::highlighting::Color {
-                r: 0x1E,
-                g: 0x1E,
-                b: 0x2E,
-                a: 0xFF,
-            });
+        let syntect_bg =
+            syntect.settings.background.unwrap_or(syntect::highlighting::Color { r: 0x1E, g: 0x1E, b: 0x2E, a: 0xFF });
 
-        let accent = syntect
-            .settings
-            .caret
-            .map_or(DEFAULT_ACCENT, color_from_syntect);
+        let accent = syntect.settings.caret.map_or(DEFAULT_ACCENT, color_from_syntect);
 
         let text_secondary = derive_text_secondary(syntect);
 
@@ -93,18 +60,10 @@ impl From<&syntect::highlighting::Theme> for Theme {
         let blockquote = resolve_scope_fg(syntect, "markup.quote").unwrap_or(text_secondary);
 
         let muted = resolve_scope_fg(syntect, "markup.list.bullet")
-            .or_else(|| {
-                syntect
-                    .settings
-                    .gutter_foreground
-                    .map(|c| composite_over(c, syntect_bg))
-            })
+            .or_else(|| syntect.settings.gutter_foreground.map(|c| composite_over(c, syntect_bg)))
             .unwrap_or(text_secondary);
 
-        let fg = syntect
-            .settings
-            .foreground
-            .map_or(DEFAULT_FG, color_from_syntect);
+        let fg = syntect.settings.foreground.map_or(DEFAULT_FG, color_from_syntect);
 
         let inline_code_fg = resolve_scope_fg(syntect, "markup.inline.raw.string.markdown")
             .or_else(|| resolve_scope_fg(syntect, "markup.raw"))
@@ -130,8 +89,7 @@ impl From<&syntect::highlighting::Theme> for Theme {
             .or_else(|| resolve_scope_fg(syntect, "storage.type"))
             .unwrap_or(accent);
 
-        let (bg, highlight_bg, highlight_fg, inline_code_bg) =
-            resolve_bg_colors(syntect, syntect_bg, fg);
+        let (bg, highlight_bg, highlight_fg, inline_code_bg) = resolve_bg_colors(syntect, syntect_bg, fg);
 
         let sidebar_bg = nudge_toward_fg(bg, fg);
 
@@ -178,10 +136,7 @@ fn resolve_bg_colors(
     syntect_bg: syntect::highlighting::Color,
     fg: Color,
 ) -> (Color, Color, Color, Color) {
-    let bg = syntect
-        .settings
-        .background
-        .map_or(DEFAULT_BG, color_from_syntect);
+    let bg = syntect.settings.background.map_or(DEFAULT_BG, color_from_syntect);
 
     let highlight_bg = syntect
         .settings
@@ -189,15 +144,9 @@ fn resolve_bg_colors(
         .or(syntect.settings.selection)
         .map_or(DEFAULT_HIGHLIGHT_BG, |c| composite_over(c, syntect_bg));
 
-    let highlight_fg = syntect
-        .settings
-        .selection_foreground
-        .map_or(fg, color_from_syntect);
+    let highlight_fg = syntect.settings.selection_foreground.map_or(fg, color_from_syntect);
 
-    let inline_code_bg = syntect
-        .settings
-        .background
-        .map_or(DEFAULT_CODE_BG, color_from_syntect);
+    let inline_code_bg = syntect.settings.background.map_or(DEFAULT_CODE_BG, color_from_syntect);
 
     (bg, highlight_bg, highlight_fg, inline_code_bg)
 }
@@ -225,27 +174,13 @@ fn resolve_scope_fg(theme: &syntect::highlighting::Theme, scope_str: &str) -> Op
 fn derive_text_secondary(theme: &syntect::highlighting::Theme) -> Color {
     use syntect::highlighting::Color as SyntectColor;
 
-    let fg = theme.settings.foreground.unwrap_or(SyntectColor {
-        r: 0xBF,
-        g: 0xBD,
-        b: 0xB6,
-        a: 0xFF,
-    });
-    let bg = theme.settings.background.unwrap_or(SyntectColor {
-        r: 0x28,
-        g: 0x28,
-        b: 0x28,
-        a: 0xFF,
-    });
+    let fg = theme.settings.foreground.unwrap_or(SyntectColor { r: 0xBF, g: 0xBD, b: 0xB6, a: 0xFF });
+    let bg = theme.settings.background.unwrap_or(SyntectColor { r: 0x28, g: 0x28, b: 0x28, a: 0xFF });
 
     #[allow(clippy::cast_possible_truncation)]
     let blend = |f: u8, b: u8| -> u8 { ((u16::from(f) * 60 + u16::from(b) * 40) / 100) as u8 };
 
-    Color::Rgb {
-        r: blend(fg.r, bg.r),
-        g: blend(fg.g, bg.g),
-        b: blend(fg.b, bg.b),
-    }
+    Color::Rgb { r: blend(fg.r, bg.r), g: blend(fg.g, bg.g), b: blend(fg.b, bg.b) }
 }
 
 /// Nudge a background color ~5% toward the foreground to produce a
@@ -253,36 +188,16 @@ fn derive_text_secondary(theme: &syntect::highlighting::Theme) -> Color {
 #[allow(clippy::cast_possible_truncation)]
 fn nudge_toward_fg(bg: Color, fg: Color) -> Color {
     match (bg, fg) {
-        (
-            Color::Rgb {
-                r: br,
-                g: bg_g,
-                b: bb,
-            },
-            Color::Rgb {
-                r: fr,
-                g: fg_g,
-                b: fb,
-            },
-        ) => {
-            let blend =
-                |b: u8, f: u8| -> u8 { ((u16::from(b) * 95 + u16::from(f) * 5) / 100) as u8 };
-            Color::Rgb {
-                r: blend(br, fr),
-                g: blend(bg_g, fg_g),
-                b: blend(bb, fb),
-            }
+        (Color::Rgb { r: br, g: bg_g, b: bb }, Color::Rgb { r: fr, g: fg_g, b: fb }) => {
+            let blend = |b: u8, f: u8| -> u8 { ((u16::from(b) * 95 + u16::from(f) * 5) / 100) as u8 };
+            Color::Rgb { r: blend(br, fr), g: blend(bg_g, fg_g), b: blend(bb, fb) }
         }
         _ => bg,
     }
 }
 
 fn color_from_syntect(color: syntect::highlighting::Color) -> Color {
-    Color::Rgb {
-        r: color.r,
-        g: color.g,
-        b: color.b,
-    }
+    Color::Rgb { r: color.r, g: color.g, b: color.b }
 }
 
 /// Alpha-composite `fg` over `bg`, producing an opaque `Color`.
@@ -293,13 +208,8 @@ fn color_from_syntect(color: syntect::highlighting::Color) -> Color {
 #[allow(clippy::cast_possible_truncation)]
 fn composite_over(fg: syntect::highlighting::Color, bg: syntect::highlighting::Color) -> Color {
     let a = u16::from(fg.a);
-    let blend =
-        |f: u8, b: u8| -> u8 { ((u16::from(f) * a + u16::from(b) * (255 - a)) / 255) as u8 };
-    Color::Rgb {
-        r: blend(fg.r, bg.r),
-        g: blend(fg.g, bg.g),
-        b: blend(fg.b, bg.b),
-    }
+    let blend = |f: u8, b: u8| -> u8 { ((u16::from(f) * a + u16::from(b) * (255 - a)) / 255) as u8 };
+    Color::Rgb { r: blend(fg.r, bg.r), g: blend(fg.g, bg.g), b: blend(fg.b, bg.b) }
 }
 
 #[cfg(test)]
@@ -314,24 +224,9 @@ mod tests {
             name: Some("Bare".into()),
             author: None,
             settings: ThemeSettings {
-                foreground: Some(syntect::highlighting::Color {
-                    r: 0xCC,
-                    g: 0xCC,
-                    b: 0xCC,
-                    a: 0xFF,
-                }),
-                background: Some(syntect::highlighting::Color {
-                    r: 0x11,
-                    g: 0x11,
-                    b: 0x11,
-                    a: 0xFF,
-                }),
-                caret: Some(syntect::highlighting::Color {
-                    r: 0xAA,
-                    g: 0xBB,
-                    b: 0xCC,
-                    a: 0xFF,
-                }),
+                foreground: Some(syntect::highlighting::Color { r: 0xCC, g: 0xCC, b: 0xCC, a: 0xFF }),
+                background: Some(syntect::highlighting::Color { r: 0x11, g: 0x11, b: 0x11, a: 0xFF }),
+                caret: Some(syntect::highlighting::Color { r: 0xAA, g: 0xBB, b: 0xCC, a: 0xFF }),
                 ..ThemeSettings::default()
             },
             scopes: Vec::new(),
@@ -363,11 +258,7 @@ mod tests {
 
     #[test]
     fn bare_theme_falls_back_to_accent() {
-        let accent = Color::Rgb {
-            r: 0xAA,
-            g: 0xBB,
-            b: 0xCC,
-        };
+        let accent = Color::Rgb { r: 0xAA, g: 0xBB, b: 0xCC };
         let syntect = bare_syntect_theme();
         let theme = Theme::from(&syntect);
 
@@ -390,14 +281,7 @@ mod tests {
 
         let loaded = Theme::load_from_path(&theme_path);
 
-        assert_eq!(
-            loaded.text_primary(),
-            Color::Rgb {
-                r: 0x11,
-                g: 0x22,
-                b: 0x33
-            }
-        );
+        assert_eq!(loaded.text_primary(), Color::Rgb { r: 0x11, g: 0x22, b: 0x33 });
     }
 
     #[test]
@@ -412,100 +296,47 @@ mod tests {
 
         assert_eq!(
             syntect.settings.foreground,
-            Some(syntect::highlighting::Color {
-                r: 0x11,
-                g: 0x22,
-                b: 0x33,
-                a: 0xFF,
-            })
+            Some(syntect::highlighting::Color { r: 0x11, g: 0x22, b: 0x33, a: 0xFF })
         );
         assert_eq!(
             syntect.settings.selection,
-            Some(syntect::highlighting::Color {
-                r: 0x33,
-                g: 0x44,
-                b: 0x55,
-                a: 0xFF,
-            })
+            Some(syntect::highlighting::Color { r: 0x33, g: 0x44, b: 0x55, a: 0xFF })
         );
     }
 
     #[test]
     fn highlight_bg_prefers_line_highlight_over_selection() {
         let mut syntect = bare_syntect_theme();
-        syntect.settings.line_highlight = Some(syntect::highlighting::Color {
-            r: 0x31,
-            g: 0x32,
-            b: 0x44,
-            a: 0xFF,
-        });
-        syntect.settings.selection = Some(syntect::highlighting::Color {
-            r: 0x99,
-            g: 0x99,
-            b: 0x99,
-            a: 0x40,
-        });
+        syntect.settings.line_highlight = Some(syntect::highlighting::Color { r: 0x31, g: 0x32, b: 0x44, a: 0xFF });
+        syntect.settings.selection = Some(syntect::highlighting::Color { r: 0x99, g: 0x99, b: 0x99, a: 0x40 });
 
         let theme = Theme::from(&syntect);
 
-        assert_eq!(
-            theme.highlight_bg(),
-            Color::Rgb {
-                r: 0x31,
-                g: 0x32,
-                b: 0x44,
-            }
-        );
+        assert_eq!(theme.highlight_bg(), Color::Rgb { r: 0x31, g: 0x32, b: 0x44 });
     }
 
     #[test]
     fn highlight_bg_falls_back_to_selection_without_line_highlight() {
         let mut syntect = bare_syntect_theme();
         syntect.settings.line_highlight = None;
-        syntect.settings.selection = Some(syntect::highlighting::Color {
-            r: 0x33,
-            g: 0x44,
-            b: 0x55,
-            a: 0xFF,
-        });
+        syntect.settings.selection = Some(syntect::highlighting::Color { r: 0x33, g: 0x44, b: 0x55, a: 0xFF });
 
         let theme = Theme::from(&syntect);
 
-        assert_eq!(
-            theme.highlight_bg(),
-            Color::Rgb {
-                r: 0x33,
-                g: 0x44,
-                b: 0x55,
-            }
-        );
+        assert_eq!(theme.highlight_bg(), Color::Rgb { r: 0x33, g: 0x44, b: 0x55 });
     }
 
     #[test]
     fn highlight_bg_composites_alpha_over_background() {
         // Kiwi-like: lineHighlight=#00000050 over background=#212121
         let mut syntect = bare_syntect_theme();
-        syntect.settings.background = Some(syntect::highlighting::Color {
-            r: 0x21,
-            g: 0x21,
-            b: 0x21,
-            a: 0xFF,
-        });
-        syntect.settings.line_highlight = Some(syntect::highlighting::Color {
-            r: 0x00,
-            g: 0x00,
-            b: 0x00,
-            a: 0x50,
-        });
+        syntect.settings.background = Some(syntect::highlighting::Color { r: 0x21, g: 0x21, b: 0x21, a: 0xFF });
+        syntect.settings.line_highlight = Some(syntect::highlighting::Color { r: 0x00, g: 0x00, b: 0x00, a: 0x50 });
 
         let theme = Theme::from(&syntect);
 
         // 0x50/0xFF ≈ 31.4% opacity: blend(0x00, 0x21) = (0*80 + 33*175)/255 ≈ 22 = 0x16
-        let expected = Color::Rgb {
-            r: 0x16,
-            g: 0x16,
-            b: 0x16,
-        };
+        let expected = Color::Rgb { r: 0x16, g: 0x16, b: 0x16 };
         assert_eq!(theme.highlight_bg(), expected);
     }
 
@@ -513,28 +344,14 @@ mod tests {
     fn muted_composites_gutter_foreground_alpha() {
         // Aster-like: gutterForeground=#4f4f5e90 over background=#1a1a2e
         let mut syntect = bare_syntect_theme();
-        syntect.settings.background = Some(syntect::highlighting::Color {
-            r: 0x1A,
-            g: 0x1A,
-            b: 0x2E,
-            a: 0xFF,
-        });
-        syntect.settings.gutter_foreground = Some(syntect::highlighting::Color {
-            r: 0x4F,
-            g: 0x4F,
-            b: 0x5E,
-            a: 0x90,
-        });
+        syntect.settings.background = Some(syntect::highlighting::Color { r: 0x1A, g: 0x1A, b: 0x2E, a: 0xFF });
+        syntect.settings.gutter_foreground = Some(syntect::highlighting::Color { r: 0x4F, g: 0x4F, b: 0x5E, a: 0x90 });
         // No markup.list.bullet scope, so muted falls back to gutter_foreground
         let theme = Theme::from(&syntect);
 
         // blend(0x4F, 0x1A) = (0x4F*0x90 + 0x1A*(255-0x90)) / 255
         let blend = |f: u16, b: u16| -> u8 { ((f * 0x90 + b * (255 - 0x90)) / 255) as u8 };
-        let expected = Color::Rgb {
-            r: blend(0x4F, 0x1A),
-            g: blend(0x4F, 0x1A),
-            b: blend(0x5E, 0x2E),
-        };
+        let expected = Color::Rgb { r: blend(0x4F, 0x1A), g: blend(0x4F, 0x1A), b: blend(0x5E, 0x2E) };
         assert_eq!(theme.muted(), expected);
     }
 

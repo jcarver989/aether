@@ -2,8 +2,7 @@ use crate::components::context_bar::{context_bar, context_color};
 use crate::components::reasoning_bar::{reasoning_bar, reasoning_color};
 use acp_utils::config_option_id::ConfigOptionId;
 use agent_client_protocol::{
-    self as acp, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
-    SessionConfigSelectOptions,
+    self as acp, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOptions,
 };
 use tui::{Color, Line, ViewContext, display_width_text};
 use utils::ReasoningEffort;
@@ -59,11 +58,7 @@ impl StatusLine<'_> {
 
         if !self.waiting_for_response && self.unhealthy_server_count > 0 {
             let count = self.unhealthy_server_count;
-            let msg = if count == 1 {
-                "1 server needs auth".to_string()
-            } else {
-                format!("{count} servers unhealthy")
-            };
+            let msg = if count == 1 { "1 server needs auth".to_string() } else { format!("{count} servers unhealthy") };
             if !right_parts.is_empty() {
                 right_parts.push((" · ".to_string(), sep));
             }
@@ -84,12 +79,8 @@ impl StatusLine<'_> {
 }
 
 /// Extract the parsed reasoning levels from config options (excludes "none").
-pub(crate) fn extract_reasoning_levels(
-    config_options: &[SessionConfigOption],
-) -> Vec<ReasoningEffort> {
-    let Some(option) = config_options
-        .iter()
-        .find(|o| o.id.0.as_ref() == ConfigOptionId::ReasoningEffort.as_str())
+pub(crate) fn extract_reasoning_levels(config_options: &[SessionConfigOption]) -> Vec<ReasoningEffort> {
+    let Some(option) = config_options.iter().find(|o| o.id.0.as_ref() == ConfigOptionId::ReasoningEffort.as_str())
     else {
         return Vec::new();
     };
@@ -99,15 +90,11 @@ pub(crate) fn extract_reasoning_levels(
     let SessionConfigSelectOptions::Ungrouped(ref options) = select.options else {
         return Vec::new();
     };
-    options
-        .iter()
-        .filter_map(|o| o.value.0.as_ref().parse().ok())
-        .collect()
+    options.iter().filter_map(|o| o.value.0.as_ref().parse().ok()).collect()
 }
 
 pub(crate) fn is_cycleable_mode_option(option: &SessionConfigOption) -> bool {
-    matches!(option.kind, SessionConfigKind::Select(_))
-        && option.category == Some(SessionConfigOptionCategory::Mode)
+    matches!(option.kind, SessionConfigKind::Select(_)) && option.category == Some(SessionConfigOptionCategory::Mode)
 }
 
 pub(crate) fn option_display_name(
@@ -115,10 +102,9 @@ pub(crate) fn option_display_name(
     current_value: &acp::SessionConfigValueId,
 ) -> Option<String> {
     match options {
-        SessionConfigSelectOptions::Ungrouped(options) => options
-            .iter()
-            .find(|option| &option.value == current_value)
-            .map(|option| option.name.clone()),
+        SessionConfigSelectOptions::Ungrouped(options) => {
+            options.iter().find(|option| &option.value == current_value).map(|option| option.name.clone())
+        }
         SessionConfigSelectOptions::Grouped(groups) => groups
             .iter()
             .flat_map(|group| group.options.iter())
@@ -128,13 +114,8 @@ pub(crate) fn option_display_name(
     }
 }
 
-pub(crate) fn extract_select_display(
-    config_options: &[SessionConfigOption],
-    id: ConfigOptionId,
-) -> Option<String> {
-    let option = config_options
-        .iter()
-        .find(|option| option.id.0.as_ref() == id.as_str())?;
+pub(crate) fn extract_select_display(config_options: &[SessionConfigOption], id: ConfigOptionId) -> Option<String> {
+    let option = config_options.iter().find(|option| option.id.0.as_ref() == id.as_str())?;
 
     let SessionConfigKind::Select(ref select) = option.kind else {
         return None;
@@ -148,9 +129,7 @@ pub(crate) fn extract_mode_display(config_options: &[SessionConfigOption]) -> Op
 }
 
 pub(crate) fn extract_model_display(config_options: &[SessionConfigOption]) -> Option<String> {
-    let option = config_options
-        .iter()
-        .find(|option| option.id.0.as_ref() == ConfigOptionId::Model.as_str())?;
+    let option = config_options.iter().find(|option| option.id.0.as_ref() == ConfigOptionId::Model.as_str())?;
 
     let SessionConfigKind::Select(ref select) = option.kind else {
         return None;
@@ -170,28 +149,18 @@ pub(crate) fn extract_model_display(config_options: &[SessionConfigOption]) -> O
             .split(',')
             .filter_map(|part| {
                 let trimmed = part.trim();
-                options
-                    .iter()
-                    .find(|option| option.value.0.as_ref() == trimmed)
-                    .map(|option| option.name.as_str())
+                options.iter().find(|option| option.value.0.as_ref() == trimmed).map(|option| option.name.as_str())
             })
             .collect();
-        if names.is_empty() {
-            None
-        } else {
-            Some(names.join(" + "))
-        }
+        if names.is_empty() { None } else { Some(names.join(" + ")) }
     } else {
         extract_select_display(config_options, ConfigOptionId::Model)
     }
 }
 
-pub(crate) fn extract_reasoning_effort(
-    config_options: &[SessionConfigOption],
-) -> Option<ReasoningEffort> {
-    let option = config_options
-        .iter()
-        .find(|option| option.id.0.as_ref() == ConfigOptionId::ReasoningEffort.as_str())?;
+pub(crate) fn extract_reasoning_effort(config_options: &[SessionConfigOption]) -> Option<ReasoningEffort> {
+    let option =
+        config_options.iter().find(|option| option.id.0.as_ref() == ConfigOptionId::ReasoningEffort.as_str())?;
 
     let SessionConfigKind::Select(ref select) = option.kind else {
         return None;
@@ -209,10 +178,7 @@ mod tests {
             "model",
             "Model",
             "claude-sonnet",
-            vec![acp::SessionConfigSelectOption::new(
-                "claude-sonnet",
-                "Claude Sonnet",
-            )],
+            vec![acp::SessionConfigSelectOption::new("claude-sonnet", "Claude Sonnet")],
         )
     }
 

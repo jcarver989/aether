@@ -33,12 +33,7 @@ pub struct Combobox<T: Searchable + Send + Sync + 'static> {
 
 impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
     pub fn new(items: Vec<T>) -> Self {
-        Self {
-            fuzzy: FuzzyMatcher::new(items),
-            selected_index: 0,
-            scroll_offset: 0,
-            max_visible: DEFAULT_MAX_VISIBLE,
-        }
+        Self { fuzzy: FuzzyMatcher::new(items), selected_index: 0, scroll_offset: 0, max_visible: DEFAULT_MAX_VISIBLE }
     }
 
     pub fn from_matches(matches: Vec<T>) -> Self {
@@ -167,21 +162,14 @@ impl<T: Searchable + Send + Sync + 'static> Combobox<T> {
 
     pub fn visible_matches_with_selection(&self) -> Vec<(&T, bool)> {
         let visible_selected_index = self.visible_selected_index();
-        self.visible_matches()
-            .iter()
-            .enumerate()
-            .map(|(i, item)| (item, Some(i) == visible_selected_index))
-            .collect()
+        self.visible_matches().iter().enumerate().map(|(i, item)| (item, Some(i) == visible_selected_index)).collect()
     }
 
     /// Standard event dispatch for picker-style components.
     ///
     /// Handles Escape, Up/Down, Enter (confirm), Char (query + whitespace-close),
     /// Backspace, and `BackspaceOnEmpty`. Returns `PickerMessage<T>` for each action.
-    pub fn handle_picker_event(
-        &mut self,
-        event: &crate::components::Event,
-    ) -> Option<Vec<PickerMessage<T>>> {
+    pub fn handle_picker_event(&mut self, event: &crate::components::Event) -> Option<Vec<PickerMessage<T>>> {
         let crate::components::Event::Key(key_event) = event else {
             return None;
         };

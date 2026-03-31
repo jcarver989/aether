@@ -1,8 +1,6 @@
 use crate::provider::get_context_window;
 use crate::providers::openai_compatible::{build_chat_request, create_custom_stream_generic};
-use crate::{
-    Context, LlmError, LlmResponseStream, ProviderFactory, Result, StreamingModelProvider,
-};
+use crate::{Context, LlmError, LlmResponseStream, ProviderFactory, Result, StreamingModelProvider};
 use async_stream::stream;
 use futures::StreamExt;
 use std::env::var;
@@ -17,10 +15,7 @@ pub struct GeminiProvider {
 
 impl GeminiProvider {
     pub fn new(api_key: Option<String>) -> Self {
-        Self {
-            api_key,
-            model: String::new(),
-        }
+        Self { api_key, model: String::new() }
     }
 
     fn get_api_key(&self) -> Result<String> {
@@ -33,17 +28,12 @@ impl GeminiProvider {
         }
 
         Err(LlmError::MissingApiKey(
-            "GEMINI_API_KEY not set. Set the environment variable or provide an API key."
-                .to_string(),
+            "GEMINI_API_KEY not set. Set the environment variable or provide an API key.".to_string(),
         ))
     }
 
-    fn build_openai_client(
-        api_key: &str,
-    ) -> async_openai::Client<async_openai::config::OpenAIConfig> {
-        let config = async_openai::config::OpenAIConfig::new()
-            .with_api_key(api_key)
-            .with_api_base(GEMINI_API_BASE);
+    fn build_openai_client(api_key: &str) -> async_openai::Client<async_openai::config::OpenAIConfig> {
+        let config = async_openai::config::OpenAIConfig::new().with_api_key(api_key).with_api_base(GEMINI_API_BASE);
         async_openai::Client::with_config(config)
     }
 }

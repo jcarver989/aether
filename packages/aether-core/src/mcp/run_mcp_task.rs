@@ -16,19 +16,9 @@ use tokio::sync::oneshot;
 /// Events emitted during tool execution lifecycle
 #[derive(Debug)]
 pub enum ToolExecutionEvent {
-    Started {
-        tool_id: String,
-        tool_name: String,
-    },
-    Progress {
-        tool_id: String,
-        progress: ProgressNotificationParam,
-    },
-    Complete {
-        tool_id: String,
-        result: Result<ToolCallResult, ToolCallError>,
-        result_meta: Option<ToolResultMeta>,
-    },
+    Started { tool_id: String, tool_name: String },
+    Progress { tool_id: String, progress: ProgressNotificationParam },
+    Complete { tool_id: String, result: Result<ToolCallResult, ToolCallError>, result_meta: Option<ToolResultMeta> },
 }
 
 type AuthResult = Result<(Vec<McpServerStatusEntry>, Vec<ToolDefinition>), String>;
@@ -69,78 +59,42 @@ pub async fn run_mcp_task(mut mcp: McpManager, mut command_rx: mpsc::Receiver<Mc
 
 async fn on_command(command: McpCommand, mcp: &mut McpManager) {
     match command {
-        McpCommand::ExecuteTool {
-            request,
-            timeout,
-            tx,
-        } => {
+        McpCommand::ExecuteTool { request, timeout, tx } => {
             let tool_id = request.id.clone();
             let tool_name = request.name.clone();
 
-            let _ = tx
-                .send(ToolExecutionEvent::Started {
-                    tool_id: tool_id.clone(),
-                    tool_name: tool_name.clone(),
-                })
-                .await;
+            let _ =
+                tx.send(ToolExecutionEvent::Started { tool_id: tool_id.clone(), tool_name: tool_name.clone() }).await;
 
             match mcp.get_client_for_tool(&request.name, &request.arguments) {
                 Ok((client, params)) => {
                     tokio::spawn(async move {
-                        let outcome = execute_mcp_call(
-                            client,
-                            &request,
-                            params,
-                            timeout,
-                            tool_id.clone(),
-                            tx.clone(),
-                        )
-                        .await;
+                        let outcome =
+                            execute_mcp_call(client, &request, params, timeout, tool_id.clone(), tx.clone()).await;
                         let (result, result_meta) = match outcome {
                             Ok((r, m)) => (Ok(r), m),
                             Err(e) => (Err(e), None),
                         };
-                        let _ = tx
-                            .send(ToolExecutionEvent::Complete {
-                                tool_id,
-                                result,
-                                result_meta,
-                            })
-                            .await;
+                        let _ = tx.send(ToolExecutionEvent::Complete { tool_id, result, result_meta }).await;
                     });
                 }
                 Err(e) => {
                     tracing::error!("Failed to get client for tool {}: {e}", request.name);
-                    let error =
-                        ToolCallError::from_request(&request, format!("Failed to get client: {e}"));
-                    let _ = tx
-                        .send(ToolExecutionEvent::Complete {
-                            tool_id,
-                            result: Err(error),
-                            result_meta: None,
-                        })
-                        .await;
+                    let error = ToolCallError::from_request(&request, format!("Failed to get client: {e}"));
+                    let _ =
+                        tx.send(ToolExecutionEvent::Complete { tool_id, result: Err(error), result_meta: None }).await;
                 }
             }
         }
 
         McpCommand::ListPrompts { tx } => {
-            let result = mcp
-                .list_prompts()
-                .await
-                .map_err(|e| format!("Failed to list prompts: {e}"));
+            let result = mcp.list_prompts().await.map_err(|e| format!("Failed to list prompts: {e}"));
             let _ = tx.send(result);
         }
 
-        McpCommand::GetPrompt {
-            name: namespaced_name,
-            arguments,
-            tx,
-        } => {
-            let result = mcp
-                .get_prompt(&namespaced_name, arguments)
-                .await
-                .map_err(|e| format!("Failed to get prompt: {e}"));
+        McpCommand::GetPrompt { name: namespaced_name, arguments, tx } => {
+            let result =
+                mcp.get_prompt(&namespaced_name, arguments).await.map_err(|e| format!("Failed to get prompt: {e}"));
             let _ = tx.send(result);
         }
 
@@ -179,22 +133,12 @@ async fn execute_mcp_call(
             opts
         })
         .await
-        .map_err(|e| {
-            ToolCallError::from_request(request, format!("Failed to send tool request: {e}"))
-        })?;
+        .map_err(|e| ToolCallError::from_request(request, format!("Failed to send tool request: {e}")))?;
 
-    let progress_subscriber = client
-        .service()
-        .progress_dispatcher
-        .subscribe(handle.progress_token.clone())
-        .await;
+    let progress_subscriber = client.service().progress_dispatcher.subscribe(handle.progress_token.clone()).await;
 
-    let progress_stream = progress_subscriber.map(move |progress| {
-        Either::Left(ToolExecutionEvent::Progress {
-            tool_id: tool_call_id.clone(),
-            progress,
-        })
-    });
+    let progress_stream = progress_subscriber
+        .map(move |progress| Either::Left(ToolExecutionEvent::Progress { tool_id: tool_call_id.clone(), progress }));
 
     let result_stream = stream::once(handle.await_response()).map(Either::Right);
     let combined_stream = stream::select(progress_stream, result_stream);
@@ -206,24 +150,17 @@ async fn execute_mcp_call(
                 let _ = event_tx.send(progress_event).await;
             }
             Some(Either::Right(result)) => {
-                break result.map_err(|e| {
-                    ToolCallError::from_request(request, format!("Tool execution failed: {e}"))
-                })?;
+                break result
+                    .map_err(|e| ToolCallError::from_request(request, format!("Tool execution failed: {e}")))?;
             }
             None => {
-                return Err(ToolCallError::from_request(
-                    request,
-                    "Stream ended without result",
-                ));
+                return Err(ToolCallError::from_request(request, "Stream ended without result"));
             }
         }
     };
 
     let ServerResult::CallToolResult(mcp_result) = server_result else {
-        return Err(ToolCallError::from_request(
-            request,
-            "Unexpected response type from MCP server",
-        ));
+        return Err(ToolCallError::from_request(request, "Unexpected response type from MCP server"));
     };
 
     mcp_result_to_tool_call_result(request, mcp_result)

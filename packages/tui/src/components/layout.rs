@@ -14,11 +14,7 @@ pub struct Layout {
 
 impl Layout {
     pub fn new() -> Self {
-        Self {
-            sections: Vec::new(),
-            cursor: None,
-            cursor_section_index: None,
-        }
+        Self { sections: Vec::new(), cursor: None, cursor_section_index: None }
     }
 
     /// Add a content section (no cursor).
@@ -44,16 +40,8 @@ impl Layout {
         }
 
         let cursor = match (self.cursor_section_index, self.cursor) {
-            (Some(idx), Some(c)) => Cursor {
-                row: section_offsets[idx] + c.row,
-                col: c.col,
-                is_visible: c.is_visible,
-            },
-            _ => Cursor {
-                row: 0,
-                col: 0,
-                is_visible: false,
-            },
+            (Some(idx), Some(c)) => Cursor { row: section_offsets[idx] + c.row, col: c.col, is_visible: c.is_visible },
+            _ => Cursor { row: 0, col: 0, is_visible: false },
         };
 
         Frame::new(all_lines).with_cursor(cursor)
@@ -93,14 +81,7 @@ mod tests {
     fn cursor_offset_is_computed_from_section_position() {
         let mut layout = Layout::new();
         layout.section(vec![Line::new("header1"), Line::new("header2")]);
-        layout.section_with_cursor(
-            vec![Line::new("input")],
-            Cursor {
-                row: 0,
-                col: 5,
-                is_visible: true,
-            },
-        );
+        layout.section_with_cursor(vec![Line::new("input")], Cursor { row: 0, col: 5, is_visible: true });
         layout.section(vec![Line::new("footer")]);
 
         let frame = layout.into_frame();
@@ -115,11 +96,7 @@ mod tests {
         layout.section(vec![Line::new("a")]);
         layout.section_with_cursor(
             vec![Line::new("b1"), Line::new("b2"), Line::new("b3")],
-            Cursor {
-                row: 2,
-                col: 3,
-                is_visible: true,
-            },
+            Cursor { row: 2, col: 3, is_visible: true },
         );
 
         let frame = layout.into_frame();

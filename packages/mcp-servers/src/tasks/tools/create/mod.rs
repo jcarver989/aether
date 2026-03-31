@@ -29,11 +29,7 @@ pub struct TaskCreateInput {
     pub description: Option<String>,
 
     /// Parent task ID - if provided, creates a subtask
-    #[serde(
-        default,
-        deserialize_with = "empty_string_as_none",
-        alias = "parent_id"
-    )]
+    #[serde(default, deserialize_with = "empty_string_as_none", alias = "parent_id")]
     pub parent_id: Option<String>,
 
     /// Agent or worker to assign the task to
@@ -65,20 +61,9 @@ pub struct TaskCreateOutput {
 }
 
 /// Create a new task or subtask
-pub fn execute_task_create(
-    input: &TaskCreateInput,
-    store: &mut TaskStore,
-) -> Result<TaskCreateOutput, TaskStoreError> {
-    let normalized_parent_id = input
-        .parent_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let description = input
-        .description
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
+pub fn execute_task_create(input: &TaskCreateInput, store: &mut TaskStore) -> Result<TaskCreateOutput, TaskStoreError> {
+    let normalized_parent_id = input.parent_id.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let description = input.description.as_deref().map(str::trim).filter(|s| !s.is_empty());
 
     let task = if let Some(parent_id) = normalized_parent_id {
         let parent = TaskId::from(parent_id);
@@ -88,8 +73,7 @@ pub fn execute_task_create(
     };
 
     let is_subtask = normalized_parent_id.is_some();
-    let needs_update =
-        input.assignee.is_some() || input.deps.is_some() || (is_subtask && description.is_some());
+    let needs_update = input.assignee.is_some() || input.deps.is_some() || (is_subtask && description.is_some());
 
     let task = if needs_update {
         let update = TaskUpdate {
@@ -99,10 +83,7 @@ pub fn execute_task_create(
                 None // Already set during create_tree
             },
             assignee: input.assignee.clone(),
-            deps: input
-                .deps
-                .as_ref()
-                .map(|d| d.iter().map(|s| TaskId::from(s.as_str())).collect()),
+            deps: input.deps.as_ref().map(|d| d.iter().map(|s| TaskId::from(s.as_str())).collect()),
             ..Default::default()
         };
         store.update(&task.id, update)?

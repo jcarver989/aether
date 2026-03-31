@@ -2,9 +2,7 @@ use clap::Parser;
 use futures::StreamExt;
 use llm::providers::anthropic::AnthropicProvider;
 use llm::types::IsoString;
-use llm::{
-    ChatMessage, Context, LlmResponse, ProviderFactory, StreamingModelProvider, ToolDefinition,
-};
+use llm::{ChatMessage, Context, LlmResponse, ProviderFactory, StreamingModelProvider, ToolDefinition};
 use serde_json::json;
 use std::error::Error;
 use std::io::{self, Write};
@@ -13,11 +11,7 @@ use std::io::{self, Write};
 #[command(author, version, about = "Test Anthropic provider integration")]
 struct Args {
     /// The message to send to Claude
-    #[arg(
-        short,
-        long,
-        default_value = "Hello, Claude! Can you help me write a simple Rust function?"
-    )]
+    #[arg(short, long, default_value = "Hello, Claude! Can you help me write a simple Rust function?")]
     prompt: String,
 
     /// Disable prompt caching (enabled by default)
@@ -45,10 +39,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("🤖 Testing Anthropic Provider");
     println!("Model: {}", args.model);
     println!("Message: {}", args.prompt);
-    println!(
-        "Caching: {}",
-        if args.no_cache { "disabled" } else { "enabled" }
-    );
+    println!("Caching: {}", if args.no_cache { "disabled" } else { "enabled" });
     println!("Temperature: {}", args.temperature);
     println!("Max tokens: {}", args.max_tokens);
     println!("{}", "=".repeat(50));
@@ -63,15 +54,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Prepare context
     let messages = vec![
         ChatMessage::System {
-            content:
-                "You are a helpful AI assistant. Be concise but informative in your responses."
-                    .to_string(),
+            content: "You are a helpful AI assistant. Be concise but informative in your responses.".to_string(),
             timestamp: IsoString::now(),
         },
-        ChatMessage::User {
-            content: vec![llm::ContentBlock::text(args.prompt)],
-            timestamp: IsoString::now(),
-        },
+        ChatMessage::User { content: vec![llm::ContentBlock::text(args.prompt)], timestamp: IsoString::now() },
     ];
 
     let tools = vec![
@@ -146,16 +132,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
             LlmResponse::ToolRequestComplete { tool_call } => {
-                println!(
-                    "\n🔧 Tool call completed: {} with args: {}",
-                    tool_call.name, tool_call.arguments
-                );
+                println!("\n🔧 Tool call completed: {} with args: {}", tool_call.name, tool_call.arguments);
 
                 // Simulate tool execution (you would call actual tools here)
                 let tool_result = match tool_call.name.as_str() {
-                    "search_web" => {
-                        "Search results: Found relevant information about Rust programming."
-                    }
+                    "search_web" => "Search results: Found relevant information about Rust programming.",
                     "calculate" => "Calculation result: 42",
                     _ => "Tool executed successfully",
                 };
@@ -175,11 +156,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 println!("\n❌ Error: {message}");
                 break;
             }
-            LlmResponse::Usage {
-                input_tokens,
-                output_tokens,
-                ..
-            } => {
+            LlmResponse::Usage { input_tokens, output_tokens, .. } => {
                 println!("\n📊 Token usage - input: {input_tokens}, output: {output_tokens}");
             }
         }

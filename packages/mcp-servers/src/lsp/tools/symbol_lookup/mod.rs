@@ -117,11 +117,7 @@ pub struct LspSymbolOutput {
 }
 
 impl LspSymbolOutput {
-    fn with_locations(
-        operation: &str,
-        locations: Vec<LocationResult>,
-        limit: Option<usize>,
-    ) -> Self {
+    fn with_locations(operation: &str, locations: Vec<LocationResult>, limit: Option<usize>) -> Self {
         let total_count = locations.len();
         let truncated = limit.is_some_and(|l| total_count > l);
         let locations = match limit {
@@ -148,26 +144,19 @@ async fn resolve_line(
 ) -> Result<u32, String> {
     match explicit_line {
         Some(line) => Ok(line),
-        None => resolve_symbol_position(file_path, symbol, tools)
-            .await
-            .map_err(|e| e.to_string()),
+        None => resolve_symbol_position(file_path, symbol, tools).await.map_err(|e| e.to_string()),
     }
 }
 
 /// Execute the `lsp_symbol` operation
 #[allow(clippy::too_many_lines)]
-pub async fn execute_lsp_symbol(
-    input: LspSymbolInput,
-    registry: &LspRegistry,
-) -> Result<LspSymbolOutput, String> {
+pub async fn execute_lsp_symbol(input: LspSymbolInput, registry: &LspRegistry) -> Result<LspSymbolOutput, String> {
     let line = resolve_line(&input.file_path, &input.symbol, input.line, registry).await?;
 
     let mut output = match input.operation {
         SymbolLookupOperation::Definition => {
-            let resolved = registry
-                .resolve_symbol(&input.file_path, &input.symbol, line)
-                .await
-                .map_err(|e| e.to_string())?;
+            let resolved =
+                registry.resolve_symbol(&input.file_path, &input.symbol, line).await.map_err(|e| e.to_string())?;
             let response = resolved
                 .client
                 .goto_definition(resolved.uri, resolved.line, resolved.column)
@@ -179,54 +168,36 @@ pub async fn execute_lsp_symbol(
             output
         }
         SymbolLookupOperation::Implementation => {
-            let resolved = registry
-                .resolve_symbol(&input.file_path, &input.symbol, line)
-                .await
-                .map_err(|e| e.to_string())?;
+            let resolved =
+                registry.resolve_symbol(&input.file_path, &input.symbol, line).await.map_err(|e| e.to_string())?;
             let response = resolved
                 .client
                 .goto_implementation(resolved.uri, resolved.line, resolved.column)
                 .await
                 .map_err(|e| e.to_string())?;
             let locations = definition_response_to_locations(response);
-            let mut output =
-                LspSymbolOutput::with_locations("implementation", locations, input.limit);
+            let mut output = LspSymbolOutput::with_locations("implementation", locations, input.limit);
             enrich_locations_with_context(&mut output, input.context_lines).await;
             output
         }
         SymbolLookupOperation::References => {
-            let resolved = registry
-                .resolve_symbol(&input.file_path, &input.symbol, line)
-                .await
-                .map_err(|e| e.to_string())?;
+            let resolved =
+                registry.resolve_symbol(&input.file_path, &input.symbol, line).await.map_err(|e| e.to_string())?;
             let lsp_locations = resolved
                 .client
-                .find_references(
-                    resolved.uri,
-                    resolved.line,
-                    resolved.column,
-                    input.include_declaration,
-                )
+                .find_references(resolved.uri, resolved.line, resolved.column, input.include_declaration)
                 .await
                 .map_err(|e| e.to_string())?;
-            let locations: Vec<LocationResult> = lsp_locations
-                .iter()
-                .map(LocationResult::from_location)
-                .collect();
+            let locations: Vec<LocationResult> = lsp_locations.iter().map(LocationResult::from_location).collect();
             let mut output = LspSymbolOutput::with_locations("references", locations, input.limit);
             enrich_locations_with_context(&mut output, input.context_lines).await;
             output
         }
         SymbolLookupOperation::Hover => {
-            let resolved = registry
-                .resolve_symbol(&input.file_path, &input.symbol, line)
-                .await
-                .map_err(|e| e.to_string())?;
-            let hover = resolved
-                .client
-                .hover(resolved.uri, resolved.line, resolved.column)
-                .await
-                .map_err(|e| e.to_string())?;
+            let resolved =
+                registry.resolve_symbol(&input.file_path, &input.symbol, line).await.map_err(|e| e.to_string())?;
+            let hover =
+                resolved.client.hover(resolved.uri, resolved.line, resolved.column).await.map_err(|e| e.to_string())?;
             LspSymbolOutput {
                 operation: "hover".to_string(),
                 hover_contents: hover.map(|h| format_hover_contents(&h)),
@@ -273,10 +244,7 @@ async fn execute_one_step_call_hierarchy(
     direction: CallDirection,
     limit: Option<usize>,
 ) -> Result<LspSymbolOutput, String> {
-    let resolved = registry
-        .resolve_symbol(file_path, symbol, line)
-        .await
-        .map_err(|e| e.to_string())?;
+    let resolved = registry.resolve_symbol(file_path, symbol, line).await.map_err(|e| e.to_string())?;
 
     let items = resolved
         .client
@@ -296,24 +264,15 @@ async fn execute_one_step_call_hierarchy(
     // For incoming/outgoing calls, we need a client for the item's file.
     // The item may be in a different file than the original request.
     let item_file_path = uri_to_path(&item.uri);
-    let item_client = registry
-        .require_client(&item_file_path)
-        .await
-        .map_err(|e| e.to_string())?;
+    let item_client = registry.require_client(&item_file_path).await.map_err(|e| e.to_string())?;
 
     let calls = match direction {
         CallDirection::Incoming => {
-            let incoming = item_client
-                .incoming_calls(item)
-                .await
-                .map_err(|e| e.to_string())?;
+            let incoming = item_client.incoming_calls(item).await.map_err(|e| e.to_string())?;
             super::call_hierarchy::convert_incoming_calls(incoming)
         }
         CallDirection::Outgoing => {
-            let outgoing = item_client
-                .outgoing_calls(item)
-                .await
-                .map_err(|e| e.to_string())?;
+            let outgoing = item_client.outgoing_calls(item).await.map_err(|e| e.to_string())?;
             super::call_hierarchy::convert_outgoing_calls(outgoing)
         }
     };
@@ -348,17 +307,10 @@ async fn enrich_locations_with_context(output: &mut LspSymbolOutput, context_lin
 fn definition_response_to_locations(response: GotoDefinitionResponse) -> Vec<LocationResult> {
     match response {
         GotoDefinitionResponse::Scalar(loc) => vec![LocationResult::from_location(&loc)],
-        GotoDefinitionResponse::Array(locs) => {
-            locs.iter().map(LocationResult::from_location).collect()
-        }
+        GotoDefinitionResponse::Array(locs) => locs.iter().map(LocationResult::from_location).collect(),
         GotoDefinitionResponse::Link(links) => links
             .iter()
-            .map(|link| {
-                LocationResult::from_range(
-                    uri_to_path(&link.target_uri),
-                    &link.target_selection_range,
-                )
-            })
+            .map(|link| LocationResult::from_range(uri_to_path(&link.target_uri), &link.target_selection_range))
             .collect(),
     }
 }
@@ -369,11 +321,7 @@ fn format_hover_contents(hover: &lsp_types::Hover) -> String {
 
     match &hover.contents {
         HoverContents::Scalar(marked) => format_marked_string(marked),
-        HoverContents::Array(arr) => arr
-            .iter()
-            .map(format_marked_string)
-            .collect::<Vec<_>>()
-            .join("\n\n"),
+        HoverContents::Array(arr) => arr.iter().map(format_marked_string).collect::<Vec<_>>().join("\n\n"),
         HoverContents::Markup(markup) => markup.value.clone(),
     }
 }
@@ -382,9 +330,7 @@ fn symbol_display_meta(input: &LspSymbolInput, output: &LspSymbolOutput) -> Tool
     let symbol = &input.symbol;
     let file = basename(&input.file_path);
     match input.operation {
-        SymbolLookupOperation::Definition => {
-            ToolDisplayMeta::new("LSP definition", format!("{symbol} in {file}"))
-        }
+        SymbolLookupOperation::Definition => ToolDisplayMeta::new("LSP definition", format!("{symbol} in {file}")),
         SymbolLookupOperation::Implementation => {
             ToolDisplayMeta::new("LSP implementation", format!("{symbol} in {file}"))
         }
@@ -392,9 +338,7 @@ fn symbol_display_meta(input: &LspSymbolInput, output: &LspSymbolOutput) -> Tool
             let count = output.total_count.unwrap_or(0);
             ToolDisplayMeta::new("LSP references", format!("{symbol} ({count} refs)"))
         }
-        SymbolLookupOperation::Hover => {
-            ToolDisplayMeta::new("LSP hover", format!("{symbol} in {file}"))
-        }
+        SymbolLookupOperation::Hover => ToolDisplayMeta::new("LSP hover", format!("{symbol} in {file}")),
         SymbolLookupOperation::IncomingCalls => {
             let count = output.total_count.unwrap_or(0);
             ToolDisplayMeta::new("LSP callers", format!("{symbol} ({count} callers)"))

@@ -1,8 +1,5 @@
 use futures::future::BoxFuture;
-use rmcp::{
-    RoleServer, service::DynService,
-    transport::streamable_http_client::StreamableHttpClientTransportConfig,
-};
+use rmcp::{RoleServer, service::DynService, transport::streamable_http_client::StreamableHttpClientTransportConfig};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -62,22 +59,11 @@ pub enum RawMcpServerConfig {
 
 /// A single connectable MCP server endpoint.
 pub enum ServerConfig {
-    Http {
-        name: String,
-        config: StreamableHttpClientTransportConfig,
-    },
+    Http { name: String, config: StreamableHttpClientTransportConfig },
 
-    Stdio {
-        name: String,
-        command: String,
-        args: Vec<String>,
-        env: HashMap<String, String>,
-    },
+    Stdio { name: String, command: String, args: Vec<String>, env: HashMap<String, String> },
 
-    InMemory {
-        name: String,
-        server: Box<dyn DynService<RoleServer>>,
-    },
+    InMemory { name: String, server: Box<dyn DynService<RoleServer>> },
 }
 
 impl ServerConfig {
@@ -93,28 +79,19 @@ impl ServerConfig {
 impl std::fmt::Debug for ServerConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ServerConfig::Http { name, config } => f
-                .debug_struct("Http")
-                .field("name", name)
-                .field("config", config)
-                .finish(),
-            ServerConfig::Stdio {
-                name,
-                command,
-                args,
-                env,
-            } => f
+            ServerConfig::Http { name, config } => {
+                f.debug_struct("Http").field("name", name).field("config", config).finish()
+            }
+            ServerConfig::Stdio { name, command, args, env } => f
                 .debug_struct("Stdio")
                 .field("name", name)
                 .field("command", command)
                 .field("args", args)
                 .field("env", env)
                 .finish(),
-            ServerConfig::InMemory { name, .. } => f
-                .debug_struct("InMemory")
-                .field("name", name)
-                .field("server", &"<DynService>")
-                .finish(),
+            ServerConfig::InMemory { name, .. } => {
+                f.debug_struct("InMemory").field("name", name).field("server", &"<DynService>").finish()
+            }
         }
     }
 }
@@ -122,10 +99,7 @@ impl std::fmt::Debug for ServerConfig {
 /// Top-level MCP config: a single server OR a tool-proxy of single servers.
 pub enum McpServerConfig {
     Server(ServerConfig),
-    ToolProxy {
-        name: String,
-        servers: Vec<ServerConfig>,
-    },
+    ToolProxy { name: String, servers: Vec<ServerConfig> },
 }
 
 impl McpServerConfig {
@@ -159,11 +133,8 @@ impl std::fmt::Debug for McpServerConfig {
 /// Factory function that creates an MCP server instance asynchronously.
 /// The factory receives parsed CLI arguments and an optional structured input from
 /// the `"input"` field in the config JSON.
-pub type ServerFactory = Box<
-    dyn Fn(Vec<String>, Option<Value>) -> BoxFuture<'static, Box<dyn DynService<RoleServer>>>
-        + Send
-        + Sync,
->;
+pub type ServerFactory =
+    Box<dyn Fn(Vec<String>, Option<Value>) -> BoxFuture<'static, Box<dyn DynService<RoleServer>>> + Send + Sync>;
 
 #[derive(Debug)]
 pub enum ParseError {
@@ -246,10 +217,7 @@ impl RawMcpServerConfig {
             RawMcpServerConfig::Stdio { command, args, env } => Ok(ServerConfig::Stdio {
                 name,
                 command: expand_env_vars(&command)?,
-                args: args
-                    .into_iter()
-                    .map(|a| expand_env_vars(&a))
-                    .collect::<Result<Vec<_>, _>>()?,
+                args: args.into_iter().map(|a| expand_env_vars(&a)).collect::<Result<Vec<_>, _>>()?,
                 env: env
                     .into_iter()
                     .map(|(k, v)| Ok((k, expand_env_vars(&v)?)))
@@ -257,16 +225,11 @@ impl RawMcpServerConfig {
             }
             .into()),
 
-            RawMcpServerConfig::Http { url, headers }
-            | RawMcpServerConfig::Sse { url, headers } => {
+            RawMcpServerConfig::Http { url, headers } | RawMcpServerConfig::Sse { url, headers } => {
                 // Extract Authorization header if present (only header currently supported)
-                let auth_header = headers
-                    .get("Authorization")
-                    .map(|v| expand_env_vars(v))
-                    .transpose()?;
+                let auth_header = headers.get("Authorization").map(|v| expand_env_vars(v)).transpose()?;
 
-                let mut config =
-                    StreamableHttpClientTransportConfig::with_uri(expand_env_vars(&url)?);
+                let mut config = StreamableHttpClientTransportConfig::with_uri(expand_env_vars(&url)?);
                 if let Some(auth) = auth_header {
                     config = config.auth_header(auth);
                 }
@@ -280,14 +243,10 @@ impl RawMcpServerConfig {
                     return parse_tool_proxy(name, servers_val, factories).await;
                 }
 
-                let server_factory = factories
-                    .get(&name)
-                    .ok_or_else(|| ParseError::FactoryNotFound(name.clone()))?;
+                let server_factory = factories.get(&name).ok_or_else(|| ParseError::FactoryNotFound(name.clone()))?;
 
-                let expanded_args = args
-                    .into_iter()
-                    .map(|a| expand_env_vars(&a))
-                    .collect::<Result<Vec<_>, VarError>>()?;
+                let expanded_args =
+                    args.into_iter().map(|a| expand_env_vars(&a)).collect::<Result<Vec<_>, VarError>>()?;
 
                 let server = server_factory(expanded_args, input).await;
                 Ok(ServerConfig::InMemory { name, server }.into())
@@ -304,9 +263,9 @@ impl RawMcpServerConfig {
     ) -> Result<ServerConfig, ParseError> {
         match self.into_config(name, factories).await? {
             McpServerConfig::Server(cfg) => Ok(cfg),
-            McpServerConfig::ToolProxy { name, .. } => Err(ParseError::InvalidNestedConfig(
-                format!("tool-proxy '{name}' cannot be nested inside another tool-proxy"),
-            )),
+            McpServerConfig::ToolProxy { name, .. } => Err(ParseError::InvalidNestedConfig(format!(
+                "tool-proxy '{name}' cannot be nested inside another tool-proxy"
+            ))),
         }
     }
 }
@@ -316,10 +275,8 @@ async fn parse_tool_proxy(
     servers_val: &Value,
     factories: &HashMap<String, ServerFactory>,
 ) -> Result<McpServerConfig, ParseError> {
-    let nested_raw: HashMap<String, RawMcpServerConfig> =
-        serde_json::from_value(servers_val.clone()).map_err(|e| {
-            ParseError::InvalidNestedConfig(format!("failed to parse input.servers: {e}"))
-        })?;
+    let nested_raw: HashMap<String, RawMcpServerConfig> = serde_json::from_value(servers_val.clone())
+        .map_err(|e| ParseError::InvalidNestedConfig(format!("failed to parse input.servers: {e}")))?;
 
     let mut nested_configs = Vec::with_capacity(nested_raw.len());
     for (nested_name, nested_raw_cfg) in nested_raw {
@@ -329,12 +286,8 @@ async fn parse_tool_proxy(
             )));
         }
 
-        nested_configs
-            .push(Box::pin(nested_raw_cfg.into_server_config(nested_name, factories)).await?);
+        nested_configs.push(Box::pin(nested_raw_cfg.into_server_config(nested_name, factories)).await?);
     }
 
-    Ok(McpServerConfig::ToolProxy {
-        name,
-        servers: nested_configs,
-    })
+    Ok(McpServerConfig::ToolProxy { name, servers: nested_configs })
 }

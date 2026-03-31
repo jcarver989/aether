@@ -191,10 +191,7 @@ fn exec_docker(args: &[String]) -> Result<ExitCode, SandboxError> {
 
 #[cfg(not(unix))]
 fn exec_docker(args: &[String]) -> Result<ExitCode, SandboxError> {
-    let status = Command::new("docker")
-        .args(args)
-        .status()
-        .map_err(SandboxError::ExecFailed)?;
+    let status = Command::new("docker").args(args).status().map_err(SandboxError::ExecFailed)?;
 
     Ok(match status.code() {
         Some(0) => ExitCode::SUCCESS,
@@ -222,22 +219,14 @@ mod tests {
 
     #[test]
     fn filter_sandbox_arg_strips_equals_form() {
-        let args = vec![
-            "aether".to_string(),
-            "--sandbox-image=my-image:latest".to_string(),
-            "headless".to_string(),
-        ];
+        let args = vec!["aether".to_string(), "--sandbox-image=my-image:latest".to_string(), "headless".to_string()];
         let filtered = filter_sandbox_arg(&args);
         assert_eq!(filtered, vec!["aether", "headless"]);
     }
 
     #[test]
     fn filter_sandbox_arg_noop_when_absent() {
-        let args = vec![
-            "aether".to_string(),
-            "headless".to_string(),
-            "-m".to_string(),
-        ];
+        let args = vec!["aether".to_string(), "headless".to_string(), "-m".to_string()];
         let filtered = filter_sandbox_arg(&args);
         assert_eq!(filtered, args);
     }
@@ -275,10 +264,7 @@ mod tests {
     #[test]
     fn select_forwarded_vars_includes_extra_keys() {
         let vars = vec![
-            (
-                "OLLAMA_HOST".to_string(),
-                "http://localhost:11434".to_string(),
-            ),
+            ("OLLAMA_HOST".to_string(), "http://localhost:11434".to_string()),
             ("HOME".to_string(), "/root".to_string()),
         ];
         let forwarded = select_forwarded_vars(vars.into_iter());
@@ -301,10 +287,7 @@ mod tests {
 
     #[test]
     fn select_forwarded_vars_excludes_unknown() {
-        let vars = vec![
-            ("HOME".to_string(), "/root".to_string()),
-            ("EDITOR".to_string(), "vim".to_string()),
-        ];
+        let vars = vec![("HOME".to_string(), "/root".to_string()), ("EDITOR".to_string(), "vim".to_string())];
         let forwarded = select_forwarded_vars(vars.into_iter());
         assert!(forwarded.is_empty());
     }
@@ -322,20 +305,9 @@ mod tests {
         let cwd = Path::new("/home/user/project");
         let aether_home = Path::new("/home/user/.aether");
         let env_vars = vec![("ANTHROPIC_API_KEY".to_string(), "sk-123".to_string())];
-        let inner_args = vec![
-            "aether".to_string(),
-            "headless".to_string(),
-            "-m".to_string(),
-            "gpt-4".to_string(),
-        ];
+        let inner_args = vec!["aether".to_string(), "headless".to_string(), "-m".to_string(), "gpt-4".to_string()];
 
-        let args = build_docker_args(
-            "test-image:latest",
-            cwd,
-            aether_home,
-            &env_vars,
-            &inner_args,
-        );
+        let args = build_docker_args("test-image:latest", cwd, aether_home, &env_vars, &inner_args);
 
         assert!(args.contains(&"run".to_string()));
         assert!(args.contains(&"--rm".to_string()));
@@ -378,13 +350,7 @@ mod tests {
     fn build_docker_args_skips_binary_name_only() {
         let cwd = Path::new("/tmp");
         let aether_home = Path::new("/home/user/.aether");
-        let args = build_docker_args(
-            "test-image:latest",
-            cwd,
-            aether_home,
-            &[],
-            &["aether".to_string()],
-        );
+        let args = build_docker_args("test-image:latest", cwd, aether_home, &[], &["aether".to_string()]);
 
         // Only the binary name — nothing after image
         assert_eq!(args.last().unwrap(), "test-image:latest");
@@ -392,32 +358,17 @@ mod tests {
 
     #[test]
     fn sandbox_error_display_messages() {
-        assert_eq!(
-            SandboxError::DockerNotFound.to_string(),
-            "Docker is not installed or not in PATH"
-        );
+        assert_eq!(SandboxError::DockerNotFound.to_string(), "Docker is not installed or not in PATH");
 
-        assert!(
-            SandboxError::DockerNotRunning("connection refused".into())
-                .to_string()
-                .contains("connection refused")
-        );
+        assert!(SandboxError::DockerNotRunning("connection refused".into()).to_string().contains("connection refused"));
 
         let img_err = SandboxError::ImageNotFound("aether-sandbox:latest".into());
         assert!(img_err.to_string().contains("aether-sandbox:latest"));
         assert!(img_err.to_string().contains("cargo build"));
 
-        assert!(
-            SandboxError::HomeNotResolvable
-                .to_string()
-                .contains("home directory")
-        );
+        assert!(SandboxError::HomeNotResolvable.to_string().contains("home directory"));
 
         let io_err = io::Error::new(io::ErrorKind::NotFound, "not found");
-        assert!(
-            SandboxError::ExecFailed(io_err)
-                .to_string()
-                .contains("not found")
-        );
+        assert!(SandboxError::ExecFailed(io_err).to_string().contains("not found"));
     }
 }

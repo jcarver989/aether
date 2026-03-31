@@ -26,15 +26,10 @@ pub struct TaskGetOutput {
 }
 
 /// Get a task by ID
-pub fn execute_task_get(
-    input: TaskGetInput,
-    store: &TaskStore,
-) -> Result<TaskGetOutput, TaskStoreError> {
+pub fn execute_task_get(input: TaskGetInput, store: &TaskStore) -> Result<TaskGetOutput, TaskStoreError> {
     let task_id = TaskId::from(input.id.as_str());
 
-    let task = store
-        .get(&task_id)
-        .ok_or(TaskStoreError::NotFound { id: input.id })?;
+    let task = store.get(&task_id).ok_or(TaskStoreError::NotFound { id: input.id })?;
 
     let display_meta = ToolDisplayMeta::new("Todo", task.title.clone());
 
@@ -64,25 +59,14 @@ mod tests {
     fn test_get_root_task() {
         let (_temp, mut store) = setup();
 
-        let created = store
-            .create_tree("Research topic", Some("Detailed description"))
-            .unwrap();
+        let created = store.create_tree("Research topic", Some("Detailed description")).unwrap();
 
-        let output = execute_task_get(
-            TaskGetInput {
-                id: created.id.to_string(),
-            },
-            &store,
-        )
-        .unwrap();
+        let output = execute_task_get(TaskGetInput { id: created.id.to_string() }, &store).unwrap();
 
         assert_eq!(output.status, "success");
         assert_eq!(output.task.id.to_string(), created.id.to_string());
         assert_eq!(output.task.title, "Research topic");
-        assert_eq!(
-            output.task.description,
-            Some("Detailed description".to_string())
-        );
+        assert_eq!(output.task.description, Some("Detailed description".to_string()));
         assert_eq!(output.task.status, TaskStatus::Pending);
         assert!(output.message.contains("Retrieved task"));
     }
@@ -94,13 +78,7 @@ mod tests {
         let root = store.create_tree("Root", None).unwrap();
         let subtask = store.add_subtask(&root.id, "Subtask 1").unwrap();
 
-        let output = execute_task_get(
-            TaskGetInput {
-                id: subtask.id.to_string(),
-            },
-            &store,
-        )
-        .unwrap();
+        let output = execute_task_get(TaskGetInput { id: subtask.id.to_string() }, &store).unwrap();
 
         assert_eq!(output.task.id.to_string(), subtask.id.to_string());
         assert_eq!(output.task.title, "Subtask 1");
@@ -128,13 +106,7 @@ mod tests {
             )
             .unwrap();
 
-        let output = execute_task_get(
-            TaskGetInput {
-                id: task.id.to_string(),
-            },
-            &store,
-        )
-        .unwrap();
+        let output = execute_task_get(TaskGetInput { id: task.id.to_string() }, &store).unwrap();
 
         assert_eq!(output.task.status, TaskStatus::Completed);
         assert_eq!(output.task.summary, Some("Found the answer".to_string()));
@@ -152,23 +124,9 @@ mod tests {
         let sub1 = store.add_subtask(&root.id, "Subtask 1").unwrap();
         let sub2 = store.add_subtask(&root.id, "Subtask 2").unwrap();
 
-        store
-            .update(
-                &sub2.id,
-                TaskUpdate {
-                    deps: Some(vec![sub1.id.clone()]),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
+        store.update(&sub2.id, TaskUpdate { deps: Some(vec![sub1.id.clone()]), ..Default::default() }).unwrap();
 
-        let output = execute_task_get(
-            TaskGetInput {
-                id: sub2.id.to_string(),
-            },
-            &store,
-        )
-        .unwrap();
+        let output = execute_task_get(TaskGetInput { id: sub2.id.to_string() }, &store).unwrap();
 
         assert_eq!(output.task.deps, vec![sub1.id.clone()]);
     }
@@ -177,17 +135,9 @@ mod tests {
     fn test_get_nonexistent_task() {
         let (_temp, store) = setup();
 
-        let result = execute_task_get(
-            TaskGetInput {
-                id: "at-nonexistent".to_string(),
-            },
-            &store,
-        );
+        let result = execute_task_get(TaskGetInput { id: "at-nonexistent".to_string() }, &store);
 
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TaskStoreError::NotFound { .. }
-        ));
+        assert!(matches!(result.unwrap_err(), TaskStoreError::NotFound { .. }));
     }
 }

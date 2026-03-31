@@ -84,10 +84,7 @@ impl<'a> MarkdownRenderer<'a> {
             Event::HardBreak => self.push_hard_break(),
             Event::Rule => {
                 self.finish_current_line();
-                self.lines.push(Line::with_style(
-                    "───────────────",
-                    Style::fg(self.theme.muted()),
-                ));
+                self.lines.push(Line::with_style("───────────────", Style::fg(self.theme.muted())));
                 self.lines.push(Line::default());
             }
             _ => {}
@@ -96,11 +93,9 @@ impl<'a> MarkdownRenderer<'a> {
 
     fn handle_start(&mut self, tag: Tag<'_>) {
         match tag {
-            Tag::Heading { .. }
-            | Tag::BlockQuote(_)
-            | Tag::List(_)
-            | Tag::Item
-            | Tag::Paragraph => self.handle_block_start(&tag),
+            Tag::Heading { .. } | Tag::BlockQuote(_) | Tag::List(_) | Tag::Item | Tag::Paragraph => {
+                self.handle_block_start(&tag)
+            }
 
             Tag::Strong | Tag::Emphasis | Tag::Strikethrough | Tag::Link { .. } => {
                 self.handle_inline_start(tag);
@@ -116,11 +111,9 @@ impl<'a> MarkdownRenderer<'a> {
 
     fn handle_end(&mut self, tag_end: TagEnd) {
         match tag_end {
-            TagEnd::Paragraph
-            | TagEnd::Heading(_)
-            | TagEnd::BlockQuote(_)
-            | TagEnd::List(_)
-            | TagEnd::Item => self.handle_block_end(tag_end),
+            TagEnd::Paragraph | TagEnd::Heading(_) | TagEnd::BlockQuote(_) | TagEnd::List(_) | TagEnd::Item => {
+                self.handle_block_end(tag_end)
+            }
 
             TagEnd::Strong | TagEnd::Emphasis | TagEnd::Strikethrough | TagEnd::Link => {
                 self.handle_inline_end(tag_end);
@@ -141,12 +134,8 @@ impl<'a> MarkdownRenderer<'a> {
             Tag::Heading { level, .. } => {
                 self.finish_current_line();
                 let prefix = "#".repeat(*level as usize);
-                self.push_styled_text(
-                    &format!("{prefix} "),
-                    Style::fg(self.theme.heading()).bold(),
-                );
-                self.style_stack
-                    .push(Style::fg(self.theme.heading()).bold());
+                self.push_styled_text(&format!("{prefix} "), Style::fg(self.theme.heading()).bold());
+                self.style_stack.push(Style::fg(self.theme.heading()).bold());
             }
             Tag::BlockQuote(_) => {
                 self.finish_current_line();
@@ -221,8 +210,7 @@ impl<'a> MarkdownRenderer<'a> {
                 self.style_stack.push(Style::default().strikethrough());
             }
             Tag::Link { dest_url, .. } => {
-                self.style_stack
-                    .push(Style::fg(self.theme.link()).underline());
+                self.style_stack.push(Style::fg(self.theme.link()).underline());
                 // Store URL to emit after text if desired; for now just style the text
                 let _ = dest_url;
             }
@@ -240,9 +228,7 @@ impl<'a> MarkdownRenderer<'a> {
             self.in_code_block = true;
             self.code_buffer.clear();
             self.code_lang = match kind {
-                CodeBlockKind::Fenced(lang) => {
-                    lang.split(',').next().unwrap_or("").trim().to_string()
-                }
+                CodeBlockKind::Fenced(lang) => lang.split(',').next().unwrap_or("").trim().to_string(),
                 CodeBlockKind::Indented => String::new(),
             };
         }
@@ -252,10 +238,7 @@ impl<'a> MarkdownRenderer<'a> {
         self.in_code_block = false;
         let code = std::mem::take(&mut self.code_buffer);
         let lang = std::mem::take(&mut self.code_lang);
-        let code_lines = self
-            .context
-            .highlighter()
-            .highlight(&code, &lang, self.theme);
+        let code_lines = self.context.highlighter().highlight(&code, &lang, self.theme);
         self.lines.extend(code_lines);
         self.lines.push(Line::default());
     }
@@ -297,18 +280,10 @@ impl<'a> MarkdownRenderer<'a> {
                     && let Some(ref mut table) = self.table_state
                 {
                     let col_idx = table.current_row.len();
-                    let alignment = table
-                        .alignments
-                        .get(col_idx)
-                        .copied()
-                        .unwrap_or(Alignment::None);
+                    let alignment = table.alignments.get(col_idx).copied().unwrap_or(Alignment::None);
                     let lines = builder.finish();
                     let max_width = lines.iter().map(line_display_width).max().unwrap_or(0);
-                    let cell = TableCell {
-                        lines,
-                        alignment,
-                        max_width,
-                    };
+                    let cell = TableCell { lines, alignment, max_width };
                     table.add_cell(cell);
                 }
             }
@@ -317,10 +292,7 @@ impl<'a> MarkdownRenderer<'a> {
     }
 
     fn current_style(&self) -> Style {
-        self.style_stack
-            .iter()
-            .copied()
-            .fold(Style::default(), Style::merge)
+        self.style_stack.iter().copied().fold(Style::default(), Style::merge)
     }
 
     fn push_text(&mut self, text: &str) {
@@ -332,8 +304,7 @@ impl<'a> MarkdownRenderer<'a> {
                 self.flush_line();
             }
             if self.current_line.is_empty() && !prefix.is_empty() {
-                self.current_line
-                    .push_with_style(&*prefix, Style::fg(self.theme.blockquote()));
+                self.current_line.push_with_style(&*prefix, Style::fg(self.theme.blockquote()));
             }
             if !chunk.is_empty() {
                 self.current_line.push_span(Span::with_style(chunk, style));
@@ -414,18 +385,13 @@ impl<'a> MarkdownRenderer<'a> {
     fn flush_line(&mut self) {
         let prefix = self.blockquote_prefix();
         if !prefix.is_empty() && self.current_line.is_empty() {
-            self.current_line
-                .push_with_style(&*prefix, Style::fg(self.theme.blockquote()));
+            self.current_line.push_with_style(&*prefix, Style::fg(self.theme.blockquote()));
         }
         let line = std::mem::take(&mut self.current_line);
         self.lines.push(line);
     }
 
     fn blockquote_prefix(&self) -> Cow<'static, str> {
-        if self.blockquote_depth == 0 {
-            Cow::Borrowed("")
-        } else {
-            Cow::Owned("  ".repeat(self.blockquote_depth))
-        }
+        if self.blockquote_depth == 0 { Cow::Borrowed("") } else { Cow::Owned("  ".repeat(self.blockquote_depth)) }
     }
 }

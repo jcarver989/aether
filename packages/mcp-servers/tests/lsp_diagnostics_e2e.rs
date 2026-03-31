@@ -19,15 +19,8 @@ use rmcp::service::RunningService;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-async fn workspace_diagnostics(
-    client: &RunningService<RoleClient, ClientInfo>,
-) -> serde_json::Value {
-    call_tool(
-        client,
-        "lsp_check_errors",
-        serde_json::json!({"input": {"scope": "workspace"}}),
-    )
-    .await
+async fn workspace_diagnostics(client: &RunningService<RoleClient, ClientInfo>) -> serde_json::Value {
+    call_tool(client, "lsp_check_errors", serde_json::json!({"input": {"scope": "workspace"}})).await
 }
 
 async fn poll_workspace_diagnostics(
@@ -39,12 +32,8 @@ async fn poll_workspace_diagnostics(
     let mut last_result = None;
 
     while start.elapsed() < timeout {
-        if let Some(result) = try_call_tool(
-            client,
-            "lsp_check_errors",
-            serde_json::json!({"input": {"scope": "workspace"}}),
-        )
-        .await
+        if let Some(result) =
+            try_call_tool(client, "lsp_check_errors", serde_json::json!({"input": {"scope": "workspace"}})).await
         {
             if predicate(&result) {
                 return result;
@@ -57,10 +46,7 @@ async fn poll_workspace_diagnostics(
 
     panic!(
         "workspace diagnostics timed out after {timeout:?}. Last result: {}",
-        last_result
-            .as_ref()
-            .map(|result| result.to_string())
-            .unwrap_or_else(|| "(no valid response)".to_string())
+        last_result.as_ref().map(|result| result.to_string()).unwrap_or_else(|| "(no valid response)".to_string())
     );
 }
 
@@ -71,18 +57,14 @@ fn file_error_count(result: &serde_json::Value, file_path: &str) -> usize {
         .into_iter()
         .flatten()
         .filter(|diagnostic| {
-            diagnostic["file"].as_str().map(canonical_path).as_deref()
-                == Some(expected_path.as_str())
+            diagnostic["file"].as_str().map(canonical_path).as_deref() == Some(expected_path.as_str())
                 && diagnostic["severity"].as_str() == Some("error")
         })
         .count()
 }
 
 fn canonical_path(path: &str) -> String {
-    std::fs::canonicalize(path)
-        .unwrap_or_else(|_| PathBuf::from(path))
-        .to_string_lossy()
-        .to_string()
+    std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path)).to_string_lossy().to_string()
 }
 
 /// Test: MCP edit_file tool → rust-analyzer picks up change → diagnostics queryable
@@ -112,12 +94,7 @@ async fn test_mcp_edit_produces_diagnostics() {
     assert!(errors > 0, "Expected type error diagnostics");
 
     // 4. Fix the error using MCP tools: read_file then edit_file
-    call_tool(
-        &client,
-        "read_file",
-        serde_json::json!({ "filePath": main_rs }),
-    )
-    .await;
+    call_tool(&client, "read_file", serde_json::json!({ "filePath": main_rs })).await;
 
     call_tool(
         &client,
@@ -133,12 +110,7 @@ async fn test_mcp_edit_produces_diagnostics() {
     poll_diagnostics(&client, Some(&main_rs), has_no_errors).await;
 
     // 6. Re-introduce a different error via MCP edit
-    call_tool(
-        &client,
-        "read_file",
-        serde_json::json!({ "filePath": main_rs }),
-    )
-    .await;
+    call_tool(&client, "read_file", serde_json::json!({ "filePath": main_rs })).await;
 
     call_tool(
         &client,
@@ -184,12 +156,7 @@ async fn test_diagnostics_available_after_edit_without_polling() {
     poll_diagnostics(&client, Some(&main_rs), has_no_errors).await;
 
     // 4. Introduce a syntax error via edit_file
-    call_tool(
-        &client,
-        "read_file",
-        serde_json::json!({ "filePath": main_rs }),
-    )
-    .await;
+    call_tool(&client, "read_file", serde_json::json!({ "filePath": main_rs })).await;
 
     call_tool(
         &client,
@@ -233,12 +200,7 @@ async fn test_diagnostics_all_files_after_edit() {
     poll_diagnostics(&client, Some(&main_rs), has_no_errors).await;
 
     // 4. Introduce a type error via edit_file
-    call_tool(
-        &client,
-        "read_file",
-        serde_json::json!({ "filePath": main_rs }),
-    )
-    .await;
+    call_tool(&client, "read_file", serde_json::json!({ "filePath": main_rs })).await;
 
     call_tool(
         &client,
@@ -279,12 +241,7 @@ async fn test_workspace_diagnostics_after_edit_without_file_check() {
     // Wait for RA to finish initial indexing via workspace-scope polling.
     poll_diagnostics(&client, None, has_no_errors).await;
 
-    call_tool(
-        &client,
-        "read_file",
-        serde_json::json!({ "filePath": main_rs }),
-    )
-    .await;
+    call_tool(&client, "read_file", serde_json::json!({ "filePath": main_rs })).await;
 
     call_tool(
         &client,
@@ -298,12 +255,7 @@ async fn test_workspace_diagnostics_after_edit_without_file_check() {
     .await;
 
     // Poll workspace diagnostics until the edit is picked up by RA.
-    poll_workspace_diagnostics(
-        &client,
-        |result| file_error_count(result, &main_rs) > 0,
-        Duration::from_secs(30),
-    )
-    .await;
+    poll_workspace_diagnostics(&client, |result| file_error_count(result, &main_rs) > 0, Duration::from_secs(30)).await;
 }
 
 /// Regression test: once workspace diagnostics have recorded an error, fixing the
@@ -327,23 +279,15 @@ async fn test_workspace_diagnostics_clear_after_fix_without_file_check() {
 
     let (_server_handle, client) = connect_lsp(&project).await;
 
-    let initial = poll_workspace_diagnostics(
-        &client,
-        |result| file_error_count(result, &main_rs) > 0,
-        Duration::from_secs(15),
-    )
-    .await;
+    let initial =
+        poll_workspace_diagnostics(&client, |result| file_error_count(result, &main_rs) > 0, Duration::from_secs(15))
+            .await;
     assert!(
         file_error_count(&initial, &main_rs) > 0,
         "Expected bootstrap workspace diagnostics to report the initial error. Full result: {initial}"
     );
 
-    call_tool(
-        &client,
-        "read_file",
-        serde_json::json!({ "filePath": main_rs }),
-    )
-    .await;
+    call_tool(&client, "read_file", serde_json::json!({ "filePath": main_rs })).await;
 
     call_tool(
         &client,

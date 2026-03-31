@@ -11,12 +11,7 @@ async fn test_prompt_done_clears_running_tool_spinner() {
     renderer.initial_render().unwrap();
 
     // Send a tool call that never gets a terminal update.
-    renderer
-        .on_session_update(acp::SessionUpdate::ToolCall(acp::ToolCall::new(
-            "tool-1",
-            "Read file",
-        )))
-        .unwrap();
+    renderer.on_session_update(acp::SessionUpdate::ToolCall(acp::ToolCall::new("tool-1", "Read file"))).unwrap();
 
     renderer.on_prompt_done().unwrap();
 
@@ -36,11 +31,9 @@ async fn test_prompt_done_flush_respects_rendering() {
     renderer.initial_render().unwrap();
 
     renderer
-        .on_session_update(acp::SessionUpdate::AgentThoughtChunk(
-            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(
-                "theme should be preserved",
-            ))),
-        ))
+        .on_session_update(acp::SessionUpdate::AgentThoughtChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
+            acp::TextContent::new("theme should be preserved"),
+        ))))
         .unwrap();
 
     renderer.on_prompt_done().unwrap();
@@ -48,9 +41,7 @@ async fn test_prompt_done_flush_respects_rendering() {
     // Should render successfully
     let lines = renderer.writer().get_lines();
     assert!(
-        lines
-            .iter()
-            .any(|l| l.contains("theme should be preserved")),
+        lines.iter().any(|l| l.contains("theme should be preserved")),
         "Thought text should be visible after prompt_done.\nBuffer:\n{}",
         lines.join("\n")
     );
@@ -68,16 +59,13 @@ async fn test_streaming_chunks_keep_waiting_for_response() {
 
     // Send a streaming chunk (should not clear waiting state)
     renderer
-        .on_session_update(acp::SessionUpdate::AgentMessageChunk(
-            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("hello"))),
-        ))
+        .on_session_update(acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
+            acp::TextContent::new("hello"),
+        ))))
         .unwrap();
 
     // Escape should still trigger cancel (proving we're still waiting)
-    let action = renderer
-        .on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
-        .await
-        .unwrap();
+    let action = renderer.on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await.unwrap();
 
     // If we're still waiting, escape triggers cancel effect which is handled
     assert!(matches!(action, LoopAction::Continue));
@@ -94,10 +82,7 @@ async fn test_on_tick_without_active_state_is_noop() {
     renderer.on_tick().await.unwrap();
 
     let lines_after = renderer.writer().get_lines();
-    assert_eq!(
-        lines_before, lines_after,
-        "Tick should be a no-op when nothing active"
-    );
+    assert_eq!(lines_before, lines_after, "Tick should be a no-op when nothing active");
 }
 
 #[tokio::test]
@@ -109,8 +94,7 @@ async fn test_in_progress_tool_call_visible_after_initial_render() {
 
     renderer
         .on_session_update(acp::SessionUpdate::ToolCall(
-            acp::ToolCall::new("call_1".to_string(), "Read")
-                .raw_input(serde_json::json!({"file": "test.rs"})),
+            acp::ToolCall::new("call_1".to_string(), "Read").raw_input(serde_json::json!({"file": "test.rs"})),
         ))
         .unwrap();
 
@@ -126,8 +110,7 @@ async fn test_in_progress_tool_call_renders_correctly_after_resize() {
 
     renderer
         .on_session_update(acp::SessionUpdate::ToolCall(
-            acp::ToolCall::new("call_1".to_string(), "Read")
-                .raw_input(serde_json::json!({"file": "test.rs"})),
+            acp::ToolCall::new("call_1".to_string(), "Read").raw_input(serde_json::json!({"file": "test.rs"})),
         ))
         .unwrap();
 
@@ -150,11 +133,9 @@ async fn test_completed_content_re_renders_at_new_width_after_resize() {
 
     // Complete a full turn: text + tool call + prompt_done
     renderer
-        .on_session_update(acp::SessionUpdate::AgentMessageChunk(
-            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(
-                "First answer",
-            ))),
-        ))
+        .on_session_update(acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
+            acp::TextContent::new("First answer"),
+        ))))
         .unwrap();
     renderer.on_prompt_done().unwrap();
 
@@ -196,16 +177,16 @@ async fn test_prompt_not_garbled_after_resize_with_completed_content() {
 
     // Build up several completed turns so there's content above the prompt
     renderer
-        .on_session_update(acp::SessionUpdate::AgentMessageChunk(
-            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("Turn one"))),
-        ))
+        .on_session_update(acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
+            acp::TextContent::new("Turn one"),
+        ))))
         .unwrap();
     renderer.on_prompt_done().unwrap();
 
     renderer
-        .on_session_update(acp::SessionUpdate::AgentMessageChunk(
-            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new("Turn two"))),
-        ))
+        .on_session_update(acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
+            acp::TextContent::new("Turn two"),
+        ))))
         .unwrap();
     renderer.on_prompt_done().unwrap();
 
@@ -236,16 +217,6 @@ async fn test_prompt_not_garbled_after_resize_with_completed_content() {
     // the visible frame.
     let turn_one_count = lines.iter().filter(|l| l.contains("Turn one")).count();
     let turn_two_count = lines.iter().filter(|l| l.contains("Turn two")).count();
-    assert_eq!(
-        turn_one_count,
-        1,
-        "Turn one should appear exactly once after resize.\nBuffer:\n{}",
-        lines.join("\n")
-    );
-    assert_eq!(
-        turn_two_count,
-        1,
-        "Turn two should appear exactly once after resize.\nBuffer:\n{}",
-        lines.join("\n")
-    );
+    assert_eq!(turn_one_count, 1, "Turn one should appear exactly once after resize.\nBuffer:\n{}", lines.join("\n"));
+    assert_eq!(turn_two_count, 1, "Turn two should appear exactly once after resize.\nBuffer:\n{}", lines.join("\n"));
 }

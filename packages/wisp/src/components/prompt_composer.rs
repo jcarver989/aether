@@ -14,10 +14,7 @@ use super::app::PromptAttachment;
 
 #[derive(Debug)]
 pub enum PromptComposerMessage {
-    SubmitRequested {
-        user_input: String,
-        attachments: Vec<PromptAttachment>,
-    },
+    SubmitRequested { user_input: String, attachments: Vec<PromptAttachment> },
     OpenSettings,
     OpenSessionPicker,
     NewSession,
@@ -101,11 +98,7 @@ impl PromptComposer {
         }
         .layout(context);
 
-        Cursor {
-            row: layout.cursor_row,
-            col: layout.cursor_col as usize,
-            is_visible: true,
-        }
+        Cursor { row: layout.cursor_row, col: layout.cursor_col as usize, is_visible: true }
     }
 
     #[cfg(test)]
@@ -118,10 +111,7 @@ impl PromptComposer {
         self.command_picker.is_some()
     }
 
-    fn handle_picker_outcome<T>(
-        &mut self,
-        outcome: Option<Vec<PickerMessage<T>>>,
-    ) -> (bool, Option<T>) {
+    fn handle_picker_outcome<T>(&mut self, outcome: Option<Vec<PickerMessage<T>>>) -> (bool, Option<T>) {
         let Some(msg) = outcome.unwrap_or_default().into_iter().next() else {
             return (false, None);
         };
@@ -147,15 +137,11 @@ impl PromptComposer {
         }
     }
 
-    fn handle_file_picker_outcome(
-        &mut self,
-        outcome: Option<Vec<FilePickerMessage>>,
-    ) -> Vec<PromptComposerMessage> {
+    fn handle_file_picker_outcome(&mut self, outcome: Option<Vec<FilePickerMessage>>) -> Vec<PromptComposerMessage> {
         let (close, confirmed) = self.handle_picker_outcome(outcome);
         if let Some(file_match) = confirmed {
             self.file_picker = None;
-            self.text_input
-                .apply_file_selection(file_match.path, file_match.display_name);
+            self.text_input.apply_file_selection(file_match.path, file_match.display_name);
         } else if close {
             self.file_picker = None;
         }
@@ -220,11 +206,8 @@ impl PromptComposer {
     }
 
     fn add_dropped_media(&mut self, paths: Vec<PathBuf>) -> bool {
-        let mut existing: HashSet<PathBuf> = self
-            .pending_media
-            .iter()
-            .filter_map(|a| std::fs::canonicalize(&a.path).ok())
-            .collect();
+        let mut existing: HashSet<PathBuf> =
+            self.pending_media.iter().filter_map(|a| std::fs::canonicalize(&a.path).ok()).collect();
 
         let before = self.pending_media.len();
 
@@ -238,12 +221,10 @@ impl PromptComposer {
             {
                 continue;
             }
-            let display_name = path.file_name().map_or_else(
-                || path.to_string_lossy().into_owned(),
-                |n| n.to_string_lossy().into_owned(),
-            );
-            self.pending_media
-                .push(PromptAttachment { path, display_name });
+            let display_name = path
+                .file_name()
+                .map_or_else(|| path.to_string_lossy().into_owned(), |n| n.to_string_lossy().into_owned());
+            self.pending_media.push(PromptAttachment { path, display_name });
         }
 
         self.pending_media.len() > before
@@ -258,16 +239,12 @@ impl PromptComposer {
         }
 
         let user_input = self.text_input.buffer().trim().to_string();
-        let mut attachments =
-            collect_submit_attachments(&user_input, self.text_input.take_mentions());
+        let mut attachments = collect_submit_attachments(&user_input, self.text_input.take_mentions());
         attachments.extend(std::mem::take(&mut self.pending_media));
         self.text_input.clear();
         self.close_all();
 
-        vec![PromptComposerMessage::SubmitRequested {
-            user_input,
-            attachments,
-        }]
+        vec![PromptComposerMessage::SubmitRequested { user_input, attachments }]
     }
 }
 
@@ -278,8 +255,7 @@ impl Component for PromptComposer {
         match event {
             Event::Paste(text) => {
                 self.close_all();
-                let added = parse_dropped_file_paths(text)
-                    .is_some_and(|paths| self.add_dropped_media(paths));
+                let added = parse_dropped_file_paths(text).is_some_and(|paths| self.add_dropped_media(paths));
                 if !added {
                     self.text_input.insert_paste(text);
                 }
@@ -294,12 +270,7 @@ impl Component for PromptComposer {
 
                     if matches!(
                         key_event.code,
-                        KeyCode::Left
-                            | KeyCode::Right
-                            | KeyCode::Home
-                            | KeyCode::End
-                            | KeyCode::Up
-                            | KeyCode::Down
+                        KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End | KeyCode::Up | KeyCode::Down
                     ) {
                         return Some(vec![]);
                     }
@@ -346,10 +317,7 @@ impl Component for PromptComposer {
                 _ => "file",
             };
             let mut line = Line::default();
-            line.push_styled(
-                format!("  attached {label}: {}", attachment.display_name),
-                context.theme.info(),
-            );
+            line.push_styled(format!("  attached {label}: {}", attachment.display_name), context.theme.info());
             lines.push(line);
         }
 
@@ -365,18 +333,12 @@ impl Component for PromptComposer {
     }
 }
 
-fn collect_submit_attachments(
-    user_input: &str,
-    selected_mentions: Vec<SelectedFileMention>,
-) -> Vec<PromptAttachment> {
+fn collect_submit_attachments(user_input: &str, selected_mentions: Vec<SelectedFileMention>) -> Vec<PromptAttachment> {
     let mentions: HashSet<&str> = user_input.split_whitespace().collect();
     selected_mentions
         .into_iter()
         .filter(|mention| mentions.contains(mention.mention.as_str()))
-        .map(|mention| PromptAttachment {
-            path: mention.path,
-            display_name: mention.display_name,
-        })
+        .map(|mention| PromptAttachment { path: mention.path, display_name: mention.display_name })
         .collect()
 }
 
@@ -441,10 +403,7 @@ mod tests {
 
         composer.on_event(&key(KeyCode::Down)).await;
         let msgs = composer.on_event(&key(KeyCode::Enter)).await.unwrap();
-        assert!(matches!(
-            msgs.as_slice(),
-            [PromptComposerMessage::OpenSettings]
-        ));
+        assert!(matches!(msgs.as_slice(), [PromptComposerMessage::OpenSettings]));
         assert_eq!(composer.buffer(), "");
         assert!(!composer.has_active_picker());
     }
@@ -499,10 +458,7 @@ mod tests {
         type_chars(&mut composer, "@").await;
         assert!(composer.has_file_picker());
 
-        let msgs = composer
-            .on_event(&Event::Paste("pasted text".into()))
-            .await
-            .unwrap();
+        let msgs = composer.on_event(&Event::Paste("pasted text".into())).await.unwrap();
         assert!(msgs.is_empty());
         assert!(!composer.has_active_picker());
         assert_eq!(composer.buffer(), "@pasted text");
@@ -523,11 +479,8 @@ mod tests {
         let context = ViewContext::new((120, 40));
         let output = composer.render(&context);
         let cursor = composer.cursor(&context);
-        let input_row = output
-            .lines()
-            .iter()
-            .position(|line| line.plain_text().contains("> "))
-            .expect("input prompt should exist");
+        let input_row =
+            output.lines().iter().position(|line| line.plain_text().contains("> ")).expect("input prompt should exist");
         assert_eq!(cursor.row, input_row);
     }
 
@@ -543,9 +496,7 @@ mod tests {
         let img = create_temp_media(&tmp, "photo.png");
 
         let mut composer = PromptComposer::default();
-        composer
-            .on_event(&Event::Paste(img.to_str().unwrap().into()))
-            .await;
+        composer.on_event(&Event::Paste(img.to_str().unwrap().into())).await;
 
         assert_eq!(composer.pending_media().len(), 1);
         assert_eq!(composer.pending_media()[0].display_name, "photo.png");
@@ -558,9 +509,7 @@ mod tests {
         let audio = create_temp_media(&tmp, "note.wav");
 
         let mut composer = PromptComposer::default();
-        composer
-            .on_event(&Event::Paste(audio.to_str().unwrap().into()))
-            .await;
+        composer.on_event(&Event::Paste(audio.to_str().unwrap().into())).await;
 
         assert_eq!(composer.pending_media().len(), 1);
         assert_eq!(composer.pending_media()[0].display_name, "note.wav");
@@ -582,9 +531,7 @@ mod tests {
         let txt = create_temp_media(&tmp, "readme.txt");
 
         let mut composer = PromptComposer::default();
-        composer
-            .on_event(&Event::Paste(txt.to_str().unwrap().into()))
-            .await;
+        composer.on_event(&Event::Paste(txt.to_str().unwrap().into())).await;
 
         // Text files are not media — should fall back to inserting the path as text
         assert!(composer.pending_media().is_empty());
@@ -600,9 +547,7 @@ mod tests {
         type_chars(&mut composer, "@").await;
         assert!(composer.has_file_picker());
 
-        composer
-            .on_event(&Event::Paste(img.to_str().unwrap().into()))
-            .await;
+        composer.on_event(&Event::Paste(img.to_str().unwrap().into())).await;
 
         assert!(!composer.has_active_picker());
         assert_eq!(composer.pending_media().len(), 1);
@@ -627,19 +572,11 @@ mod tests {
         let img = create_temp_media(&tmp, "photo.png");
 
         let mut composer = PromptComposer::default();
-        composer
-            .on_event(&Event::Paste(img.to_str().unwrap().into()))
-            .await;
+        composer.on_event(&Event::Paste(img.to_str().unwrap().into())).await;
         type_chars(&mut composer, "describe this").await;
 
         let msgs = composer.on_event(&key(KeyCode::Enter)).await.unwrap();
-        let [
-            PromptComposerMessage::SubmitRequested {
-                user_input,
-                attachments,
-            },
-        ] = msgs.as_slice()
-        else {
+        let [PromptComposerMessage::SubmitRequested { user_input, attachments }] = msgs.as_slice() else {
             panic!("expected submit request");
         };
         assert_eq!(user_input, "describe this");
@@ -653,9 +590,7 @@ mod tests {
         let img = create_temp_media(&tmp, "photo.png");
 
         let mut composer = PromptComposer::default();
-        composer
-            .on_event(&Event::Paste(img.to_str().unwrap().into()))
-            .await;
+        composer.on_event(&Event::Paste(img.to_str().unwrap().into())).await;
         type_chars(&mut composer, "go").await;
         composer.on_event(&key(KeyCode::Enter)).await;
 
@@ -669,18 +604,10 @@ mod tests {
         let img = create_temp_media(&tmp, "photo.png");
 
         let mut composer = PromptComposer::default();
-        composer
-            .on_event(&Event::Paste(img.to_str().unwrap().into()))
-            .await;
+        composer.on_event(&Event::Paste(img.to_str().unwrap().into())).await;
 
         let msgs = composer.on_event(&key(KeyCode::Enter)).await.unwrap();
-        let [
-            PromptComposerMessage::SubmitRequested {
-                user_input,
-                attachments,
-            },
-        ] = msgs.as_slice()
-        else {
+        let [PromptComposerMessage::SubmitRequested { user_input, attachments }] = msgs.as_slice() else {
             panic!("expected submit request");
         };
         assert_eq!(user_input, "");
@@ -694,12 +621,8 @@ mod tests {
         let img2 = create_temp_media(&tmp, "b.png");
 
         let mut composer = PromptComposer::default();
-        composer
-            .on_event(&Event::Paste(img1.to_str().unwrap().into()))
-            .await;
-        composer
-            .on_event(&Event::Paste(img2.to_str().unwrap().into()))
-            .await;
+        composer.on_event(&Event::Paste(img1.to_str().unwrap().into())).await;
+        composer.on_event(&Event::Paste(img2.to_str().unwrap().into())).await;
         assert_eq!(composer.pending_media().len(), 2);
 
         composer.on_event(&key(KeyCode::Backspace)).await;
@@ -716,19 +639,11 @@ mod tests {
         let img = create_temp_media(&tmp, "photo.png");
 
         let mut composer = PromptComposer::default();
-        composer.pending_media.push(PromptAttachment {
-            path: img,
-            display_name: "photo.png".to_string(),
-        });
+        composer.pending_media.push(PromptAttachment { path: img, display_name: "photo.png".to_string() });
 
         let context = ViewContext::new((80, 24));
         let output = composer.render(&context);
-        let text: String = output
-            .lines()
-            .iter()
-            .map(|l| l.plain_text())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let text: String = output.lines().iter().map(|l| l.plain_text()).collect::<Vec<_>>().join("\n");
         assert!(text.contains("attached image: photo.png"));
     }
 
@@ -739,23 +654,12 @@ mod tests {
         let audio = create_temp_media(&tmp, "note.wav");
 
         let mut composer = PromptComposer::default();
-        composer.pending_media.push(PromptAttachment {
-            path: img,
-            display_name: "photo.png".to_string(),
-        });
-        composer.pending_media.push(PromptAttachment {
-            path: audio,
-            display_name: "note.wav".to_string(),
-        });
+        composer.pending_media.push(PromptAttachment { path: img, display_name: "photo.png".to_string() });
+        composer.pending_media.push(PromptAttachment { path: audio, display_name: "note.wav".to_string() });
 
         let context = ViewContext::new((80, 24));
         let output = composer.render(&context);
-        let text: String = output
-            .lines()
-            .iter()
-            .map(|l| l.plain_text())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let text: String = output.lines().iter().map(|l| l.plain_text()).collect::<Vec<_>>().join("\n");
         assert!(text.contains("attached image: photo.png"));
         assert!(text.contains("attached audio: note.wav"));
     }

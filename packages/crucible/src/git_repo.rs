@@ -9,9 +9,7 @@ pub struct GitRepo {
 impl GitRepo {
     /// Create a `GitRepo` instance from an existing repository path
     pub fn from_path(path: &Path) -> Self {
-        GitRepo {
-            path: path.to_path_buf(),
-        }
+        GitRepo { path: path.to_path_buf() }
     }
 
     /// Clone a repository to the specified destination
@@ -32,18 +30,14 @@ impl GitRepo {
             .arg(url)
             .arg(dest)
             .output()
-            .map_err(|e| {
-                GitRepoError::CommandFailed(format!("Failed to execute git clone: {e}"))
-            })?;
+            .map_err(|e| GitRepoError::CommandFailed(format!("Failed to execute git clone: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(GitRepoError::CloneFailed(stderr.to_string()));
         }
 
-        Ok(GitRepo {
-            path: dest.to_path_buf(),
-        })
+        Ok(GitRepo { path: dest.to_path_buf() })
     }
 
     /// Checkout a specific commit, branch, or tag
@@ -56,16 +50,11 @@ impl GitRepo {
             .arg("checkout")
             .arg(reference)
             .output()
-            .map_err(|e| {
-                GitRepoError::CommandFailed(format!("Failed to execute git checkout: {e}"))
-            })?;
+            .map_err(|e| GitRepoError::CommandFailed(format!("Failed to execute git checkout: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(GitRepoError::CheckoutFailed {
-                reference: reference.to_string(),
-                reason: stderr.to_string(),
-            });
+            return Err(GitRepoError::CheckoutFailed { reference: reference.to_string(), reason: stderr.to_string() });
         }
 
         Ok(())
@@ -82,11 +71,7 @@ impl GitRepo {
     /// * `diff_range("abc123", None)` - changes from commit to working directory
     /// * `diff_range("HEAD", None)` - unstaged changes (equivalent to `git diff`)
     #[tracing::instrument(skip(self))]
-    pub fn diff_range(
-        &self,
-        from_commit: &str,
-        to_commit: Option<&str>,
-    ) -> Result<String, GitRepoError> {
+    pub fn diff_range(&self, from_commit: &str, to_commit: Option<&str>) -> Result<String, GitRepoError> {
         let mut cmd = Command::new("git");
         cmd.arg("-C").arg(&self.path).arg("diff");
 
@@ -98,9 +83,8 @@ impl GitRepo {
             cmd.arg(from_commit);
         }
 
-        let output = cmd
-            .output()
-            .map_err(|e| GitRepoError::CommandFailed(format!("Failed to execute git diff: {e}")))?;
+        let output =
+            cmd.output().map_err(|e| GitRepoError::CommandFailed(format!("Failed to execute git diff: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -139,15 +123,8 @@ impl GitRepo {
 pub enum GitRepoError {
     CommandFailed(String),
     CloneFailed(String),
-    CheckoutFailed {
-        reference: String,
-        reason: String,
-    },
-    DiffFailed {
-        from: String,
-        to: String,
-        reason: String,
-    },
+    CheckoutFailed { reference: String, reason: String },
+    DiffFailed { from: String, to: String, reason: String },
 }
 
 impl std::fmt::Display for GitRepoError {
@@ -181,45 +158,20 @@ mod tests {
         let repo_path = temp_dir.path();
 
         // Initialize a git repo
-        Command::new("git")
-            .args(["init"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
+        Command::new("git").args(["init"]).current_dir(repo_path).output().unwrap();
 
         // Configure git user for commits
-        Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
+        Command::new("git").args(["config", "user.email", "test@example.com"]).current_dir(repo_path).output().unwrap();
+        Command::new("git").args(["config", "user.name", "Test User"]).current_dir(repo_path).output().unwrap();
 
         // Create initial file and commit
         fs::write(repo_path.join("test.txt"), "initial content\n").unwrap();
-        Command::new("git")
-            .args(["add", "test.txt"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
+        Command::new("git").args(["add", "test.txt"]).current_dir(repo_path).output().unwrap();
+        Command::new("git").args(["commit", "-m", "Initial commit"]).current_dir(repo_path).output().unwrap();
 
         // Get the first commit hash
         let first_commit = String::from_utf8(
-            Command::new("git")
-                .args(["rev-parse", "HEAD"])
-                .current_dir(repo_path)
-                .output()
-                .unwrap()
-                .stdout,
+            Command::new("git").args(["rev-parse", "HEAD"]).current_dir(repo_path).output().unwrap().stdout,
         )
         .unwrap()
         .trim()
@@ -228,25 +180,12 @@ mod tests {
         // Make changes and create second commit
         fs::write(repo_path.join("test.txt"), "modified content\n").unwrap();
         fs::write(repo_path.join("new.txt"), "new file\n").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Second commit"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
+        Command::new("git").args(["add", "."]).current_dir(repo_path).output().unwrap();
+        Command::new("git").args(["commit", "-m", "Second commit"]).current_dir(repo_path).output().unwrap();
 
         // Get the second commit hash
         let second_commit = String::from_utf8(
-            Command::new("git")
-                .args(["rev-parse", "HEAD"])
-                .current_dir(repo_path)
-                .output()
-                .unwrap()
-                .stdout,
+            Command::new("git").args(["rev-parse", "HEAD"]).current_dir(repo_path).output().unwrap().stdout,
         )
         .unwrap()
         .trim()
@@ -272,44 +211,19 @@ mod tests {
         let repo_path = temp_dir.path();
 
         // Initialize a git repo
-        Command::new("git")
-            .args(["init"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
+        Command::new("git").args(["init"]).current_dir(repo_path).output().unwrap();
 
         // Configure git user for commits
-        Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
+        Command::new("git").args(["config", "user.email", "test@example.com"]).current_dir(repo_path).output().unwrap();
+        Command::new("git").args(["config", "user.name", "Test User"]).current_dir(repo_path).output().unwrap();
 
         // Create initial file and commit
         fs::write(repo_path.join("test.txt"), "initial content\n").unwrap();
-        Command::new("git")
-            .args(["add", "test.txt"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
+        Command::new("git").args(["add", "test.txt"]).current_dir(repo_path).output().unwrap();
+        Command::new("git").args(["commit", "-m", "Initial commit"]).current_dir(repo_path).output().unwrap();
 
         let first_commit = String::from_utf8(
-            Command::new("git")
-                .args(["rev-parse", "HEAD"])
-                .current_dir(repo_path)
-                .output()
-                .unwrap()
-                .stdout,
+            Command::new("git").args(["rev-parse", "HEAD"]).current_dir(repo_path).output().unwrap().stdout,
         )
         .unwrap()
         .trim()
@@ -317,24 +231,11 @@ mod tests {
 
         // Make changes and create second commit
         fs::write(repo_path.join("test.txt"), "modified content\n").unwrap();
-        Command::new("git")
-            .args(["add", "test.txt"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Second commit"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
+        Command::new("git").args(["add", "test.txt"]).current_dir(repo_path).output().unwrap();
+        Command::new("git").args(["commit", "-m", "Second commit"]).current_dir(repo_path).output().unwrap();
 
         let second_commit = String::from_utf8(
-            Command::new("git")
-                .args(["rev-parse", "HEAD"])
-                .current_dir(repo_path)
-                .output()
-                .unwrap()
-                .stdout,
+            Command::new("git").args(["rev-parse", "HEAD"]).current_dir(repo_path).output().unwrap().stdout,
         )
         .unwrap()
         .trim()
@@ -346,24 +247,16 @@ mod tests {
         let git_repo = GitRepo::from_path(repo_path);
 
         // Test: diff between two specific commits
-        let diff = git_repo
-            .diff_range(&first_commit, Some(&second_commit))
-            .unwrap();
+        let diff = git_repo.diff_range(&first_commit, Some(&second_commit)).unwrap();
         assert!(diff.contains("modified content") || diff.contains("+modified content"));
 
         // Test: diff unstaged changes (from HEAD to working directory)
         let unstaged_diff = git_repo.diff_range("HEAD", None).unwrap();
-        assert!(
-            unstaged_diff.contains("unstaged content")
-                || unstaged_diff.contains("+unstaged content")
-        );
+        assert!(unstaged_diff.contains("unstaged content") || unstaged_diff.contains("+unstaged content"));
 
         // Test: diff from specific commit to working directory
         let from_commit_diff = git_repo.diff_range(&first_commit, None).unwrap();
-        assert!(
-            from_commit_diff.contains("unstaged content")
-                || from_commit_diff.contains("+unstaged content")
-        );
+        assert!(from_commit_diff.contains("unstaged content") || from_commit_diff.contains("+unstaged content"));
     }
 
     #[test]
@@ -373,11 +266,7 @@ mod tests {
         let source_path = source_dir.path();
 
         // Initialize source repo
-        Command::new("git")
-            .args(["init"])
-            .current_dir(source_path)
-            .output()
-            .unwrap();
+        Command::new("git").args(["init"]).current_dir(source_path).output().unwrap();
 
         // Configure git user
         Command::new("git")
@@ -385,32 +274,15 @@ mod tests {
             .current_dir(source_path)
             .output()
             .unwrap();
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(source_path)
-            .output()
-            .unwrap();
+        Command::new("git").args(["config", "user.name", "Test User"]).current_dir(source_path).output().unwrap();
 
         // Create a file and commit
         fs::write(source_path.join("test.txt"), "initial content\n").unwrap();
-        Command::new("git")
-            .args(["add", "test.txt"])
-            .current_dir(source_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(source_path)
-            .output()
-            .unwrap();
+        Command::new("git").args(["add", "test.txt"]).current_dir(source_path).output().unwrap();
+        Command::new("git").args(["commit", "-m", "Initial commit"]).current_dir(source_path).output().unwrap();
 
         let first_commit = String::from_utf8(
-            Command::new("git")
-                .args(["rev-parse", "HEAD"])
-                .current_dir(source_path)
-                .output()
-                .unwrap()
-                .stdout,
+            Command::new("git").args(["rev-parse", "HEAD"]).current_dir(source_path).output().unwrap().stdout,
         )
         .unwrap()
         .trim()
@@ -418,24 +290,11 @@ mod tests {
 
         // Create another commit
         fs::write(source_path.join("test.txt"), "modified content\n").unwrap();
-        Command::new("git")
-            .args(["add", "test.txt"])
-            .current_dir(source_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Second commit"])
-            .current_dir(source_path)
-            .output()
-            .unwrap();
+        Command::new("git").args(["add", "test.txt"]).current_dir(source_path).output().unwrap();
+        Command::new("git").args(["commit", "-m", "Second commit"]).current_dir(source_path).output().unwrap();
 
         let second_commit = String::from_utf8(
-            Command::new("git")
-                .args(["rev-parse", "HEAD"])
-                .current_dir(source_path)
-                .output()
-                .unwrap()
-                .stdout,
+            Command::new("git").args(["rev-parse", "HEAD"]).current_dir(source_path).output().unwrap().stdout,
         )
         .unwrap()
         .trim()
@@ -451,11 +310,7 @@ mod tests {
             .filter_map(std::result::Result::ok)
             .filter(|e| e.file_name() != ".git")
             .collect();
-        assert_eq!(
-            entries.len(),
-            0,
-            "Working directory should be empty after blobless clone"
-        );
+        assert_eq!(entries.len(), 0, "Working directory should be empty after blobless clone");
 
         // Checkout the first commit
         repo.checkout(&first_commit).unwrap();

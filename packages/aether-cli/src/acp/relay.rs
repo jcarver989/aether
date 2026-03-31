@@ -17,8 +17,8 @@ use tracing::warn;
 use tracing::{error, info};
 
 use super::mappers::{
-    map_agent_message_to_session_notification, map_agent_message_to_stop_reason,
-    try_extract_plan_notification, try_into_ext_notification,
+    map_agent_message_to_session_notification, map_agent_message_to_stop_reason, try_extract_plan_notification,
+    try_into_ext_notification,
 };
 use super::session::Session;
 use super::session_store::SessionStore;
@@ -65,19 +65,9 @@ pub(crate) fn spawn_relay(
 ) -> RelayHandle {
     let (cmd_tx, cmd_rx) = mpsc::channel(50);
     let (mcp_request_tx, mcp_request_rx) = mpsc::channel(50);
-    let join_handle = tokio::spawn(run_session_relay(
-        session,
-        cmd_rx,
-        mcp_request_rx,
-        actor_handle,
-        acp_session_id,
-        session_store,
-    ));
-    RelayHandle {
-        cmd_tx,
-        mcp_request_tx,
-        join_handle,
-    }
+    let join_handle =
+        tokio::spawn(run_session_relay(session, cmd_rx, mcp_request_rx, actor_handle, acp_session_id, session_store));
+    RelayHandle { cmd_tx, mcp_request_tx, join_handle }
 }
 
 async fn run_session_relay(
@@ -98,10 +88,7 @@ async fn run_session_relay(
         initial_server_statuses,
     } = session;
 
-    let notification: ExtNotification = McpNotification::ServerStatus {
-        servers: initial_server_statuses,
-    }
-    .into();
+    let notification: ExtNotification = McpNotification::ServerStatus { servers: initial_server_statuses }.into();
 
     if let Err(e) = actor_handle.send_ext_notification(notification).await {
         error!("Failed to send initial MCP server status: {:?}", e);
@@ -168,9 +155,7 @@ async fn handle_prompt(
 ) -> Result<acp::StopReason, RelayError> {
     if let Some(model) = switch_model {
         let parser = ModelProviderParser::default();
-        let (provider, _) = parser
-            .parse(&model)
-            .map_err(|e| RelayError::SwitchModelFailed(format!("{e}")))?;
+        let (provider, _) = parser.parse(&model).map_err(|e| RelayError::SwitchModelFailed(format!("{e}")))?;
         ctx.agent_tx
             .send(UserMessage::SwitchModel(provider))
             .await
@@ -186,9 +171,7 @@ async fn handle_prompt(
     log_event(
         ctx.session_store,
         &ctx.acp_session_id.0,
-        &SessionEvent::User(UserEvent::Message {
-            content: content.clone(),
-        }),
+        &SessionEvent::User(UserEvent::Message { content: content.clone() }),
     );
 
     ctx.agent_tx
@@ -204,11 +187,7 @@ async fn handle_prompt(
             early_stop_reason = Some(map_agent_message_to_stop_reason(msg));
             None
         }
-        AgentMessage::Done => Some(
-            early_stop_reason
-                .take()
-                .unwrap_or_else(|| map_agent_message_to_stop_reason(msg)),
-        ),
+        AgentMessage::Done => Some(early_stop_reason.take().unwrap_or_else(|| map_agent_message_to_stop_reason(msg))),
         AgentMessage::Error { .. } => Some(map_agent_message_to_stop_reason(msg)),
         _ => None,
     })
@@ -267,9 +246,7 @@ async fn handle_in_flight_command(agent_tx: &mpsc::Sender<UserMessage>, cmd: Ses
         }
         SessionCommand::Prompt { result_tx, .. } => {
             // Can't process a new prompt while one is in-flight
-            let _ = result_tx.send(Err(RelayError::SendPromptFailed(
-                "prompt already in progress".to_string(),
-            )));
+            let _ = result_tx.send(Err(RelayError::SendPromptFailed("prompt already in progress".to_string())));
         }
     }
 }
@@ -280,10 +257,7 @@ fn log_event(store: &SessionStore, session_id: &str, event: &SessionEvent) {
     }
 }
 
-async fn handle_elicitation_request(
-    actor_handle: &AcpActorHandle,
-    elicitation: ElicitationRequest,
-) {
+async fn handle_elicitation_request(actor_handle: &AcpActorHandle, elicitation: ElicitationRequest) {
     let ext_params = build_elicitation_params(&elicitation.request);
     let ext_request = build_ext_request(&ext_params);
 
@@ -292,10 +266,7 @@ async fn handle_elicitation_request(
         Ok(ref response) => parse_elicitation_response(response),
         Err(e) => {
             error!("Failed to send elicitation ext_method: {:?}", e);
-            CreateElicitationResult {
-                action: rmcp::model::ElicitationAction::Cancel,
-                content: None,
-            }
+            CreateElicitationResult { action: rmcp::model::ElicitationAction::Cancel, content: None }
         }
     };
 
@@ -306,18 +277,12 @@ async fn handle_elicitation_request(
 
 fn build_elicitation_params(request: &CreateElicitationRequestParams) -> ElicitationParams {
     match request {
-        CreateElicitationRequestParams::FormElicitationParams {
-            message,
-            requested_schema,
-            ..
-        } => ElicitationParams {
-            message: message.clone(),
-            schema: requested_schema.clone(),
-        },
-        CreateElicitationRequestParams::UrlElicitationParams { message, .. } => ElicitationParams {
-            message: message.clone(),
-            schema: ElicitationSchema::new(BTreeMap::new()),
-        },
+        CreateElicitationRequestParams::FormElicitationParams { message, requested_schema, .. } => {
+            ElicitationParams { message: message.clone(), schema: requested_schema.clone() }
+        }
+        CreateElicitationRequestParams::UrlElicitationParams { message, .. } => {
+            ElicitationParams { message: message.clone(), schema: ElicitationSchema::new(BTreeMap::new()) }
+        }
     }
 }
 
@@ -330,16 +295,10 @@ fn parse_elicitation_response(response: &acp::ExtResponse) -> CreateElicitationR
     let parsed: Result<ElicitationResponse, _> = serde_json::from_str(response.0.get());
 
     match parsed {
-        Ok(r) => CreateElicitationResult {
-            action: r.action,
-            content: r.content,
-        },
+        Ok(r) => CreateElicitationResult { action: r.action, content: r.content },
         Err(e) => {
             error!("Failed to parse elicitation response: {:?}", e);
-            CreateElicitationResult {
-                action: rmcp::model::ElicitationAction::Cancel,
-                content: None,
-            }
+            CreateElicitationResult { action: rmcp::model::ElicitationAction::Cancel, content: None }
         }
     }
 }
@@ -362,21 +321,16 @@ async fn expand_slash_command_if_needed(mcp_tx: &mpsc::Sender<McpCommand>, text:
         return text;
     };
 
-    let (command_name, args_text) =
-        if let Some(space_idx) = slash_command_text.find(char::is_whitespace) {
-            let (cmd, args) = slash_command_text.split_at(space_idx);
-            (cmd, args.trim())
-        } else {
-            (slash_command_text, "")
-        };
+    let (command_name, args_text) = if let Some(space_idx) = slash_command_text.find(char::is_whitespace) {
+        let (cmd, args) = slash_command_text.split_at(space_idx);
+        (cmd, args.trim())
+    } else {
+        (slash_command_text, "")
+    };
 
     match expand_slash_command(mcp_tx, command_name, args_text).await {
         Ok(expanded) => {
-            info!(
-                "Expanded slash command '{}' -> {} chars",
-                command_name,
-                expanded.len()
-            );
+            info!("Expanded slash command '{}' -> {} chars", command_name, expanded.len());
             expanded
         }
         Err(e) => {
@@ -399,9 +353,7 @@ async fn expand_slash_command(
         .await
         .map_err(|e| format!("Failed to send ListPrompts command: {e}"))?;
 
-    let prompts = rx_list
-        .await
-        .map_err(|e| format!("Failed to receive prompts: {e}"))??;
+    let prompts = rx_list.await.map_err(|e| format!("Failed to receive prompts: {e}"))??;
 
     let matching_prompt = prompts
         .iter()
@@ -412,17 +364,11 @@ async fn expand_slash_command(
 
     let (tx_get, rx_get) = oneshot::channel();
     mcp_tx
-        .send(McpCommand::GetPrompt {
-            name: namespaced_name.clone(),
-            arguments,
-            tx: tx_get,
-        })
+        .send(McpCommand::GetPrompt { name: namespaced_name.clone(), arguments, tx: tx_get })
         .await
         .map_err(|e| format!("Failed to send GetPrompt command: {e}"))?;
 
-    let prompt_result = rx_get
-        .await
-        .map_err(|e| format!("Failed to receive prompt: {e}"))??;
+    let prompt_result = rx_get.await.map_err(|e| format!("Failed to receive prompt: {e}"))??;
 
     if let Some(message) = prompt_result.messages.first() {
         match &message.content {
@@ -439,24 +385,16 @@ async fn expand_slash_command(
 /// Creates an argument map with:
 /// - "ARGUMENTS": The full argument string
 /// - "1", "2", "3", etc.: Individual positional arguments (1-based)
-fn parse_slash_command_arguments(
-    args_text: &str,
-) -> Option<serde_json::Map<String, serde_json::Value>> {
+fn parse_slash_command_arguments(args_text: &str) -> Option<serde_json::Map<String, serde_json::Value>> {
     if args_text.is_empty() {
         None
     } else {
         let mut arg_map = serde_json::Map::new();
 
-        arg_map.insert(
-            "ARGUMENTS".to_string(),
-            serde_json::Value::String(args_text.to_string()),
-        );
+        arg_map.insert("ARGUMENTS".to_string(), serde_json::Value::String(args_text.to_string()));
 
         for (i, arg) in args_text.split_whitespace().enumerate() {
-            arg_map.insert(
-                (i + 1).to_string(),
-                serde_json::Value::String(arg.to_string()),
-            );
+            arg_map.insert((i + 1).to_string(), serde_json::Value::String(arg.to_string()));
         }
 
         Some(arg_map)
@@ -470,13 +408,7 @@ async fn authenticate_mcp_server(
     name: &str,
 ) {
     let (tx, rx) = oneshot::channel();
-    if let Err(e) = mcp_tx
-        .send(McpCommand::AuthenticateServer {
-            name: name.to_string(),
-            tx,
-        })
-        .await
-    {
+    if let Err(e) = mcp_tx.send(McpCommand::AuthenticateServer { name: name.to_string(), tx }).await {
         error!("MCP server authentication failed: Failed to send AuthenticateServer command: {e}");
         return;
     }
@@ -498,22 +430,13 @@ async fn authenticate_mcp_server(
     if let Err(e) = actor_handle.send_ext_notification(notification).await {
         error!("Failed to send updated MCP server status: {:?}", e);
     }
-    if let Err(e) = agent_tx
-        .send(UserMessage::UpdateTools(tool_definitions))
-        .await
-    {
+    if let Err(e) = agent_tx.send(UserMessage::UpdateTools(tool_definitions)).await {
         error!("Failed to send updated tools to agent: {:?}", e);
     }
 }
 
-async fn forward_notification(
-    actor_handle: &AcpActorHandle,
-    acp_session_id: &SessionId,
-    msg: &AgentMessage,
-) {
-    if let Some(notification) =
-        map_agent_message_to_session_notification(acp_session_id.clone(), msg)
-    {
+async fn forward_notification(actor_handle: &AcpActorHandle, acp_session_id: &SessionId, msg: &AgentMessage) {
+    if let Some(notification) = map_agent_message_to_session_notification(acp_session_id.clone(), msg) {
         if let Err(e) = actor_handle.send_session_notification(notification).await {
             error!("Failed to send session notification: {:?}", e);
         }
@@ -524,8 +447,7 @@ async fn forward_notification(
     }
 
     if let AgentMessage::ToolResult { result_meta, .. } = msg
-        && let Some(plan_notif) =
-            try_extract_plan_notification(acp_session_id.clone(), result_meta.as_ref())
+        && let Some(plan_notif) = try_extract_plan_notification(acp_session_id.clone(), result_meta.as_ref())
         && let Err(e) = actor_handle.send_session_notification(plan_notif).await
     {
         error!("Failed to send plan notification: {:?}", e);
@@ -537,31 +459,15 @@ mod tests {
     use super::*;
     #[test]
     fn test_argument_parsing() {
-        let arg_map =
-            parse_slash_command_arguments("do a thing that has spaces").expect("Expected Some");
+        let arg_map = parse_slash_command_arguments("do a thing that has spaces").expect("Expected Some");
         let expected = serde_json::Map::from_iter([
-            (
-                "ARGUMENTS".to_string(),
-                serde_json::Value::String("do a thing that has spaces".to_string()),
-            ),
+            ("ARGUMENTS".to_string(), serde_json::Value::String("do a thing that has spaces".to_string())),
             ("1".to_string(), serde_json::Value::String("do".to_string())),
             ("2".to_string(), serde_json::Value::String("a".to_string())),
-            (
-                "3".to_string(),
-                serde_json::Value::String("thing".to_string()),
-            ),
-            (
-                "4".to_string(),
-                serde_json::Value::String("that".to_string()),
-            ),
-            (
-                "5".to_string(),
-                serde_json::Value::String("has".to_string()),
-            ),
-            (
-                "6".to_string(),
-                serde_json::Value::String("spaces".to_string()),
-            ),
+            ("3".to_string(), serde_json::Value::String("thing".to_string())),
+            ("4".to_string(), serde_json::Value::String("that".to_string())),
+            ("5".to_string(), serde_json::Value::String("has".to_string())),
+            ("6".to_string(), serde_json::Value::String("spaces".to_string())),
         ]);
         assert_eq!(arg_map, expected);
     }
@@ -599,10 +505,7 @@ mod tests {
         )
         .await;
 
-        match result_rx
-            .await
-            .expect("result channel should receive response")
-        {
+        match result_rx.await.expect("result channel should receive response") {
             Ok(reason) => panic!("expected rejection, got stop reason: {reason:?}"),
             Err(RelayError::SendPromptFailed(message)) => {
                 assert_eq!(message, "prompt already in progress");
@@ -616,10 +519,7 @@ mod tests {
         let elicitation = CreateElicitationRequestParams::FormElicitationParams {
             meta: None,
             message: "Pick a color".to_string(),
-            requested_schema: ElicitationSchema::builder()
-                .required_bool("approved")
-                .build()
-                .unwrap(),
+            requested_schema: ElicitationSchema::builder().required_bool("approved").build().unwrap(),
         };
 
         let params = build_elicitation_params(&elicitation);
@@ -658,8 +558,7 @@ mod tests {
 
     #[test]
     fn test_parse_elicitation_response_invalid_json() {
-        let raw: Arc<serde_json::value::RawValue> =
-            serde_json::from_str("\"not_an_object\"").unwrap();
+        let raw: Arc<serde_json::value::RawValue> = serde_json::from_str("\"not_an_object\"").unwrap();
         let ext_response = acp::ExtResponse::new(raw);
 
         let result = parse_elicitation_response(&ext_response);

@@ -28,31 +28,17 @@ impl Default for SyntaxHighlighter {
 
 impl SyntaxHighlighter {
     pub fn new() -> Self {
-        Self {
-            syntax_set: two_face::syntax::extra_newlines(),
-            cache: Mutex::new(HashMap::new()),
-        }
+        Self { syntax_set: two_face::syntax::extra_newlines(), cache: Mutex::new(HashMap::new()) }
     }
 
     /// Syntax-highlights `code`, caching the result by `(lang, code)`.
     pub fn highlight(&self, code: &str, lang: &str, theme: &Theme) -> Vec<Line> {
-        if let Some(cached) = self
-            .cache
-            .lock()
-            .unwrap()
-            .get(lang)
-            .and_then(|m| m.get(code))
-        {
+        if let Some(cached) = self.cache.lock().unwrap().get(lang).and_then(|m| m.get(code)) {
             return cached.clone();
         }
 
         let lines = self.render_highlighted_lines(code, lang, theme);
-        self.cache
-            .lock()
-            .unwrap()
-            .entry(lang.to_string())
-            .or_default()
-            .insert(code.to_string(), lines.clone());
+        self.cache.lock().unwrap().entry(lang.to_string()).or_default().insert(code.to_string(), lines.clone());
 
         lines
     }
@@ -89,7 +75,5 @@ impl SyntaxHighlighter {
 
 fn plain_code_lines(code: &str, theme: &Theme) -> Vec<Line> {
     let style = Style::fg(theme.code_fg());
-    code.lines()
-        .map(|line| Line::with_style(line, style))
-        .collect()
+    code.lines().map(|line| Line::with_style(line, style)).collect()
 }

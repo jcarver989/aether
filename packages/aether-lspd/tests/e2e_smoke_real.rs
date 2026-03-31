@@ -8,13 +8,9 @@ use common::{CargoProject, DaemonHarness, TestProject, hover_text};
 async fn rust_analyzer_smoke_hover() {
     let project = CargoProject::new("smoke_ra").expect("Failed to create project");
     let content = "fn main() { let value = 1; }\n";
-    project
-        .add_file("src/main.rs", content)
-        .expect("Failed to add source file");
+    project.add_file("src/main.rs", content).expect("Failed to add source file");
 
-    let harness = DaemonHarness::spawn(project.root(), LanguageId::Rust)
-        .await
-        .expect("Failed to spawn daemon");
+    let harness = DaemonHarness::spawn(project.root(), LanguageId::Rust).await.expect("Failed to spawn daemon");
     let client = harness.connect().await.expect("Failed to connect client");
     let uri = project.file_uri("src/main.rs");
 

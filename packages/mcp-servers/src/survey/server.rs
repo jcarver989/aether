@@ -5,8 +5,8 @@ use rmcp::{
         wrapper::{Json, Parameters},
     },
     model::{
-        CreateElicitationRequestParams, ElicitationAction, ElicitationSchema, Implementation,
-        ServerCapabilities, ServerInfo,
+        CreateElicitationRequestParams, ElicitationAction, ElicitationSchema, Implementation, ServerCapabilities,
+        ServerInfo,
     },
     service::RequestContext,
     tool, tool_handler, tool_router,
@@ -39,9 +39,7 @@ impl Default for SurveyMcp {
 
 impl SurveyMcp {
     pub fn new() -> Self {
-        Self {
-            tool_router: Self::tool_router(),
-        }
+        Self { tool_router: Self::tool_router() }
     }
 
     pub fn from_args(_args: Vec<String>) -> Result<Self, String> {
@@ -93,10 +91,7 @@ impl SurveyMcp {
             .await
             .map_err(|e| format!("Elicitation failed: {e}"))?;
 
-        Ok(Json(AskUserOutput {
-            accepted: result.action == ElicitationAction::Accept,
-            data: result.content,
-        }))
+        Ok(Json(AskUserOutput { accepted: result.action == ElicitationAction::Accept, data: result.content }))
     }
 }
 
@@ -130,8 +125,7 @@ mod tests {
 
     #[test]
     fn parse_schema_from_string_value() {
-        let json_str =
-            r#"{"type":"object","properties":{"name":{"type":"string","title":"Name"}}}"#;
+        let json_str = r#"{"type":"object","properties":{"name":{"type":"string","title":"Name"}}}"#;
         let value = serde_json::Value::String(json_str.to_string());
         let schema = parse_schema(value).expect("should parse string-encoded value");
         assert!(schema.properties.contains_key("name"));

@@ -1,6 +1,4 @@
-use super::types::{
-    Content, ContentBlock as AnthropicContentBlock, ImageSource, Message, Role, Tool,
-};
+use super::types::{Content, ContentBlock as AnthropicContentBlock, ImageSource, Message, Role, Tool};
 use crate::{ChatMessage, ContentBlock, LlmError, Result, ToolDefinition};
 
 pub fn map_messages(messages: &[ChatMessage]) -> Result<(Option<String>, Vec<Message>)> {
@@ -19,11 +17,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> Result<(Option<String>, Vec<Mes
                     cache_control: None,
                 });
             }
-            ChatMessage::Assistant {
-                content,
-                tool_calls,
-                ..
-            } => {
+            ChatMessage::Assistant { content, tool_calls, .. } => {
                 if tool_calls.is_empty() {
                     anthropic_messages.push(Message {
                         role: Role::Assistant,
@@ -34,10 +28,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> Result<(Option<String>, Vec<Mes
                     let mut blocks = if content.is_empty() {
                         Vec::new()
                     } else {
-                        vec![AnthropicContentBlock::Text {
-                            text: content.clone(),
-                            cache_control: None,
-                        }]
+                        vec![AnthropicContentBlock::Text { text: content.clone(), cache_control: None }]
                     };
 
                     for tool_call in tool_calls {
@@ -106,10 +97,9 @@ fn map_content_blocks(parts: &[ContentBlock]) -> Result<Content> {
     let mut blocks = Vec::with_capacity(parts.len());
     for p in parts {
         match p {
-            ContentBlock::Text { text } => blocks.push(AnthropicContentBlock::Text {
-                text: text.clone(),
-                cache_control: None,
-            }),
+            ContentBlock::Text { text } => {
+                blocks.push(AnthropicContentBlock::Text { text: text.clone(), cache_control: None })
+            }
             ContentBlock::Image { data, mime_type } => blocks.push(AnthropicContentBlock::Image {
                 source: ImageSource {
                     source_type: "base64".to_string(),
@@ -118,9 +108,7 @@ fn map_content_blocks(parts: &[ContentBlock]) -> Result<Content> {
                 },
             }),
             ContentBlock::Audio { .. } => {
-                return Err(LlmError::UnsupportedContent(
-                    "Anthropic does not support audio input".into(),
-                ));
+                return Err(LlmError::UnsupportedContent("Anthropic does not support audio input".into()));
             }
         }
     }
@@ -131,11 +119,8 @@ pub fn map_tools(tools: &[ToolDefinition]) -> Result<Vec<Tool>> {
     let mut anthropic_tools = Vec::new();
 
     for tool in tools {
-        let input_schema: serde_json::Value =
-            serde_json::from_str(&tool.parameters).map_err(|e| LlmError::ToolParameterParsing {
-                tool_name: tool.name.clone(),
-                error: e.to_string(),
-            })?;
+        let input_schema: serde_json::Value = serde_json::from_str(&tool.parameters)
+            .map_err(|e| LlmError::ToolParameterParsing { tool_name: tool.name.clone(), error: e.to_string() })?;
 
         anthropic_tools.push(Tool {
             name: tool.name.clone(),
@@ -156,10 +141,8 @@ mod tests {
 
     #[test]
     fn test_map_simple_user_message() {
-        let messages = vec![ChatMessage::User {
-            content: vec![ContentBlock::text("Hello")],
-            timestamp: IsoString::now(),
-        }];
+        let messages =
+            vec![ChatMessage::User { content: vec![ContentBlock::text("Hello")], timestamp: IsoString::now() }];
 
         let (system, mapped) = map_messages(&messages).unwrap();
         assert_eq!(system, None);
@@ -178,10 +161,7 @@ mod tests {
         let messages = vec![ChatMessage::User {
             content: vec![
                 ContentBlock::text("Look at this:"),
-                ContentBlock::Image {
-                    data: "aW1hZ2VkYXRh".to_string(),
-                    mime_type: "image/png".to_string(),
-                },
+                ContentBlock::Image { data: "aW1hZ2VkYXRh".to_string(), mime_type: "image/png".to_string() },
             ],
             timestamp: IsoString::now(),
         }];
@@ -199,11 +179,9 @@ mod tests {
 
     #[test]
     fn test_map_user_image_serialization() {
-        let content = map_content_blocks(&[ContentBlock::Image {
-            data: "aW1n".to_string(),
-            mime_type: "image/png".to_string(),
-        }])
-        .unwrap();
+        let content =
+            map_content_blocks(&[ContentBlock::Image { data: "aW1n".to_string(), mime_type: "image/png".to_string() }])
+                .unwrap();
         let json = serde_json::to_value(&content).unwrap();
         let block = &json[0];
         assert_eq!(block["type"], "image");
@@ -216,10 +194,7 @@ mod tests {
     fn test_map_user_message_with_audio_errors() {
         let result = map_content_blocks(&[
             ContentBlock::text("Listen:"),
-            ContentBlock::Audio {
-                data: "YXVkaW8=".to_string(),
-                mime_type: "audio/wav".to_string(),
-            },
+            ContentBlock::Audio { data: "YXVkaW8=".to_string(), mime_type: "audio/wav".to_string() },
         ]);
         assert!(matches!(result, Err(LlmError::UnsupportedContent(_))));
     }
@@ -236,14 +211,8 @@ mod tests {
     #[test]
     fn test_map_system_message() {
         let messages = vec![
-            ChatMessage::System {
-                content: "You are a helpful assistant".to_string(),
-                timestamp: IsoString::now(),
-            },
-            ChatMessage::User {
-                content: vec![ContentBlock::text("Hello")],
-                timestamp: IsoString::now(),
-            },
+            ChatMessage::System { content: "You are a helpful assistant".to_string(), timestamp: IsoString::now() },
+            ChatMessage::User { content: vec![ContentBlock::text("Hello")], timestamp: IsoString::now() },
         ];
 
         let (system, mapped) = map_messages(&messages).unwrap();
@@ -282,8 +251,7 @@ mod tests {
         let tools = vec![ToolDefinition {
             name: "search".to_string(),
             description: "Search for information".to_string(),
-            parameters: r#"{"type": "object", "properties": {"query": {"type": "string"}}}"#
-                .to_string(),
+            parameters: r#"{"type": "object", "properties": {"query": {"type": "string"}}}"#.to_string(),
             server: None,
         }];
 
@@ -298,8 +266,7 @@ mod tests {
         let tools = vec![ToolDefinition {
             name: "search".to_string(),
             description: "Search for information".to_string(),
-            parameters: r#"{"type": "object", "properties": {"query": {"type": "string"}}}"#
-                .to_string(),
+            parameters: r#"{"type": "object", "properties": {"query": {"type": "string"}}}"#.to_string(),
             server: None,
         }];
 

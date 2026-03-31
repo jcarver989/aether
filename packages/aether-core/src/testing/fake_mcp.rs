@@ -11,10 +11,7 @@ use serde::{Deserialize, Serialize};
 use mcp_utils::client::ServerConfig;
 
 pub fn fake_mcp(name: &str, server: FakeMcpServer) -> ServerConfig {
-    ServerConfig::InMemory {
-        name: name.to_string(),
-        server: server.as_dyn(),
-    }
+    ServerConfig::InMemory { name: name.to_string(), server: server.as_dyn() }
 }
 
 /// A fake MCP server for testing
@@ -28,8 +25,7 @@ impl ServerHandler for FakeMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(
-                Implementation::new("fake-mcp-server", "0.1.0")
-                    .with_description("A fake MCP server for testing"),
+                Implementation::new("fake-mcp-server", "0.1.0").with_description("A fake MCP server for testing"),
             )
             .with_instructions("A fake MCP server for testing")
     }
@@ -129,9 +125,7 @@ impl SlowToolResult {
 
 impl Default for FakeMcpServer {
     fn default() -> Self {
-        Self {
-            tool_router: Self::tool_router(),
-        }
+        Self { tool_router: Self::tool_router() }
     }
 }
 
@@ -146,25 +140,17 @@ impl FakeMcpServer {
     }
 
     #[tool(description = "Adds two numbers together")]
-    pub async fn add_numbers(
-        &self,
-        request: Parameters<AddNumbersRequest>,
-    ) -> Json<AddNumbersResult> {
+    pub async fn add_numbers(&self, request: Parameters<AddNumbersRequest>) -> Json<AddNumbersResult> {
         let Parameters(AddNumbersRequest { a, b }) = request;
         Json(AddNumbersResult { sum: a + b })
     }
 
     #[tool(description = "Divides two numbers")]
-    pub async fn divide_numbers(
-        &self,
-        request: Parameters<DivideNumbersRequest>,
-    ) -> Result<CallToolResult, McpError> {
+    pub async fn divide_numbers(&self, request: Parameters<DivideNumbersRequest>) -> Result<CallToolResult, McpError> {
         let Parameters(DivideNumbersRequest { a, b }) = request;
 
         if b == 0 {
-            return Ok(CallToolResult::error(vec![Content::text(
-                "Division by zero",
-            )]));
+            return Ok(CallToolResult::error(vec![Content::text("Division by zero")]));
         }
 
         let result = DivideNumbersResult { quotient: a / b };
@@ -177,8 +163,6 @@ impl FakeMcpServer {
     pub async fn slow_tool(&self, request: Parameters<SlowToolRequest>) -> Json<SlowToolResult> {
         let Parameters(SlowToolRequest { sleep_ms }) = request;
         tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
-        Json(SlowToolResult {
-            message: format!("Slept for {sleep_ms}ms"),
-        })
+        Json(SlowToolResult { message: format!("Slept for {sleep_ms}ms") })
     }
 }

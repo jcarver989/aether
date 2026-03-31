@@ -57,11 +57,7 @@ pub(super) enum ConnectResult {
     /// Connection established successfully.
     Connected(McpServerConnection),
     /// HTTP server failed; may need OAuth. Carries the config for retry.
-    NeedsOAuth {
-        name: String,
-        config: StreamableHttpClientTransportConfig,
-        error: McpError,
-    },
+    NeedsOAuth { name: String, config: StreamableHttpClientTransportConfig, error: McpError },
     /// Hard failure (non-HTTP, or no OAuth handler available).
     Failed(McpError),
 }
@@ -86,10 +82,7 @@ impl McpServerConnection {
                 let child = match TokioChildProcess::new(cmd) {
                     Ok(child) => child,
                     Err(e) => {
-                        return ConnectResult::Failed(McpError::SpawnFailed {
-                            command,
-                            reason: e.to_string(),
-                        });
+                        return ConnectResult::Failed(McpError::SpawnFailed { command, reason: e.to_string() });
                     }
                 };
                 match params.mcp_client.serve(child).await {
@@ -98,14 +91,10 @@ impl McpServerConnection {
                 }
             }
 
-            ServerConfig::InMemory { name, server } => {
-                match serve_in_memory(server, params.mcp_client, &name).await {
-                    Ok((client, handle)) => {
-                        ConnectResult::Connected(Self::from_parts(client, Some(handle)))
-                    }
-                    Err(e) => ConnectResult::Failed(e),
-                }
-            }
+            ServerConfig::InMemory { name, server } => match serve_in_memory(server, params.mcp_client, &name).await {
+                Ok((client, handle)) => ConnectResult::Connected(Self::from_parts(client, Some(handle))),
+                Err(e) => ConnectResult::Failed(e),
+            },
 
             ServerConfig::Http { name, config: cfg } => Self::connect_http(name, cfg, params).await,
         }
@@ -121,9 +110,9 @@ impl McpServerConnection {
         mcp_client: McpClient,
     ) -> Result<Self> {
         let transport = StreamableHttpClientTransport::with_client(auth_client, config);
-        let client = serve_client(mcp_client, transport).await.map_err(|e| {
-            McpError::ConnectionFailed(format!("reconnect failed for '{name}': {e}"))
-        })?;
+        let client = serve_client(mcp_client, transport)
+            .await
+            .map_err(|e| McpError::ConnectionFailed(format!("reconnect failed for '{name}': {e}")))?;
         Ok(Self::from_parts(client, None))
     }
 
@@ -139,19 +128,9 @@ impl McpServerConnection {
 
     /// Build a connection from already-connected parts, extracting any
     /// server-provided instructions from peer info.
-    fn from_parts(
-        client: RunningService<RoleClient, McpClient>,
-        server_task: Option<JoinHandle<()>>,
-    ) -> Self {
-        let instructions = client
-            .peer_info()
-            .and_then(|info| info.instructions.clone())
-            .filter(|s| !s.is_empty());
-        Self {
-            client: Arc::new(client),
-            server_task,
-            instructions,
-        }
+    fn from_parts(client: RunningService<RoleClient, McpClient>, server_task: Option<JoinHandle<()>>) -> Self {
+        let instructions = client.peer_info().and_then(|info| info.instructions.clone()).filter(|s| !s.is_empty());
+        Self { client: Arc::new(client), server_task, instructions }
     }
 
     /// Connect to an HTTP MCP server. Tries stored OAuth credentials first,
@@ -167,17 +146,12 @@ impl McpServerConnection {
         let result = match create_auth_client(&name, &config.uri).await {
             Some(auth_client) if config.auth_header.is_none() => {
                 tracing::debug!("Using OAuth for server '{name}'");
-                let transport =
-                    StreamableHttpClientTransport::with_client(auth_client, config.clone());
-                serve_client(params.mcp_client, transport)
-                    .await
-                    .map_err(conn_err)
+                let transport = StreamableHttpClientTransport::with_client(auth_client, config.clone());
+                serve_client(params.mcp_client, transport).await.map_err(conn_err)
             }
             _ => {
                 let transport = StreamableHttpClientTransport::from_config(config.clone());
-                serve_client(params.mcp_client, transport)
-                    .await
-                    .map_err(conn_err)
+                serve_client(params.mcp_client, transport).await.map_err(conn_err)
             }
         };
 
@@ -186,11 +160,7 @@ impl McpServerConnection {
             Err(err) => {
                 tracing::warn!("Failed to connect to MCP server '{name}': {err}");
                 if params.oauth_handler.is_some() {
-                    ConnectResult::NeedsOAuth {
-                        name,
-                        config,
-                        error: err,
-                    }
+                    ConnectResult::NeedsOAuth { name, config, error: err }
                 } else {
                     ConnectResult::Failed(err)
                 }
@@ -200,13 +170,8 @@ impl McpServerConnection {
 }
 
 /// Try to build an `AuthClient` from stored OAuth credentials.
-async fn create_auth_client(
-    server_id: &str,
-    base_url: &str,
-) -> Option<AuthClient<reqwest::Client>> {
-    let auth_manager = create_auth_manager_from_store(server_id, base_url)
-        .await
-        .ok()??;
+async fn create_auth_client(server_id: &str, base_url: &str) -> Option<AuthClient<reqwest::Client>> {
+    let auth_manager = create_auth_manager_from_store(server_id, base_url).await.ok()??;
     Some(AuthClient::new(reqwest::Client::default(), auth_manager))
 }
 
@@ -233,11 +198,7 @@ async fn serve_in_memory(
 
     let client = serve_client(mcp_client, client_transport)
         .await
-        .map_err(|e| {
-            McpError::ConnectionFailed(format!(
-                "Failed to connect to in-memory server '{label}': {e}"
-            ))
-        })?;
+        .map_err(|e| McpError::ConnectionFailed(format!("Failed to connect to in-memory server '{label}': {e}")))?;
 
     Ok((client, server_handle))
 }

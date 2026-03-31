@@ -19,10 +19,7 @@ async fn test_ctrl_c_emits_exit() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
-    let action = renderer
-        .on_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
-        .await
-        .unwrap();
+    let action = renderer.on_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)).await.unwrap();
 
     assert!(matches!(action, LoopAction::Exit));
 }
@@ -38,10 +35,7 @@ async fn test_escape_while_waiting_emits_cancel() {
     press_enter(&mut renderer).await;
 
     // Press Escape while waiting — should cancel
-    let action = renderer
-        .on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
-        .await
-        .unwrap();
+    let action = renderer.on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await.unwrap();
 
     assert!(matches!(action, LoopAction::Continue));
 }
@@ -54,14 +48,8 @@ async fn test_escape_while_not_waiting_does_nothing() {
 
     let lines_before = renderer.writer().get_lines();
 
-    renderer
-        .on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
-        .await
-        .unwrap();
+    renderer.on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await.unwrap();
 
     let lines_after = renderer.writer().get_lines();
-    assert_eq!(
-        lines_before, lines_after,
-        "Escape should be a no-op when not waiting"
-    );
+    assert_eq!(lines_before, lines_after, "Escape should be a no-op when not waiting");
 }

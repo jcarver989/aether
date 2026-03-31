@@ -27,10 +27,7 @@ impl ReasoningEffort {
 
     /// Numeric position derived from `all()` ordering.
     pub fn ordinal(self) -> usize {
-        Self::all()
-            .iter()
-            .position(|&e| e == self)
-            .expect("variant must be in all()")
+        Self::all().iter().position(|&e| e == self).expect("variant must be in all()")
     }
 
     /// Cycles through only the given `levels`, wrapping to `None` after the last.
@@ -41,11 +38,7 @@ impl ReasoningEffort {
         }
         match current {
             None => Some(levels[0]),
-            Some(effort) => levels
-                .iter()
-                .position(|&l| l == effort)
-                .and_then(|i| levels.get(i + 1))
-                .copied(),
+            Some(effort) => levels.iter().position(|&l| l == effort).and_then(|i| levels.get(i + 1)).copied(),
         }
     }
 
@@ -136,14 +129,8 @@ mod tests {
 
     #[test]
     fn parse_valid_levels() {
-        assert_eq!(
-            ReasoningEffort::parse("high").unwrap(),
-            Some(ReasoningEffort::High)
-        );
-        assert_eq!(
-            ReasoningEffort::parse("low").unwrap(),
-            Some(ReasoningEffort::Low)
-        );
+        assert_eq!(ReasoningEffort::parse("high").unwrap(), Some(ReasoningEffort::High));
+        assert_eq!(ReasoningEffort::parse("low").unwrap(), Some(ReasoningEffort::Low));
     }
 
     #[test]
@@ -154,14 +141,8 @@ mod tests {
     #[test]
     fn config_str_values() {
         assert_eq!(ReasoningEffort::config_str(None), "none");
-        assert_eq!(
-            ReasoningEffort::config_str(Some(ReasoningEffort::Low)),
-            "low"
-        );
-        assert_eq!(
-            ReasoningEffort::config_str(Some(ReasoningEffort::High)),
-            "high"
-        );
+        assert_eq!(ReasoningEffort::config_str(Some(ReasoningEffort::Low)), "low");
+        assert_eq!(ReasoningEffort::config_str(Some(ReasoningEffort::High)), "high");
     }
 
     #[test]
@@ -185,14 +166,8 @@ mod tests {
         use ReasoningEffort::*;
         let levels = &[Low, Medium, High];
         assert_eq!(ReasoningEffort::cycle_within(None, levels), Some(Low));
-        assert_eq!(
-            ReasoningEffort::cycle_within(Some(Low), levels),
-            Some(Medium)
-        );
-        assert_eq!(
-            ReasoningEffort::cycle_within(Some(Medium), levels),
-            Some(High)
-        );
+        assert_eq!(ReasoningEffort::cycle_within(Some(Low), levels), Some(Medium));
+        assert_eq!(ReasoningEffort::cycle_within(Some(Medium), levels), Some(High));
         assert_eq!(ReasoningEffort::cycle_within(Some(High), levels), None);
     }
 
@@ -201,30 +176,21 @@ mod tests {
         use ReasoningEffort::*;
         let levels = &[Low, Medium, High, Xhigh];
         assert_eq!(ReasoningEffort::cycle_within(None, levels), Some(Low));
-        assert_eq!(
-            ReasoningEffort::cycle_within(Some(High), levels),
-            Some(Xhigh)
-        );
+        assert_eq!(ReasoningEffort::cycle_within(Some(High), levels), Some(Xhigh));
         assert_eq!(ReasoningEffort::cycle_within(Some(Xhigh), levels), None);
     }
 
     #[test]
     fn cycle_within_empty_returns_none() {
         assert_eq!(ReasoningEffort::cycle_within(None, &[]), None);
-        assert_eq!(
-            ReasoningEffort::cycle_within(Some(ReasoningEffort::Low), &[]),
-            None
-        );
+        assert_eq!(ReasoningEffort::cycle_within(Some(ReasoningEffort::Low), &[]), None);
     }
 
     #[test]
     fn cycle_within_unknown_current_wraps_to_none() {
         use ReasoningEffort::*;
         // Current is Xhigh but levels only have Low/Medium/High
-        assert_eq!(
-            ReasoningEffort::cycle_within(Some(Xhigh), &[Low, Medium, High]),
-            None
-        );
+        assert_eq!(ReasoningEffort::cycle_within(Some(Xhigh), &[Low, Medium, High]), None);
     }
 
     #[test]
@@ -250,9 +216,6 @@ mod tests {
 
     #[test]
     fn parse_xhigh() {
-        assert_eq!(
-            ReasoningEffort::parse("xhigh").unwrap(),
-            Some(ReasoningEffort::Xhigh)
-        );
+        assert_eq!(ReasoningEffort::parse("xhigh").unwrap(), Some(ReasoningEffort::Xhigh));
     }
 }

@@ -76,10 +76,7 @@ impl From<McpNotification> for ExtNotification {
 /// Client→server MCP extension requests (wisp → relay).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum McpRequest {
-    Authenticate {
-        session_id: String,
-        server_name: String,
-    },
+    Authenticate { session_id: String, server_name: String },
 }
 
 impl From<McpRequest> for ExtNotification {
@@ -243,8 +240,7 @@ mod tests {
         let notification: ExtNotification = msg.clone().into();
         assert_eq!(notification.method.as_ref(), MCP_MESSAGE_METHOD);
 
-        let parsed: McpRequest =
-            serde_json::from_str(notification.params.get()).expect("valid JSON");
+        let parsed: McpRequest = serde_json::from_str(notification.params.get()).expect("valid JSON");
         assert_eq!(parsed, msg);
     }
 
@@ -256,15 +252,10 @@ mod tests {
                     name: "github".to_string(),
                     status: McpServerStatus::Connected { tool_count: 5 },
                 },
-                McpServerStatusEntry {
-                    name: "linear".to_string(),
-                    status: McpServerStatus::NeedsOAuth,
-                },
+                McpServerStatusEntry { name: "linear".to_string(), status: McpServerStatus::NeedsOAuth },
                 McpServerStatusEntry {
                     name: "slack".to_string(),
-                    status: McpServerStatus::Failed {
-                        error: "connection timeout".to_string(),
-                    },
+                    status: McpServerStatus::Failed { error: "connection timeout".to_string() },
                 },
             ],
         };
@@ -272,8 +263,7 @@ mod tests {
         let notification: ExtNotification = msg.clone().into();
         assert_eq!(notification.method.as_ref(), MCP_MESSAGE_METHOD);
 
-        let parsed: McpNotification =
-            serde_json::from_str(notification.params.get()).expect("valid JSON");
+        let parsed: McpNotification = serde_json::from_str(notification.params.get()).expect("valid JSON");
         assert_eq!(parsed, msg);
     }
 
@@ -281,16 +271,13 @@ mod tests {
     fn auth_methods_updated_params_roundtrip() {
         let params = AuthMethodsUpdatedParams {
             auth_methods: vec![
-                AuthMethod::Agent(
-                    AuthMethodAgent::new("anthropic", "Anthropic").description("authenticated"),
-                ),
+                AuthMethod::Agent(AuthMethodAgent::new("anthropic", "Anthropic").description("authenticated")),
                 AuthMethod::Agent(AuthMethodAgent::new("openrouter", "OpenRouter")),
             ],
         };
 
         let notification: ExtNotification = params.clone().into();
-        let parsed: AuthMethodsUpdatedParams =
-            from_str(notification.params.get()).expect("valid JSON");
+        let parsed: AuthMethodsUpdatedParams = from_str(notification.params.get()).expect("valid JSON");
 
         assert_eq!(parsed, params);
         assert_eq!(notification.method.as_ref(), AUTH_METHODS_UPDATED_METHOD);
@@ -317,9 +304,7 @@ mod tests {
             schema: ElicitationSchema::builder()
                 .required_enum_schema(
                     "color",
-                    EnumSchema::builder(vec!["red".into(), "green".into(), "blue".into()])
-                        .untitled()
-                        .build(),
+                    EnumSchema::builder(vec!["red".into(), "green".into(), "blue".into()]).untitled().build(),
                 )
                 .build()
                 .unwrap(),
@@ -332,17 +317,12 @@ mod tests {
 
     #[test]
     fn context_usage_params_roundtrip() {
-        let params = ContextUsageParams {
-            usage_ratio: Some(0.75),
-            tokens_used: 75000,
-            context_limit: Some(100_000),
-        };
+        let params = ContextUsageParams { usage_ratio: Some(0.75), tokens_used: 75000, context_limit: Some(100_000) };
 
         let notification: ExtNotification = params.clone().into();
         assert_eq!(notification.method.as_ref(), CONTEXT_USAGE_METHOD);
 
-        let parsed: ContextUsageParams =
-            serde_json::from_str(notification.params.get()).expect("valid JSON");
+        let parsed: ContextUsageParams = serde_json::from_str(notification.params.get()).expect("valid JSON");
         assert_eq!(parsed, params);
     }
 
@@ -353,8 +333,7 @@ mod tests {
         let notification: ExtNotification = params.clone().into();
         assert_eq!(notification.method.as_ref(), CONTEXT_CLEARED_METHOD);
 
-        let parsed: ContextClearedParams =
-            serde_json::from_str(notification.params.get()).expect("valid JSON");
+        let parsed: ContextClearedParams = serde_json::from_str(notification.params.get()).expect("valid JSON");
         assert_eq!(parsed, params);
     }
 
@@ -370,8 +349,7 @@ mod tests {
         let notification: ExtNotification = params.into();
         assert_eq!(notification.method.as_ref(), SUB_AGENT_PROGRESS_METHOD);
 
-        let parsed: SubAgentProgressParams =
-            serde_json::from_str(notification.params.get()).expect("valid JSON");
+        let parsed: SubAgentProgressParams = serde_json::from_str(notification.params.get()).expect("valid JSON");
         assert!(matches!(parsed.event, SubAgentEvent::Done));
         assert_eq!(parsed.parent_tool_id, "call_123");
     }
@@ -426,8 +404,7 @@ mod tests {
 
     #[test]
     fn tool_result_meta_map_roundtrip() {
-        let meta: ToolResultMeta =
-            ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines").into();
+        let meta: ToolResultMeta = ToolDisplayMeta::new("Read file", "Cargo.toml, 156 lines").into();
         let map = meta.clone().into_map();
         let parsed = ToolResultMeta::from_map(&map).expect("should deserialize ToolResultMeta");
         assert_eq!(parsed, meta);
@@ -455,8 +432,7 @@ mod tests {
         };
 
         let notification: ExtNotification = msg.clone().into();
-        let parsed =
-            McpNotification::try_from(&notification).expect("should parse McpNotification");
+        let parsed = McpNotification::try_from(&notification).expect("should parse McpNotification");
         assert_eq!(parsed, msg);
     }
 
@@ -469,8 +445,7 @@ mod tests {
         };
 
         let notification: ExtNotification = params.clone().into();
-        let parsed =
-            AuthMethodsUpdatedParams::try_from(&notification).expect("should parse auth methods");
+        let parsed = AuthMethodsUpdatedParams::try_from(&notification).expect("should parse auth methods");
         assert_eq!(parsed, params);
     }
 
@@ -478,18 +453,11 @@ mod tests {
     fn try_from_wrong_method_returns_error() {
         let notification = ext_notification(
             CONTEXT_USAGE_METHOD,
-            &ContextUsageParams {
-                usage_ratio: Some(0.5),
-                tokens_used: 50000,
-                context_limit: Some(100_000),
-            },
+            &ContextUsageParams { usage_ratio: Some(0.5), tokens_used: 50000, context_limit: Some(100_000) },
         );
 
         let result = McpRequest::try_from(&notification);
-        assert!(matches!(
-            result,
-            Err(ExtNotificationParseError::WrongMethod)
-        ));
+        assert!(matches!(result, Err(ExtNotificationParseError::WrongMethod)));
     }
 
     #[test]
@@ -497,10 +465,7 @@ mod tests {
         let notification = ext_notification(MCP_MESSAGE_METHOD, &"not a valid McpRequest");
 
         let result = McpRequest::try_from(&notification);
-        assert!(matches!(
-            result,
-            Err(ExtNotificationParseError::InvalidJson(_))
-        ));
+        assert!(matches!(result, Err(ExtNotificationParseError::InvalidJson(_))));
     }
 
     #[test]

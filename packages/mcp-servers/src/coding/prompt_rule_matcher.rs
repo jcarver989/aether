@@ -13,10 +13,7 @@ pub struct PromptRuleMatcher {
 
 impl PromptRuleMatcher {
     pub fn new(catalog: PromptCatalog) -> Self {
-        Self {
-            catalog,
-            activated: RwLock::new(HashSet::new()),
-        }
+        Self { catalog, activated: RwLock::new(HashSet::new()) }
     }
 
     /// Returns newly-matched rules for `file_path` and marks them as activated.
@@ -36,11 +33,7 @@ impl PromptRuleMatcher {
             if activated.contains(&spec.name) {
                 continue;
             }
-            tracing::info!(
-                "Activating read rule '{}' triggered by read of '{}'",
-                spec.name,
-                file_path
-            );
+            tracing::info!("Activating read rule '{}' triggered by read of '{}'", spec.name, file_path);
             activated.insert(spec.name.clone());
             result.push(spec.clone());
         }
@@ -89,7 +82,8 @@ mod tests {
         fs::write(
             rust_dir.join("SKILL.md"),
             "---\ndescription: Rust conventions\ntriggers:\n  read:\n    - \"**/*.rs\"\n---\nRust best practices.\n",
-        ).unwrap();
+        )
+        .unwrap();
 
         let catalog = PromptCatalog::from_dir(skills_dir).unwrap();
         let state = PromptRuleMatcher::new(catalog);
@@ -117,7 +111,8 @@ mod tests {
         fs::write(
             rust_dir.join("SKILL.md"),
             "---\ndescription: Rust conventions\ntriggers:\n  read:\n    - \"**/*.rs\"\n---\nRust rules.\n",
-        ).unwrap();
+        )
+        .unwrap();
 
         let catalog = PromptCatalog::from_dir(skills_dir).unwrap();
         let state = PromptRuleMatcher::new(catalog);
@@ -140,7 +135,8 @@ mod tests {
         fs::write(
             rust_dir.join("SKILL.md"),
             "---\ndescription: Rust conventions\ntriggers:\n  read:\n    - \"**/*.rs\"\n---\nRust rules.\n",
-        ).unwrap();
+        )
+        .unwrap();
 
         let catalog = PromptCatalog::from_dir(skills_dir).unwrap();
         let state = PromptRuleMatcher::new(catalog);

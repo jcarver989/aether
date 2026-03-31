@@ -35,14 +35,7 @@ pub struct Panel {
 
 impl Panel {
     pub fn new(border_color: Color) -> Self {
-        Self {
-            blocks: Vec::new(),
-            title: None,
-            footer: None,
-            border_color,
-            fill_height: None,
-            gap: 0,
-        }
+        Self { blocks: Vec::new(), title: None, footer: None, border_color, fill_height: None, gap: 0 }
     }
 
     pub fn title(mut self, title: impl Into<String>) -> Self {
@@ -85,14 +78,9 @@ impl Panel {
         // ── Top border ──
         let title_text = self.title.as_deref().unwrap_or("");
         let bar_left = "┌─";
-        let bar_right_pad = width.saturating_sub(
-            UnicodeWidthStr::width(bar_left) + UnicodeWidthStr::width(title_text) + 1,
-        ); // 1 for ┐
-        let title_line = format!(
-            "{bar_left}{title_text}{:─>bar_right_pad$}┐",
-            "",
-            bar_right_pad = bar_right_pad
-        );
+        let bar_right_pad =
+            width.saturating_sub(UnicodeWidthStr::width(bar_left) + UnicodeWidthStr::width(title_text) + 1); // 1 for ┐
+        let title_line = format!("{bar_left}{title_text}{:─>bar_right_pad$}┐", "", bar_right_pad = bar_right_pad);
         lines.push(Line::with_style(title_line, border_style));
 
         // ── Blank line after top border ──
@@ -122,13 +110,8 @@ impl Panel {
 
         // ── Footer ──
         if let Some(ref footer_text) = self.footer {
-            let footer_pad =
-                inner_width.saturating_sub(UnicodeWidthStr::width(footer_text.as_str()));
-            let footer_line_str = format!(
-                "│ {footer_text}{:footer_pad$} │",
-                "",
-                footer_pad = footer_pad
-            );
+            let footer_pad = inner_width.saturating_sub(UnicodeWidthStr::width(footer_text.as_str()));
+            let footer_line_str = format!("│ {footer_text}{:footer_pad$} │", "", footer_pad = footer_pad);
             lines.push(Line::with_style(footer_line_str, border_style));
         }
 
@@ -159,11 +142,7 @@ fn wrap_in_border(content: &Line, inner_width: usize) -> Line {
 }
 
 fn empty_border_line(inner_width: usize) -> Line {
-    Line::new(format!(
-        "│ {:inner_width$} │",
-        "",
-        inner_width = inner_width
-    ))
+    Line::new(format!("│ {:inner_width$} │", "", inner_width = inner_width))
 }
 
 #[cfg(test)]
@@ -196,10 +175,7 @@ mod tests {
 
     #[test]
     fn fill_height_pads_with_empty_bordered_rows() {
-        let mut container = Panel::new(Color::Grey)
-            .title(" T ")
-            .footer("F")
-            .fill_height(10);
+        let mut container = Panel::new(Color::Grey).title(" T ").footer("F").fill_height(10);
         container.push(vec![Line::new("x")]);
         let context = ViewContext::new((30, 10));
         let lines = container.render(&context);
@@ -229,16 +205,9 @@ mod tests {
         let lines = container.render(&context);
         // Content row (top border + blank + first content = index 2)
         let content_row = &lines[2];
-        let bg_span = content_row
-            .spans()
-            .iter()
-            .find(|s| s.style().bg == Some(bg))
-            .expect("should have a span with bg color");
-        assert!(
-            bg_span.text().len() > 2,
-            "bg span should extend through padding, got: {:?}",
-            bg_span.text()
-        );
+        let bg_span =
+            content_row.spans().iter().find(|s| s.style().bg == Some(bg)).expect("should have a span with bg color");
+        assert!(bg_span.text().len() > 2, "bg span should extend through padding, got: {:?}", bg_span.text());
     }
 
     #[test]

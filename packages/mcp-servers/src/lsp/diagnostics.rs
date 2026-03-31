@@ -83,49 +83,28 @@ impl FormattedDiagnostic {
 
     /// Format the diagnostic for display (rustc-style)
     pub fn format(&self) -> String {
-        let source = self
-            .source
-            .as_ref()
-            .map(|s| format!("[{s}] "))
-            .unwrap_or_default();
+        let source = self.source.as_ref().map(|s| format!("[{s}] ")).unwrap_or_default();
 
-        let code = self
-            .code
-            .as_ref()
-            .map(|c| format!("[{c}] "))
-            .unwrap_or_default();
+        let code = self.code.as_ref().map(|c| format!("[{c}] ")).unwrap_or_default();
 
-        format!(
-            "{}: {}{}{}:{}:{}: {}",
-            self.severity, source, code, self.file, self.line, self.column, self.message
-        )
+        format!("{}: {}{}{}:{}:{}: {}", self.severity, source, code, self.file, self.line, self.column, self.message)
     }
 }
 
 /// Extract and format all diagnostics from a `PublishDiagnosticsParams`
 pub fn format_diagnostics(params: &PublishDiagnosticsParams) -> Vec<FormattedDiagnostic> {
-    params
-        .diagnostics
-        .iter()
-        .map(|d| FormattedDiagnostic::from_diagnostic(&params.uri, d))
-        .collect()
+    params.diagnostics.iter().map(|d| FormattedDiagnostic::from_diagnostic(&params.uri, d)).collect()
 }
 
 /// Filter diagnostics by severity
-pub fn filter_by_severity(
-    diagnostics: &[FormattedDiagnostic],
-    min_severity: Severity,
-) -> Vec<&FormattedDiagnostic> {
+pub fn filter_by_severity(diagnostics: &[FormattedDiagnostic], min_severity: Severity) -> Vec<&FormattedDiagnostic> {
     diagnostics
         .iter()
         .filter(|d| {
             matches!(
                 (d.severity, min_severity),
                 (Severity::Error, _)
-                    | (
-                        Severity::Warning,
-                        Severity::Warning | Severity::Info | Severity::Hint
-                    )
+                    | (Severity::Warning, Severity::Warning | Severity::Info | Severity::Hint)
                     | (Severity::Info, Severity::Info | Severity::Hint)
                     | (Severity::Hint, Severity::Hint)
             )
@@ -168,11 +147,7 @@ impl DiagnosticCounts {
 
 impl std::fmt::Display for DiagnosticCounts {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} errors, {} warnings, {} info, {} hints",
-            self.errors, self.warnings, self.infos, self.hints
-        )
+        write!(f, "{} errors, {} warnings, {} info, {} hints", self.errors, self.warnings, self.infos, self.hints)
     }
 }
 
@@ -183,13 +158,7 @@ mod tests {
 
     fn make_diagnostic(severity: DiagnosticSeverity, message: &str, line: u32) -> Diagnostic {
         Diagnostic {
-            range: Range {
-                start: Position { line, character: 0 },
-                end: Position {
-                    line,
-                    character: 10,
-                },
-            },
+            range: Range { start: Position { line, character: 0 }, end: Position { line, character: 10 } },
             severity: Some(severity),
             code: None,
             code_description: None,
@@ -207,22 +176,10 @@ mod tests {
 
     #[test]
     fn test_severity_conversion() {
-        assert_eq!(
-            Severity::from(Some(DiagnosticSeverity::ERROR)),
-            Severity::Error
-        );
-        assert_eq!(
-            Severity::from(Some(DiagnosticSeverity::WARNING)),
-            Severity::Warning
-        );
-        assert_eq!(
-            Severity::from(Some(DiagnosticSeverity::INFORMATION)),
-            Severity::Info
-        );
-        assert_eq!(
-            Severity::from(Some(DiagnosticSeverity::HINT)),
-            Severity::Hint
-        );
+        assert_eq!(Severity::from(Some(DiagnosticSeverity::ERROR)), Severity::Error);
+        assert_eq!(Severity::from(Some(DiagnosticSeverity::WARNING)), Severity::Warning);
+        assert_eq!(Severity::from(Some(DiagnosticSeverity::INFORMATION)), Severity::Info);
+        assert_eq!(Severity::from(Some(DiagnosticSeverity::HINT)), Severity::Hint);
         assert_eq!(Severity::from(None), Severity::Error);
     }
 
@@ -249,10 +206,7 @@ mod tests {
             make_diagnostic(DiagnosticSeverity::WARNING, "warning 1", 2),
         ];
 
-        let formatted: Vec<_> = diagnostics
-            .iter()
-            .map(|d| FormattedDiagnostic::from_diagnostic(&uri, d))
-            .collect();
+        let formatted: Vec<_> = diagnostics.iter().map(|d| FormattedDiagnostic::from_diagnostic(&uri, d)).collect();
 
         let counts = count_by_severity(&formatted);
 
@@ -267,10 +221,7 @@ mod tests {
     #[test]
     fn test_uri_to_path() {
         // Unix-style path
-        assert_eq!(
-            uri_to_path(&make_uri("/path/to/file.rs")),
-            "/path/to/file.rs"
-        );
+        assert_eq!(uri_to_path(&make_uri("/path/to/file.rs")), "/path/to/file.rs");
 
         // Non-file URI
         let non_file_uri: Uri = "https://example.com/file.rs".parse().unwrap();

@@ -39,19 +39,12 @@ async fn test_hover_returns_type_info() {
             "symbol": "x",
             "line": 2
         }),
-        |r| {
-            r.get("hoverContents")
-                .and_then(|h| h.as_str())
-                .is_some_and(|s| s.contains("Vec"))
-        },
+        |r| r.get("hoverContents").and_then(|h| h.as_str()).is_some_and(|s| s.contains("Vec")),
     )
     .await;
 
     let hover = result["hoverContents"].as_str().unwrap();
-    assert!(
-        hover.contains("Vec") && hover.contains("i32"),
-        "Expected hover to contain Vec<i32>, got: {hover}"
-    );
+    assert!(hover.contains("Vec") && hover.contains("i32"), "Expected hover to contain Vec<i32>, got: {hover}");
 }
 
 /// Test: goto definition resolves to the correct function definition
@@ -85,19 +78,12 @@ fn main() {
             "symbol": "greet",
             "line": 6
         }),
-        |r| {
-            r.get("locations")
-                .and_then(|l| l.as_array())
-                .is_some_and(|a| !a.is_empty())
-        },
+        |r| r.get("locations").and_then(|l| l.as_array()).is_some_and(|a| !a.is_empty()),
     )
     .await;
 
     let locations = result["locations"].as_array().unwrap();
-    assert!(
-        !locations.is_empty(),
-        "Expected at least one definition location"
-    );
+    assert!(!locations.is_empty(), "Expected at least one definition location");
 
     // LocationResult uses 1-indexed startLine (camelCase)
     let first = &locations[0];
@@ -137,21 +123,13 @@ fn main() {
             "symbol": "greet",
             "line": 1
         }),
-        |r| {
-            r.get("locations")
-                .and_then(|l| l.as_array())
-                .is_some_and(|a| a.len() >= 2)
-        },
+        |r| r.get("locations").and_then(|l| l.as_array()).is_some_and(|a| a.len() >= 2),
     )
     .await;
 
     let locations = result["locations"].as_array().unwrap();
     // At least the 2 call sites (and possibly the definition if include_declaration defaults true)
-    assert!(
-        locations.len() >= 2,
-        "Expected at least 2 references to greet, got {}",
-        locations.len()
-    );
+    assert!(locations.len() >= 2, "Expected at least 2 references to greet, got {}", locations.len());
 }
 
 /// Test: lsp_rename applies workspace edits for a Rust symbol
@@ -197,15 +175,10 @@ async fn test_lsp_rename_applies_workspace_edits() {
             "line": 1
         }),
         |r| {
-            r.get("locations")
-                .and_then(|v| v.as_array())
-                .is_some_and(|refs| {
-                    refs.iter().any(|loc| {
-                        loc.get("filePath")
-                            .and_then(|p| p.as_str())
-                            .is_some_and(|p| p.ends_with("main.rs"))
-                    })
-                })
+            r.get("locations").and_then(|v| v.as_array()).is_some_and(|refs| {
+                refs.iter()
+                    .any(|loc| loc.get("filePath").and_then(|p| p.as_str()).is_some_and(|p| p.ends_with("main.rs")))
+            })
         },
     )
     .await;
@@ -228,38 +201,26 @@ async fn test_lsp_rename_applies_workspace_edits() {
 
     let files_affected = result["filesAffected"].as_u64().unwrap();
     let total_edits = result["totalEdits"].as_u64().unwrap();
-    assert!(
-        files_affected >= 2,
-        "expected at least 2 files, got {files_affected}"
-    );
-    assert!(
-        total_edits >= 3,
-        "expected at least 3 edits, got {total_edits}"
-    );
+    assert!(files_affected >= 2, "expected at least 2 files, got {files_affected}");
+    assert!(total_edits >= 3, "expected at least 3 edits, got {total_edits}");
 
     let changes = result["changes"].as_array().unwrap();
-    let changed_paths: Vec<&str> = changes
-        .iter()
-        .filter_map(|entry| entry.get("filePath").and_then(|v| v.as_str()))
-        .collect();
+    let changed_paths: Vec<&str> =
+        changes.iter().filter_map(|entry| entry.get("filePath").and_then(|v| v.as_str())).collect();
 
     assert!(
-        changed_paths
-            .iter()
-            .any(|path| path.ends_with("src/lib.rs")),
+        changed_paths.iter().any(|path| path.ends_with("src/lib.rs")),
         "expected lib.rs in changes, got {changed_paths:?}"
     );
     assert!(
-        changed_paths
-            .iter()
-            .any(|path| path.ends_with("src/main.rs")),
+        changed_paths.iter().any(|path| path.ends_with("src/main.rs")),
         "expected main.rs in changes, got {changed_paths:?}"
     );
 
-    let lib_content = std::fs::read_to_string(project.root().join("src/lib.rs"))
-        .expect("failed to read lib.rs after rename");
-    let main_content = std::fs::read_to_string(project.root().join("src/main.rs"))
-        .expect("failed to read main.rs after rename");
+    let lib_content =
+        std::fs::read_to_string(project.root().join("src/lib.rs")).expect("failed to read lib.rs after rename");
+    let main_content =
+        std::fs::read_to_string(project.root().join("src/main.rs")).expect("failed to read main.rs after rename");
 
     assert!(
         lib_content.contains("say_hello") && !lib_content.contains("greet"),
@@ -305,30 +266,14 @@ fn main() {
         serde_json::json!({
             "file_path": main_rs
         }),
-        |r| {
-            r.get("symbols")
-                .and_then(|s| s.as_array())
-                .is_some_and(|a| !a.is_empty())
-        },
+        |r| r.get("symbols").and_then(|s| s.as_array()).is_some_and(|a| !a.is_empty()),
     )
     .await;
 
     let symbols = result["symbols"].as_array().unwrap();
-    let names: Vec<&str> = symbols
-        .iter()
-        .filter_map(|s| s.get("name").and_then(|n| n.as_str()))
-        .collect();
+    let names: Vec<&str> = symbols.iter().filter_map(|s| s.get("name").and_then(|n| n.as_str())).collect();
 
-    assert!(
-        names.contains(&"Point"),
-        "Expected 'Point' in document symbols, got: {names:?}"
-    );
-    assert!(
-        names.contains(&"distance"),
-        "Expected 'distance' in document symbols, got: {names:?}"
-    );
-    assert!(
-        names.contains(&"main"),
-        "Expected 'main' in document symbols, got: {names:?}"
-    );
+    assert!(names.contains(&"Point"), "Expected 'Point' in document symbols, got: {names:?}");
+    assert!(names.contains(&"distance"), "Expected 'distance' in document symbols, got: {names:?}");
+    assert!(names.contains(&"main"), "Expected 'main' in document symbols, got: {names:?}");
 }

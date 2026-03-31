@@ -1,8 +1,6 @@
 use crate::error::{DaemonError, DaemonResult};
 use crate::language_catalog::LanguageId;
-use crate::language_catalog::{
-    ServerKind, metadata_for, resolved_config_for_language, server_kind_for_language,
-};
+use crate::language_catalog::{ServerKind, metadata_for, resolved_config_for_language, server_kind_for_language};
 use crate::workspace_session::WorkspaceSession;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -37,9 +35,8 @@ impl WorkspaceRegistry {
             return Ok(Arc::clone(session));
         }
 
-        let config = resolved_config_for_language(language).ok_or_else(|| {
-            DaemonError::LspSpawnFailed(format!("No LSP configured for language: {language:?}"))
-        })?;
+        let config = resolved_config_for_language(language)
+            .ok_or_else(|| DaemonError::LspSpawnFailed(format!("No LSP configured for language: {language:?}")))?;
 
         let mut sessions = self.sessions.write().await;
         if let Some(session) = sessions.get(&key) {
@@ -57,12 +54,7 @@ impl WorkspaceRegistry {
     }
 
     pub(crate) async fn workspace_roots(&self) -> Vec<PathBuf> {
-        self.sessions
-            .read()
-            .await
-            .keys()
-            .map(|key| key.workspace_root.clone())
-            .collect()
+        self.sessions.read().await.keys().map(|key| key.workspace_root.clone()).collect()
     }
 
     pub(crate) async fn shutdown(&self) {
@@ -84,16 +76,10 @@ fn supported_extensions(config: &crate::language_catalog::LspConfig) -> HashSet<
 
 impl WorkspaceKey {
     pub(crate) fn new(workspace_root: &Path, language: LanguageId) -> DaemonResult<Self> {
-        let workspace_root = workspace_root
-            .canonicalize()
-            .unwrap_or_else(|_| workspace_root.to_path_buf());
-        let server_kind = server_kind_for_language(language).ok_or_else(|| {
-            DaemonError::LspSpawnFailed(format!("No LSP configured for language: {language:?}"))
-        })?;
-        Ok(Self {
-            workspace_root,
-            server_kind,
-        })
+        let workspace_root = workspace_root.canonicalize().unwrap_or_else(|_| workspace_root.to_path_buf());
+        let server_kind = server_kind_for_language(language)
+            .ok_or_else(|| DaemonError::LspSpawnFailed(format!("No LSP configured for language: {language:?}")))?;
+        Ok(Self { workspace_root, server_kind })
     }
 }
 

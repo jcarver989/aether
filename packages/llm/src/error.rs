@@ -19,13 +19,7 @@ impl ContextOverflowError {
         max_tokens: Option<u32>,
         message: impl Into<String>,
     ) -> Self {
-        Self {
-            provider: provider.into(),
-            model,
-            requested_tokens,
-            max_tokens,
-            message: message.into(),
-        }
+        Self { provider: provider.into(), model, requested_tokens, max_tokens, message: message.into() }
     }
 }
 
@@ -38,11 +32,7 @@ impl fmt::Display for ContextOverflowError {
                 "{} (provider={}, model={}, requested={}, max={})",
                 self.message, self.provider, model, requested, max
             ),
-            _ => write!(
-                f,
-                "{} (provider={}, model={})",
-                self.message, self.provider, model
-            ),
+            _ => write!(f, "{} (provider={}, model={})", self.message, self.provider, model),
         }
     }
 }

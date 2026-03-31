@@ -25,12 +25,7 @@ impl AgentCatalog {
         inherited_mcp_config_path: Option<PathBuf>,
         specs: Vec<AgentSpec>,
     ) -> Self {
-        Self {
-            project_root,
-            inherited_prompts,
-            inherited_mcp_config_path,
-            specs,
-        }
+        Self { project_root, inherited_prompts, inherited_mcp_config_path, specs }
     }
 
     /// Create an empty catalog for a project with no settings.
@@ -53,9 +48,7 @@ impl AgentCatalog {
         self.specs
             .iter()
             .find(|spec| spec.name == name)
-            .ok_or_else(|| SettingsError::AgentNotFound {
-                name: name.to_string(),
-            })
+            .ok_or_else(|| SettingsError::AgentNotFound { name: name.to_string() })
     }
 
     /// Iterate over user-invocable agents.
@@ -82,8 +75,7 @@ impl AgentCatalog {
         reasoning_effort: Option<ReasoningEffort>,
         cwd: &Path,
     ) -> AgentSpec {
-        let mut spec =
-            AgentSpec::default_spec(model, reasoning_effort, self.inherited_prompts.clone());
+        let mut spec = AgentSpec::default_spec(model, reasoning_effort, self.inherited_prompts.clone());
         spec.resolve_mcp_config(self.inherited_mcp_config_path.as_deref(), cwd);
         spec
     }
@@ -121,10 +113,7 @@ mod tests {
     }
 
     fn create_test_catalog(project_root: PathBuf) -> AgentCatalog {
-        let inherited_prompts = vec![Prompt::from_globs(
-            vec!["BASE.md".to_string()],
-            project_root.clone(),
-        )];
+        let inherited_prompts = vec![Prompt::from_globs(vec!["BASE.md".to_string()], project_root.clone())];
         let planner = AgentSpec {
             name: "planner".to_string(),
             description: "Planner agent".to_string(),
@@ -212,10 +201,7 @@ mod tests {
         );
 
         let spec = catalog.resolve("planner", dir.path()).unwrap();
-        assert_eq!(
-            spec.mcp_config_path,
-            Some(dir.path().join("agent-mcp.json"))
-        );
+        assert_eq!(spec.mcp_config_path, Some(dir.path().join("agent-mcp.json")));
     }
 
     #[test]
@@ -232,10 +218,7 @@ mod tests {
         );
 
         let spec = catalog.resolve("planner", dir.path()).unwrap();
-        assert_eq!(
-            spec.mcp_config_path,
-            Some(dir.path().join("inherited-mcp.json"))
-        );
+        assert_eq!(spec.mcp_config_path, Some(dir.path().join("inherited-mcp.json")));
     }
 
     #[test]

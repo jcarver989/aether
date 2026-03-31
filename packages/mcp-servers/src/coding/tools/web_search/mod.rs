@@ -81,17 +81,12 @@ impl<C: SearchClient> WebSearcher<C> {
         let query = args.query.trim();
 
         if query.is_empty() {
-            return Err(WebSearchError::InvalidQuery(
-                "Search query cannot be empty".to_string(),
-            ));
+            return Err(WebSearchError::InvalidQuery("Search query cannot be empty".to_string()));
         }
 
         let count = args.count.unwrap_or(DEFAULT_COUNT).min(MAX_COUNT);
 
-        let params = SearchParams {
-            query: query.to_string(),
-            count,
-        };
+        let params = SearchParams { query: query.to_string(), count };
 
         let mut results = self.client.search(params).await?;
 
@@ -112,23 +107,12 @@ impl<C: SearchClient> WebSearcher<C> {
         // Convert to output format
         let results: Vec<SearchResult> = results
             .into_iter()
-            .map(|r| SearchResult {
-                title: r.title,
-                url: r.url.clone(),
-                snippet: r.description,
-            })
+            .map(|r| SearchResult { title: r.title, url: r.url.clone(), snippet: r.description })
             .collect();
 
-        let display_meta = ToolDisplayMeta::new(
-            "Web search",
-            format!("'{}' ({} results)", query, results.len()),
-        );
+        let display_meta = ToolDisplayMeta::new("Web search", format!("'{}' ({} results)", query, results.len()));
 
-        Ok(WebSearchOutput {
-            results,
-            query: query.to_string(),
-            meta: Some(display_meta.into()),
-        })
+        Ok(WebSearchOutput { results, query: query.to_string(), meta: Some(display_meta.into()) })
     }
 }
 
@@ -148,16 +132,11 @@ impl WebSearcher<BraveSearchClient> {
 
 impl Default for WebSearcher<BraveSearchClient> {
     fn default() -> Self {
-        Self::with_api_key(
-            std::env::var("BRAVE_SEARCH_API_KEY").expect("BRAVE_SEARCH_API_KEY must be set"),
-        )
+        Self::with_api_key(std::env::var("BRAVE_SEARCH_API_KEY").expect("BRAVE_SEARCH_API_KEY must be set"))
     }
 }
 
-fn filter_allowed_domains(
-    results: Vec<RawSearchResult>,
-    allowed_domains: &[String],
-) -> Vec<RawSearchResult> {
+fn filter_allowed_domains(results: Vec<RawSearchResult>, allowed_domains: &[String]) -> Vec<RawSearchResult> {
     let allowed_set: HashSet<String> = allowed_domains.iter().cloned().collect();
 
     results
@@ -171,10 +150,7 @@ fn filter_allowed_domains(
         .collect()
 }
 
-fn filter_blocked_domains(
-    results: Vec<RawSearchResult>,
-    blocked_domains: &[String],
-) -> Vec<RawSearchResult> {
+fn filter_blocked_domains(results: Vec<RawSearchResult>, blocked_domains: &[String]) -> Vec<RawSearchResult> {
     let blocked_set: HashSet<String> = blocked_domains.iter().cloned().collect();
 
     results
@@ -191,10 +167,7 @@ fn filter_blocked_domains(
 /// Extract domain/hostname from a URL
 fn extract_domain(url: &str) -> Option<String> {
     // Remove protocol
-    let url = url
-        .strip_prefix("http://")
-        .or_else(|| url.strip_prefix("https://"))
-        .unwrap_or(url);
+    let url = url.strip_prefix("http://").or_else(|| url.strip_prefix("https://")).unwrap_or(url);
 
     // Remove path and query string
     let domain = url.split('/').next()?;
@@ -210,20 +183,11 @@ mod tests {
     use super::*;
 
     fn make_result(url: &str) -> RawSearchResult {
-        RawSearchResult {
-            title: "Test".to_string(),
-            url: url.to_string(),
-            description: "Test description".to_string(),
-        }
+        RawSearchResult { title: "Test".to_string(), url: url.to_string(), description: "Test description".to_string() }
     }
 
     fn input(query: &str) -> WebSearchInput {
-        WebSearchInput {
-            query: query.to_string(),
-            count: None,
-            allowed_domains: None,
-            blocked_domains: None,
-        }
+        WebSearchInput { query: query.to_string(), count: None, allowed_domains: None, blocked_domains: None }
     }
 
     fn strs(vals: &[&str]) -> Vec<String> {
@@ -236,11 +200,7 @@ mod tests {
 
     #[test]
     fn test_domain_filtering() {
-        let urls = [
-            "https://example.com/page",
-            "https://test.org/page",
-            "https://sub.example.com/page",
-        ];
+        let urls = ["https://example.com/page", "https://test.org/page", "https://sub.example.com/page"];
         let results: Vec<_> = urls.iter().map(|u| make_result(u)).collect();
 
         // Allowed domains: keeps example.com and sub.example.com

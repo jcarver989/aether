@@ -17,9 +17,7 @@ use common::{connect_lsp, poll_lsp_tool};
 #[tokio::test]
 async fn test_ts_hover_returns_type_info() {
     let project = NodeProject::new("ts_hover_test").expect("Failed to create project");
-    project
-        .add_file("src/index.ts", "const x: number = 42;\nconsole.log(x);\n")
-        .expect("Failed to add file");
+    project.add_file("src/index.ts", "const x: number = 42;\nconsole.log(x);\n").expect("Failed to add file");
 
     let index_ts = project.file_path_str("src/index.ts");
     let (_server_handle, client) = connect_lsp(&project).await;
@@ -33,19 +31,12 @@ async fn test_ts_hover_returns_type_info() {
             "symbol": "x",
             "line": 1
         }),
-        |r| {
-            r.get("hoverContents")
-                .and_then(|h| h.as_str())
-                .is_some_and(|s| !s.is_empty())
-        },
+        |r| r.get("hoverContents").and_then(|h| h.as_str()).is_some_and(|s| !s.is_empty()),
     )
     .await;
 
     let hover = result["hoverContents"].as_str().unwrap();
-    assert!(
-        hover.contains("number"),
-        "Expected hover to contain 'number', got: {hover}"
-    );
+    assert!(hover.contains("number"), "Expected hover to contain 'number', got: {hover}");
 }
 
 /// Test: goto definition resolves to the correct function definition in TypeScript
@@ -77,19 +68,12 @@ console.log(msg);
             "symbol": "greet",
             "line": 5
         }),
-        |r| {
-            r.get("locations")
-                .and_then(|l| l.as_array())
-                .is_some_and(|a| !a.is_empty())
-        },
+        |r| r.get("locations").and_then(|l| l.as_array()).is_some_and(|a| !a.is_empty()),
     )
     .await;
 
     let locations = result["locations"].as_array().unwrap();
-    assert!(
-        !locations.is_empty(),
-        "Expected at least one definition location"
-    );
+    assert!(!locations.is_empty(), "Expected at least one definition location");
 
     let first = &locations[0];
     let start_line = first["startLine"].as_u64().unwrap();
@@ -126,20 +110,12 @@ console.log(a, b);
             "symbol": "greet",
             "line": 1
         }),
-        |r| {
-            r.get("locations")
-                .and_then(|l| l.as_array())
-                .is_some_and(|a| a.len() >= 2)
-        },
+        |r| r.get("locations").and_then(|l| l.as_array()).is_some_and(|a| a.len() >= 2),
     )
     .await;
 
     let locations = result["locations"].as_array().unwrap();
-    assert!(
-        locations.len() >= 2,
-        "Expected at least 2 references to greet, got {}",
-        locations.len()
-    );
+    assert!(locations.len() >= 2, "Expected at least 2 references to greet, got {}", locations.len());
 }
 
 /// Test: document symbols returns functions and interfaces in TypeScript
@@ -178,30 +154,14 @@ main();
         serde_json::json!({
             "file_path": index_ts
         }),
-        |r| {
-            r.get("symbols")
-                .and_then(|s| s.as_array())
-                .is_some_and(|a| !a.is_empty())
-        },
+        |r| r.get("symbols").and_then(|s| s.as_array()).is_some_and(|a| !a.is_empty()),
     )
     .await;
 
     let symbols = result["symbols"].as_array().unwrap();
-    let names: Vec<&str> = symbols
-        .iter()
-        .filter_map(|s| s.get("name").and_then(|n| n.as_str()))
-        .collect();
+    let names: Vec<&str> = symbols.iter().filter_map(|s| s.get("name").and_then(|n| n.as_str())).collect();
 
-    assert!(
-        names.contains(&"Point"),
-        "Expected 'Point' in document symbols, got: {names:?}"
-    );
-    assert!(
-        names.contains(&"distance"),
-        "Expected 'distance' in document symbols, got: {names:?}"
-    );
-    assert!(
-        names.contains(&"main"),
-        "Expected 'main' in document symbols, got: {names:?}"
-    );
+    assert!(names.contains(&"Point"), "Expected 'Point' in document symbols, got: {names:?}");
+    assert!(names.contains(&"distance"), "Expected 'distance' in document symbols, got: {names:?}");
+    assert!(names.contains(&"main"), "Expected 'main' in document symbols, got: {names:?}");
 }

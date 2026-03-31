@@ -44,12 +44,7 @@ fn highlight_split_diff(preview: &DiffPreview, context: &ViewContext) -> Vec<Lin
 
     for row in &preview.rows {
         let left_lines = render_cell(row.left.as_ref(), left_content, &preview.lang_hint, context);
-        let right_lines = render_cell(
-            row.right.as_ref(),
-            right_content,
-            &preview.lang_hint,
-            context,
-        );
+        let right_lines = render_cell(row.right.as_ref(), right_content, &preview.lang_hint, context);
 
         let height = left_lines.len().max(right_lines.len());
 
@@ -58,14 +53,8 @@ fn highlight_split_diff(preview: &DiffPreview, context: &ViewContext) -> Vec<Lin
         }
 
         for i in 0..height {
-            let left = left_lines
-                .get(i)
-                .cloned()
-                .unwrap_or_else(|| blank_panel(left_panel));
-            let right = right_lines
-                .get(i)
-                .cloned()
-                .unwrap_or_else(|| blank_panel(right_panel));
+            let left = left_lines.get(i).cloned().unwrap_or_else(|| blank_panel(left_panel));
+            let right = right_lines.get(i).cloned().unwrap_or_else(|| blank_panel(right_panel));
 
             let mut line = left;
             line.push_styled(SEPARATOR, theme.muted());
@@ -114,9 +103,7 @@ pub fn render_cell(
     };
 
     // Syntax-highlighted content
-    let highlighted = context
-        .highlighter()
-        .highlight(&cell.content, lang_hint, theme);
+    let highlighted = context.highlighter().highlight(&cell.content, lang_hint, theme);
 
     let content_line = if let Some(hl_line) = highlighted.first() {
         let mut styled_content = Line::default();
@@ -182,28 +169,15 @@ mod tests {
     }
 
     fn make_split_preview(rows: Vec<SplitDiffRow>) -> DiffPreview {
-        DiffPreview {
-            lines: vec![],
-            rows,
-            lang_hint: String::new(),
-            start_line: None,
-        }
+        DiffPreview { lines: vec![], rows, lang_hint: String::new(), start_line: None }
     }
 
     fn removed_cell(content: &str, line_num: usize) -> SplitDiffCell {
-        SplitDiffCell {
-            tag: DiffTag::Removed,
-            content: content.to_string(),
-            line_number: Some(line_num),
-        }
+        SplitDiffCell { tag: DiffTag::Removed, content: content.to_string(), line_number: Some(line_num) }
     }
 
     fn added_cell(content: &str, line_num: usize) -> SplitDiffCell {
-        SplitDiffCell {
-            tag: DiffTag::Added,
-            content: content.to_string(),
-            line_number: Some(line_num),
-        }
+        SplitDiffCell { tag: DiffTag::Added, content: content.to_string(), line_number: Some(line_num) }
     }
 
     #[test]
@@ -229,26 +203,16 @@ mod tests {
         }]);
         let ctx = test_context_with_width(100);
         let lines = highlight_split_diff(&preview, &ctx);
-        assert!(
-            lines.len() > 1,
-            "long line should wrap into multiple visual lines, got {}",
-            lines.len()
-        );
+        assert!(lines.len() > 1, "long line should wrap into multiple visual lines, got {}", lines.len());
         for line in &lines {
             let width = line.display_width();
-            assert!(
-                width <= 100,
-                "line width {width} should not exceed terminal width 100"
-            );
+            assert!(width <= 100, "line width {width} should not exceed terminal width 100");
         }
         // Full content should be present across all wrapped lines
         let all_text: String = lines.iter().map(|l| l.plain_text()).collect();
         let x_count = all_text.chars().filter(|&c| c == 'x').count();
         // Both left and right panels contain 200 x's each
-        assert_eq!(
-            x_count, 400,
-            "all content should be present across wrapped lines"
-        );
+        assert_eq!(x_count, 400, "all content should be present across wrapped lines");
     }
 
     #[test]
@@ -279,14 +243,8 @@ mod tests {
     #[test]
     fn render_diff_dispatches_to_unified_below_80() {
         let preview = DiffPreview {
-            lines: vec![DiffLine {
-                tag: DiffTag::Removed,
-                content: "old".to_string(),
-            }],
-            rows: vec![SplitDiffRow {
-                left: Some(removed_cell("old", 1)),
-                right: None,
-            }],
+            lines: vec![DiffLine { tag: DiffTag::Removed, content: "old".to_string() }],
+            rows: vec![SplitDiffRow { left: Some(removed_cell("old", 1)), right: None }],
             lang_hint: String::new(),
             start_line: None,
         };
@@ -306,32 +264,14 @@ mod tests {
         // since split view would have an empty left panel
         let preview = DiffPreview {
             lines: vec![
-                DiffLine {
-                    tag: DiffTag::Added,
-                    content: "fn main() {".to_string(),
-                },
-                DiffLine {
-                    tag: DiffTag::Added,
-                    content: "    println!(\"Hello\");".to_string(),
-                },
-                DiffLine {
-                    tag: DiffTag::Added,
-                    content: "}".to_string(),
-                },
+                DiffLine { tag: DiffTag::Added, content: "fn main() {".to_string() },
+                DiffLine { tag: DiffTag::Added, content: "    println!(\"Hello\");".to_string() },
+                DiffLine { tag: DiffTag::Added, content: "}".to_string() },
             ],
             rows: vec![
-                SplitDiffRow {
-                    left: None,
-                    right: Some(added_cell("fn main() {", 1)),
-                },
-                SplitDiffRow {
-                    left: None,
-                    right: Some(added_cell("    println!(\"Hello\");", 2)),
-                },
-                SplitDiffRow {
-                    left: None,
-                    right: Some(added_cell("}", 3)),
-                },
+                SplitDiffRow { left: None, right: Some(added_cell("fn main() {", 1)) },
+                SplitDiffRow { left: None, right: Some(added_cell("    println!(\"Hello\");", 2)) },
+                SplitDiffRow { left: None, right: Some(added_cell("}", 3)) },
             ],
             lang_hint: "rs".to_string(),
             start_line: None,
@@ -340,23 +280,14 @@ mod tests {
         let lines = render_diff(&preview, &ctx);
         // Unified renderer uses prefix "  + "
         let text = lines[0].plain_text();
-        assert!(
-            text.contains("+ fn main()"),
-            "should use unified renderer for new file: {text}"
-        );
+        assert!(text.contains("+ fn main()"), "should use unified renderer for new file: {text}");
     }
 
     #[test]
     fn render_diff_dispatches_to_split_at_80() {
         let preview = DiffPreview {
-            lines: vec![DiffLine {
-                tag: DiffTag::Removed,
-                content: "old".to_string(),
-            }],
-            rows: vec![SplitDiffRow {
-                left: Some(removed_cell("old", 1)),
-                right: None,
-            }],
+            lines: vec![DiffLine { tag: DiffTag::Removed, content: "old".to_string() }],
+            rows: vec![SplitDiffRow { left: Some(removed_cell("old", 1)), right: None }],
             lang_hint: String::new(),
             start_line: None,
         };
@@ -364,25 +295,14 @@ mod tests {
         let lines = render_diff(&preview, &ctx);
         let text = lines[0].plain_text();
         // Split renderer shows line number gutter, not unified "- " prefix
-        assert!(
-            !text.contains("- old"),
-            "should use split renderer at 80: {text}"
-        );
+        assert!(!text.contains("- old"), "should use split renderer at 80: {text}");
     }
 
     #[test]
     fn line_numbers_rendered_when_start_line_set() {
         let preview = make_split_preview(vec![SplitDiffRow {
-            left: Some(SplitDiffCell {
-                tag: DiffTag::Context,
-                content: "hello".to_string(),
-                line_number: Some(42),
-            }),
-            right: Some(SplitDiffCell {
-                tag: DiffTag::Context,
-                content: "hello".to_string(),
-                line_number: Some(42),
-            }),
+            left: Some(SplitDiffCell { tag: DiffTag::Context, content: "hello".to_string(), line_number: Some(42) }),
+            right: Some(SplitDiffCell { tag: DiffTag::Context, content: "hello".to_string(), line_number: Some(42) }),
         }]);
         let ctx = test_context_with_width(100);
         let lines = highlight_split_diff(&preview, &ctx);
@@ -400,10 +320,7 @@ mod tests {
         }]);
         let ctx = test_context_with_width(100);
         let lines = highlight_split_diff(&preview, &ctx);
-        assert!(
-            lines.len() > 1,
-            "long left side should produce multiple visual lines"
-        );
+        assert!(lines.len() > 1, "long left side should produce multiple visual lines");
         // All lines should have consistent width
         let first_width = lines[0].display_width();
         for (i, line) in lines.iter().enumerate() {
@@ -414,19 +331,12 @@ mod tests {
     #[test]
     fn blank_gutter_when_line_number_none() {
         let preview = make_split_preview(vec![SplitDiffRow {
-            left: Some(SplitDiffCell {
-                tag: DiffTag::Removed,
-                content: "old".to_string(),
-                line_number: None,
-            }),
+            left: Some(SplitDiffCell { tag: DiffTag::Removed, content: "old".to_string(), line_number: None }),
             right: None,
         }]);
         let ctx = test_context_with_width(100);
         let lines = highlight_split_diff(&preview, &ctx);
         let text = lines[0].plain_text();
-        assert!(
-            text.starts_with("     "),
-            "should have blank gutter: {text:?}"
-        );
+        assert!(text.starts_with("     "), "should have blank gutter: {text:?}");
     }
 }

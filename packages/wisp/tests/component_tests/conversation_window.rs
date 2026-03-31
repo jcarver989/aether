@@ -8,10 +8,7 @@ fn renders_empty_when_no_segments() {
     let conversation = ConversationBuffer::new();
     let statuses = ToolCallStatuses::new();
     let context = ViewContext::new((80, 24));
-    let view = ConversationWindow {
-        conversation: &conversation,
-        tool_call_statuses: &statuses,
-    };
+    let view = ConversationWindow { conversation: &conversation, tool_call_statuses: &statuses };
 
     let lines = view.render(&context);
     assert!(lines.is_empty());
@@ -25,10 +22,7 @@ fn inserts_vertical_margin_between_different_segment_kinds() {
     conversation.append_text_chunk("three");
     let statuses = ToolCallStatuses::new();
     let context = ViewContext::new((80, 24));
-    let view = ConversationWindow {
-        conversation: &conversation,
-        tool_call_statuses: &statuses,
-    };
+    let view = ConversationWindow { conversation: &conversation, tool_call_statuses: &statuses };
 
     let lines = view.render(&context);
     assert_eq!(lines.len(), 5);
@@ -49,10 +43,7 @@ fn consecutive_text_chunks_render_without_margin() {
     conversation.append_text_chunk("second");
     let statuses = ToolCallStatuses::new();
     let context = ViewContext::new((80, 24));
-    let view = ConversationWindow {
-        conversation: &conversation,
-        tool_call_statuses: &statuses,
-    };
+    let view = ConversationWindow { conversation: &conversation, tool_call_statuses: &statuses };
 
     let lines = view.render(&context);
     // Consecutive text chunks are coalesced, so there should be one line with no margin

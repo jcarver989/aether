@@ -3,19 +3,18 @@ use std::collections::HashMap;
 use async_openai::Client;
 use async_openai::config::OpenAIConfig;
 use async_openai::types::responses::{
-    CreateResponse, EasyInputContent, EasyInputMessage, FunctionCallOutput,
-    FunctionCallOutputItemParam, FunctionTool, FunctionToolCall, ImageDetail, IncludeEnum,
-    InputContent, InputImageContent, InputItem, InputParam, InputTextContent, Item, MessageType,
-    OutputItem, Reasoning, ReasoningEffort as OaiReasoningEffort, ReasoningSummary,
-    ResponseStreamEvent, Role, Tool,
+    CreateResponse, EasyInputContent, EasyInputMessage, FunctionCallOutput, FunctionCallOutputItemParam, FunctionTool,
+    FunctionToolCall, ImageDetail, IncludeEnum, InputContent, InputImageContent, InputItem, InputParam,
+    InputTextContent, Item, MessageType, OutputItem, Reasoning, ReasoningEffort as OaiReasoningEffort,
+    ReasoningSummary, ResponseStreamEvent, Role, Tool,
 };
 use tokio_stream::StreamExt;
 use tracing::{debug, error};
 
 use crate::provider::get_context_window;
 use crate::{
-    ChatMessage, ContentBlock, Context, LlmError, LlmModel, LlmResponse, LlmResponseStream,
-    ProviderFactory, ReasoningEffort, Result, StopReason, StreamingModelProvider, ToolDefinition,
+    ChatMessage, ContentBlock, Context, LlmError, LlmModel, LlmResponse, LlmResponseStream, ProviderFactory,
+    ReasoningEffort, Result, StopReason, StreamingModelProvider, ToolDefinition,
 };
 
 pub(crate) fn map_user_content_for_responses(parts: &[ContentBlock]) -> Result<EasyInputContent> {
@@ -23,9 +22,7 @@ pub(crate) fn map_user_content_for_responses(parts: &[ContentBlock]) -> Result<E
     for p in parts {
         match p {
             ContentBlock::Text { text } => {
-                items.push(InputContent::InputText(InputTextContent {
-                    text: text.clone(),
-                }));
+                items.push(InputContent::InputText(InputTextContent { text: text.clone() }));
             }
             ContentBlock::Image { .. } => {
                 items.push(InputContent::InputImage(InputImageContent {
@@ -35,9 +32,7 @@ pub(crate) fn map_user_content_for_responses(parts: &[ContentBlock]) -> Result<E
                 }));
             }
             ContentBlock::Audio { .. } => {
-                return Err(LlmError::UnsupportedContent(
-                    "OpenAI Responses does not support audio input".into(),
-                ));
+                return Err(LlmError::UnsupportedContent("OpenAI Responses does not support audio input".into()));
             }
         }
     }
@@ -51,15 +46,12 @@ pub struct OpenAiProvider {
 
 impl ProviderFactory for OpenAiProvider {
     fn from_env() -> Result<Self> {
-        let api_key = std::env::var("OPENAI_API_KEY")
-            .map_err(|_| LlmError::MissingApiKey("OPENAI_API_KEY".to_string()))?;
+        let api_key =
+            std::env::var("OPENAI_API_KEY").map_err(|_| LlmError::MissingApiKey("OPENAI_API_KEY".to_string()))?;
 
         let config = OpenAIConfig::new().with_api_key(api_key);
 
-        Ok(Self {
-            client: Client::with_config(config),
-            model: "gpt-4.1".to_string(),
-        })
+        Ok(Self { client: Client::with_config(config), model: "gpt-4.1".to_string() })
     }
 
     fn with_model(mut self, model: &str) -> Self {
@@ -163,11 +155,7 @@ fn process_event(
         ResponseStreamEvent::ResponseFunctionCallArgumentsDone(e) => {
             if let Some((call_id, name)) = fn_calls.remove(&e.item_id) {
                 let name = e.name.unwrap_or(name);
-                vec![Ok(LlmResponse::tool_request_complete(
-                    &call_id,
-                    &name,
-                    &e.arguments,
-                ))]
+                vec![Ok(LlmResponse::tool_request_complete(&call_id, &name, &e.arguments))]
             } else {
                 vec![]
             }
@@ -177,20 +165,13 @@ fn process_event(
             if let Some(usage) = e.response.usage {
                 let cached = usage.input_tokens_details.cached_tokens;
                 let cached = if cached > 0 { Some(cached) } else { None };
-                results.push(Ok(LlmResponse::usage_with_cache(
-                    usage.input_tokens,
-                    usage.output_tokens,
-                    cached,
-                )));
+                results.push(Ok(LlmResponse::usage_with_cache(usage.input_tokens, usage.output_tokens, cached)));
             }
             results.push(Ok(LlmResponse::done_with_stop_reason(StopReason::EndTurn)));
             results
         }
         ResponseStreamEvent::ResponseFailed(e) => {
-            let msg = e
-                .response
-                .error
-                .map_or_else(|| "Unknown error".to_string(), |err| err.message);
+            let msg = e.response.error.map_or_else(|| "Unknown error".to_string(), |err| err.message);
             vec![Err(LlmError::ApiError(msg))]
         }
         ResponseStreamEvent::ResponseIncomplete(_) => {
@@ -219,11 +200,7 @@ fn build_response_request(model: &str, context: &Context) -> Result<CreateRespon
                     content: map_user_content_for_responses(content)?,
                 }));
             }
-            ChatMessage::Assistant {
-                content,
-                tool_calls,
-                ..
-            } => {
+            ChatMessage::Assistant { content, tool_calls, .. } => {
                 if !content.is_empty() {
                     items.push(InputItem::EasyMessage(EasyInputMessage {
                         r#type: MessageType::Message,
@@ -246,22 +223,18 @@ fn build_response_request(model: &str, context: &Context) -> Result<CreateRespon
                     Ok(r) => (r.id.clone(), r.result.clone()),
                     Err(e) => (e.id.clone(), e.error.clone()),
                 };
-                items.push(InputItem::Item(Item::FunctionCallOutput(
-                    FunctionCallOutputItemParam {
-                        call_id,
-                        output: FunctionCallOutput::Text(output),
-                        id: None,
-                        status: None,
-                    },
-                )));
+                items.push(InputItem::Item(Item::FunctionCallOutput(FunctionCallOutputItemParam {
+                    call_id,
+                    output: FunctionCallOutput::Text(output),
+                    id: None,
+                    status: None,
+                })));
             }
             ChatMessage::Summary { content, .. } => {
                 items.push(InputItem::EasyMessage(EasyInputMessage {
                     r#type: MessageType::Message,
                     role: Role::User,
-                    content: EasyInputContent::Text(format!(
-                        "[Previous conversation handoff]\n\n{content}"
-                    )),
+                    content: EasyInputContent::Text(format!("[Previous conversation handoff]\n\n{content}")),
                 }));
             }
             ChatMessage::Error { .. } => {}
@@ -270,10 +243,9 @@ fn build_response_request(model: &str, context: &Context) -> Result<CreateRespon
 
     let tools = map_tools(context.tools())?;
 
-    let reasoning = context.reasoning_effort().map(|effort| Reasoning {
-        effort: Some(map_reasoning_effort(effort)),
-        summary: Some(ReasoningSummary::Auto),
-    });
+    let reasoning = context
+        .reasoning_effort()
+        .map(|effort| Reasoning { effort: Some(map_reasoning_effort(effort)), summary: Some(ReasoningSummary::Auto) });
 
     Ok(CreateResponse {
         model: Some(model.to_string()),
@@ -310,13 +282,8 @@ fn map_tools(tools: &[ToolDefinition]) -> Result<Vec<Tool>> {
     tools
         .iter()
         .map(|t| {
-            let parameters: serde_json::Value =
-                serde_json::from_str(&t.parameters).map_err(|e| {
-                    LlmError::ToolParameterParsing {
-                        tool_name: t.name.clone(),
-                        error: e.to_string(),
-                    }
-                })?;
+            let parameters: serde_json::Value = serde_json::from_str(&t.parameters)
+                .map_err(|e| LlmError::ToolParameterParsing { tool_name: t.name.clone(), error: e.to_string() })?;
 
             Ok(Tool::Function(FunctionTool {
                 name: t.name.clone(),
@@ -346,10 +313,7 @@ mod tests {
     #[test]
     fn test_build_request_simple_user_message() {
         let context = Context::new(
-            vec![ChatMessage::User {
-                content: vec![ContentBlock::text("Hello")],
-                timestamp: IsoString::now(),
-            }],
+            vec![ChatMessage::User { content: vec![ContentBlock::text("Hello")], timestamp: IsoString::now() }],
             vec![],
         );
 
@@ -368,14 +332,8 @@ mod tests {
     fn test_build_request_with_system_message() {
         let context = Context::new(
             vec![
-                ChatMessage::System {
-                    content: "You are helpful.".to_string(),
-                    timestamp: IsoString::now(),
-                },
-                ChatMessage::User {
-                    content: vec![ContentBlock::text("Hi")],
-                    timestamp: IsoString::now(),
-                },
+                ChatMessage::System { content: "You are helpful.".to_string(), timestamp: IsoString::now() },
+                ChatMessage::User { content: vec![ContentBlock::text("Hi")], timestamp: IsoString::now() },
             ],
             vec![],
         );
@@ -393,10 +351,7 @@ mod tests {
     fn test_build_request_with_tool_calls() {
         let context = Context::new(
             vec![
-                ChatMessage::User {
-                    content: vec![ContentBlock::text("Search for rust")],
-                    timestamp: IsoString::now(),
-                },
+                ChatMessage::User { content: vec![ContentBlock::text("Search for rust")], timestamp: IsoString::now() },
                 ChatMessage::Assistant {
                     content: String::new(),
                     reasoning: Default::default(),
@@ -442,10 +397,7 @@ mod tests {
     #[test]
     fn test_build_request_with_reasoning_effort() {
         let mut context = Context::new(
-            vec![ChatMessage::User {
-                content: vec![ContentBlock::text("Think")],
-                timestamp: IsoString::now(),
-            }],
+            vec![ChatMessage::User { content: vec![ContentBlock::text("Think")], timestamp: IsoString::now() }],
             vec![],
         );
         context.set_reasoning_effort(Some(ReasoningEffort::High));
@@ -460,19 +412,13 @@ mod tests {
     fn test_build_request_with_audio_returns_unsupported_content() {
         let context = Context::new(
             vec![ChatMessage::User {
-                content: vec![ContentBlock::Audio {
-                    data: "YXVkaW8=".to_string(),
-                    mime_type: "audio/wav".to_string(),
-                }],
+                content: vec![ContentBlock::Audio { data: "YXVkaW8=".to_string(), mime_type: "audio/wav".to_string() }],
                 timestamp: IsoString::now(),
             }],
             vec![],
         );
 
-        assert!(matches!(
-            build_response_request("gpt-4.1", &context),
-            Err(LlmError::UnsupportedContent(_))
-        ));
+        assert!(matches!(build_response_request("gpt-4.1", &context), Err(LlmError::UnsupportedContent(_))));
     }
 
     #[test]
@@ -513,10 +459,7 @@ mod tests {
 
     #[test]
     fn test_provider_display_name() {
-        let provider = OpenAiProvider {
-            client: Client::new(),
-            model: "gpt-4.1".to_string(),
-        };
+        let provider = OpenAiProvider { client: Client::new(), model: "gpt-4.1".to_string() };
         assert_eq!(provider.display_name(), "OpenAI (gpt-4.1)");
     }
 }

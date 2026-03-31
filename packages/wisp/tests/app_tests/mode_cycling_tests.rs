@@ -23,10 +23,7 @@ async fn test_shift_tab_cycles_mode_option() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &options, (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
-    let action = renderer
-        .on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
-        .await
-        .unwrap();
+    let action = renderer.on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)).await.unwrap();
 
     assert!(matches!(action, LoopAction::Continue));
 }
@@ -50,10 +47,7 @@ async fn test_shift_tab_wraps_mode_option() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &options, (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
-    renderer
-        .on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
-        .await
-        .unwrap();
+    renderer.on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)).await.unwrap();
 }
 
 #[tokio::test]
@@ -75,22 +69,13 @@ async fn test_shift_tab_ignored_when_overlay_consumes_input() {
     // Open settings overlay
     type_string(&mut renderer, "/settings").await;
     press_enter(&mut renderer).await;
-    assert!(
-        has_settings_menu(renderer.writer()),
-        "Settings overlay should be visible"
-    );
+    assert!(has_settings_menu(renderer.writer()), "Settings overlay should be visible");
 
     // Send shift+tab — should be swallowed by the overlay
-    renderer
-        .on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
-        .await
-        .unwrap();
+    renderer.on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)).await.unwrap();
 
     // Overlay should still be visible
-    assert!(
-        has_settings_menu(renderer.writer()),
-        "Settings overlay should still be visible after shift+tab"
-    );
+    assert!(has_settings_menu(renderer.writer()), "Settings overlay should still be visible after shift+tab");
 }
 
 #[tokio::test]
@@ -100,10 +85,7 @@ async fn test_shift_tab_noop_when_no_cycleable_option_exists() {
             "model",
             "Model",
             "m1",
-            vec![
-                acp::SessionConfigSelectOption::new("m1", "M1"),
-                acp::SessionConfigSelectOption::new("m2", "M2"),
-            ],
+            vec![acp::SessionConfigSelectOption::new("m1", "M1"), acp::SessionConfigSelectOption::new("m2", "M2")],
         )
         .category(acp::SessionConfigOptionCategory::Model),
     ];
@@ -114,16 +96,10 @@ async fn test_shift_tab_noop_when_no_cycleable_option_exists() {
 
     let lines_before = renderer.writer().get_lines();
 
-    renderer
-        .on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
-        .await
-        .unwrap();
+    renderer.on_key_event(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT)).await.unwrap();
 
     let lines_after = renderer.writer().get_lines();
-    assert_eq!(
-        lines_before, lines_after,
-        "Shift+Tab should be a no-op when no cycleable mode option"
-    );
+    assert_eq!(lines_before, lines_after, "Shift+Tab should be a no-op when no cycleable mode option");
 }
 
 #[tokio::test]
@@ -145,10 +121,7 @@ async fn test_tab_cycles_reasoning_option() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &options, (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
-    renderer
-        .on_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
-        .await
-        .unwrap();
+    renderer.on_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)).await.unwrap();
 }
 
 #[tokio::test]
@@ -159,14 +132,8 @@ async fn test_tab_noop_when_no_reasoning_option() {
 
     let lines_before = renderer.writer().get_lines();
 
-    renderer
-        .on_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
-        .await
-        .unwrap();
+    renderer.on_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)).await.unwrap();
 
     let lines_after = renderer.writer().get_lines();
-    assert_eq!(
-        lines_before, lines_after,
-        "Tab should be a no-op when no reasoning option"
-    );
+    assert_eq!(lines_before, lines_after, "Tab should be a no-op when no reasoning option");
 }

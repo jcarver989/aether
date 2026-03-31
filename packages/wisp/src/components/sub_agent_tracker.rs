@@ -19,11 +19,7 @@ pub(crate) struct SubAgentState {
 
 impl SubAgentState {
     pub(crate) fn is_active_for_render(&self) -> bool {
-        !self.done
-            || self
-                .tool_calls
-                .values()
-                .any(|tc| matches!(tc.status, ToolCallStatus::Running))
+        !self.done || self.tool_calls.values().any(|tc| matches!(tc.status, ToolCallStatus::Running))
     }
 }
 
@@ -38,15 +34,9 @@ pub(crate) struct SubAgentTracker {
 
 impl SubAgentTracker {
     pub(crate) fn on_progress(&mut self, notification: &SubAgentProgressParams) {
-        let agents = self
-            .agents
-            .entry(notification.parent_tool_id.clone())
-            .or_default();
+        let agents = self.agents.entry(notification.parent_tool_id.clone()).or_default();
 
-        let agent = if let Some(a) = agents
-            .iter_mut()
-            .find(|a| a.task_id == notification.task_id)
-        {
+        let agent = if let Some(a) = agents.iter_mut().find(|a| a.task_id == notification.task_id) {
             a
         } else {
             agents.push(SubAgentState {
@@ -112,17 +102,12 @@ impl SubAgentTracker {
     }
 
     pub(crate) fn any_running(&self) -> bool {
-        self.agents
-            .values()
-            .any(|agents| agents.iter().any(SubAgentState::is_active_for_render))
+        self.agents.values().any(|agents| agents.iter().any(SubAgentState::is_active_for_render))
     }
 
     pub(crate) fn finalize_running(&mut self, cancelled: bool) {
-        let terminal_status = if cancelled {
-            ToolCallStatus::Error("cancelled".to_string())
-        } else {
-            ToolCallStatus::Success
-        };
+        let terminal_status =
+            if cancelled { ToolCallStatus::Error("cancelled".to_string()) } else { ToolCallStatus::Success };
 
         for agents in self.agents.values_mut() {
             for agent in agents {

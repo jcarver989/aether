@@ -18,27 +18,18 @@ impl BrowserOAuthHandler {
         let port = std_listener.local_addr()?.port();
         std_listener.set_nonblocking(true)?;
         let listener = TcpListener::from_std(std_listener)?;
-        Ok(Self {
-            listener,
-            redirect_uri: format!("http://127.0.0.1:{port}/oauth2callback"),
-        })
+        Ok(Self { listener, redirect_uri: format!("http://127.0.0.1:{port}/oauth2callback") })
     }
 
     /// Create a handler bound to a specific port with a custom redirect URI.
     ///
     /// Use this when the OAuth provider has a fixed redirect URI registered
     /// (e.g. `http://localhost:1455/auth/callback` for Codex).
-    pub fn with_redirect_uri(
-        redirect_uri: impl Into<String>,
-        port: u16,
-    ) -> Result<Self, std::io::Error> {
+    pub fn with_redirect_uri(redirect_uri: impl Into<String>, port: u16) -> Result<Self, std::io::Error> {
         let std_listener = std::net::TcpListener::bind(format!("127.0.0.1:{port}"))?;
         std_listener.set_nonblocking(true)?;
         let listener = TcpListener::from_std(std_listener)?;
-        Ok(Self {
-            listener,
-            redirect_uri: redirect_uri.into(),
-        })
+        Ok(Self { listener, redirect_uri: redirect_uri.into() })
     }
 }
 
@@ -72,9 +63,7 @@ pub async fn accept_oauth_callback(listener: &TcpListener) -> Result<OAuthCallba
 
     let callback = parse_callback_from_request(&request_line)?;
 
-    socket
-        .write_all(create_success_response().as_bytes())
-        .await?;
+    socket.write_all(create_success_response().as_bytes()).await?;
 
     Ok(callback)
 }
@@ -93,26 +82,17 @@ pub async fn wait_for_callback(port: u16) -> Result<OAuthCallback, OAuthError> {
 pub fn open_browser(url: &str) -> Result<(), OAuthError> {
     #[cfg(target_os = "macos")]
     {
-        Command::new("open")
-            .arg(url)
-            .spawn()
-            .map_err(std::io::Error::other)?;
+        Command::new("open").arg(url).spawn().map_err(std::io::Error::other)?;
     }
 
     #[cfg(target_os = "linux")]
     {
-        Command::new("xdg-open")
-            .arg(url)
-            .spawn()
-            .map_err(std::io::Error::other)?;
+        Command::new("xdg-open").arg(url).spawn().map_err(std::io::Error::other)?;
     }
 
     #[cfg(target_os = "windows")]
     {
-        Command::new("cmd")
-            .args(["/C", "start", url])
-            .spawn()
-            .map_err(std::io::Error::other)?;
+        Command::new("cmd").args(["/C", "start", url]).spawn().map_err(std::io::Error::other)?;
     }
 
     Ok(())
@@ -123,15 +103,12 @@ fn parse_callback_from_request(request_line: &str) -> Result<OAuthCallback, OAut
     // Request format: GET /oauth2callback?code=XXX&state=YYY HTTP/1.1
     let parts: Vec<&str> = request_line.split_whitespace().collect();
     if parts.len() < 2 {
-        return Err(OAuthError::InvalidCallback(
-            "Invalid HTTP request format".to_string(),
-        ));
+        return Err(OAuthError::InvalidCallback("Invalid HTTP request format".to_string()));
     }
 
     let path = parts[1];
-    let query_start = path.find('?').ok_or_else(|| {
-        OAuthError::InvalidCallback("No query parameters in callback".to_string())
-    })?;
+    let query_start =
+        path.find('?').ok_or_else(|| OAuthError::InvalidCallback("No query parameters in callback".to_string()))?;
 
     let query = &path[query_start + 1..];
 
@@ -143,14 +120,10 @@ fn parse_callback_from_request(request_line: &str) -> Result<OAuthCallback, OAut
             let error_desc = query
                 .split('&')
                 .find_map(|p| {
-                    p.split_once('=')
-                        .filter(|(k, _)| *k == "error_description")
-                        .map(|(_, v)| urlencoding_decode(v))
+                    p.split_once('=').filter(|(k, _)| *k == "error_description").map(|(_, v)| urlencoding_decode(v))
                 })
                 .unwrap_or_else(|| value.to_string());
-            return Err(OAuthError::InvalidCallback(format!(
-                "OAuth error: {error_desc}"
-            )));
+            return Err(OAuthError::InvalidCallback(format!("OAuth error: {error_desc}")));
         }
     }
 
@@ -168,10 +141,8 @@ fn parse_callback_from_request(request_line: &str) -> Result<OAuthCallback, OAut
         }
     }
 
-    let code = code
-        .ok_or_else(|| OAuthError::InvalidCallback("No authorization code in callback".into()))?;
-    let state = state
-        .ok_or_else(|| OAuthError::InvalidCallback("No state parameter in callback".into()))?;
+    let code = code.ok_or_else(|| OAuthError::InvalidCallback("No authorization code in callback".into()))?;
+    let state = state.ok_or_else(|| OAuthError::InvalidCallback("No state parameter in callback".into()))?;
 
     Ok(OAuthCallback { code, state })
 }
@@ -233,8 +204,7 @@ mod tests {
 
     #[test]
     fn parse_callback_returns_error_for_oauth_error() {
-        let request =
-            "GET /oauth2callback?error=access_denied&error_description=User+denied HTTP/1.1\r\n";
+        let request = "GET /oauth2callback?error=access_denied&error_description=User+denied HTTP/1.1\r\n";
         let result = parse_callback_from_request(request);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -246,12 +216,7 @@ mod tests {
         let request = "GET /oauth2callback?state=verifier HTTP/1.1\r\n";
         let result = parse_callback_from_request(request);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("No authorization code")
-        );
+        assert!(result.unwrap_err().to_string().contains("No authorization code"));
     }
 
     #[test]
@@ -259,18 +224,12 @@ mod tests {
         let request = "GET /oauth2callback?code=abc123 HTTP/1.1\r\n";
         let result = parse_callback_from_request(request);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("No state parameter")
-        );
+        assert!(result.unwrap_err().to_string().contains("No state parameter"));
     }
 
     #[tokio::test]
     async fn with_redirect_uri_binds_to_specified_port() {
-        let handler =
-            BrowserOAuthHandler::with_redirect_uri("http://localhost:9999/callback", 0).unwrap();
+        let handler = BrowserOAuthHandler::with_redirect_uri("http://localhost:9999/callback", 0).unwrap();
         assert_eq!(handler.redirect_uri(), "http://localhost:9999/callback");
     }
 

@@ -55,18 +55,10 @@ fn unfocused_none_selected_shows_none() {
     let ms = MultiSelect::new(sample_options(), vec![false, false, false]);
     let ctx = ViewContext::new((80, 24));
     let rendered = ms.render_field(&ctx, false);
-    assert_eq!(
-        rendered.len(),
-        1,
-        "Unfocused should render a single inline line"
-    );
+    assert_eq!(rendered.len(), 1, "Unfocused should render a single inline line");
     let term = render_lines(&rendered, 80, 24);
     let lines = term.get_lines();
-    assert!(
-        lines[0].contains("(none)"),
-        "Expected '(none)' in unfocused render, got: '{}'",
-        lines[0]
-    );
+    assert!(lines[0].contains("(none)"), "Expected '(none)' in unfocused render, got: '{}'", lines[0]);
 }
 
 #[test]
@@ -74,16 +66,8 @@ fn unfocused_with_selections_shows_summary() {
     let ms = MultiSelect::new(sample_options(), vec![true, false, true]);
     let ctx = ViewContext::new((80, 24));
     let rendered = ms.render_field(&ctx, false);
-    assert_eq!(
-        rendered.len(),
-        1,
-        "Unfocused should render a single inline line"
-    );
+    assert_eq!(rendered.len(), 1, "Unfocused should render a single inline line");
     let term = render_lines(&rendered, 80, 24);
     let lines = term.get_lines();
-    assert!(
-        lines[0].contains("Alpha, Gamma"),
-        "Expected 'Alpha, Gamma' in unfocused render, got: '{}'",
-        lines[0]
-    );
+    assert!(lines[0].contains("Alpha, Gamma"), "Expected 'Alpha, Gamma' in unfocused render, got: '{}'", lines[0]);
 }

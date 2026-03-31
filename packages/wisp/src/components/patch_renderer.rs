@@ -32,18 +32,12 @@ pub fn build_patch_lines(
 
             match pl.kind {
                 PatchLineKind::HunkHeader => {
-                    line.push_with_style(
-                        &pl.text,
-                        Style::fg(theme.info()).bold().bg_color(theme.code_bg()),
-                    );
+                    line.push_with_style(&pl.text, Style::fg(theme.info()).bold().bg_color(theme.code_bg()));
                 }
                 PatchLineKind::Context => {
                     let old_str = format_line_no(pl.old_line_no, gutter_width);
                     let new_str = format_line_no(pl.new_line_no, gutter_width);
-                    line.push_with_style(
-                        format!("{old_str} {new_str}   "),
-                        Style::fg(theme.text_secondary()),
-                    );
+                    line.push_with_style(format!("{old_str} {new_str}   "), Style::fg(theme.text_secondary()));
                     append_syntax_spans(&mut line, &pl.text, lang_hint, None, context);
                 }
                 PatchLineKind::Added => {
@@ -58,8 +52,7 @@ pub fn build_patch_lines(
                     let old_str = format_line_no(pl.old_line_no, gutter_width);
                     let new_str = " ".repeat(gutter_width);
                     let bg = Some(theme.diff_removed_bg());
-                    let style =
-                        Style::fg(theme.diff_removed_fg()).bg_color(theme.diff_removed_bg());
+                    let style = Style::fg(theme.diff_removed_fg()).bg_color(theme.diff_removed_bg());
                     line.push_with_style(format!("{old_str} {new_str} - "), style);
                     append_syntax_spans(&mut line, &pl.text, lang_hint, bg, context);
                 }
@@ -74,10 +67,7 @@ pub fn build_patch_lines(
                 wrapped_line.extend_bg_to_width(right_width);
                 patch_lines.push(wrapped_line);
                 if i == 0 {
-                    patch_refs.push(Some(PatchLineRef {
-                        hunk_index: hunk_idx,
-                        line_index: line_idx,
-                    }));
+                    patch_refs.push(Some(PatchLineRef { hunk_index: hunk_idx, line_index: line_idx }));
                 } else {
                     patch_refs.push(None);
                 }
@@ -99,9 +89,7 @@ pub(crate) fn append_syntax_spans(
     bg_override: Option<Color>,
     context: &ViewContext,
 ) {
-    let spans = context
-        .highlighter()
-        .highlight(text, lang_hint, &context.theme);
+    let spans = context.highlighter().highlight(text, lang_hint, &context.theme);
     if let Some(content) = spans.first() {
         for span in content.spans() {
             let mut span_style = span.style();
@@ -167,41 +155,25 @@ mod tests {
                 old_line_no: None,
                 new_line_no: None,
             },
-            PatchLine {
-                kind: PatchLineKind::Added,
-                text: long_content,
-                old_line_no: None,
-                new_line_no: Some(1),
-            },
+            PatchLine { kind: PatchLineKind::Added, text: long_content, old_line_no: None, new_line_no: Some(1) },
         ]);
         let context = ViewContext::new((120, 24));
         let right_width = 60;
         let (lines, refs) = build_patch_lines(&file, right_width, &context);
 
         // The long line should have wrapped into multiple visual lines
-        assert!(
-            lines.len() > 2,
-            "long line should wrap, got {} lines",
-            lines.len()
-        );
+        assert!(lines.len() > 2, "long line should wrap, got {} lines", lines.len());
 
         // No visual line should exceed right_width
         for (i, line) in lines.iter().enumerate() {
             let w = line.display_width();
-            assert!(
-                w <= right_width,
-                "line {i} width {w} exceeds right_width {right_width}: {}",
-                line.plain_text()
-            );
+            assert!(w <= right_width, "line {i} width {w} exceeds right_width {right_width}: {}", line.plain_text());
         }
 
         // First wrapped line gets the ref, continuations get None
         assert!(refs[1].is_some(), "first wrapped line should have a ref");
         for i in 2..lines.len() {
-            assert!(
-                refs[i].is_none(),
-                "continuation line {i} should have None ref"
-            );
+            assert!(refs[i].is_none(), "continuation line {i} should have None ref");
         }
     }
 
@@ -245,12 +217,7 @@ mod tests {
         // All lines from the added line should have consistent width due to bg extension
         for line in &lines {
             let w = display_width_text(&line.plain_text());
-            assert_eq!(
-                w,
-                right_width,
-                "line should be padded to right_width: {}",
-                line.plain_text()
-            );
+            assert_eq!(w, right_width, "line should be padded to right_width: {}", line.plain_text());
         }
     }
 

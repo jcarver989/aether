@@ -11,19 +11,9 @@ pub(crate) enum TerminalCommand<'a> {
     SetCursorVisible(bool),
     SetMouseCapture(bool),
     RestoreCursorPosition,
-    PlaceCursor {
-        rows_up: u16,
-        col: u16,
-    },
-    RewriteVisibleLines {
-        rows_up: u16,
-        append_after_existing: bool,
-        lines: &'a [Line],
-    },
-    PushScrollbackLines {
-        previous_visible_rows: usize,
-        lines: &'a [Line],
-    },
+    PlaceCursor { rows_up: u16, col: u16 },
+    RewriteVisibleLines { rows_up: u16, append_after_existing: bool, lines: &'a [Line] },
+    PushScrollbackLines { previous_visible_rows: usize, lines: &'a [Line] },
 }
 
 pub(crate) struct TerminalScreen<W: Write> {
@@ -35,12 +25,7 @@ pub(crate) struct TerminalScreen<W: Write> {
 
 impl<W: Write> TerminalScreen<W> {
     pub(crate) fn new(writer: W) -> Self {
-        Self {
-            writer,
-            cursor_row_offset: 0,
-            cursor_visible: true,
-            mouse_captured: false,
-        }
+        Self { writer, cursor_row_offset: 0, cursor_visible: true, mouse_captured: false }
     }
 
     pub(crate) fn execute_batch(&mut self, commands: &[TerminalCommand<'_>]) -> io::Result<()> {
@@ -94,11 +79,7 @@ impl<W: Write> TerminalScreen<W> {
                     self.cursor_row_offset = 0;
                 }
             }
-            TerminalCommand::RewriteVisibleLines {
-                rows_up,
-                append_after_existing,
-                lines,
-            } => {
+            TerminalCommand::RewriteVisibleLines { rows_up, append_after_existing, lines } => {
                 if *rows_up > 0 {
                     self.writer.queue(MoveUp(*rows_up))?;
                     write!(self.writer, "\r")?;
@@ -115,10 +96,7 @@ impl<W: Write> TerminalScreen<W> {
                     }
                 }
             }
-            TerminalCommand::PushScrollbackLines {
-                previous_visible_rows,
-                lines,
-            } => {
+            TerminalCommand::PushScrollbackLines { previous_visible_rows, lines } => {
                 if *previous_visible_rows > 1 {
                     let rows_up = u16::try_from(previous_visible_rows - 1).unwrap_or(u16::MAX);
                     self.writer.queue(MoveUp(rows_up))?;
@@ -174,10 +152,7 @@ mod tests {
         run_batch(&[command]).1
     }
 
-    fn continue_batch(
-        screen: &mut TerminalScreen<FakeWriter>,
-        commands: &[TerminalCommand<'_>],
-    ) -> String {
+    fn continue_batch(screen: &mut TerminalScreen<FakeWriter>, commands: &[TerminalCommand<'_>]) -> String {
         screen.writer.bytes.clear();
         screen.execute_batch(commands).unwrap();
         extract_sync_content(screen)
@@ -198,12 +173,7 @@ mod tests {
 
     fn assert_no_move_up(content: &str) {
         for n in 1..=10 {
-            assert!(
-                !content.contains(&format!("\x1b[{}A", n)),
-                "unexpected MoveUp({}) in: {:?}",
-                n,
-                content
-            );
+            assert!(!content.contains(&format!("\x1b[{}A", n)), "unexpected MoveUp({}) in: {:?}", n, content);
         }
     }
 
@@ -236,8 +206,7 @@ mod tests {
 
     #[test]
     fn place_cursor_and_restore_round_trip() {
-        let (mut screen, content) =
-            run_batch(&[TerminalCommand::PlaceCursor { rows_up: 3, col: 5 }]);
+        let (mut screen, content) = run_batch(&[TerminalCommand::PlaceCursor { rows_up: 3, col: 5 }]);
         assert_has_all(&content, &["\x1b[3A", "\r", "\x1b[5C"]);
 
         let content = continue_batch(&mut screen, &[TerminalCommand::RestoreCursorPosition]);
@@ -261,43 +230,25 @@ mod tests {
     #[test]
     fn rewrite_visible_lines_emits_expected_sequences() {
         let lines = vec![Line::new("line1"), Line::new("line2"), Line::new("line3")];
-        let content = run_one(TerminalCommand::RewriteVisibleLines {
-            rows_up: 2,
-            append_after_existing: false,
-            lines: &lines,
-        });
+        let content =
+            run_one(TerminalCommand::RewriteVisibleLines { rows_up: 2, append_after_existing: false, lines: &lines });
 
-        assert_has_all(
-            &content,
-            &["\x1b[2A", "\r", "\x1b[J", "line1", "line2", "line3"],
-        );
+        assert_has_all(&content, &["\x1b[2A", "\r", "\x1b[J", "line1", "line2", "line3"]);
 
         // Newlines between lines but not after last
         let p1 = content.find("line1").unwrap();
         let p2 = content.find("line2").unwrap();
         let p3 = content.find("line3").unwrap();
-        assert!(
-            content[p1 + 5..p2].contains("\r\n"),
-            "missing newline between 1-2"
-        );
-        assert!(
-            content[p2 + 5..p3].contains("\r\n"),
-            "missing newline between 2-3"
-        );
-        assert!(
-            !content[p3 + 5..].starts_with("\r\n"),
-            "unexpected trailing newline"
-        );
+        assert!(content[p1 + 5..p2].contains("\r\n"), "missing newline between 1-2");
+        assert!(content[p2 + 5..p3].contains("\r\n"), "missing newline between 2-3");
+        assert!(!content[p3 + 5..].starts_with("\r\n"), "unexpected trailing newline");
     }
 
     #[test]
     fn rewrite_visible_lines_with_zero_rows_up() {
         let lines = vec![Line::new("only")];
-        let content = run_one(TerminalCommand::RewriteVisibleLines {
-            rows_up: 0,
-            append_after_existing: false,
-            lines: &lines,
-        });
+        let content =
+            run_one(TerminalCommand::RewriteVisibleLines { rows_up: 0, append_after_existing: false, lines: &lines });
         assert_no_move_up(&content);
         assert!(content.contains("only"), "missing content");
     }
@@ -305,25 +256,15 @@ mod tests {
     #[test]
     fn rewrite_visible_lines_append_moves_to_next_row_before_clearing() {
         let lines = vec![Line::new("appended")];
-        let content = run_one(TerminalCommand::RewriteVisibleLines {
-            rows_up: 0,
-            append_after_existing: true,
-            lines: &lines,
-        });
-        assert!(
-            content.starts_with("\r\n\x1b[Jappended"),
-            "expected newline before clear, got: {:?}",
-            content
-        );
+        let content =
+            run_one(TerminalCommand::RewriteVisibleLines { rows_up: 0, append_after_existing: true, lines: &lines });
+        assert!(content.starts_with("\r\n\x1b[Jappended"), "expected newline before clear, got: {:?}", content);
     }
 
     #[test]
     fn push_scrollback_lines_emits_expected_sequences() {
         let lines = vec![Line::new("scroll1"), Line::new("scroll2")];
-        let content = run_one(TerminalCommand::PushScrollbackLines {
-            previous_visible_rows: 4,
-            lines: &lines,
-        });
+        let content = run_one(TerminalCommand::PushScrollbackLines { previous_visible_rows: 4, lines: &lines });
         assert_has_all(&content, &["\x1b[3A", "\r", "\x1b[J", "scroll1", "scroll2"]);
         assert!(content.ends_with("\r\n"), "should end with newline");
     }
@@ -332,10 +273,8 @@ mod tests {
     fn push_scrollback_lines_skips_move_up_for_small_previous_rows() {
         for prev_rows in [0, 1] {
             let lines = vec![Line::new("scroll")];
-            let content = run_one(TerminalCommand::PushScrollbackLines {
-                previous_visible_rows: prev_rows,
-                lines: &lines,
-            });
+            let content =
+                run_one(TerminalCommand::PushScrollbackLines { previous_visible_rows: prev_rows, lines: &lines });
             assert_no_move_up(&content);
             assert_has_all(&content, &["scroll", "\r\n"]);
         }

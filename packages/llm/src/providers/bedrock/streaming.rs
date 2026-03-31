@@ -91,17 +91,11 @@ fn process_stream_event(
             info!("Bedrock message stopped: {stop_reason:?}");
             StreamEvent::Stop(stop_reason)
         }
-        ConverseStreamOutput::Metadata(metadata_event) => {
-            metadata_event.usage().map_or(StreamEvent::Skip, |usage| {
-                let input_tokens = u32::try_from(usage.input_tokens).unwrap_or(0);
-                let output_tokens = u32::try_from(usage.output_tokens).unwrap_or(0);
-                StreamEvent::Emit(LlmResponse::Usage {
-                    input_tokens,
-                    output_tokens,
-                    cached_input_tokens: None,
-                })
-            })
-        }
+        ConverseStreamOutput::Metadata(metadata_event) => metadata_event.usage().map_or(StreamEvent::Skip, |usage| {
+            let input_tokens = u32::try_from(usage.input_tokens).unwrap_or(0);
+            let output_tokens = u32::try_from(usage.output_tokens).unwrap_or(0);
+            StreamEvent::Emit(LlmResponse::Usage { input_tokens, output_tokens, cached_input_tokens: None })
+        }),
         other => {
             warn!("Unhandled Bedrock stream event: {other:?}");
             StreamEvent::Skip
@@ -119,14 +113,7 @@ fn handle_content_block_start(
         let id = tool_start.tool_use_id().to_string();
         let name = tool_start.name().to_string();
         debug!("Bedrock tool use started: {name} ({id})");
-        active_tool_calls.insert(
-            index,
-            PendingToolCall {
-                id: id.clone(),
-                name: name.clone(),
-                args: String::new(),
-            },
-        );
+        active_tool_calls.insert(index, PendingToolCall { id: id.clone(), name: name.clone(), args: String::new() });
         StreamEvent::Emit(LlmResponse::ToolRequestStart { id, name })
     } else {
         debug!("Content block started at index {index}");
@@ -145,9 +132,9 @@ fn handle_content_block_delta(
     };
 
     match delta {
-        ContentBlockDelta::Text(text) if !text.is_empty() => StreamEvent::Emit(LlmResponse::Text {
-            chunk: text.clone(),
-        }),
+        ContentBlockDelta::Text(text) if !text.is_empty() => {
+            StreamEvent::Emit(LlmResponse::Text { chunk: text.clone() })
+        }
         ContentBlockDelta::ToolUse(tool_delta) => {
             let input = tool_delta.input();
             if input.is_empty() {
@@ -156,10 +143,7 @@ fn handle_content_block_delta(
 
             if let Some(tc) = active_tool_calls.get_mut(&index) {
                 tc.args.push_str(input);
-                StreamEvent::Emit(LlmResponse::ToolRequestArg {
-                    id: tc.id.clone(),
-                    chunk: input.to_string(),
-                })
+                StreamEvent::Emit(LlmResponse::ToolRequestArg { id: tc.id.clone(), chunk: input.to_string() })
             } else {
                 warn!("Received tool input delta for unknown content block index: {index}");
                 StreamEvent::Skip
@@ -169,9 +153,7 @@ fn handle_content_block_delta(
             if let Ok(text) = reasoning.as_text()
                 && !text.is_empty()
             {
-                return StreamEvent::Emit(LlmResponse::Reasoning {
-                    chunk: text.clone(),
-                });
+                return StreamEvent::Emit(LlmResponse::Reasoning { chunk: text.clone() });
             }
             StreamEvent::Skip
         }
@@ -182,16 +164,9 @@ fn handle_content_block_delta(
     }
 }
 
-fn handle_content_block_stop(
-    index: i32,
-    active_tool_calls: &mut HashMap<i32, PendingToolCall>,
-) -> StreamEvent {
+fn handle_content_block_stop(index: i32, active_tool_calls: &mut HashMap<i32, PendingToolCall>) -> StreamEvent {
     if let Some(tc) = active_tool_calls.remove(&index) {
-        let tool_call = ToolCallRequest {
-            id: tc.id,
-            name: tc.name,
-            arguments: tc.args,
-        };
+        let tool_call = ToolCallRequest { id: tc.id, name: tc.name, arguments: tc.args };
         StreamEvent::Emit(LlmResponse::ToolRequestComplete { tool_call })
     } else {
         debug!("Content block stopped at index {index}");
@@ -203,12 +178,8 @@ fn map_bedrock_stop_reason(reason: &BedrockStopReason) -> StopReason {
     match reason {
         BedrockStopReason::EndTurn | BedrockStopReason::StopSequence => StopReason::EndTurn,
         BedrockStopReason::ToolUse => StopReason::ToolCalls,
-        BedrockStopReason::MaxTokens | BedrockStopReason::ModelContextWindowExceeded => {
-            StopReason::Length
-        }
-        BedrockStopReason::ContentFiltered | BedrockStopReason::GuardrailIntervened => {
-            StopReason::ContentFilter
-        }
+        BedrockStopReason::MaxTokens | BedrockStopReason::ModelContextWindowExceeded => StopReason::Length,
+        BedrockStopReason::ContentFiltered | BedrockStopReason::GuardrailIntervened => StopReason::ContentFilter,
         other => StopReason::Unknown(format!("{other:?}")),
     }
 }
@@ -219,58 +190,37 @@ mod tests {
 
     #[test]
     fn test_map_stop_reason_end_turn() {
-        assert_eq!(
-            map_bedrock_stop_reason(&BedrockStopReason::EndTurn),
-            StopReason::EndTurn
-        );
+        assert_eq!(map_bedrock_stop_reason(&BedrockStopReason::EndTurn), StopReason::EndTurn);
     }
 
     #[test]
     fn test_map_stop_reason_stop_sequence() {
-        assert_eq!(
-            map_bedrock_stop_reason(&BedrockStopReason::StopSequence),
-            StopReason::EndTurn
-        );
+        assert_eq!(map_bedrock_stop_reason(&BedrockStopReason::StopSequence), StopReason::EndTurn);
     }
 
     #[test]
     fn test_map_stop_reason_tool_use() {
-        assert_eq!(
-            map_bedrock_stop_reason(&BedrockStopReason::ToolUse),
-            StopReason::ToolCalls
-        );
+        assert_eq!(map_bedrock_stop_reason(&BedrockStopReason::ToolUse), StopReason::ToolCalls);
     }
 
     #[test]
     fn test_map_stop_reason_max_tokens() {
-        assert_eq!(
-            map_bedrock_stop_reason(&BedrockStopReason::MaxTokens),
-            StopReason::Length
-        );
+        assert_eq!(map_bedrock_stop_reason(&BedrockStopReason::MaxTokens), StopReason::Length);
     }
 
     #[test]
     fn test_map_stop_reason_context_window_exceeded() {
-        assert_eq!(
-            map_bedrock_stop_reason(&BedrockStopReason::ModelContextWindowExceeded),
-            StopReason::Length
-        );
+        assert_eq!(map_bedrock_stop_reason(&BedrockStopReason::ModelContextWindowExceeded), StopReason::Length);
     }
 
     #[test]
     fn test_map_stop_reason_content_filtered() {
-        assert_eq!(
-            map_bedrock_stop_reason(&BedrockStopReason::ContentFiltered),
-            StopReason::ContentFilter
-        );
+        assert_eq!(map_bedrock_stop_reason(&BedrockStopReason::ContentFiltered), StopReason::ContentFilter);
     }
 
     #[test]
     fn test_map_stop_reason_guardrail() {
-        assert_eq!(
-            map_bedrock_stop_reason(&BedrockStopReason::GuardrailIntervened),
-            StopReason::ContentFilter
-        );
+        assert_eq!(map_bedrock_stop_reason(&BedrockStopReason::GuardrailIntervened), StopReason::ContentFilter);
     }
 
     #[test]
@@ -305,27 +255,17 @@ mod tests {
             .unwrap();
 
         let result = handle_content_block_delta(&delta, &mut active);
-        assert!(
-            matches!(&result, StreamEvent::Emit(LlmResponse::Text { chunk }) if chunk == "Hello")
-        );
+        assert!(matches!(&result, StreamEvent::Emit(LlmResponse::Text { chunk }) if chunk == "Hello"));
     }
 
     #[test]
     fn test_handle_content_block_delta_tool_input() {
         let mut active = HashMap::new();
-        active.insert(
-            0,
-            PendingToolCall {
-                id: "tool_123".to_string(),
-                name: "search".to_string(),
-                args: String::new(),
-            },
-        );
+        active
+            .insert(0, PendingToolCall { id: "tool_123".to_string(), name: "search".to_string(), args: String::new() });
 
-        let tool_delta = aws_sdk_bedrockruntime::types::ToolUseBlockDelta::builder()
-            .input(r#"{"query":"test"}"#)
-            .build()
-            .unwrap();
+        let tool_delta =
+            aws_sdk_bedrockruntime::types::ToolUseBlockDelta::builder().input(r#"{"query":"test"}"#).build().unwrap();
 
         let delta = aws_sdk_bedrockruntime::types::ContentBlockDeltaEvent::builder()
             .content_block_index(0)
@@ -355,13 +295,11 @@ mod tests {
         );
 
         let result = handle_content_block_stop(0, &mut active);
-        assert!(
-            matches!(&result, StreamEvent::Emit(LlmResponse::ToolRequestComplete { tool_call })
-                if tool_call.id == "tool_123"
-                && tool_call.name == "search"
-                && tool_call.arguments == r#"{"query":"test"}"#
-            )
-        );
+        assert!(matches!(&result, StreamEvent::Emit(LlmResponse::ToolRequestComplete { tool_call })
+            if tool_call.id == "tool_123"
+            && tool_call.name == "search"
+            && tool_call.arguments == r#"{"query":"test"}"#
+        ));
         assert!(active.is_empty());
     }
 

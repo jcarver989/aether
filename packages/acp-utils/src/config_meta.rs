@@ -44,8 +44,7 @@ impl ConfigOptionMeta {
     }
 
     pub fn from_meta(meta: Option<&Meta>) -> Self {
-        meta.and_then(|m| serde_json::from_value(serde_json::Value::Object(m.clone())).ok())
-            .unwrap_or_default()
+        meta.and_then(|m| serde_json::from_value(serde_json::Value::Object(m.clone())).ok()).unwrap_or_default()
     }
 }
 
@@ -61,8 +60,7 @@ impl SelectOptionMeta {
     }
 
     pub fn from_meta(meta: Option<&Meta>) -> Self {
-        meta.and_then(|m| serde_json::from_value(serde_json::Value::Object(m.clone())).ok())
-            .unwrap_or_default()
+        meta.and_then(|m| serde_json::from_value(serde_json::Value::Object(m.clone())).ok()).unwrap_or_default()
     }
 }
 
@@ -82,11 +80,7 @@ mod tests {
     #[test]
     fn select_option_meta_roundtrip() {
         let original = SelectOptionMeta {
-            reasoning_levels: vec![
-                ReasoningEffort::Low,
-                ReasoningEffort::Medium,
-                ReasoningEffort::High,
-            ],
+            reasoning_levels: vec![ReasoningEffort::Low, ReasoningEffort::Medium, ReasoningEffort::High],
             supports_image: true,
             supports_audio: false,
         };
@@ -104,33 +98,22 @@ mod tests {
 
     #[test]
     fn from_meta_none_returns_default() {
-        assert_eq!(
-            ConfigOptionMeta::from_meta(None),
-            ConfigOptionMeta::default()
-        );
-        assert_eq!(
-            SelectOptionMeta::from_meta(None),
-            SelectOptionMeta::default()
-        );
+        assert_eq!(ConfigOptionMeta::from_meta(None), ConfigOptionMeta::default());
+        assert_eq!(SelectOptionMeta::from_meta(None), SelectOptionMeta::default());
     }
 
     #[test]
     fn unknown_keys_are_ignored() {
         let mut map = serde_json::Map::new();
         map.insert("multi_select".to_string(), serde_json::Value::Bool(true));
-        map.insert(
-            "unknown_field".to_string(),
-            serde_json::Value::String("hello".to_string()),
-        );
+        map.insert("unknown_field".to_string(), serde_json::Value::String("hello".to_string()));
         let parsed = ConfigOptionMeta::from_meta(Some(&map));
         assert_eq!(parsed, ConfigOptionMeta { multi_select: true });
     }
 
     #[test]
     fn false_fields_omitted_from_serialized_output() {
-        let meta = ConfigOptionMeta {
-            multi_select: false,
-        };
+        let meta = ConfigOptionMeta { multi_select: false };
         let value = serde_json::to_value(&meta).unwrap();
         let obj = value.as_object().unwrap();
         assert!(!obj.contains_key("multi_select"));

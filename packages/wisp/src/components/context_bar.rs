@@ -4,9 +4,7 @@ use tui::{Color, Theme};
 ///
 /// Example: `slot_bar(2, 3)` => `[■■·]`
 pub(crate) fn slot_bar(filled: usize, total: usize) -> String {
-    let slots: String = (0..total)
-        .map(|i| if i < filled { '■' } else { '·' })
-        .collect();
+    let slots: String = (0..total).map(|i| if i < filled { '■' } else { '·' }).collect();
     format!("[{slots}]")
 }
 

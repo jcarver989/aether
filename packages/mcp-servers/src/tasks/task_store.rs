@@ -47,11 +47,7 @@ pub struct TaskStore {
 impl TaskStore {
     /// Create a new task store at the given root directory
     pub fn new(root: PathBuf) -> Self {
-        Self {
-            root,
-            index: TaskIndex::new(),
-            initialized: false,
-        }
+        Self { root, index: TaskIndex::new(), initialized: false }
     }
 
     /// Initialize the store by loading all active tasks.
@@ -81,11 +77,7 @@ impl TaskStore {
     }
 
     /// Create a new task tree with a root task
-    pub fn create_tree(
-        &mut self,
-        title: &str,
-        description: Option<&str>,
-    ) -> Result<Task, TaskStoreError> {
+    pub fn create_tree(&mut self, title: &str, description: Option<&str>) -> Result<Task, TaskStoreError> {
         let hash = self.generate_hash();
         let id = TaskId::new_root(&hash);
 
@@ -108,9 +100,7 @@ impl TaskStore {
         let root_id = parent_id.root();
 
         if !self.index.contains(&root_id) {
-            return Err(TaskStoreError::ParentNotFound {
-                id: parent_id.to_string(),
-            });
+            return Err(TaskStoreError::ParentNotFound { id: parent_id.to_string() });
         }
 
         let subtask_index = self.index.next_subtask_index(&root_id);
@@ -118,11 +108,11 @@ impl TaskStore {
 
         let task = Task::new_subtask(subtask_id, parent_id.clone(), title.to_string());
 
-        let file_path = self.index.get_tree_path(&root_id).cloned().ok_or_else(|| {
-            TaskStoreError::TreeNotFound {
-                id: root_id.to_string(),
-            }
-        })?;
+        let file_path = self
+            .index
+            .get_tree_path(&root_id)
+            .cloned()
+            .ok_or_else(|| TaskStoreError::TreeNotFound { id: root_id.to_string() })?;
 
         write_task_to_file(&task, &file_path)?;
         self.index.insert(task.clone(), file_path);
@@ -135,18 +125,12 @@ impl TaskStore {
         if let Some(deps) = &updates.deps {
             for dep_id in deps {
                 if !self.index.contains(dep_id) {
-                    return Err(TaskStoreError::DependencyNotFound {
-                        id: dep_id.to_string(),
-                    });
+                    return Err(TaskStoreError::DependencyNotFound { id: dep_id.to_string() });
                 }
             }
         }
 
-        let mut task = self
-            .index
-            .get(id)
-            .cloned()
-            .ok_or_else(|| TaskStoreError::NotFound { id: id.to_string() })?;
+        let mut task = self.index.get(id).cloned().ok_or_else(|| TaskStoreError::NotFound { id: id.to_string() })?;
 
         updates.apply_to(&mut task);
 
@@ -189,11 +173,11 @@ impl TaskStore {
     pub fn archive_tree(&mut self, root_id: &TaskId) -> Result<(), TaskStoreError> {
         let root_id = root_id.root();
 
-        let src_path = self.index.get_tree_path(&root_id).cloned().ok_or_else(|| {
-            TaskStoreError::TreeNotFound {
-                id: root_id.to_string(),
-            }
-        })?;
+        let src_path = self
+            .index
+            .get_tree_path(&root_id)
+            .cloned()
+            .ok_or_else(|| TaskStoreError::TreeNotFound { id: root_id.to_string() })?;
 
         let completed_dir = self.completed_dir();
         if !completed_dir.exists() {
@@ -234,10 +218,7 @@ impl TaskStore {
     fn generate_hash(&self) -> String {
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
 
         let pid = u128::from(std::process::id());
         let count = self.index.len() as u128;
@@ -266,11 +247,11 @@ impl TaskStore {
     }
 
     fn rewrite_tree_file(&self, root_id: &TaskId) -> Result<(), TaskStoreError> {
-        let path = self.index.get_tree_path(root_id).cloned().ok_or_else(|| {
-            TaskStoreError::TreeNotFound {
-                id: root_id.to_string(),
-            }
-        })?;
+        let path = self
+            .index
+            .get_tree_path(root_id)
+            .cloned()
+            .ok_or_else(|| TaskStoreError::TreeNotFound { id: root_id.to_string() })?;
 
         let mut tasks: Vec<_> = self.index.get_tree(root_id);
         tasks.sort_by_key(|t| t.id.as_str());
@@ -317,9 +298,7 @@ mod tests {
     fn test_create_tree() {
         let (_temp, mut store) = setup();
 
-        let task = store
-            .create_tree("Research topic X", Some("Detailed description"))
-            .unwrap();
+        let task = store.create_tree("Research topic X", Some("Detailed description")).unwrap();
 
         assert!(task.id.is_root());
         assert_eq!(task.title, "Research topic X");
@@ -397,15 +376,7 @@ mod tests {
         let subtask1 = store.add_subtask(&root.id, "Subtask 1").unwrap();
         let subtask2 = store.add_subtask(&root.id, "Subtask 2").unwrap();
 
-        store
-            .update(
-                &subtask2.id,
-                TaskUpdate {
-                    deps: Some(vec![subtask1.id.clone()]),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
+        store.update(&subtask2.id, TaskUpdate { deps: Some(vec![subtask1.id.clone()]), ..Default::default() }).unwrap();
 
         let ready = store.get_ready();
         assert_eq!(ready.len(), 2);
@@ -479,25 +450,11 @@ mod tests {
         let root = store.create_tree("Root", None).unwrap();
 
         store
-            .update(
-                &root.id,
-                TaskUpdate {
-                    assignee: Some("orchestrator".to_string()),
-                    ..Default::default()
-                },
-            )
+            .update(&root.id, TaskUpdate { assignee: Some("orchestrator".to_string()), ..Default::default() })
             .unwrap();
 
         let subtask = store.add_subtask(&root.id, "Worker task").unwrap();
-        store
-            .update(
-                &subtask.id,
-                TaskUpdate {
-                    assignee: Some("worker-1".to_string()),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
+        store.update(&subtask.id, TaskUpdate { assignee: Some("worker-1".to_string()), ..Default::default() }).unwrap();
 
         assert_eq!(store.list_by_assignee("orchestrator").len(), 1);
         assert_eq!(store.list_by_assignee("worker-1").len(), 1);
@@ -513,15 +470,7 @@ mod tests {
 
         assert_eq!(store.list_by_status(TaskStatus::Pending).len(), 2);
 
-        store
-            .update(
-                &subtask.id,
-                TaskUpdate {
-                    status: Some(TaskStatus::InProgress),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
+        store.update(&subtask.id, TaskUpdate { status: Some(TaskStatus::InProgress), ..Default::default() }).unwrap();
 
         assert_eq!(store.list_by_status(TaskStatus::Pending).len(), 1);
         assert_eq!(store.list_by_status(TaskStatus::InProgress).len(), 1);
@@ -549,18 +498,10 @@ mod tests {
 
         let task = store.create_tree("Task", None).unwrap();
 
-        let result = store.update(
-            &task.id,
-            TaskUpdate {
-                deps: Some(vec![TaskId::from("at-nonexistent")]),
-                ..Default::default()
-            },
-        );
+        let result = store
+            .update(&task.id, TaskUpdate { deps: Some(vec![TaskId::from("at-nonexistent")]), ..Default::default() });
 
-        assert!(matches!(
-            result,
-            Err(TaskStoreError::DependencyNotFound { .. })
-        ));
+        assert!(matches!(result, Err(TaskStoreError::DependencyNotFound { .. })));
     }
 
     #[test]

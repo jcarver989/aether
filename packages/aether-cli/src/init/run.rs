@@ -7,9 +7,8 @@ use std::io;
 use std::path::Path;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tui::{
-    Component, CrosstermEvent, Event, Form, FormField, FormFieldKind, FormMessage, MouseCapture,
-    MultiSelect, Renderer, SelectOption, TerminalSession, TextField, Theme,
-    spawn_terminal_event_task, terminal_size,
+    Component, CrosstermEvent, Event, Form, FormField, FormFieldKind, FormMessage, MouseCapture, MultiSelect, Renderer,
+    SelectOption, TerminalSession, TextField, Theme, spawn_terminal_event_task, terminal_size,
 };
 use wisp::components::model_selector::{ModelEntry, ModelSelector, ModelSelectorMessage};
 
@@ -23,8 +22,7 @@ pub async fn run_init(args: InitArgs) -> Result<(), CliError> {
     let (form_values, model) = {
         let size = terminal_size().unwrap_or((80, 24));
         let mut renderer = Renderer::new(io::stdout(), Theme::default(), size);
-        let _session =
-            TerminalSession::new(false, MouseCapture::Disabled).map_err(CliError::IoError)?;
+        let _session = TerminalSession::new(false, MouseCapture::Disabled).map_err(CliError::IoError)?;
 
         let mut terminal_rx = spawn_terminal_event_task();
         let mut form = build_form();
@@ -43,9 +41,7 @@ pub async fn run_init(args: InitArgs) -> Result<(), CliError> {
             None,
         );
 
-        let Some(model) =
-            run_model_selector(&mut selector, &mut renderer, &mut terminal_rx).await?
-        else {
+        let Some(model) = run_model_selector(&mut selector, &mut renderer, &mut terminal_rx).await? else {
             renderer.clear_screen().map_err(CliError::IoError)?;
             println!("Cancelled.");
             return Ok(());
@@ -90,19 +86,10 @@ impl WizardInput {
         let description = json["description"].as_str().unwrap_or("").to_string();
         let servers = json["servers"]
             .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            })
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
             .unwrap_or_default();
 
-        Self {
-            name,
-            description,
-            model,
-            servers,
-        }
+        Self { name, description, model, servers }
     }
 }
 
@@ -176,9 +163,7 @@ async fn run_form<W: io::Write>(
     renderer: &mut Renderer<W>,
     terminal_rx: &mut UnboundedReceiver<CrosstermEvent>,
 ) -> Result<Option<Value>, CliError> {
-    renderer
-        .render_frame(|ctx| form.render(ctx))
-        .map_err(CliError::IoError)?;
+    renderer.render_frame(|ctx| form.render(ctx)).map_err(CliError::IoError)?;
 
     loop {
         let Some(event) = terminal_rx.recv().await else {
@@ -188,19 +173,13 @@ async fn run_form<W: io::Write>(
             renderer.on_resize((*c, *r));
         }
         if let Ok(tui_event) = Event::try_from(event) {
-            if let Some(msg) = form
-                .on_event(&tui_event)
-                .await
-                .and_then(|msgs| msgs.into_iter().next())
-            {
+            if let Some(msg) = form.on_event(&tui_event).await.and_then(|msgs| msgs.into_iter().next()) {
                 match msg {
                     FormMessage::Submit => return Ok(Some(form.to_json())),
                     FormMessage::Close => return Ok(None),
                 }
             }
-            renderer
-                .render_frame(|ctx| form.render(ctx))
-                .map_err(CliError::IoError)?;
+            renderer.render_frame(|ctx| form.render(ctx)).map_err(CliError::IoError)?;
         }
     }
 }
@@ -225,17 +204,10 @@ async fn run_model_selector<W: io::Write>(
             renderer.on_resize((*c, *r));
         }
         if let Ok(tui_event) = Event::try_from(event) {
-            if let Some(msg) = selector
-                .on_event(&tui_event)
-                .await
-                .and_then(|msgs| msgs.into_iter().next())
-            {
+            if let Some(msg) = selector.on_event(&tui_event).await.and_then(|msgs| msgs.into_iter().next()) {
                 match msg {
                     ModelSelectorMessage::Done(changes) => {
-                        let model = changes
-                            .into_iter()
-                            .find(|c| c.config_id == "model")
-                            .map(|c| c.new_value);
+                        let model = changes.into_iter().find(|c| c.config_id == "model").map(|c| c.new_value);
                         return Ok(model);
                     }
                 }
@@ -255,15 +227,9 @@ fn scaffold(project_root: &Path, input: &WizardInput) -> Result<(), CliError> {
     std::fs::create_dir_all(project_root).map_err(CliError::IoError)?;
 
     write_if_absent(&project_root.join(".aether/SYSTEM.md"), SYSTEM_MD_TEMPLATE)?;
-    write_if_absent(
-        &project_root.join(".aether/mcp.json"),
-        &build_mcp_json(input),
-    )?;
+    write_if_absent(&project_root.join(".aether/mcp.json"), &build_mcp_json(input))?;
     write_if_absent(&project_root.join("AGENTS.md"), &build_agents_md(input))?;
-    write_if_absent(
-        &project_root.join(".aether/settings.json"),
-        &build_settings_json(input),
-    )?;
+    write_if_absent(&project_root.join(".aether/settings.json"), &build_settings_json(input))?;
 
     Ok(())
 }
@@ -303,10 +269,7 @@ fn build_mcp_json(input: &WizardInput) -> String {
         let mut entry = serde_json::Map::new();
         entry.insert("type".to_string(), serde_json::json!("in-memory"));
         if server == "skills" {
-            entry.insert(
-                "args".to_string(),
-                serde_json::json!(["--dir", "$HOME/.aether"]),
-            );
+            entry.insert("args".to_string(), serde_json::json!(["--dir", "$HOME/.aether"]));
         }
         servers.insert(server.clone(), Value::Object(entry));
     }
@@ -315,10 +278,7 @@ fn build_mcp_json(input: &WizardInput) -> String {
 }
 
 fn build_agents_md(input: &WizardInput) -> String {
-    format!(
-        "# {}\n\n{}\n\nYou are an expert coding assistant.\n",
-        input.name, input.description
-    )
+    format!("# {}\n\n{}\n\nYou are an expert coding assistant.\n", input.name, input.description)
 }
 
 #[cfg(test)]
@@ -333,11 +293,7 @@ mod tests {
             name: "Default".to_string(),
             description: "Default coding agent".to_string(),
             model: "anthropic:claude-sonnet-4-5".to_string(),
-            servers: vec![
-                "coding".to_string(),
-                "skills".to_string(),
-                "tasks".to_string(),
-            ],
+            servers: vec!["coding".to_string(), "skills".to_string(), "tasks".to_string()],
         }
     }
 
@@ -366,10 +322,7 @@ mod tests {
 
     #[test]
     fn scaffold_rejects_invalid_model() {
-        let input = WizardInput {
-            model: "invalid:nope".to_string(),
-            ..default_input()
-        };
+        let input = WizardInput { model: "invalid:nope".to_string(), ..default_input() };
         let dir = tempfile::tempdir().unwrap();
         scaffold(dir.path(), &input).unwrap();
 
@@ -425,10 +378,7 @@ mod tests {
     #[test]
     fn scaffold_custom_servers() {
         let dir = tempfile::tempdir().unwrap();
-        let input = WizardInput {
-            servers: vec!["coding".to_string(), "lsp".to_string()],
-            ..default_input()
-        };
+        let input = WizardInput { servers: vec!["coding".to_string(), "lsp".to_string()], ..default_input() };
         scaffold(dir.path(), &input).unwrap();
 
         let raw = RawMcpConfig::from_json_file(&dir.path().join(".aether/mcp.json")).unwrap();
@@ -447,11 +397,7 @@ mod tests {
     #[tokio::test]
     async fn build_model_entries_includes_default() {
         let items = build_model_entries().await;
-        assert!(
-            items
-                .iter()
-                .any(|e| e.value == "anthropic:claude-sonnet-4-5")
-        );
+        assert!(items.iter().any(|e| e.value == "anthropic:claude-sonnet-4-5"));
     }
 
     #[test]

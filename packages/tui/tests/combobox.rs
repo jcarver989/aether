@@ -10,17 +10,11 @@ struct FakeItem {
 
 impl FakeItem {
     fn new(text: &str) -> Self {
-        Self {
-            text: text.to_string(),
-            disabled: false,
-        }
+        Self { text: text.to_string(), disabled: false }
     }
 
     fn disabled(text: &str) -> Self {
-        Self {
-            text: text.to_string(),
-            disabled: true,
-        }
+        Self { text: text.to_string(), disabled: true }
     }
 }
 
@@ -35,9 +29,7 @@ fn items(names: &[&str]) -> Vec<FakeItem> {
 }
 
 fn many_items(n: usize) -> Vec<FakeItem> {
-    (0..n)
-        .map(|i| FakeItem::new(&format!("item-{i}")))
-        .collect()
+    (0..n).map(|i| FakeItem::new(&format!("item-{i}"))).collect()
 }
 
 fn combo(names: &[&str]) -> Combobox<FakeItem> {
@@ -51,19 +43,11 @@ fn type_query(combobox: &mut Combobox<FakeItem>, s: &str) {
 }
 
 fn visible_texts(combobox: &Combobox<FakeItem>) -> Vec<String> {
-    combobox
-        .visible_matches_with_selection()
-        .iter()
-        .map(|(item, _)| item.text.clone())
-        .collect()
+    combobox.visible_matches_with_selection().iter().map(|(item, _)| item.text.clone()).collect()
 }
 
 fn selected_visible_pos(combobox: &Combobox<FakeItem>) -> usize {
-    combobox
-        .visible_matches_with_selection()
-        .iter()
-        .position(|(_, sel)| *sel)
-        .unwrap()
+    combobox.visible_matches_with_selection().iter().position(|(_, sel)| *sel).unwrap()
 }
 
 fn key(code: KeyCode) -> KeyEvent {
@@ -161,12 +145,7 @@ fn visible_matches_returns_viewport_window() {
 
 #[test]
 fn visible_matches_returns_all_when_fewer_than_viewport() {
-    assert_eq!(
-        Combobox::from_matches(many_items(3))
-            .visible_matches_with_selection()
-            .len(),
-        3
-    );
+    assert_eq!(Combobox::from_matches(many_items(3)).visible_matches_with_selection().len(), 3);
 }
 
 #[test]
@@ -264,10 +243,7 @@ fn classify_key_mappings() {
             PickerKey::ControlChar => "ControlChar",
             PickerKey::Other => "Other",
         };
-        assert_eq!(
-            label, expected,
-            "classify_key({key_event:?}, {query_empty}) = {label}, expected {expected}"
-        );
+        assert_eq!(label, expected, "classify_key({key_event:?}, {query_empty}) = {label}, expected {expected}");
     }
 }
 
@@ -283,9 +259,7 @@ fn render_items_empty_returns_empty() {
 fn render_items_calls_closure_for_each_visible() {
     let combobox = combo(&["a", "b", "c"]);
     let context = ViewContext::new((120, 40));
-    let lines = combobox.render_items(&context, |item, _selected, _ctx| {
-        Line::new(item.text.clone())
-    });
+    let lines = combobox.render_items(&context, |item, _selected, _ctx| Line::new(item.text.clone()));
     let output = render_lines(&lines, 120, 3).get_lines();
     assert_eq!(output.len(), 3);
     for (line, expected) in output.iter().zip(["a", "b", "c"]) {
@@ -304,11 +278,7 @@ fn set_max_visible_changes_viewport_size() {
 }
 
 fn disabled_items() -> Vec<FakeItem> {
-    vec![
-        FakeItem::new("a"),
-        FakeItem::disabled("b"),
-        FakeItem::new("c"),
-    ]
+    vec![FakeItem::new("a"), FakeItem::disabled("b"), FakeItem::new("c")]
 }
 
 #[test]
@@ -328,11 +298,7 @@ fn move_up_where_skips_disabled() {
 
 #[test]
 fn select_first_where_finds_first_enabled() {
-    let items = vec![
-        FakeItem::disabled("a"),
-        FakeItem::disabled("b"),
-        FakeItem::new("c"),
-    ];
+    let items = vec![FakeItem::disabled("a"), FakeItem::disabled("b"), FakeItem::new("c")];
     let mut combobox = Combobox::from_matches(items);
     combobox.select_first_where(|item| !item.disabled);
     assert_eq!(combobox.selected_index(), 2);
@@ -340,11 +306,7 @@ fn select_first_where_finds_first_enabled() {
 
 #[test]
 fn move_down_where_noop_when_all_filtered() {
-    let items = vec![
-        FakeItem::disabled("a"),
-        FakeItem::disabled("b"),
-        FakeItem::disabled("c"),
-    ];
+    let items = vec![FakeItem::disabled("a"), FakeItem::disabled("b"), FakeItem::disabled("c")];
     let mut combobox = Combobox::from_matches(items);
     combobox.move_down_where(|item| !item.disabled);
     assert_eq!(combobox.selected_index(), 0);

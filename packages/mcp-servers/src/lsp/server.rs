@@ -13,15 +13,11 @@ use std::{fmt::Debug, path::PathBuf};
 use tokio::sync::RwLock;
 
 use super::registry::LspRegistry;
-use super::tools::check_errors::{
-    LspDiagnosticsOutput, LspDiagnosticsRequest, execute_lsp_diagnostics,
-};
+use super::tools::check_errors::{LspDiagnosticsOutput, LspDiagnosticsRequest, execute_lsp_diagnostics};
 use super::tools::document_info::{LspDocumentInput, LspDocumentOutput, execute_lsp_document};
 use super::tools::rename::{LspRenameInput, LspRenameOutput, execute_lsp_rename};
 use super::tools::symbol_lookup::{LspSymbolInput, LspSymbolOutput, execute_lsp_symbol};
-use super::tools::workspace_search::{
-    LspWorkspaceSearchInput, LspWorkspaceSearchOutput, execute_lsp_workspace_search,
-};
+use super::tools::workspace_search::{LspWorkspaceSearchInput, LspWorkspaceSearchOutput, execute_lsp_workspace_search};
 
 /// CLI arguments for `LspMcp` server
 #[derive(Debug, Clone, Parser)]
@@ -36,8 +32,7 @@ impl LspMcpArgs {
         let mut full_args = vec!["lsp-mcp".to_string()];
         full_args.extend(args);
 
-        Self::try_parse_from(full_args)
-            .map_err(|e| format!("Failed to parse LspMcp arguments: {e}"))
+        Self::try_parse_from(full_args).map_err(|e| format!("Failed to parse LspMcp arguments: {e}"))
     }
 }
 
@@ -58,21 +53,14 @@ impl LspMcp {
     /// Create a standalone `LspMcp` with its own `LspRegistry`.
     pub fn new(root_dir: PathBuf) -> Self {
         let registry = LspRegistry::new_and_spawn(root_dir.clone());
-        Self {
-            tool_router: Self::tool_router(),
-            lsp: registry,
-            roots: RwLock::new(vec![root_dir]),
-        }
+        Self { tool_router: Self::tool_router(), lsp: registry, roots: RwLock::new(vec![root_dir]) }
     }
 
     /// Create from parsed CLI arguments.
     pub fn from_args(args: Vec<String>) -> Result<Self, String> {
         let parsed = LspMcpArgs::from_args(args)?;
-        let root_dir = parsed
-            .root_dir
-            .unwrap_or_else(|| PathBuf::from("."))
-            .canonicalize()
-            .unwrap_or_else(|_| PathBuf::from("."));
+        let root_dir =
+            parsed.root_dir.unwrap_or_else(|| PathBuf::from(".")).canonicalize().unwrap_or_else(|_| PathBuf::from("."));
         Ok(Self::new(root_dir))
     }
 
@@ -88,10 +76,7 @@ impl LspMcp {
     }
 
     fn get_workspace_root(&self) -> Option<PathBuf> {
-        self.roots
-            .try_read()
-            .ok()
-            .and_then(|roots| roots.first().cloned())
+        self.roots.try_read().ok().and_then(|roots| roots.first().cloned())
     }
 
     fn build_instructions(&self) -> String {
@@ -136,24 +121,16 @@ impl ServerHandler for LspMcp {
 impl LspMcp {
     #[doc = include_str!("tools/symbol_lookup/description.md")]
     #[tool]
-    pub async fn lsp_symbol(
-        &self,
-        request: Parameters<LspSymbolInput>,
-    ) -> Result<Json<LspSymbolOutput>, String> {
+    pub async fn lsp_symbol(&self, request: Parameters<LspSymbolInput>) -> Result<Json<LspSymbolOutput>, String> {
         let Parameters(input) = request;
         execute_lsp_symbol(input, self.lsp.as_ref()).await.map(Json)
     }
 
     #[doc = include_str!("tools/document_info/description.md")]
     #[tool]
-    pub async fn lsp_document(
-        &self,
-        request: Parameters<LspDocumentInput>,
-    ) -> Result<Json<LspDocumentOutput>, String> {
+    pub async fn lsp_document(&self, request: Parameters<LspDocumentInput>) -> Result<Json<LspDocumentOutput>, String> {
         let Parameters(input) = request;
-        execute_lsp_document(input, self.lsp.as_ref())
-            .await
-            .map(Json)
+        execute_lsp_document(input, self.lsp.as_ref()).await.map(Json)
     }
 
     #[doc = include_str!("tools/check_errors/description.md")]
@@ -163,9 +140,7 @@ impl LspMcp {
         request: Parameters<LspDiagnosticsRequest>,
     ) -> Result<Json<LspDiagnosticsOutput>, String> {
         let Parameters(request) = request;
-        execute_lsp_diagnostics(request, self.lsp.as_ref())
-            .await
-            .map(Json)
+        execute_lsp_diagnostics(request, self.lsp.as_ref()).await.map(Json)
     }
 
     #[doc = include_str!("tools/workspace_search/description.md")]
@@ -175,17 +150,12 @@ impl LspMcp {
         request: Parameters<LspWorkspaceSearchInput>,
     ) -> Result<Json<LspWorkspaceSearchOutput>, String> {
         let Parameters(input) = request;
-        execute_lsp_workspace_search(input, self.lsp.as_ref())
-            .await
-            .map(Json)
+        execute_lsp_workspace_search(input, self.lsp.as_ref()).await.map(Json)
     }
 
     #[doc = include_str!("tools/rename/description.md")]
     #[tool]
-    pub async fn lsp_rename(
-        &self,
-        request: Parameters<LspRenameInput>,
-    ) -> Result<Json<LspRenameOutput>, String> {
+    pub async fn lsp_rename(&self, request: Parameters<LspRenameInput>) -> Result<Json<LspRenameOutput>, String> {
         let Parameters(input) = request;
         execute_lsp_rename(input, self.lsp.as_ref()).await.map(Json)
     }

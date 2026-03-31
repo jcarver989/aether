@@ -12,33 +12,16 @@ fn make_select_option(
     current: &str,
     values: &[(&str, &str)],
 ) -> agent_client_protocol::SessionConfigOption {
-    let options: Vec<SessionConfigSelectOption> = values
-        .iter()
-        .map(|(v, n)| SessionConfigSelectOption::new(v.to_string(), n.to_string()))
-        .collect();
-    agent_client_protocol::SessionConfigOption::select(
-        id.to_string(),
-        name.to_string(),
-        current.to_string(),
-        options,
-    )
+    let options: Vec<SessionConfigSelectOption> =
+        values.iter().map(|(v, n)| SessionConfigSelectOption::new(v.to_string(), n.to_string())).collect();
+    agent_client_protocol::SessionConfigOption::select(id.to_string(), name.to_string(), current.to_string(), options)
 }
 
 #[test]
 fn component_renders_selected_row() {
     let opts = vec![
-        make_select_option(
-            "model",
-            "Model",
-            "gpt-4o",
-            &[("gpt-4o", "GPT-4o"), ("claude", "Claude")],
-        ),
-        make_select_option(
-            "mode",
-            "Mode",
-            "code",
-            &[("code", "Code"), ("chat", "Chat")],
-        ),
+        make_select_option("model", "Model", "gpt-4o", &[("gpt-4o", "GPT-4o"), ("claude", "Claude")]),
+        make_select_option("mode", "Mode", "code", &[("code", "Code"), ("chat", "Chat")]),
     ];
     let mut menu = SettingsMenu::from_config_options(&opts);
 
@@ -51,22 +34,10 @@ fn component_renders_selected_row() {
         term.get_style_at(0, 2).bg == Some(ctx.theme.highlight_bg()),
         "first row should have selection highlight background"
     );
-    assert!(
-        output[0].contains("Model"),
-        "first row should contain 'Model'"
-    );
-    assert!(
-        output[0].contains("GPT-4o"),
-        "first row should contain 'GPT-4o'"
-    );
-    assert!(
-        output[1].contains("Mode"),
-        "second row should contain 'Mode'"
-    );
-    assert!(
-        output[1].contains("Code"),
-        "second row should contain 'Code'"
-    );
+    assert!(output[0].contains("Model"), "first row should contain 'Model'");
+    assert!(output[0].contains("GPT-4o"), "first row should contain 'GPT-4o'");
+    assert!(output[1].contains("Mode"), "second row should contain 'Mode'");
+    assert!(output[1].contains("Code"), "second row should contain 'Code'");
     assert!(
         term.get_style_at(1, 2).bg != Some(ctx.theme.highlight_bg()),
         "second row should not have selection highlight background"
@@ -82,10 +53,7 @@ fn empty_options_renders_placeholder() {
     let term = render_component(|ctx| menu.render(ctx), 80, 24);
     let output = term.get_lines();
 
-    assert!(
-        output[0].contains("no settings options"),
-        "should show placeholder text"
-    );
+    assert!(output[0].contains("no settings options"), "should show placeholder text");
     // Second row should be empty
     assert!(output[1].trim().is_empty(), "row 1 should be empty");
 }

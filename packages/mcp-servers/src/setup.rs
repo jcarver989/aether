@@ -1,7 +1,4 @@
-use crate::{
-    CodingMcp, CodingMcpArgs, DefaultCodingTools, LspMcp, SkillsMcp, SubAgentsMcp, SurveyMcp,
-    TasksMcp,
-};
+use crate::{CodingMcp, CodingMcpArgs, DefaultCodingTools, LspMcp, SkillsMcp, SubAgentsMcp, SurveyMcp, TasksMcp};
 use aether_core::mcp::McpBuilder;
 use futures::FutureExt;
 use mcp_utils::ServiceExt;
@@ -29,10 +26,7 @@ impl McpBuilderExt for McpBuilder {
                             CodingMcpArgs::default()
                         }
                     };
-                    debug!(
-                        "CodingMcp created with LSP, permission_mode={:?}",
-                        parsed.permission_mode
-                    );
+                    debug!("CodingMcp created with LSP, permission_mode={:?}", parsed.permission_mode);
                     CodingMcp::with_tools(DefaultCodingTools::new())
                         .with_lsp(project_path.clone())
                         .with_root_dir(project_path)
@@ -48,9 +42,7 @@ impl McpBuilderExt for McpBuilder {
                 let project_path = lsp_cwd.clone();
                 async move {
                     debug!("LspMcp created with own registry");
-                    LspMcp::new(project_path.clone())
-                        .with_root_dir(project_path)
-                        .into_dyn()
+                    LspMcp::new(project_path.clone()).with_root_dir(project_path).into_dyn()
                 }
                 .boxed()
             }),
@@ -58,23 +50,14 @@ impl McpBuilderExt for McpBuilder {
         .register_in_memory_server(
             "skills",
             Box::new(|args, _input| {
-                async move {
-                    SkillsMcp::from_args(args)
-                        .expect("Failed to parse SkillsMcp args")
-                        .into_dyn()
-                }
-                .boxed()
+                async move { SkillsMcp::from_args(args).expect("Failed to parse SkillsMcp args").into_dyn() }.boxed()
             }),
         )
         .register_in_memory_server(
             "subagents",
             Box::new(|args, _input| {
-                async move {
-                    SubAgentsMcp::from_args(args)
-                        .expect("Failed to parse SubAgentsMcp args")
-                        .into_dyn()
-                }
-                .boxed()
+                async move { SubAgentsMcp::from_args(args).expect("Failed to parse SubAgentsMcp args").into_dyn() }
+                    .boxed()
             }),
         )
         .register_in_memory_server(

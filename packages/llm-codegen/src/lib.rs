@@ -126,13 +126,7 @@ struct DynamicProviderConfig {
 }
 
 const PROVIDERS: &[ProviderConfig] = &[
-    ProviderConfig::standard(
-        "anthropic",
-        "Anthropic",
-        "anthropic",
-        "Anthropic",
-        Some("ANTHROPIC_API_KEY"),
-    ),
+    ProviderConfig::standard("anthropic", "Anthropic", "anthropic", "Anthropic", Some("ANTHROPIC_API_KEY")),
     ProviderConfig {
         dev_id: "codex",
         source_dev_id: Some("openai"),
@@ -145,41 +139,11 @@ const PROVIDERS: &[ProviderConfig] = &[
         oauth_provider_id: Some("codex"),
         default_reasoning_levels: &["low", "medium", "high", "xhigh"],
     },
-    ProviderConfig::standard(
-        "deepseek",
-        "DeepSeek",
-        "deepseek",
-        "DeepSeek",
-        Some("DEEPSEEK_API_KEY"),
-    ),
-    ProviderConfig::standard(
-        "google",
-        "Gemini",
-        "gemini",
-        "Gemini",
-        Some("GEMINI_API_KEY"),
-    ),
-    ProviderConfig::standard(
-        "moonshotai",
-        "Moonshot",
-        "moonshot",
-        "Moonshot",
-        Some("MOONSHOT_API_KEY"),
-    ),
-    ProviderConfig::standard(
-        "openai",
-        "Openai",
-        "openai",
-        "OpenAI",
-        Some("OPENAI_API_KEY"),
-    ),
-    ProviderConfig::standard(
-        "openrouter",
-        "OpenRouter",
-        "openrouter",
-        "OpenRouter",
-        Some("OPENROUTER_API_KEY"),
-    ),
+    ProviderConfig::standard("deepseek", "DeepSeek", "deepseek", "DeepSeek", Some("DEEPSEEK_API_KEY")),
+    ProviderConfig::standard("google", "Gemini", "gemini", "Gemini", Some("GEMINI_API_KEY")),
+    ProviderConfig::standard("moonshotai", "Moonshot", "moonshot", "Moonshot", Some("MOONSHOT_API_KEY")),
+    ProviderConfig::standard("openai", "Openai", "openai", "OpenAI", Some("OPENAI_API_KEY")),
+    ProviderConfig::standard("openrouter", "OpenRouter", "openrouter", "OpenRouter", Some("OPENROUTER_API_KEY")),
     ProviderConfig {
         extra_source_ids: &["zai-coding-plan"],
         ..ProviderConfig::standard("zai", "ZAi", "zai", "ZAI", Some("ZAI_API_KEY"))
@@ -188,16 +152,8 @@ const PROVIDERS: &[ProviderConfig] = &[
 ];
 
 const DYNAMIC_PROVIDERS: &[DynamicProviderConfig] = &[
-    DynamicProviderConfig {
-        enum_name: "Ollama",
-        parser_name: "ollama",
-        display_name: "Ollama",
-    },
-    DynamicProviderConfig {
-        enum_name: "LlamaCpp",
-        parser_name: "llamacpp",
-        display_name: "LlamaCpp",
-    },
+    DynamicProviderConfig { enum_name: "Ollama", parser_name: "ollama", display_name: "Ollama" },
+    DynamicProviderConfig { enum_name: "LlamaCpp", parser_name: "llamacpp", display_name: "LlamaCpp" },
 ];
 
 #[derive(Debug, Clone)]
@@ -230,15 +186,11 @@ pub struct GeneratedOutput {
 /// Run the codegen, returning the generated Rust source and per-provider docs.
 pub fn generate(models_json_path: &Path) -> Result<GeneratedOutput, String> {
     let json_bytes = std::fs::read_to_string(models_json_path).map_err(|e| format!("read: {e}"))?;
-    let data: ModelsDevData =
-        serde_json::from_str(&json_bytes).map_err(|e| format!("parse: {e}"))?;
+    let data: ModelsDevData = serde_json::from_str(&json_bytes).map_err(|e| format!("parse: {e}"))?;
 
     let provider_models = build_provider_models(&data)?;
     let ctx = CodegenCtx { provider_models };
-    Ok(GeneratedOutput {
-        rust_source: emit_generated_source(&ctx),
-        provider_docs: emit_provider_docs(&ctx),
-    })
+    Ok(GeneratedOutput { rust_source: emit_generated_source(&ctx), provider_docs: emit_provider_docs(&ctx) })
 }
 
 fn build_provider_models(data: &ModelsDevData) -> Result<ProviderModels, String> {
@@ -246,9 +198,8 @@ fn build_provider_models(data: &ModelsDevData) -> Result<ProviderModels, String>
 
     for cfg in PROVIDERS {
         let json_key = cfg.json_key();
-        let provider_data = data
-            .get(json_key)
-            .ok_or_else(|| format!("Provider '{json_key}' not found in models.dev data"))?;
+        let provider_data =
+            data.get(json_key).ok_or_else(|| format!("Provider '{json_key}' not found in models.dev data"))?;
 
         let mut models: Vec<ModelInfo> = collect_models_from(cfg, &provider_data.models);
 
@@ -257,11 +208,7 @@ fn build_provider_models(data: &ModelsDevData) -> Result<ProviderModels, String>
                 let extra = collect_models_from(cfg, &extra_data.models);
                 let existing_ids: std::collections::HashSet<String> =
                     models.iter().map(|m| m.model_id.clone()).collect();
-                models.extend(
-                    extra
-                        .into_iter()
-                        .filter(|m| !existing_ids.contains(&m.model_id)),
-                );
+                models.extend(extra.into_iter().filter(|m| !existing_ids.contains(&m.model_id)));
             }
         }
 
@@ -272,10 +219,7 @@ fn build_provider_models(data: &ModelsDevData) -> Result<ProviderModels, String>
     Ok(provider_models)
 }
 
-fn collect_models_from(
-    cfg: &ProviderConfig,
-    models: &HashMap<String, ModelData>,
-) -> Vec<ModelInfo> {
+fn collect_models_from(cfg: &ProviderConfig, models: &HashMap<String, ModelData>) -> Vec<ModelInfo> {
     models
         .values()
         .filter(|m| m.tool_call == Some(true))
@@ -283,17 +227,12 @@ fn collect_models_from(
         .filter(|m| cfg.model_filter.is_none_or(|f| f(&m.id)))
         .map(|m| {
             let reasoning_levels = if m.reasoning.unwrap_or(false) {
-                cfg.default_reasoning_levels
-                    .iter()
-                    .map(|s| (*s).to_string())
-                    .collect()
+                cfg.default_reasoning_levels.iter().map(|s| (*s).to_string()).collect()
             } else {
                 Vec::new()
             };
-            let input_modalities = m
-                .modalities
-                .as_ref()
-                .map_or_else(|| vec!["text".to_string()], |md| md.input.clone());
+            let input_modalities =
+                m.modalities.as_ref().map_or_else(|| vec!["text".to_string()], |md| md.input.clone());
             ModelInfo {
                 variant_name: model_id_to_variant(&m.id),
                 model_id: m.id.clone(),
@@ -350,10 +289,7 @@ fn emit_generated_source(ctx: &CodegenCtx) -> String {
 }
 
 fn emit_header(out: &mut String) {
-    pushln(
-        out,
-        "// Auto-generated from models.dev — do not edit manually",
-    );
+    pushln(out, "// Auto-generated from models.dev — do not edit manually");
     pushln(out, "// Regenerated automatically by build.rs");
     blank(out);
     pushln(out, "use std::borrow::Cow;");
@@ -386,13 +322,7 @@ fn emit_provider_impls(out: &mut String, provider_models: &ProviderModels) {
         pushln(out, "    fn model_id(self) -> &'static str {");
         pushln(out, "        match self {");
         for model in models {
-            pushln(
-                out,
-                format!(
-                    "            Self::{} => \"{}\",",
-                    model.variant_name, model.model_id
-                ),
-            );
+            pushln(out, format!("            Self::{} => \"{}\",", model.variant_name, model.model_id));
         }
         pushln(out, "        }");
         pushln(out, "    }");
@@ -402,12 +332,7 @@ fn emit_provider_impls(out: &mut String, provider_models: &ProviderModels) {
         pushln(out, "    #[allow(clippy::too_many_lines)]");
         pushln(out, "    fn display_name(self) -> &'static str {");
         pushln(out, "        match self {");
-        emit_grouped_arms(
-            out,
-            models,
-            |m| escape_rust_string(&m.display_name),
-            |name| format!("\"{name}\""),
-        );
+        emit_grouped_arms(out, models, |m| escape_rust_string(&m.display_name), |name| format!("\"{name}\""));
         pushln(out, "        }");
         pushln(out, "    }");
         blank(out);
@@ -426,17 +351,9 @@ fn emit_provider_impls(out: &mut String, provider_models: &ProviderModels) {
         blank(out);
 
         // reasoning_levels — per-model reasoning level list
-        pushln(
-            out,
-            "    pub fn reasoning_levels(self) -> &'static [ReasoningEffort] {",
-        );
+        pushln(out, "    pub fn reasoning_levels(self) -> &'static [ReasoningEffort] {");
         pushln(out, "        match self {");
-        emit_grouped_arms(
-            out,
-            models,
-            |m| m.reasoning_levels.join(","),
-            format_reasoning_levels_rhs,
-        );
+        emit_grouped_arms(out, models, |m| m.reasoning_levels.join(","), format_reasoning_levels_rhs);
         pushln(out, "        }");
         pushln(out, "    }");
         blank(out);
@@ -448,10 +365,7 @@ fn emit_provider_impls(out: &mut String, provider_models: &ProviderModels) {
         blank(out);
 
         for modality in ["image", "audio"] {
-            pushln(
-                out,
-                format!("    pub fn supports_{modality}(self) -> bool {{"),
-            );
+            pushln(out, format!("    pub fn supports_{modality}(self) -> bool {{"));
             pushln(out, "        match self {");
             let mod_owned = modality.to_string();
             emit_grouped_arms(
@@ -479,12 +393,7 @@ fn emit_provider_impls(out: &mut String, provider_models: &ProviderModels) {
     }
 }
 
-fn emit_from_str_impl(
-    out: &mut String,
-    enum_name: &str,
-    parser_name: &str,
-    models: &[ModelInfo],
-) {
+fn emit_from_str_impl(out: &mut String, enum_name: &str, parser_name: &str, models: &[ModelInfo]) {
     pushln(out, format!("impl std::str::FromStr for {enum_name} {{"));
     pushln(out, "    type Err = String;");
     blank(out);
@@ -492,18 +401,9 @@ fn emit_from_str_impl(
     pushln(out, "    fn from_str(s: &str) -> Result<Self, Self::Err> {");
     pushln(out, "        match s {");
     for model in models {
-        pushln(
-            out,
-            format!(
-                "            \"{}\" => Ok(Self::{}),",
-                model.model_id, model.variant_name
-            ),
-        );
+        pushln(out, format!("            \"{}\" => Ok(Self::{}),", model.model_id, model.variant_name));
     }
-    pushln(
-        out,
-        format!("            _ => Err(format!(\"Unknown {parser_name} model: '{{s}}'\")),"),
-    );
+    pushln(out, format!("            _ => Err(format!(\"Unknown {parser_name} model: '{{s}}'\")),"));
     pushln(out, "        }");
     pushln(out, "    }");
     pushln(out, "}");
@@ -523,10 +423,7 @@ fn emit_grouped_arms(
     // Group variants by value, preserving insertion order via BTreeMap
     let mut groups: BTreeMap<String, Vec<&str>> = BTreeMap::new();
     for model in models {
-        groups
-            .entry(key_fn(model))
-            .or_default()
-            .push(&model.variant_name);
+        groups.entry(key_fn(model)).or_default().push(&model.variant_name);
     }
 
     for (key, variants) in &groups {
@@ -535,10 +432,7 @@ fn emit_grouped_arms(
             pushln(out, format!("            Self::{} => {rhs},", variants[0]));
         } else {
             let patterns: Vec<String> = variants.iter().map(|v| format!("Self::{v}")).collect();
-            pushln(
-                out,
-                format!("            {} => {rhs},", patterns.join(" | ")),
-            );
+            pushln(out, format!("            {} => {rhs},", patterns.join(" | ")));
         }
     }
 }
@@ -575,10 +469,7 @@ fn emit_llm_model_enum(out: &mut String) {
     pushln(out, "#[derive(Debug, Clone, PartialEq, Eq, Hash)]");
     pushln(out, "pub enum LlmModel {");
     for cfg in PROVIDERS {
-        pushln(
-            out,
-            format!("    {provider}({provider}Model),", provider = cfg.enum_name),
-        );
+        pushln(out, format!("    {provider}({provider}Model),", provider = cfg.enum_name));
     }
     for dyn_cfg in DYNAMIC_PROVIDERS {
         pushln(out, format!("    {}(String),", dyn_cfg.enum_name));
@@ -589,17 +480,8 @@ fn emit_llm_model_enum(out: &mut String) {
 
 fn emit_from_impls(out: &mut String) {
     for cfg in PROVIDERS {
-        pushln(
-            out,
-            format!("impl From<{}Model> for LlmModel {{", cfg.enum_name),
-        );
-        pushln(
-            out,
-            format!(
-                "    fn from(m: {}Model) -> Self {{ LlmModel::{}(m) }}",
-                cfg.enum_name, cfg.enum_name
-            ),
-        );
+        pushln(out, format!("impl From<{}Model> for LlmModel {{", cfg.enum_name));
+        pushln(out, format!("    fn from(m: {}Model) -> Self {{ LlmModel::{}(m) }}", cfg.enum_name, cfg.enum_name));
         pushln(out, "}");
         blank(out);
     }
@@ -626,48 +508,24 @@ fn emit_llm_model_impl(out: &mut String) {
 }
 
 fn emit_llm_model_id(out: &mut String) {
-    pushln(
-        out,
-        "    /// Raw model ID (e.g. `claude-opus-4-6`, `llama3.2`)",
-    );
+    pushln(out, "    /// Raw model ID (e.g. `claude-opus-4-6`, `llama3.2`)");
     pushln(out, "    pub fn model_id(&self) -> Cow<'static, str> {");
     pushln(out, "        match self {");
     for cfg in PROVIDERS {
-        pushln(
-            out,
-            format!(
-                "            Self::{}(m) => Cow::Borrowed(m.model_id()),",
-                cfg.enum_name
-            ),
-        );
+        pushln(out, format!("            Self::{}(m) => Cow::Borrowed(m.model_id()),", cfg.enum_name));
     }
-    pushln(
-        out,
-        format!(
-            "            {} => Cow::Owned(s.clone()),",
-            dynamic_pattern_with_binding("s")
-        ),
-    );
+    pushln(out, format!("            {} => Cow::Owned(s.clone()),", dynamic_pattern_with_binding("s")));
     pushln(out, "        }");
     pushln(out, "    }");
     blank(out);
 }
 
 fn emit_llm_display_name(out: &mut String) {
-    pushln(
-        out,
-        "    /// Human-readable display name (e.g. `Claude Opus 4.6`)",
-    );
+    pushln(out, "    /// Human-readable display name (e.g. `Claude Opus 4.6`)");
     pushln(out, "    pub fn display_name(&self) -> Cow<'static, str> {");
     pushln(out, "        match self {");
     for cfg in PROVIDERS {
-        pushln(
-            out,
-            format!(
-                "            Self::{}(m) => Cow::Borrowed(m.display_name()),",
-                cfg.enum_name
-            ),
-        );
+        pushln(out, format!("            Self::{}(m) => Cow::Borrowed(m.display_name()),", cfg.enum_name));
     }
     for dyn_cfg in DYNAMIC_PROVIDERS {
         pushln(
@@ -688,22 +546,10 @@ fn emit_llm_provider(out: &mut String) {
     pushln(out, "    pub fn provider(&self) -> &'static str {");
     pushln(out, "        match self {");
     for cfg in PROVIDERS {
-        pushln(
-            out,
-            format!(
-                "            Self::{}(_) => \"{}\",",
-                cfg.enum_name, cfg.parser_name
-            ),
-        );
+        pushln(out, format!("            Self::{}(_) => \"{}\",", cfg.enum_name, cfg.parser_name));
     }
     for dyn_cfg in DYNAMIC_PROVIDERS {
-        pushln(
-            out,
-            format!(
-                "            Self::{}(_) => \"{}\",",
-                dyn_cfg.enum_name, dyn_cfg.parser_name
-            ),
-        );
+        pushln(out, format!("            Self::{}(_) => \"{}\",", dyn_cfg.enum_name, dyn_cfg.parser_name));
     }
     pushln(out, "        }");
     pushln(out, "    }");
@@ -711,32 +557,14 @@ fn emit_llm_provider(out: &mut String) {
 }
 
 fn emit_llm_provider_display_name(out: &mut String) {
-    pushln(
-        out,
-        "    /// Human-readable provider name (e.g. `AWS Bedrock`)",
-    );
-    pushln(
-        out,
-        "    pub fn provider_display_name(&self) -> &'static str {",
-    );
+    pushln(out, "    /// Human-readable provider name (e.g. `AWS Bedrock`)");
+    pushln(out, "    pub fn provider_display_name(&self) -> &'static str {");
     pushln(out, "        match self {");
     for cfg in PROVIDERS {
-        pushln(
-            out,
-            format!(
-                "            Self::{}(_) => \"{}\",",
-                cfg.enum_name, cfg.display_name
-            ),
-        );
+        pushln(out, format!("            Self::{}(_) => \"{}\",", cfg.enum_name, cfg.display_name));
     }
     for dyn_cfg in DYNAMIC_PROVIDERS {
-        pushln(
-            out,
-            format!(
-                "            Self::{}(_) => \"{}\",",
-                dyn_cfg.enum_name, dyn_cfg.display_name
-            ),
-        );
+        pushln(out, format!("            Self::{}(_) => \"{}\",", dyn_cfg.enum_name, dyn_cfg.display_name));
     }
     pushln(out, "        }");
     pushln(out, "    }");
@@ -744,60 +572,33 @@ fn emit_llm_provider_display_name(out: &mut String) {
 }
 
 fn emit_llm_context_window(out: &mut String) {
-    pushln(
-        out,
-        "    /// Context window size in tokens (None for dynamic providers)",
-    );
+    pushln(out, "    /// Context window size in tokens (None for dynamic providers)");
     pushln(out, "    pub fn context_window(&self) -> Option<u32> {");
     pushln(out, "        match self {");
     for cfg in PROVIDERS {
-        pushln(
-            out,
-            format!(
-                "            Self::{}(m) => Some(m.context_window()),",
-                cfg.enum_name
-            ),
-        );
+        pushln(out, format!("            Self::{}(m) => Some(m.context_window()),", cfg.enum_name));
     }
-    pushln(
-        out,
-        format!("            {} => None,", dynamic_pattern_with_binding("_")),
-    );
+    pushln(out, format!("            {} => None,", dynamic_pattern_with_binding("_")));
     pushln(out, "        }");
     pushln(out, "    }");
     blank(out);
 }
 
 fn emit_llm_required_env_var(out: &mut String) {
-    pushln(
-        out,
-        "    /// Required env var for this model's provider (None for local providers)",
-    );
-    pushln(
-        out,
-        "    pub fn required_env_var(&self) -> Option<&'static str> {",
-    );
+    pushln(out, "    /// Required env var for this model's provider (None for local providers)");
+    pushln(out, "    pub fn required_env_var(&self) -> Option<&'static str> {");
     pushln(out, "        match self {");
     let mut none_arms: Vec<String> = Vec::new();
     for cfg in PROVIDERS {
         match cfg.env_var {
-            Some(var) => pushln(
-                out,
-                format!(
-                    "            Self::{}(_) => Some(\"{}\"),",
-                    cfg.enum_name, var
-                ),
-            ),
+            Some(var) => pushln(out, format!("            Self::{}(_) => Some(\"{}\"),", cfg.enum_name, var)),
             None => none_arms.push(format!("Self::{}(_)", cfg.enum_name)),
         }
     }
     for dyn_cfg in DYNAMIC_PROVIDERS {
         none_arms.push(format!("Self::{}(_)", dyn_cfg.enum_name));
     }
-    pushln(
-        out,
-        format!("            {} => None,", none_arms.join(" | ")),
-    );
+    pushln(out, format!("            {} => None,", none_arms.join(" | ")));
     pushln(out, "        }");
     pushln(out, "    }");
     blank(out);
@@ -805,91 +606,52 @@ fn emit_llm_required_env_var(out: &mut String) {
 
 fn emit_llm_all_required_env_vars(out: &mut String) {
     let vars: Vec<&str> = PROVIDERS.iter().filter_map(|cfg| cfg.env_var).collect();
-    pushln(
-        out,
-        "    /// All provider API key env var names (deduplicated, static)",
-    );
+    pushln(out, "    /// All provider API key env var names (deduplicated, static)");
     pushln(
         out,
         format!(
             "    pub const ALL_REQUIRED_ENV_VARS: &[&str] = &[{}];",
-            vars.iter()
-                .map(|v| format!("\"{v}\""))
-                .collect::<Vec<_>>()
-                .join(", ")
+            vars.iter().map(|v| format!("\"{v}\"")).collect::<Vec<_>>().join(", ")
         ),
     );
     blank(out);
 }
 
 fn emit_llm_oauth_provider_id(out: &mut String) {
-    pushln(
-        out,
-        "    /// OAuth provider ID if this model requires OAuth login (e.g. `\"codex\"`)",
-    );
-    pushln(
-        out,
-        "    pub fn oauth_provider_id(&self) -> Option<&'static str> {",
-    );
+    pushln(out, "    /// OAuth provider ID if this model requires OAuth login (e.g. `\"codex\"`)");
+    pushln(out, "    pub fn oauth_provider_id(&self) -> Option<&'static str> {");
     pushln(out, "        match self {");
     let mut none_arms: Vec<String> = Vec::new();
     for cfg in PROVIDERS {
         match cfg.oauth_provider_id {
-            Some(id) => pushln(
-                out,
-                format!(
-                    "            Self::{}(_) => Some(\"{}\"),",
-                    cfg.enum_name, id
-                ),
-            ),
+            Some(id) => pushln(out, format!("            Self::{}(_) => Some(\"{}\"),", cfg.enum_name, id)),
             None => none_arms.push(format!("Self::{}(_)", cfg.enum_name)),
         }
     }
     for dyn_cfg in DYNAMIC_PROVIDERS {
         none_arms.push(format!("Self::{}(_)", dyn_cfg.enum_name));
     }
-    pushln(
-        out,
-        format!("            {} => None,", none_arms.join(" | ")),
-    );
+    pushln(out, format!("            {} => None,", none_arms.join(" | ")));
     pushln(out, "        }");
     pushln(out, "    }");
     blank(out);
 }
 
 fn emit_llm_reasoning_levels(out: &mut String) {
-    pushln(
-        out,
-        "    /// Reasoning levels supported by this model (empty if not a reasoning model)",
-    );
-    pushln(
-        out,
-        "    pub fn reasoning_levels(&self) -> &'static [ReasoningEffort] {",
-    );
+    pushln(out, "    /// Reasoning levels supported by this model (empty if not a reasoning model)");
+    pushln(out, "    pub fn reasoning_levels(&self) -> &'static [ReasoningEffort] {");
     pushln(out, "        match self {");
     for cfg in PROVIDERS {
-        pushln(
-            out,
-            format!(
-                "            Self::{}(m) => m.reasoning_levels(),",
-                cfg.enum_name
-            ),
-        );
+        pushln(out, format!("            Self::{}(m) => m.reasoning_levels(),", cfg.enum_name));
     }
-    pushln(
-        out,
-        format!("            {} => &[],", dynamic_pattern_with_binding("_")),
-    );
+    pushln(out, format!("            {} => &[],", dynamic_pattern_with_binding("_")));
     pushln(out, "        }");
     pushln(out, "    }");
     blank(out);
 }
 
 fn emit_llm_supports_reasoning(out: &mut String) {
-    pushln(
-        out,
-        "    /// Whether this model supports reasoning/extended thinking",
-    );
+    pushln(out, "    /// Whether this model supports reasoning/extended thinking");
     pushln(out, "    pub fn supports_reasoning(&self) -> bool {");
     pushln(out, "        !self.reasoning_levels().is_empty()");
     pushln(out, "    }");
@@ -897,46 +659,22 @@ fn emit_llm_supports_reasoning(out: &mut String) {
 }
 
 fn emit_llm_supports_modality(out: &mut String, modality: &str) {
-    pushln(
-        out,
-        format!("    /// Whether this model supports {modality} input"),
-    );
-    pushln(
-        out,
-        format!("    pub fn supports_{modality}(&self) -> bool {{"),
-    );
+    pushln(out, format!("    /// Whether this model supports {modality} input"));
+    pushln(out, format!("    pub fn supports_{modality}(&self) -> bool {{"));
     pushln(out, "        match self {");
     for cfg in PROVIDERS {
-        pushln(
-            out,
-            format!(
-                "            Self::{}(m) => m.supports_{modality}(),",
-                cfg.enum_name
-            ),
-        );
+        pushln(out, format!("            Self::{}(m) => m.supports_{modality}(),", cfg.enum_name));
     }
-    pushln(
-        out,
-        format!(
-            "            {} => false,",
-            dynamic_pattern_with_binding("_")
-        ),
-    );
+    pushln(out, format!("            {} => false,", dynamic_pattern_with_binding("_")));
     pushln(out, "        }");
     pushln(out, "    }");
     blank(out);
 }
 
 fn emit_llm_all(out: &mut String) {
-    pushln(
-        out,
-        "    /// All catalog models (excludes dynamic providers)",
-    );
+    pushln(out, "    /// All catalog models (excludes dynamic providers)");
     pushln(out, "    pub fn all() -> &'static [LlmModel] {");
-    pushln(
-        out,
-        "        static ALL: LazyLock<Vec<LlmModel>> = LazyLock::new(|| {",
-    );
+    pushln(out, "        static ALL: LazyLock<Vec<LlmModel>> = LazyLock::new(|| {");
     pushln(out, "            let mut v = Vec::new();");
     for cfg in PROVIDERS {
         pushln(
@@ -955,14 +693,8 @@ fn emit_llm_all(out: &mut String) {
 
 fn emit_display_impl(out: &mut String) {
     pushln(out, "impl std::fmt::Display for LlmModel {");
-    pushln(
-        out,
-        "    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {",
-    );
-    pushln(
-        out,
-        "        write!(f, \"{}:{}\", self.provider(), self.model_id())",
-    );
+    pushln(out, "    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {");
+    pushln(out, "        write!(f, \"{}:{}\", self.provider(), self.model_id())");
     pushln(out, "    }");
     pushln(out, "}");
     blank(out);
@@ -972,15 +704,9 @@ fn emit_fromstr_impl(out: &mut String) {
     pushln(out, "impl std::str::FromStr for LlmModel {");
     pushln(out, "    type Err = String;");
     blank(out);
-    pushln(
-        out,
-        "    /// Parse a `provider:model` string into an `LlmModel`",
-    );
+    pushln(out, "    /// Parse a `provider:model` string into an `LlmModel`");
     pushln(out, "    fn from_str(s: &str) -> Result<Self, Self::Err> {");
-    pushln(
-        out,
-        "        let (provider_str, model_str) = s.split_once(':').unwrap_or((s, \"\"));",
-    );
+    pushln(out, "        let (provider_str, model_str) = s.split_once(':').unwrap_or((s, \"\"));");
     pushln(out, "        match provider_str {");
     for cfg in PROVIDERS {
         pushln(
@@ -1000,10 +726,7 @@ fn emit_fromstr_impl(out: &mut String) {
             ),
         );
     }
-    pushln(
-        out,
-        "            _ => Err(format!(\"Unknown provider: '{provider_str}'\")),",
-    );
+    pushln(out, "            _ => Err(format!(\"Unknown provider: '{provider_str}'\")),");
     pushln(out, "        }");
     pushln(out, "    }");
     pushln(out, "}");
@@ -1012,11 +735,7 @@ fn emit_fromstr_impl(out: &mut String) {
 /// Build a combined `|` pattern for all dynamic providers with a binding variable.
 /// e.g. `Self::Ollama(s) | Self::LlamaCpp(s)` or `Self::Ollama(_) | Self::LlamaCpp(_)`
 fn dynamic_pattern_with_binding(binding: &str) -> String {
-    DYNAMIC_PROVIDERS
-        .iter()
-        .map(|d| format!("Self::{}({binding})", d.enum_name))
-        .collect::<Vec<_>>()
-        .join(" | ")
+    DYNAMIC_PROVIDERS.iter().map(|d| format!("Self::{}({binding})", d.enum_name)).collect::<Vec<_>>().join(" | ")
 }
 
 /// Format a number with underscore separators (e.g. `200000` → `200_000`).
@@ -1069,31 +788,13 @@ fn emit_provider_docs(ctx: &CodegenCtx) -> HashMap<String, String> {
         // Supported models table
         pushln(&mut doc, "# Supported models");
         blank(&mut doc);
-        pushln(
-            &mut doc,
-            "| Model ID | Name | Context | Reasoning | Image | Audio |",
-        );
-        pushln(
-            &mut doc,
-            "|----------|------|---------|-----------|-------|-------|",
-        );
+        pushln(&mut doc, "| Model ID | Name | Context | Reasoning | Image | Audio |");
+        pushln(&mut doc, "|----------|------|---------|-----------|-------|-------|");
         for model in models {
             let ctx_str = format_context_window(model.context_window);
-            let reasoning = if model.reasoning_levels.is_empty() {
-                ""
-            } else {
-                "yes"
-            };
-            let image = if model.input_modalities.contains(&"image".to_string()) {
-                "yes"
-            } else {
-                ""
-            };
-            let audio = if model.input_modalities.contains(&"audio".to_string()) {
-                "yes"
-            } else {
-                ""
-            };
+            let reasoning = if model.reasoning_levels.is_empty() { "" } else { "yes" };
+            let image = if model.input_modalities.contains(&"image".to_string()) { "yes" } else { "" };
+            let audio = if model.input_modalities.contains(&"audio".to_string()) { "yes" } else { "" };
             pushln(
                 &mut doc,
                 format!(
@@ -1113,10 +814,7 @@ fn emit_provider_docs(ctx: &CodegenCtx) -> HashMap<String, String> {
         blank(&mut doc);
         pushln(
             &mut doc,
-            format!(
-                "This provider accepts any model name at runtime (e.g. `{}:my-model`).",
-                dyn_cfg.parser_name
-            ),
+            format!("This provider accepts any model name at runtime (e.g. `{}:my-model`).", dyn_cfg.parser_name),
         );
         pushln(&mut doc, "No API key is required.");
         docs.insert(dyn_cfg.parser_name.to_string(), doc);
@@ -1160,10 +858,7 @@ mod tests {
     fn generate_sorts_and_filters_models() {
         let mut data = minimal_models_dev_json();
         let root = data.as_object_mut().expect("root object");
-        let anthropic = root
-            .get_mut("anthropic")
-            .and_then(Value::as_object_mut)
-            .expect("anthropic provider");
+        let anthropic = root.get_mut("anthropic").and_then(Value::as_object_mut).expect("anthropic provider");
 
         anthropic.insert(
             "models".to_string(),
@@ -1250,19 +945,14 @@ mod tests {
         assert!(source.contains("Self::Anthropic(m) => Cow::Borrowed(m.model_id()),"));
         assert!(source.contains("Self::Anthropic(m) => Some(m.context_window()),"));
         // Provider-level FromStr is used by LlmModel::FromStr
-        assert!(source.contains(
-            "\"anthropic\" => model_str.parse::<AnthropicModel>().map(Self::Anthropic),"
-        ));
+        assert!(source.contains("\"anthropic\" => model_str.parse::<AnthropicModel>().map(Self::Anthropic),"));
     }
 
     #[test]
     fn generate_formats_large_numbers_with_separators() {
         let mut data = minimal_models_dev_json();
         let root = data.as_object_mut().expect("root object");
-        let anthropic = root
-            .get_mut("anthropic")
-            .and_then(Value::as_object_mut)
-            .expect("anthropic provider");
+        let anthropic = root.get_mut("anthropic").and_then(Value::as_object_mut).expect("anthropic provider");
 
         anthropic.insert(
             "models".to_string(),
@@ -1285,10 +975,7 @@ mod tests {
     fn generate_groups_identical_match_arms() {
         let mut data = minimal_models_dev_json();
         let root = data.as_object_mut().expect("root object");
-        let anthropic = root
-            .get_mut("anthropic")
-            .and_then(Value::as_object_mut)
-            .expect("anthropic provider");
+        let anthropic = root.get_mut("anthropic").and_then(Value::as_object_mut).expect("anthropic provider");
 
         anthropic.insert(
             "models".to_string(),
@@ -1316,10 +1003,7 @@ mod tests {
 
     #[test]
     fn test_model_id_to_variant() {
-        assert_eq!(
-            model_id_to_variant("claude-sonnet-4-5-20250929"),
-            "ClaudeSonnet4520250929"
-        );
+        assert_eq!(model_id_to_variant("claude-sonnet-4-5-20250929"), "ClaudeSonnet4520250929");
         assert_eq!(model_id_to_variant("gemini-2.5-flash"), "Gemini25Flash");
         assert_eq!(model_id_to_variant("deepseek-chat"), "DeepseekChat");
         assert_eq!(model_id_to_variant("glm-4.5"), "Glm45");
@@ -1327,18 +1011,9 @@ mod tests {
 
     #[test]
     fn test_model_id_to_variant_with_slash_and_colon() {
-        assert_eq!(
-            model_id_to_variant("anthropic/claude-opus-4.6"),
-            "AnthropicClaudeOpus46"
-        );
-        assert_eq!(
-            model_id_to_variant("openai/gpt-5.1-codex-max"),
-            "OpenaiGpt51CodexMax"
-        );
-        assert_eq!(
-            model_id_to_variant("deepseek/deepseek-r1:free"),
-            "DeepseekDeepseekR1Free"
-        );
+        assert_eq!(model_id_to_variant("anthropic/claude-opus-4.6"), "AnthropicClaudeOpus46");
+        assert_eq!(model_id_to_variant("openai/gpt-5.1-codex-max"), "OpenaiGpt51CodexMax");
+        assert_eq!(model_id_to_variant("deepseek/deepseek-r1:free"), "DeepseekDeepseekR1Free");
     }
 
     #[test]
@@ -1352,10 +1027,7 @@ mod tests {
     fn generate_contains_reasoning_levels_and_supports_reasoning() {
         let mut data = minimal_models_dev_json();
         let root = data.as_object_mut().expect("root object");
-        let anthropic = root
-            .get_mut("anthropic")
-            .and_then(Value::as_object_mut)
-            .expect("anthropic provider");
+        let anthropic = root.get_mut("anthropic").and_then(Value::as_object_mut).expect("anthropic provider");
 
         anthropic.insert(
             "models".to_string(),
@@ -1381,7 +1053,10 @@ mod tests {
         // Provider enum should have reasoning_levels method
         assert!(source.contains("pub fn reasoning_levels(self) -> &'static [ReasoningEffort] {"));
         // Thinker (anthropic) gets standard 3 levels
-        assert!(source.contains("Self::Thinker => &[ReasoningEffort::Low, ReasoningEffort::Medium, ReasoningEffort::High],"));
+        assert!(
+            source
+                .contains("Self::Thinker => &[ReasoningEffort::Low, ReasoningEffort::Medium, ReasoningEffort::High],")
+        );
         // Fast gets empty
         assert!(source.contains("Self::Fast => &[],"));
         // supports_reasoning delegates to reasoning_levels
@@ -1397,10 +1072,7 @@ mod tests {
     fn generate_codex_gets_four_reasoning_levels() {
         let mut data = minimal_models_dev_json();
         let root = data.as_object_mut().expect("root object");
-        let openai = root
-            .get_mut("openai")
-            .and_then(Value::as_object_mut)
-            .expect("openai provider");
+        let openai = root.get_mut("openai").and_then(Value::as_object_mut).expect("openai provider");
 
         openai.insert(
             "models".to_string(),
@@ -1417,7 +1089,9 @@ mod tests {
 
         let source = generate_from_value(&data);
         assert!(
-            source.contains("ReasoningEffort::Low, ReasoningEffort::Medium, ReasoningEffort::High, ReasoningEffort::Xhigh"),
+            source.contains(
+                "ReasoningEffort::Low, ReasoningEffort::Medium, ReasoningEffort::High, ReasoningEffort::Xhigh"
+            ),
             "Codex reasoning model should have 4 levels including Xhigh"
         );
     }
@@ -1461,11 +1135,7 @@ mod tests {
         let root = data.as_object_mut().unwrap();
 
         // Add a model to the zai-coding-plan extra source that doesn't exist in zai
-        let extra = root
-            .get_mut("zai-coding-plan")
-            .unwrap()
-            .as_object_mut()
-            .unwrap();
+        let extra = root.get_mut("zai-coding-plan").unwrap().as_object_mut().unwrap();
         extra.insert(
             "models".to_string(),
             json!({
@@ -1501,11 +1171,7 @@ mod tests {
                 }
             }),
         );
-        let extra = root
-            .get_mut("zai-coding-plan")
-            .unwrap()
-            .as_object_mut()
-            .unwrap();
+        let extra = root.get_mut("zai-coding-plan").unwrap().as_object_mut().unwrap();
         extra.insert(
             "models".to_string(),
             json!({
@@ -1519,9 +1185,7 @@ mod tests {
         );
 
         let source = generate_from_value(&data);
-        let from_str_matches = source
-            .matches("\"shared-model\" => Ok(Self::SharedModel),")
-            .count();
+        let from_str_matches = source.matches("\"shared-model\" => Ok(Self::SharedModel),").count();
         assert_eq!(from_str_matches, 1);
     }
 
@@ -1529,10 +1193,7 @@ mod tests {
     fn generate_emits_provider_docs() {
         let mut data = minimal_models_dev_json();
         let root = data.as_object_mut().unwrap();
-        let anthropic = root
-            .get_mut("anthropic")
-            .and_then(Value::as_object_mut)
-            .unwrap();
+        let anthropic = root.get_mut("anthropic").and_then(Value::as_object_mut).unwrap();
 
         anthropic.insert(
             "models".to_string(),

@@ -1,7 +1,6 @@
 use acp_utils::notifications::{ElicitationAction, ElicitationParams, ElicitationResponse};
 use acp_utils::{
-    ConstTitle, ElicitationSchema, EnumSchema, MultiSelectEnumSchema, PrimitiveSchema,
-    SingleSelectEnumSchema,
+    ConstTitle, ElicitationSchema, EnumSchema, MultiSelectEnumSchema, PrimitiveSchema, SingleSelectEnumSchema,
 };
 use tokio::sync::oneshot;
 use tui::{Checkbox, MultiSelect, NumberField, RadioSelect, SelectOption, TextField};
@@ -43,29 +42,17 @@ impl Component for ElicitationForm {
 }
 
 impl ElicitationForm {
-    pub fn from_params(
-        params: ElicitationParams,
-        response_tx: oneshot::Sender<ElicitationResponse>,
-    ) -> Self {
+    pub fn from_params(params: ElicitationParams, response_tx: oneshot::Sender<ElicitationResponse>) -> Self {
         let fields = parse_schema(&params.schema);
-        Self {
-            form: Form::new(params.message, fields),
-            response_tx: Some(response_tx),
-        }
+        Self { form: Form::new(params.message, fields), response_tx: Some(response_tx) }
     }
 
     pub fn confirm(&self) -> ElicitationResponse {
-        ElicitationResponse {
-            action: ElicitationAction::Accept,
-            content: Some(self.form.to_json()),
-        }
+        ElicitationResponse { action: ElicitationAction::Accept, content: Some(self.form.to_json()) }
     }
 
     pub fn decline() -> ElicitationResponse {
-        ElicitationResponse {
-            action: ElicitationAction::Decline,
-            content: None,
-        }
+        ElicitationResponse { action: ElicitationAction::Decline, content: None }
     }
 }
 
@@ -89,9 +76,7 @@ fn parse_schema(schema: &ElicitationSchema) -> Vec<FormField> {
 
 fn parse_field_kind(prop: &PrimitiveSchema) -> FormFieldKind {
     match prop {
-        PrimitiveSchema::Boolean(b) => {
-            FormFieldKind::Boolean(Checkbox::new(b.default.unwrap_or(false)))
-        }
+        PrimitiveSchema::Boolean(b) => FormFieldKind::Boolean(Checkbox::new(b.default.unwrap_or(false))),
         PrimitiveSchema::Integer(_) => FormFieldKind::Number(NumberField::new(String::new(), true)),
         PrimitiveSchema::Number(_) => FormFieldKind::Number(NumberField::new(String::new(), false)),
         PrimitiveSchema::String(_) => FormFieldKind::Text(TextField::new(String::new())),
@@ -104,20 +89,14 @@ fn parse_enum_field(e: &EnumSchema) -> FormFieldKind {
         EnumSchema::Single(s) => match s {
             SingleSelectEnumSchema::Untitled(u) => {
                 let options = options_from_strings(&u.enum_);
-                let default_idx = u
-                    .default
-                    .as_ref()
-                    .and_then(|d| options.iter().position(|o| o.value == *d))
-                    .unwrap_or(0);
+                let default_idx =
+                    u.default.as_ref().and_then(|d| options.iter().position(|o| o.value == *d)).unwrap_or(0);
                 FormFieldKind::SingleSelect(RadioSelect::new(options, default_idx))
             }
             SingleSelectEnumSchema::Titled(t) => {
                 let options = options_from_const_titles(&t.one_of);
-                let default_idx = t
-                    .default
-                    .as_ref()
-                    .and_then(|d| options.iter().position(|o| o.value == *d))
-                    .unwrap_or(0);
+                let default_idx =
+                    t.default.as_ref().and_then(|d| options.iter().position(|o| o.value == *d)).unwrap_or(0);
                 FormFieldKind::SingleSelect(RadioSelect::new(options, default_idx))
             }
         },
@@ -125,19 +104,13 @@ fn parse_enum_field(e: &EnumSchema) -> FormFieldKind {
             MultiSelectEnumSchema::Untitled(u) => {
                 let options = options_from_strings(&u.items.enum_);
                 let defaults = u.default.as_deref().unwrap_or(&[]);
-                let selected: Vec<bool> = options
-                    .iter()
-                    .map(|o| defaults.contains(&o.value))
-                    .collect();
+                let selected: Vec<bool> = options.iter().map(|o| defaults.contains(&o.value)).collect();
                 FormFieldKind::MultiSelect(MultiSelect::new(options, selected))
             }
             MultiSelectEnumSchema::Titled(t) => {
                 let options = options_from_const_titles(&t.items.any_of);
                 let defaults = t.default.as_deref().unwrap_or(&[]);
-                let selected: Vec<bool> = options
-                    .iter()
-                    .map(|o| defaults.contains(&o.value))
-                    .collect();
+                let selected: Vec<bool> = options.iter().map(|o| defaults.contains(&o.value)).collect();
                 FormFieldKind::MultiSelect(MultiSelect::new(options, selected))
             }
         },
@@ -150,22 +123,18 @@ fn parse_enum_field(e: &EnumSchema) -> FormFieldKind {
 
 fn extract_metadata(prop: &PrimitiveSchema) -> (Option<String>, Option<String>) {
     match prop {
-        PrimitiveSchema::String(s) => (
-            s.title.as_ref().map(ToString::to_string),
-            s.description.as_ref().map(ToString::to_string),
-        ),
-        PrimitiveSchema::Number(n) => (
-            n.title.as_ref().map(ToString::to_string),
-            n.description.as_ref().map(ToString::to_string),
-        ),
-        PrimitiveSchema::Integer(i) => (
-            i.title.as_ref().map(ToString::to_string),
-            i.description.as_ref().map(ToString::to_string),
-        ),
-        PrimitiveSchema::Boolean(b) => (
-            b.title.as_ref().map(ToString::to_string),
-            b.description.as_ref().map(ToString::to_string),
-        ),
+        PrimitiveSchema::String(s) => {
+            (s.title.as_ref().map(ToString::to_string), s.description.as_ref().map(ToString::to_string))
+        }
+        PrimitiveSchema::Number(n) => {
+            (n.title.as_ref().map(ToString::to_string), n.description.as_ref().map(ToString::to_string))
+        }
+        PrimitiveSchema::Integer(i) => {
+            (i.title.as_ref().map(ToString::to_string), i.description.as_ref().map(ToString::to_string))
+        }
+        PrimitiveSchema::Boolean(b) => {
+            (b.title.as_ref().map(ToString::to_string), b.description.as_ref().map(ToString::to_string))
+        }
         PrimitiveSchema::Enum(e) => extract_enum_metadata(e),
     }
 }
@@ -173,51 +142,35 @@ fn extract_metadata(prop: &PrimitiveSchema) -> (Option<String>, Option<String>) 
 fn extract_enum_metadata(e: &EnumSchema) -> (Option<String>, Option<String>) {
     match e {
         EnumSchema::Single(s) => match s {
-            SingleSelectEnumSchema::Untitled(u) => (
-                u.title.as_ref().map(ToString::to_string),
-                u.description.as_ref().map(ToString::to_string),
-            ),
-            SingleSelectEnumSchema::Titled(t) => (
-                t.title.as_ref().map(ToString::to_string),
-                t.description.as_ref().map(ToString::to_string),
-            ),
+            SingleSelectEnumSchema::Untitled(u) => {
+                (u.title.as_ref().map(ToString::to_string), u.description.as_ref().map(ToString::to_string))
+            }
+            SingleSelectEnumSchema::Titled(t) => {
+                (t.title.as_ref().map(ToString::to_string), t.description.as_ref().map(ToString::to_string))
+            }
         },
         EnumSchema::Multi(m) => match m {
-            MultiSelectEnumSchema::Untitled(u) => (
-                u.title.as_ref().map(ToString::to_string),
-                u.description.as_ref().map(ToString::to_string),
-            ),
-            MultiSelectEnumSchema::Titled(t) => (
-                t.title.as_ref().map(ToString::to_string),
-                t.description.as_ref().map(ToString::to_string),
-            ),
+            MultiSelectEnumSchema::Untitled(u) => {
+                (u.title.as_ref().map(ToString::to_string), u.description.as_ref().map(ToString::to_string))
+            }
+            MultiSelectEnumSchema::Titled(t) => {
+                (t.title.as_ref().map(ToString::to_string), t.description.as_ref().map(ToString::to_string))
+            }
         },
-        EnumSchema::Legacy(l) => (
-            l.title.as_ref().map(ToString::to_string),
-            l.description.as_ref().map(ToString::to_string),
-        ),
+        EnumSchema::Legacy(l) => {
+            (l.title.as_ref().map(ToString::to_string), l.description.as_ref().map(ToString::to_string))
+        }
     }
 }
 
 fn options_from_strings(values: &[String]) -> Vec<SelectOption> {
-    values
-        .iter()
-        .map(|s| SelectOption {
-            value: s.clone(),
-            title: s.clone(),
-            description: None,
-        })
-        .collect()
+    values.iter().map(|s| SelectOption { value: s.clone(), title: s.clone(), description: None }).collect()
 }
 
 fn options_from_const_titles(items: &[ConstTitle]) -> Vec<SelectOption> {
     items
         .iter()
-        .map(|ct| SelectOption {
-            value: ct.const_.clone(),
-            title: ct.title.clone(),
-            description: None,
-        })
+        .map(|ct| SelectOption { value: ct.const_.clone(), title: ct.title.clone(), description: None })
         .collect()
 }
 

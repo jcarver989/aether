@@ -30,10 +30,7 @@ impl Default for ConversationBuffer {
 
 impl ConversationBuffer {
     pub fn new() -> Self {
-        Self {
-            segments: Vec::new(),
-            thought_block_open: false,
-        }
+        Self { segments: Vec::new(), thought_block_open: false }
     }
 
     #[cfg(test)]
@@ -43,9 +40,7 @@ impl ConversationBuffer {
 
     pub fn push_user_message(&mut self, text: &str) {
         self.close_thought_block();
-        self.segments.push(Segment {
-            content: SegmentContent::UserMessage(text.to_string()),
-        });
+        self.segments.push(Segment { content: SegmentContent::UserMessage(text.to_string()) });
     }
 
     pub fn append_text_chunk(&mut self, chunk: &str) {
@@ -60,9 +55,7 @@ impl ConversationBuffer {
         {
             existing.push_str(chunk);
         } else {
-            self.segments.push(Segment {
-                content: SegmentContent::Text(chunk.to_string()),
-            });
+            self.segments.push(Segment { content: SegmentContent::Text(chunk.to_string()) });
         }
     }
 
@@ -79,9 +72,7 @@ impl ConversationBuffer {
             return;
         }
 
-        self.segments.push(Segment {
-            content: SegmentContent::Thought(chunk.to_string()),
-        });
+        self.segments.push(Segment { content: SegmentContent::Thought(chunk.to_string()) });
         self.thought_block_open = true;
     }
 
@@ -95,23 +86,16 @@ impl ConversationBuffer {
     }
 
     pub(crate) fn ensure_tool_segment(&mut self, tool_id: &str) {
-        let has_segment = self
-            .segments
-            .iter()
-            .any(|s| matches!(&s.content, SegmentContent::ToolCall(id) if id == tool_id));
+        let has_segment =
+            self.segments.iter().any(|s| matches!(&s.content, SegmentContent::ToolCall(id) if id == tool_id));
 
         if !has_segment {
-            self.segments.push(Segment {
-                content: SegmentContent::ToolCall(tool_id.to_string()),
-            });
+            self.segments.push(Segment { content: SegmentContent::ToolCall(tool_id.to_string()) });
         }
     }
 
     #[cfg(test)]
-    fn drain_segments_except(
-        &mut self,
-        mut keep: impl FnMut(&SegmentContent) -> bool,
-    ) -> Vec<Segment> {
+    fn drain_segments_except(&mut self, mut keep: impl FnMut(&SegmentContent) -> bool) -> Vec<Segment> {
         let old = std::mem::take(&mut self.segments);
         let (kept, removed) = old.into_iter().partition(|s| keep(&s.content));
         self.segments = kept;
@@ -123,9 +107,9 @@ impl ConversationBuffer {
         &mut self,
         tool_call_statuses: &ToolCallStatuses,
     ) -> (Vec<SegmentContent>, Vec<String>) {
-        let drained = self.drain_segments_except(|seg| {
-            matches!(seg, SegmentContent::ToolCall(id) if tool_call_statuses.is_tool_running(id))
-        });
+        let drained = self.drain_segments_except(
+            |seg| matches!(seg, SegmentContent::ToolCall(id) if tool_call_statuses.is_tool_running(id)),
+        );
 
         let mut content = Vec::new();
         let mut completed_tool_ids = Vec::new();
@@ -153,8 +137,7 @@ impl ConversationWindow<'_> {
 
         for segment in &self.conversation.segments {
             let kind = discriminant(&segment.content);
-            let rendered =
-                render_stream_segment(&segment.content, self.tool_call_statuses, context);
+            let rendered = render_stream_segment(&segment.content, self.tool_call_statuses, context);
             extend_with_vertical_margin(&mut lines, &mut last_segment_kind, kind, &rendered);
         }
 
@@ -252,10 +235,8 @@ mod tests {
         let mut statuses = ToolCallStatuses::new();
         let tc = acp::ToolCall::new("tool-1", "Read file");
         statuses.on_tool_call(&tc);
-        let update = acp::ToolCallUpdate::new(
-            "tool-1",
-            acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::Completed),
-        );
+        let update =
+            acp::ToolCallUpdate::new("tool-1", acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::Completed));
         statuses.on_tool_call_update(&update);
 
         let (content, tool_ids) = buffer.drain_completed(&statuses);

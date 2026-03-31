@@ -3,8 +3,8 @@ use crate::components::patch_renderer::lang_hint_from_path;
 use crate::git_diff::{FileDiff, PatchLine, PatchLineKind};
 use similar::{DiffOp as SimilarDiffOp, TextDiff};
 use tui::{
-    DiffTag, GUTTER_WIDTH, Line, SEPARATOR, SEPARATOR_WIDTH, SplitDiffCell, Style, ViewContext,
-    split_blank_panel, split_render_cell,
+    DiffTag, GUTTER_WIDTH, Line, SEPARATOR, SEPARATOR_WIDTH, SplitDiffCell, Style, ViewContext, split_blank_panel,
+    split_render_cell,
 };
 
 pub fn build_split_patch_lines(
@@ -36,16 +36,10 @@ pub fn build_split_patch_lines(
             match row {
                 PairedRow::Header { line_idx, text } => {
                     let mut line = Line::default();
-                    line.push_with_style(
-                        *text,
-                        Style::fg(theme.info()).bold().bg_color(theme.code_bg()),
-                    );
+                    line.push_with_style(*text, Style::fg(theme.info()).bold().bg_color(theme.code_bg()));
                     line.extend_bg_to_width(right_width);
                     patch_lines.push(line);
-                    patch_refs.push(Some(PatchLineRef {
-                        hunk_index: hunk_idx,
-                        line_index: *line_idx,
-                    }));
+                    patch_refs.push(Some(PatchLineRef { hunk_index: hunk_idx, line_index: *line_idx }));
                 }
                 PairedRow::Split { left, right } => {
                     let left_cell = left.as_ref().map(|s| SplitDiffCell {
@@ -65,35 +59,19 @@ pub fn build_split_patch_lines(
                         line_number: s.line_no,
                     });
 
-                    let left_rendered =
-                        split_render_cell(left_cell.as_ref(), left_content, lang_hint, context);
-                    let right_rendered =
-                        split_render_cell(right_cell.as_ref(), right_content, lang_hint, context);
+                    let left_rendered = split_render_cell(left_cell.as_ref(), left_content, lang_hint, context);
+                    let right_rendered = split_render_cell(right_cell.as_ref(), right_content, lang_hint, context);
 
                     let height = left_rendered.len().max(right_rendered.len());
 
-                    let patch_ref = right
-                        .as_ref()
-                        .map(|s| PatchLineRef {
-                            hunk_index: hunk_idx,
-                            line_index: s.line_idx,
-                        })
-                        .or_else(|| {
-                            left.as_ref().map(|s| PatchLineRef {
-                                hunk_index: hunk_idx,
-                                line_index: s.line_idx,
-                            })
-                        });
+                    let patch_ref =
+                        right.as_ref().map(|s| PatchLineRef { hunk_index: hunk_idx, line_index: s.line_idx }).or_else(
+                            || left.as_ref().map(|s| PatchLineRef { hunk_index: hunk_idx, line_index: s.line_idx }),
+                        );
 
                     for i in 0..height {
-                        let l = left_rendered
-                            .get(i)
-                            .cloned()
-                            .unwrap_or_else(|| split_blank_panel(left_panel));
-                        let r = right_rendered
-                            .get(i)
-                            .cloned()
-                            .unwrap_or_else(|| split_blank_panel(right_panel));
+                        let l = left_rendered.get(i).cloned().unwrap_or_else(|| split_blank_panel(left_panel));
+                        let r = right_rendered.get(i).cloned().unwrap_or_else(|| split_blank_panel(right_panel));
 
                         let mut line = l;
                         line.push_styled(SEPARATOR, theme.muted());
@@ -123,14 +101,8 @@ struct SideInfo<'a> {
 }
 
 enum PairedRow<'a> {
-    Header {
-        line_idx: usize,
-        text: &'a str,
-    },
-    Split {
-        left: Option<SideInfo<'a>>,
-        right: Option<SideInfo<'a>>,
-    },
+    Header { line_idx: usize, text: &'a str },
+    Split { left: Option<SideInfo<'a>>, right: Option<SideInfo<'a>> },
 }
 
 fn pair_hunk_lines(lines: &[PatchLine]) -> Vec<PairedRow<'_>> {
@@ -141,26 +113,13 @@ fn pair_hunk_lines(lines: &[PatchLine]) -> Vec<PairedRow<'_>> {
         let pl = &lines[i];
         match pl.kind {
             PatchLineKind::HunkHeader | PatchLineKind::Meta => {
-                rows.push(PairedRow::Header {
-                    line_idx: i,
-                    text: &pl.text,
-                });
+                rows.push(PairedRow::Header { line_idx: i, text: &pl.text });
                 i += 1;
             }
             PatchLineKind::Context => {
                 rows.push(PairedRow::Split {
-                    left: Some(SideInfo {
-                        kind: pl.kind,
-                        text: &pl.text,
-                        line_no: pl.old_line_no,
-                        line_idx: i,
-                    }),
-                    right: Some(SideInfo {
-                        kind: pl.kind,
-                        text: &pl.text,
-                        line_no: pl.new_line_no,
-                        line_idx: i,
-                    }),
+                    left: Some(SideInfo { kind: pl.kind, text: &pl.text, line_no: pl.old_line_no, line_idx: i }),
+                    right: Some(SideInfo { kind: pl.kind, text: &pl.text, line_no: pl.new_line_no, line_idx: i }),
                 });
                 i += 1;
             }
@@ -199,12 +158,7 @@ fn side_info(line: &PatchLine, line_idx: usize) -> SideInfo<'_> {
         PatchLineKind::HunkHeader | PatchLineKind::Meta => None,
     };
 
-    SideInfo {
-        kind: line.kind,
-        text: &line.text,
-        line_no,
-        line_idx,
-    }
+    SideInfo { kind: line.kind, text: &line.text, line_no, line_idx }
 }
 
 fn pair_changed_block<'a>(removed: &[SideInfo<'a>], added: &[SideInfo<'a>]) -> Vec<PairedRow<'a>> {
@@ -215,38 +169,22 @@ fn pair_changed_block<'a>(removed: &[SideInfo<'a>], added: &[SideInfo<'a>]) -> V
 
     for op in diff.ops() {
         match *op {
-            SimilarDiffOp::Equal {
-                old_index,
-                new_index,
-                len,
-            } => {
+            SimilarDiffOp::Equal { old_index, new_index, len } => {
                 for offset in 0..len {
-                    rows.push(split_row(
-                        Some(removed[old_index + offset]),
-                        Some(added[new_index + offset]),
-                    ));
+                    rows.push(split_row(Some(removed[old_index + offset]), Some(added[new_index + offset])));
                 }
             }
-            SimilarDiffOp::Delete {
-                old_index, old_len, ..
-            } => {
+            SimilarDiffOp::Delete { old_index, old_len, .. } => {
                 for side in &removed[old_index..old_index + old_len] {
                     rows.push(split_row(Some(*side), None));
                 }
             }
-            SimilarDiffOp::Insert {
-                new_index, new_len, ..
-            } => {
+            SimilarDiffOp::Insert { new_index, new_len, .. } => {
                 for side in &added[new_index..new_index + new_len] {
                     rows.push(split_row(None, Some(*side)));
                 }
             }
-            SimilarDiffOp::Replace {
-                old_index,
-                old_len,
-                new_index,
-                new_len,
-            } => {
+            SimilarDiffOp::Replace { old_index, old_len, new_index, new_len } => {
                 let pair_len = old_len.min(new_len);
 
                 for offset in 0..pair_len {
@@ -278,12 +216,7 @@ mod tests {
     use crate::git_diff::{FileDiff, FileStatus, Hunk, PatchLine, PatchLineKind};
 
     fn pl(kind: PatchLineKind, text: &str, old: Option<usize>, new: Option<usize>) -> PatchLine {
-        PatchLine {
-            kind,
-            text: text.to_string(),
-            old_line_no: old,
-            new_line_no: new,
-        }
+        PatchLine { kind, text: text.to_string(), old_line_no: old, new_line_no: new }
     }
 
     fn test_file(hunks: Vec<Hunk>) -> FileDiff {
@@ -297,14 +230,7 @@ mod tests {
     }
 
     fn test_hunk(lines: Vec<PatchLine>) -> Hunk {
-        Hunk {
-            header: "@@ -1,3 +1,3 @@".to_string(),
-            old_start: 1,
-            old_count: 3,
-            new_start: 1,
-            new_count: 3,
-            lines,
-        }
+        Hunk { header: "@@ -1,3 +1,3 @@".to_string(), old_start: 1, old_count: 3, new_start: 1, new_count: 3, lines }
     }
 
     fn ctx() -> ViewContext {
@@ -369,10 +295,7 @@ mod tests {
         ])]);
         let (lines, refs) = build_split_patch_lines(&file, 100, &ctx());
         let header_text = lines[0].plain_text();
-        assert!(
-            header_text.contains("@@ -1,1 +1,1 @@"),
-            "header missing: {header_text}"
-        );
+        assert!(header_text.contains("@@ -1,1 +1,1 @@"), "header missing: {header_text}");
         assert!(refs[0].is_some());
     }
 
@@ -398,10 +321,7 @@ mod tests {
         let (_lines, refs) = build_split_patch_lines(&file, 100, &ctx());
         // Layout: hunk1_header, context_a, spacer, hunk2_header, context_b
         assert_eq!(refs.len(), 5);
-        assert!(
-            refs[2].is_none(),
-            "spacer between hunks should have None ref"
-        );
+        assert!(refs[2].is_none(), "spacer between hunks should have None ref");
     }
 
     #[test]
@@ -428,15 +348,9 @@ mod tests {
         ])]);
         let (lines, _refs) = build_split_patch_lines(&file, 100, &ctx());
 
-        let shared_row = lines
-            .iter()
-            .skip(1)
-            .find(|line| line.plain_text().matches("shared_call();").count() == 2);
+        let shared_row = lines.iter().skip(1).find(|line| line.plain_text().matches("shared_call();").count() == 2);
 
-        assert!(
-            shared_row.is_some(),
-            "identical moved lines should be aligned onto the same split row"
-        );
+        assert!(shared_row.is_some(), "identical moved lines should be aligned onto the same split row");
     }
 
     #[test]
@@ -444,31 +358,15 @@ mod tests {
         let file = test_file(vec![test_hunk(vec![
             pl(PatchLineKind::HunkHeader, "@@ -1,2 +1,3 @@", None, None),
             pl(PatchLineKind::Removed, "shared_call();", Some(1), None),
-            pl(
-                PatchLineKind::Removed,
-                "let old_value = foo();",
-                Some(2),
-                None,
-            ),
+            pl(PatchLineKind::Removed, "let old_value = foo();", Some(2), None),
             pl(PatchLineKind::Added, "shared_call();", None, Some(1)),
-            pl(
-                PatchLineKind::Added,
-                "let new_value = bar();",
-                None,
-                Some(2),
-            ),
+            pl(PatchLineKind::Added, "let new_value = bar();", None, Some(2)),
             pl(PatchLineKind::Added, "extra_call();", None, Some(3)),
         ])]);
         let (lines, _refs) = build_split_patch_lines(&file, 100, &ctx());
 
-        let shared_row = lines
-            .iter()
-            .skip(1)
-            .find(|line| line.plain_text().matches("shared_call();").count() == 2);
-        assert!(
-            shared_row.is_some(),
-            "shared prefix line should stay aligned as an unchanged pair"
-        );
+        let shared_row = lines.iter().skip(1).find(|line| line.plain_text().matches("shared_call();").count() == 2);
+        assert!(shared_row.is_some(), "shared prefix line should stay aligned as an unchanged pair");
 
         let overflow_row = lines
             .iter()

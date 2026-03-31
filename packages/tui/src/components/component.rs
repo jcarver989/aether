@@ -17,9 +17,7 @@ impl TryFrom<crossterm::event::Event> for Event {
 
     fn try_from(event: crossterm::event::Event) -> Result<Self, ()> {
         match event {
-            crossterm::event::Event::Key(key)
-                if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) =>
-            {
+            crossterm::event::Event::Key(key) if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) => {
                 Ok(Event::Key(key))
             }
             crossterm::event::Event::Paste(text) => Ok(Event::Paste(text)),

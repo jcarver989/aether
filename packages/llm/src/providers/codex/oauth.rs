@@ -2,9 +2,7 @@ use crate::LlmError;
 use crate::oauth::BrowserOAuthHandler;
 use crate::oauth::OAuthError;
 use crate::oauth::OAuthHandler;
-use crate::oauth::credential_store::{
-    OAuthCredential, OAuthCredentialStorage, OAuthCredentialStore,
-};
+use crate::oauth::credential_store::{OAuthCredential, OAuthCredentialStorage, OAuthCredentialStore};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use oauth2::TokenResponse;
@@ -81,10 +79,7 @@ pub async fn perform_codex_oauth_flow() -> Result<(), LlmError> {
 
     let expires_at = token_response.expires_in().map(|duration| {
         let now_ms = u64::try_from(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis(),
         )
         .unwrap_or(u64::MAX);
         let duration_ms = u64::try_from(duration.as_millis()).unwrap_or(u64::MAX);
@@ -99,10 +94,7 @@ pub async fn perform_codex_oauth_flow() -> Result<(), LlmError> {
     };
 
     let store = OAuthCredentialStore::new(super::PROVIDER_ID);
-    store
-        .save_credential(credential)
-        .await
-        .map_err(|e| OAuthError::CredentialStore(e.to_string()))?;
+    store.save_credential(credential).await.map_err(|e| OAuthError::CredentialStore(e.to_string()))?;
 
     Ok(())
 }
@@ -121,10 +113,7 @@ impl CachedToken {
             return false;
         };
         let now_ms = u64::try_from(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis(),
         )
         .unwrap_or(u64::MAX);
         now_ms >= expires_at
@@ -143,11 +132,7 @@ pub struct CodexTokenManager<T: OAuthCredentialStorage> {
 
 impl<T: OAuthCredentialStorage> CodexTokenManager<T> {
     pub fn new(store: T, server_id: &str) -> Self {
-        Self {
-            store,
-            server_id: server_id.to_string(),
-            cached: Mutex::new(None),
-        }
+        Self { store, server_id: server_id.to_string(), cached: Mutex::new(None) }
     }
 
     /// Get a valid access token and account ID.
@@ -172,7 +157,8 @@ impl<T: OAuthCredentialStorage> CodexTokenManager<T> {
             .map_err(|e| OAuthError::NoCredentials(e.to_string()))?
             .ok_or_else(|| {
                 OAuthError::NoCredentials(
-                    "No Codex OAuth credentials found. Run `aether` and select a codex model to trigger OAuth login.".to_string(),
+                    "No Codex OAuth credentials found. Run `aether` and select a codex model to trigger OAuth login."
+                        .to_string(),
                 )
             })?;
 
@@ -259,12 +245,7 @@ mod tests {
         let jwt = make_test_jwt(&payload);
         let result = extract_account_id(&jwt);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("chatgpt_account_id")
-        );
+        assert!(result.unwrap_err().to_string().contains("chatgpt_account_id"));
     }
 
     #[test]
@@ -331,24 +312,16 @@ mod tests {
 
     #[test]
     fn cached_token_not_expired_when_no_expiry() {
-        let token = CachedToken {
-            access_token: "tok".to_string(),
-            account_id: "acct".to_string(),
-            expires_at: None,
-        };
+        let token = CachedToken { access_token: "tok".to_string(), account_id: "acct".to_string(), expires_at: None };
         assert!(!token.is_expired());
     }
 
     #[test]
     fn cached_token_not_expired_when_future() {
-        let future_ms = u64::try_from(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+        let future_ms =
+            u64::try_from(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis())
                 .unwrap()
-                .as_millis(),
-        )
-        .unwrap()
-            + 3_600_000; // 1 hour from now
+                + 3_600_000; // 1 hour from now
         let token = CachedToken {
             access_token: "tok".to_string(),
             account_id: "acct".to_string(),

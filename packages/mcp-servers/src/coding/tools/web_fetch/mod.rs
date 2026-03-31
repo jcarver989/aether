@@ -3,8 +3,8 @@ mod http_client;
 #[cfg(test)]
 pub use http_client::FakeHttpClient;
 pub use http_client::{
-    DEFAULT_TIMEOUT_MS, HttpClient, HttpResponse, MAX_CONTENT_LENGTH, MAX_TIMEOUT_MS,
-    ReqwestClient, WebFetchInput, WebFetchOutput,
+    DEFAULT_TIMEOUT_MS, HttpClient, HttpResponse, MAX_CONTENT_LENGTH, MAX_TIMEOUT_MS, ReqwestClient, WebFetchInput,
+    WebFetchOutput,
 };
 
 use dom_smoothie::Readability;
@@ -30,9 +30,7 @@ impl Default for WebFetcher<ReqwestClient> {
 impl WebFetcher<ReqwestClient> {
     /// Creates a new `WebFetcher` with a preconfigured reqwest client
     pub fn new() -> Self {
-        Self {
-            client: ReqwestClient::new(),
-        }
+        Self { client: ReqwestClient::new() }
     }
 }
 
@@ -46,14 +44,9 @@ impl<C: HttpClient> WebFetcher<C> {
     pub async fn fetch(&self, args: WebFetchInput) -> Result<WebFetchOutput, WebFetchError> {
         let url = normalize_url(&args.url)?;
 
-        let timeout_ms = args
-            .timeout
-            .map_or(DEFAULT_TIMEOUT_MS, |t| t.min(MAX_TIMEOUT_MS));
+        let timeout_ms = args.timeout.map_or(DEFAULT_TIMEOUT_MS, |t| t.min(MAX_TIMEOUT_MS));
 
-        let response = self
-            .client
-            .fetch(&url, Duration::from_millis(timeout_ms))
-            .await?;
+        let response = self.client.fetch(&url, Duration::from_millis(timeout_ms)).await?;
 
         let extracted = extract_content(&response.body, &url);
         let (content, truncated) = if extracted.markdown.len() > MAX_CONTENT_LENGTH {
@@ -62,13 +55,8 @@ impl<C: HttpClient> WebFetcher<C> {
             (extracted.markdown, false)
         };
 
-        let display_meta = ToolDisplayMeta::new(
-            "Fetch URL",
-            extracted
-                .title
-                .clone()
-                .unwrap_or_else(|| truncate(&url, 60)),
-        );
+        let display_meta =
+            ToolDisplayMeta::new("Fetch URL", extracted.title.clone().unwrap_or_else(|| truncate(&url, 60)));
 
         Ok(WebFetchOutput {
             content,
@@ -106,21 +94,13 @@ fn try_readability(html: &str, url: &str) -> Option<ExtractedContent> {
     let markdown = convert(&article.content).unwrap_or_else(|_| article.text_content.to_string());
     let title = non_empty(article.title);
 
-    Some(ExtractedContent {
-        title,
-        markdown,
-        byline: article.byline,
-    })
+    Some(ExtractedContent { title, markdown, byline: article.byline })
 }
 
 fn fallback_extract(html: &str) -> ExtractedContent {
     let title = extract_title(html);
     let markdown = convert(html).unwrap_or_else(|_| html.to_string());
-    ExtractedContent {
-        title,
-        markdown,
-        byline: None,
-    }
+    ExtractedContent { title, markdown, byline: None }
 }
 
 fn normalize_url(url: &str) -> Result<String, WebFetchError> {
@@ -132,9 +112,7 @@ fn normalize_url(url: &str) -> Result<String, WebFetchError> {
         url.to_string()
     };
 
-    Url::parse(&url)
-        .map(|u| u.to_string())
-        .map_err(|e| WebFetchError::InvalidUrl(e.to_string()))
+    Url::parse(&url).map(|u| u.to_string()).map_err(|e| WebFetchError::InvalidUrl(e.to_string()))
 }
 
 fn extract_title(html: &str) -> Option<String> {
@@ -172,11 +150,7 @@ mod tests {
     use super::*;
 
     fn input(url: &str) -> WebFetchInput {
-        WebFetchInput {
-            url: url.to_string(),
-            prompt: None,
-            timeout: None,
-        }
+        WebFetchInput { url: url.to_string(), prompt: None, timeout: None }
     }
 
     #[test]
@@ -194,18 +168,9 @@ mod tests {
 
     #[test]
     fn test_extract_title() {
-        assert_eq!(
-            extract_title("<html><head><title>Test Page</title></head></html>"),
-            Some("Test Page".to_string())
-        );
-        assert_eq!(
-            extract_title("<html><head></head><body></body></html>"),
-            None
-        );
-        assert_eq!(
-            extract_title("<html><head><title>  </title></head></html>"),
-            None
-        );
+        assert_eq!(extract_title("<html><head><title>Test Page</title></head></html>"), Some("Test Page".to_string()));
+        assert_eq!(extract_title("<html><head></head><body></body></html>"), None);
+        assert_eq!(extract_title("<html><head><title>  </title></head></html>"), None);
     }
 
     fn article_html(body: &str) -> String {
@@ -233,17 +198,13 @@ mod tests {
 
         assert!(result.markdown.contains("Main Article"));
         assert!(result.markdown.contains("paragraph 0"));
-        assert!(
-            !result.markdown.contains("Copyright 2026"),
-            "Footer should be stripped by readability"
-        );
+        assert!(!result.markdown.contains("Copyright 2026"), "Footer should be stripped by readability");
     }
 
     #[test]
     fn test_readability_extracts_metadata() {
-        let paragraphs: Vec<String> = (0..10)
-            .map(|i| format!("<p>Paragraph {i} with enough content for readability to engage.</p>"))
-            .collect();
+        let paragraphs: Vec<String> =
+            (0..10).map(|i| format!("<p>Paragraph {i} with enough content for readability to engage.</p>")).collect();
         let html = article_html(&paragraphs.join(""));
 
         let result = extract_content(&html, "https://example.com/article");
@@ -293,31 +254,17 @@ mod tests {
             .with_html("https://example.com/page2", "<h1>Page 2</h1>");
         let fetcher = WebFetcher::with_client(fake.clone());
 
-        fetcher
-            .fetch(input("https://example.com/page1"))
-            .await
-            .unwrap();
-        fetcher
-            .fetch(input("https://example.com/page2"))
-            .await
-            .unwrap();
+        fetcher.fetch(input("https://example.com/page1")).await.unwrap();
+        fetcher.fetch(input("https://example.com/page2")).await.unwrap();
 
         assert_eq!(fake.fetch_count(), 2);
-        assert_eq!(
-            fake.fetched_urls(),
-            vec!["https://example.com/page1", "https://example.com/page2"]
-        );
+        assert_eq!(fake.fetched_urls(), vec!["https://example.com/page1", "https://example.com/page2"]);
     }
 
     #[tokio::test]
     async fn test_fake_client_missing_url_returns_error() {
         let fetcher = WebFetcher::with_client(FakeHttpClient::new());
-        assert!(
-            fetcher
-                .fetch(input("https://not-configured.com/"))
-                .await
-                .is_err()
-        );
+        assert!(fetcher.fetch(input("https://not-configured.com/")).await.is_err());
     }
 
     #[tokio::test]
@@ -327,10 +274,7 @@ mod tests {
             status_code: 404,
             body: "<h1>Not Found</h1>".to_string(),
         });
-        let result = WebFetcher::with_client(fake)
-            .fetch(input("https://any-url.com/"))
-            .await
-            .unwrap();
+        let result = WebFetcher::with_client(fake).fetch(input("https://any-url.com/")).await.unwrap();
         assert_eq!(result.status_code, 404);
     }
 }

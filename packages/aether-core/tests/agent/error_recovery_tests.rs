@@ -7,8 +7,7 @@ use aether_core::{
 use llm::{ChatMessage, LlmError, LlmResponse};
 
 #[tokio::test]
-async fn test_api_error_mid_stream_does_not_add_empty_assistant_message()
--> Result<(), Box<dyn Error>> {
+async fn test_api_error_mid_stream_does_not_add_empty_assistant_message() -> Result<(), Box<dyn Error>> {
     // First call: Start → Err → Done (simulates HTTP 522 mid-stream)
     let error_response: Vec<Result<LlmResponse, LlmError>> = vec![
         Ok(LlmResponse::start("msg_1")),
@@ -17,11 +16,8 @@ async fn test_api_error_mid_stream_does_not_add_empty_assistant_message()
     ];
 
     // Second call: normal success (triggered by second user message)
-    let success_response: Vec<Result<LlmResponse, LlmError>> = vec![
-        Ok(LlmResponse::start("msg_2")),
-        Ok(LlmResponse::text("Hello!")),
-        Ok(LlmResponse::done()),
-    ];
+    let success_response: Vec<Result<LlmResponse, LlmError>> =
+        vec![Ok(LlmResponse::start("msg_2")), Ok(LlmResponse::text("Hello!")), Ok(LlmResponse::done())];
 
     // Only send the first user message to avoid race conditions.
     // After the error + Done cycle, we manually inspect captured contexts.
@@ -59,19 +55,11 @@ async fn test_api_error_mid_stream_does_not_add_empty_assistant_message()
 
     // Only one LLM call should have been made (the errored one)
     let contexts = result.captured_contexts.lock().unwrap();
-    assert_eq!(
-        contexts.len(),
-        1,
-        "Expected exactly one LLM call (the errored one)"
-    );
+    assert_eq!(contexts.len(), 1, "Expected exactly one LLM call (the errored one)");
 
     // That context should only contain the user message — no empty assistant message
     let has_empty_assistant = contexts[0].messages().iter().any(|msg| match msg {
-        ChatMessage::Assistant {
-            content,
-            tool_calls,
-            ..
-        } => content.is_empty() && tool_calls.is_empty(),
+        ChatMessage::Assistant { content, tool_calls, .. } => content.is_empty() && tool_calls.is_empty(),
         _ => false,
     });
 

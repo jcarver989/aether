@@ -8,18 +8,13 @@ async fn daemon_survives_client_drop() {
     use_fake_rust_server();
 
     let project = CargoProject::new("client_drop").expect("Failed to create project");
-    let harness = DaemonHarness::spawn(project.root(), LanguageId::Rust)
-        .await
-        .expect("Failed to spawn daemon");
+    let harness = DaemonHarness::spawn(project.root(), LanguageId::Rust).await.expect("Failed to spawn daemon");
 
     {
         let _client = harness.connect().await.expect("Failed to connect client");
     }
 
-    let client = harness
-        .connect()
-        .await
-        .expect("Failed to reconnect to daemon");
+    let client = harness.connect().await.expect("Failed to reconnect to daemon");
     let uri = project.file_uri("src/main.rs");
     let hover = client.hover(uri, 0, 0).await.expect("Hover failed");
     assert!(hover.is_some());

@@ -160,11 +160,7 @@ pub struct AgentExecutor {
 impl AgentExecutor {
     /// Create a new `AgentExecutor` with the given agent catalog and workspace roots
     pub fn new(catalog: AgentCatalog, roots: Vec<PathBuf>) -> Self {
-        Self {
-            catalog: Arc::new(catalog),
-            progress_callback: None,
-            roots,
-        }
+        Self { catalog: Arc::new(catalog), progress_callback: None, roots }
     }
 
     /// Set a callback for receiving progress updates during agent execution
@@ -176,12 +172,7 @@ impl AgentExecutor {
     /// Execute multiple agent tasks in parallel and return results
     pub async fn execute_tasks(&self, tasks: Vec<SubAgentTask>) -> SpawnSubAgentsOutput {
         if tasks.is_empty() {
-            return SpawnSubAgentsOutput {
-                results: vec![],
-                success_count: 0,
-                error_count: 0,
-                meta: None,
-            };
+            return SpawnSubAgentsOutput { results: vec![], success_count: 0, error_count: 0, meta: None };
         }
 
         // Store task count and first task for display metadata
@@ -202,9 +193,7 @@ impl AgentExecutor {
                 let catalog = Arc::clone(&catalog);
                 let progress_callback = progress_callback.clone();
                 let roots = roots.clone();
-                spawn(async move {
-                    execute_single_agent(task_id, task, catalog, progress_callback, roots).await
-                })
+                spawn(async move { execute_single_agent(task_id, task, catalog, progress_callback, roots).await })
             })
             .collect();
 
@@ -222,28 +211,14 @@ impl AgentExecutor {
             })
             .collect();
 
-        let success_count = results
-            .iter()
-            .filter(|r| matches!(r.status, SubAgentStatus::Success))
-            .count();
+        let success_count = results.iter().filter(|r| matches!(r.status, SubAgentStatus::Success)).count();
 
-        let error_count = results
-            .iter()
-            .filter(|r| matches!(r.status, SubAgentStatus::Error))
-            .count();
+        let error_count = results.iter().filter(|r| matches!(r.status, SubAgentStatus::Error)).count();
 
         // Create display metadata using the first task
-        let display_meta = ToolDisplayMeta::new(
-            "Spawn agent",
-            format!("{first_agent_name} (1/{task_count})"),
-        );
+        let display_meta = ToolDisplayMeta::new("Spawn agent", format!("{first_agent_name} (1/{task_count})"));
 
-        SpawnSubAgentsOutput {
-            results,
-            success_count,
-            error_count,
-            meta: Some(display_meta.into()),
-        }
+        SpawnSubAgentsOutput { results, success_count, error_count, meta: Some(display_meta.into()) }
     }
 }
 
@@ -259,15 +234,10 @@ async fn execute_single_agent(
     let agent_name = task.agent_name.clone();
 
     let result: Result<String, String> = async {
-        let mut spec = catalog
-            .resolve(&task.agent_name, catalog.project_root())
-            .map_err(|e| e.to_string())?;
+        let mut spec = catalog.resolve(&task.agent_name, catalog.project_root()).map_err(|e| e.to_string())?;
 
         if !spec.exposure.agent_invocable {
-            return Err(format!(
-                "Agent '{}' is not agent-invocable",
-                task.agent_name
-            ));
+            return Err(format!("Agent '{}' is not agent-invocable", task.agent_name));
         }
 
         let McpSpawnResult {
@@ -277,31 +247,20 @@ async fn execute_single_agent(
             command_tx,
             elicitation_rx: _,
             handle: _,
-        } = spawn_mcps(
-            spec.mcp_config_path.as_deref(),
-            roots,
-            catalog.project_root(),
-        )
-        .await?;
+        } = spawn_mcps(spec.mcp_config_path.as_deref(), roots, catalog.project_root()).await?;
         let filtered_tools = spec.tools.apply(tool_definitions);
         spec.prompts.push(Prompt::mcp_instructions(instructions));
 
-        let (user_tx, mut agent_rx, _agent_handle) =
-            spawn_agent(spec, command_tx, filtered_tools).await?;
+        let (user_tx, mut agent_rx, _agent_handle) = spawn_agent(spec, command_tx, filtered_tools).await?;
 
-        let prompt_with_instructions =
-            format!("{}\n\n{}", task.prompt, STRUCTURED_OUTPUT_INSTRUCTIONS);
+        let prompt_with_instructions = format!("{}\n\n{}", task.prompt, STRUCTURED_OUTPUT_INSTRUCTIONS);
         user_tx
             .send(UserMessage::text(&prompt_with_instructions))
             .await
             .map_err(|e| format!("Failed to send message to agent: {e}"))?;
 
         if let Some(ref callback) = progress_callback {
-            callback(
-                &task_id,
-                &agent_name,
-                &AgentMessage::text("", "", false, ""),
-            );
+            callback(&task_id, &agent_name, &AgentMessage::text("", "", false, ""));
         }
 
         let mut final_output = String::new();
@@ -314,9 +273,7 @@ async fn execute_single_agent(
             }
 
             match &message {
-                AgentMessage::Text {
-                    chunk, is_complete, ..
-                } if *is_complete => {
+                AgentMessage::Text { chunk, is_complete, .. } if *is_complete => {
                     final_output.clone_from(chunk);
                 }
 
@@ -340,10 +297,7 @@ async fn execute_single_agent(
         }
 
         if was_cancelled {
-            return Err(format!(
-                "Agent cancelled: {}",
-                error_message.unwrap_or_default()
-            ));
+            return Err(format!("Agent cancelled: {}", error_message.unwrap_or_default()));
         }
 
         if let Some(err) = error_message {
@@ -355,20 +309,12 @@ async fn execute_single_agent(
     .await;
 
     match result {
-        Ok(output) => SubAgentResult {
-            task_id,
-            agent_name,
-            status: SubAgentStatus::Success,
-            output: Some(output),
-            error: None,
-        },
-        Err(error) => SubAgentResult {
-            task_id,
-            agent_name,
-            status: SubAgentStatus::Error,
-            output: None,
-            error: Some(error),
-        },
+        Ok(output) => {
+            SubAgentResult { task_id, agent_name, status: SubAgentStatus::Success, output: Some(output), error: None }
+        }
+        Err(error) => {
+            SubAgentResult { task_id, agent_name, status: SubAgentStatus::Error, output: None, error: Some(error) }
+        }
     }
 }
 
@@ -387,24 +333,14 @@ async fn spawn_mcps(
             .map_err(|e| format!("Failed to load mcp.json: {e}"))?;
     }
 
-    builder
-        .spawn()
-        .await
-        .map_err(|e| format!("Failed to spawn MCP manager: {e}"))
+    builder.spawn().await.map_err(|e| format!("Failed to spawn MCP manager: {e}"))
 }
 
 async fn spawn_agent(
     spec: aether_core::agent_spec::AgentSpec,
     mcp_tx: mpsc::Sender<McpCommand>,
     tools: Vec<ToolDefinition>,
-) -> Result<
-    (
-        mpsc::Sender<UserMessage>,
-        mpsc::Receiver<AgentMessage>,
-        AgentHandle,
-    ),
-    String,
-> {
+) -> Result<(mpsc::Sender<UserMessage>, mpsc::Receiver<AgentMessage>, AgentHandle), String> {
     AgentBuilder::from_spec(&spec, vec![])
         .map_err(|e| format!("Failed to build agent from spec: {e}"))?
         .tools(mcp_tx, tools)
@@ -453,8 +389,7 @@ mod tests {
 
 Hope this helps!"#;
 
-        let result =
-            StructuredAgentOutput::parse(markdown).expect("Should parse JSON from markdown");
+        let result = StructuredAgentOutput::parse(markdown).expect("Should parse JSON from markdown");
 
         assert_eq!(result.summary, "Analyzed the codebase");
         assert_eq!(result.decisions.len(), 1);

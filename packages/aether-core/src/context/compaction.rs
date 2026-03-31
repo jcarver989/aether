@@ -50,9 +50,7 @@ pub struct CompactionConfig {
 
 impl Default for CompactionConfig {
     fn default() -> Self {
-        Self {
-            threshold: super::DEFAULT_COMPACTION_THRESHOLD,
-        }
+        Self { threshold: super::DEFAULT_COMPACTION_THRESHOLD }
     }
 }
 
@@ -113,18 +111,12 @@ impl Compactor {
         }
 
         if summary.is_empty() {
-            return Err(CompactionError::SummarizationFailed(
-                "LLM returned empty summary".to_string(),
-            ));
+            return Err(CompactionError::SummarizationFailed("LLM returned empty summary".to_string()));
         }
 
         let compacted_context = context.with_compacted_summary(&summary);
 
-        Ok(CompactionResult {
-            context: compacted_context,
-            summary,
-            messages_removed,
-        })
+        Ok(CompactionResult { context: compacted_context, summary, messages_removed })
     }
 }
 
@@ -163,10 +155,7 @@ mod tests {
 
         let context = Context::new(
             vec![
-                ChatMessage::System {
-                    content: "System".to_string(),
-                    timestamp: IsoString::now(),
-                },
+                ChatMessage::System { content: "System".to_string(), timestamp: IsoString::now() },
                 ChatMessage::User {
                     content: vec![llm::ContentBlock::text("Test message")],
                     timestamp: IsoString::now(),
@@ -189,32 +178,21 @@ mod tests {
     async fn test_compactor_handles_error() {
         use llm::testing::FakeLlmProvider;
 
-        let error_response = vec![LlmResponse::Error {
-            message: "API error".to_string(),
-        }];
+        let error_response = vec![LlmResponse::Error { message: "API error".to_string() }];
 
         let fake_llm = Arc::new(FakeLlmProvider::with_single_response(error_response));
         let compactor = Compactor::new(fake_llm);
 
         let context = Context::new(
             vec![
-                ChatMessage::System {
-                    content: "System".to_string(),
-                    timestamp: IsoString::now(),
-                },
-                ChatMessage::User {
-                    content: vec![llm::ContentBlock::text("Test")],
-                    timestamp: IsoString::now(),
-                },
+                ChatMessage::System { content: "System".to_string(), timestamp: IsoString::now() },
+                ChatMessage::User { content: vec![llm::ContentBlock::text("Test")], timestamp: IsoString::now() },
             ],
             vec![],
         );
 
         let result = compactor.compact(&context).await;
-        assert!(matches!(
-            result,
-            Err(CompactionError::SummarizationFailed(_))
-        ));
+        assert!(matches!(result, Err(CompactionError::SummarizationFailed(_))));
     }
 
     #[tokio::test]
@@ -225,10 +203,7 @@ mod tests {
         let compactor = Compactor::new(fake_llm);
 
         let context = Context::new(
-            vec![ChatMessage::System {
-                content: "System".to_string(),
-                timestamp: IsoString::now(),
-            }],
+            vec![ChatMessage::System { content: "System".to_string(), timestamp: IsoString::now() }],
             vec![],
         );
 

@@ -11,19 +11,11 @@ pub enum SettingsError {
 
     /// An agent entry has an invalid model string.
     #[error("Invalid model '{model}' for agent '{agent}': {error}")]
-    InvalidModel {
-        agent: String,
-        model: String,
-        error: String,
-    },
+    InvalidModel { agent: String, model: String, error: String },
 
     /// An agent entry has an invalid reasoning effort string.
     #[error("Invalid reasoningEffort '{effort}' for agent '{agent}': {error}")]
-    InvalidReasoningEffort {
-        agent: String,
-        effort: String,
-        error: String,
-    },
+    InvalidReasoningEffort { agent: String, effort: String, error: String },
 
     /// An agent entry is missing required fields.
     #[error("Agent '{agent}' is missing required field: {field}")]
@@ -42,18 +34,12 @@ pub enum SettingsError {
     DuplicateAgentName { name: String },
 
     /// An agent has no invocation surface enabled.
-    #[error(
-        "Agent '{agent}' must have at least one invocation flag (userInvocable or agentInvocable)"
-    )]
+    #[error("Agent '{agent}' must have at least one invocation flag (userInvocable or agentInvocable)")]
     NoInvocationSurface { agent: String },
 
     /// A prompt glob pattern is syntactically invalid.
     #[error("Invalid glob pattern '{pattern}' for agent '{agent}': {error}")]
-    InvalidGlobPattern {
-        agent: String,
-        pattern: String,
-        error: String,
-    },
+    InvalidGlobPattern { agent: String, pattern: String, error: String },
 
     /// An inherited prompt glob pattern is syntactically invalid.
     #[error("Invalid inherited glob pattern '{pattern}': {error}")]

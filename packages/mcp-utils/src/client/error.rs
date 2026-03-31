@@ -13,11 +13,7 @@ pub enum McpError {
     ServerNotFound(String),
     /// Failed to execute tool on MCP server
     #[error("Failed to execute tool {tool_name} on server {server_name}: {error}")]
-    ToolExecutionFailed {
-        tool_name: String,
-        server_name: String,
-        error: String,
-    },
+    ToolExecutionFailed { tool_name: String, server_name: String, error: String },
     /// Tool execution returned an error
     #[error("Tool execution failed: {0}")]
     ToolExecutionError(String),

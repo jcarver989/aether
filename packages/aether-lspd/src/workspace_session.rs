@@ -49,15 +49,9 @@ impl WorkspaceSession {
         let (transport, event_rx) = ProcessTransport::spawn(workspace_root, command, args)?;
         let documents = DocumentCoordinator::new();
         let diagnostics = DiagnosticsStore::new();
-        let refresh =
-            BackgroundRefresh::spawn(transport.clone(), documents.clone(), diagnostics.clone());
+        let refresh = BackgroundRefresh::spawn(transport.clone(), documents.clone(), diagnostics.clone());
 
-        let session = Self {
-            transport,
-            documents,
-            diagnostics,
-            refresh,
-        };
+        let session = Self { transport, documents, diagnostics, refresh };
 
         let supported_extensions = Arc::new(supported_extensions);
 
@@ -79,11 +73,7 @@ impl WorkspaceSession {
         Ok(session)
     }
 
-    pub(crate) async fn request_raw(
-        &self,
-        method: &str,
-        params: Value,
-    ) -> Result<Value, crate::LspErrorResponse> {
+    pub(crate) async fn request_raw(&self, method: &str, params: Value) -> Result<Value, crate::LspErrorResponse> {
         self.transport.request_raw(method, params).await
     }
 
@@ -124,30 +114,20 @@ impl WorkspaceSession {
         if let Some(uri) = uri {
             let version_before = self.ensure_document_open(uri).await;
             if let Some(version_before) = version_before {
-                self.diagnostics
-                    .wait_for_fresh(version_before, DIAGNOSTICS_TIMEOUT)
-                    .await;
+                self.diagnostics.wait_for_fresh(version_before, DIAGNOSTICS_TIMEOUT).await;
             } else {
-                self.refresh
-                    .wait_for_current_generation(DIAGNOSTICS_TIMEOUT)
-                    .await;
+                self.refresh.wait_for_current_generation(DIAGNOSTICS_TIMEOUT).await;
             }
             self.close_document(uri).await;
             return;
         }
 
-        self.refresh
-            .wait_for_current_generation(BACKGROUND_REFRESH_TIMEOUT)
-            .await;
+        self.refresh.wait_for_current_generation(BACKGROUND_REFRESH_TIMEOUT).await;
     }
 }
 
 impl BackgroundRefresh {
-    fn spawn(
-        transport: ProcessTransport,
-        documents: DocumentCoordinator,
-        diagnostics: DiagnosticsStore,
-    ) -> Self {
+    fn spawn(transport: ProcessTransport, documents: DocumentCoordinator, diagnostics: DiagnosticsStore) -> Self {
         let refresh = Self {
             state: Arc::new(Mutex::new(BackgroundRefreshState {
                 pending_queue: VecDeque::new(),
@@ -162,12 +142,7 @@ impl BackgroundRefresh {
             progress: Arc::new(Notify::new()),
         };
 
-        tokio::spawn(run_background_refresh_worker(
-            transport,
-            documents,
-            diagnostics,
-            refresh.clone(),
-        ));
+        tokio::spawn(run_background_refresh_worker(transport, documents, diagnostics, refresh.clone()));
 
         refresh
     }
@@ -252,9 +227,7 @@ impl BackgroundRefresh {
                 Some(uri)
             } else {
                 state.active = false;
-                if !state.bootstrap_in_progress
-                    && state.completed_generation != state.scheduled_generation
-                {
+                if !state.bootstrap_in_progress && state.completed_generation != state.scheduled_generation {
                     state.completed_generation = state.scheduled_generation;
                     should_notify = true;
                 }
@@ -323,9 +296,7 @@ async fn refresh_uri(
     };
 
     if let Some(version_before) = version_before {
-        diagnostics
-            .wait_for_fresh(version_before, DIAGNOSTICS_TIMEOUT)
-            .await;
+        diagnostics.wait_for_fresh(version_before, DIAGNOSTICS_TIMEOUT).await;
     }
 
     if let Some(notification) = documents.release_request_document(uri).await {
@@ -350,10 +321,7 @@ async fn bootstrap_workspace_refresh(
                 let Ok(entry) = entry else {
                     continue;
                 };
-                if !entry
-                    .file_type()
-                    .is_some_and(|file_type| file_type.is_file())
-                {
+                if !entry.file_type().is_some_and(|file_type| file_type.is_file()) {
                     continue;
                 }
                 if !path_is_supported(entry.path(), supported_extensions.as_ref()) {
@@ -384,26 +352,16 @@ async fn run_session_events(
     while let Some(event) = event_rx.recv().await {
         match event {
             TransportEvent::PublishedDiagnostics(params) => {
-                documents
-                    .remember_uris(std::slice::from_ref(&params.uri))
-                    .await;
+                documents.remember_uris(std::slice::from_ref(&params.uri)).await;
                 diagnostics.publish(params).await;
             }
             TransportEvent::FileWatcherBatch(batch) => {
                 let mut remembered = batch.discovered_uris.clone();
-                remembered.extend(
-                    batch
-                        .forwarded_changes
-                        .iter()
-                        .map(|change| change.uri.clone()),
-                );
+                remembered.extend(batch.forwarded_changes.iter().map(|change| change.uri.clone()));
                 documents.remember_uris(&remembered).await;
 
-                let filtered = documents
-                    .filter_watcher_changes(batch.forwarded_changes)
-                    .await;
-                let discovered =
-                    filter_supported_uris(batch.discovered_uris, supported_extensions.as_ref());
+                let filtered = documents.filter_watcher_changes(batch.forwarded_changes).await;
+                let discovered = filter_supported_uris(batch.discovered_uris, supported_extensions.as_ref());
 
                 let mut refresh_uris = filter_supported_uris(
                     filtered.iter().map(|change| change.uri.clone()).collect(),
@@ -432,9 +390,7 @@ async fn run_session_events(
 }
 
 fn filter_supported_uris(uris: Vec<Uri>, supported_extensions: &HashSet<String>) -> Vec<Uri> {
-    uris.into_iter()
-        .filter(|uri| uri_is_supported(uri, supported_extensions))
-        .collect()
+    uris.into_iter().filter(|uri| uri_is_supported(uri, supported_extensions)).collect()
 }
 
 fn uri_is_supported(uri: &Uri, supported_extensions: &HashSet<String>) -> bool {
@@ -443,7 +399,5 @@ fn uri_is_supported(uri: &Uri, supported_extensions: &HashSet<String>) -> bool {
 }
 
 fn path_is_supported(path: &Path, supported_extensions: &HashSet<String>) -> bool {
-    path.extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| supported_extensions.contains(ext))
+    path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| supported_extensions.contains(ext))
 }

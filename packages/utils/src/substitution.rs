@@ -5,10 +5,7 @@ use regex::{Captures, Regex};
 
 /// Substitute parameters in a prompt template
 /// Supports named parameters using the format `$parameter_name`
-pub fn substitute_parameters<S: BuildHasher>(
-    template: &str,
-    arguments: &Option<HashMap<String, String, S>>,
-) -> String {
+pub fn substitute_parameters<S: BuildHasher>(template: &str, arguments: &Option<HashMap<String, String, S>>) -> String {
     let Ok(regex) = Regex::new(r"\$(\w+)") else {
         return template.to_string();
     };
@@ -60,10 +57,7 @@ mod tests {
         ]);
 
         let result = substitute_parameters(template, &Some(args));
-        assert_eq!(
-            result,
-            "Language: Rust, Framework: Actix, Database: $database"
-        );
+        assert_eq!(result, "Language: Rust, Framework: Actix, Database: $database");
     }
 
     #[test]

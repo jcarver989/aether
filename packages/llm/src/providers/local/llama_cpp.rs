@@ -11,17 +11,13 @@ pub struct LlamaCppProvider {
 
 impl LlamaCppProvider {
     pub fn new(base_url: &str) -> Self {
-        Self {
-            client: Client::with_config(get_local_config(base_url)),
-        }
+        Self { client: Client::with_config(get_local_config(base_url)) }
     }
 }
 
 impl Default for LlamaCppProvider {
     fn default() -> Self {
-        Self {
-            client: Client::with_config(get_local_config("http://localhost:8080/v1")),
-        }
+        Self { client: Client::with_config(get_local_config("http://localhost:8080/v1")) }
     }
 }
 

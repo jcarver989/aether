@@ -59,72 +59,41 @@ pub enum LlmResponse {
 
 impl LlmResponse {
     pub fn start(message_id: &str) -> Self {
-        Self::Start {
-            message_id: message_id.to_string(),
-        }
+        Self::Start { message_id: message_id.to_string() }
     }
 
     pub fn text(chunk: &str) -> Self {
-        Self::Text {
-            chunk: chunk.to_string(),
-        }
+        Self::Text { chunk: chunk.to_string() }
     }
 
     pub fn reasoning(chunk: &str) -> Self {
-        Self::Reasoning {
-            chunk: chunk.to_string(),
-        }
+        Self::Reasoning { chunk: chunk.to_string() }
     }
 
     pub fn encrypted_reasoning(id: &str, encrypted: &str) -> Self {
-        Self::EncryptedReasoning {
-            id: id.to_string(),
-            content: encrypted.to_string(),
-        }
+        Self::EncryptedReasoning { id: id.to_string(), content: encrypted.to_string() }
     }
 
     pub fn tool_request_start(id: &str, name: &str) -> Self {
-        Self::ToolRequestStart {
-            id: id.to_string(),
-            name: name.to_string(),
-        }
+        Self::ToolRequestStart { id: id.to_string(), name: name.to_string() }
     }
 
     pub fn tool_request_arg(id: &str, chunk: &str) -> Self {
-        Self::ToolRequestArg {
-            id: id.to_string(),
-            chunk: chunk.to_string(),
-        }
+        Self::ToolRequestArg { id: id.to_string(), chunk: chunk.to_string() }
     }
 
     pub fn tool_request_complete(id: &str, name: &str, arguments: &str) -> Self {
         Self::ToolRequestComplete {
-            tool_call: ToolCallRequest {
-                id: id.to_string(),
-                name: name.to_string(),
-                arguments: arguments.to_string(),
-            },
+            tool_call: ToolCallRequest { id: id.to_string(), name: name.to_string(), arguments: arguments.to_string() },
         }
     }
 
     pub fn usage(input_tokens: u32, output_tokens: u32) -> Self {
-        Self::Usage {
-            input_tokens,
-            output_tokens,
-            cached_input_tokens: None,
-        }
+        Self::Usage { input_tokens, output_tokens, cached_input_tokens: None }
     }
 
-    pub fn usage_with_cache(
-        input_tokens: u32,
-        output_tokens: u32,
-        cached_input_tokens: Option<u32>,
-    ) -> Self {
-        Self::Usage {
-            input_tokens,
-            output_tokens,
-            cached_input_tokens,
-        }
+    pub fn usage_with_cache(input_tokens: u32, output_tokens: u32, cached_input_tokens: Option<u32>) -> Self {
+        Self::Usage { input_tokens, output_tokens, cached_input_tokens }
     }
 
     pub fn done() -> Self {
@@ -132,8 +101,6 @@ impl LlmResponse {
     }
 
     pub fn done_with_stop_reason(stop_reason: StopReason) -> Self {
-        Self::Done {
-            stop_reason: Some(stop_reason),
-        }
+        Self::Done { stop_reason: Some(stop_reason) }
     }
 }

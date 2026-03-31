@@ -40,18 +40,12 @@ mod tests {
 
     #[test]
     fn test_skill_request_serialization() {
-        let req = SkillRequest {
-            name: "rust".to_string(),
-            path: Some("traits.md".to_string()),
-        };
+        let req = SkillRequest { name: "rust".to_string(), path: Some("traits.md".to_string()) };
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"name\":\"rust\""));
         assert!(json.contains("\"path\":\"traits.md\""));
 
-        let req_no_path = SkillRequest {
-            name: "rust".to_string(),
-            path: None,
-        };
+        let req_no_path = SkillRequest { name: "rust".to_string(), path: None };
         let json = serde_json::to_string(&req_no_path).unwrap();
         assert!(json.contains("\"name\":\"rust\""));
         assert!(!json.contains("\"path\""));

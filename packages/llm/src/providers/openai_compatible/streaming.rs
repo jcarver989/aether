@@ -158,34 +158,31 @@ fn map_openai_compatible_finish_reason(reason: FinishReason) -> StopReason {
 mod tests {
     use super::*;
     use crate::providers::openai_compatible::types::{
-        ChatCompletionStreamChoice, ChatCompletionStreamResponseDelta, FinishReason,
-        FunctionCallDelta, ToolCallDelta,
+        ChatCompletionStreamChoice, ChatCompletionStreamResponseDelta, FinishReason, FunctionCallDelta, ToolCallDelta,
     };
     use tokio_stream::StreamExt;
 
     #[tokio::test]
     async fn test_process_compatible_stream_emits_reasoning_chunks() {
-        let stream_items = vec![Ok::<ChatCompletionStreamResponse, std::io::Error>(
-            ChatCompletionStreamResponse {
-                id: "chunk_1".to_string(),
-                choices: vec![ChatCompletionStreamChoice {
-                    index: 0,
-                    delta: ChatCompletionStreamResponseDelta {
-                        role: None,
-                        content: None,
-                        reasoning_content: Some("thinking".to_string()),
-                        tool_calls: None,
-                    },
-                    finish_reason: None,
-                    logprobs: None,
-                }],
-                created: 1,
-                model: "kimi-k2.5".to_string(),
-                system_fingerprint: None,
-                object: "chat.completion.chunk".to_string(),
-                usage: None,
-            },
-        )];
+        let stream_items = vec![Ok::<ChatCompletionStreamResponse, std::io::Error>(ChatCompletionStreamResponse {
+            id: "chunk_1".to_string(),
+            choices: vec![ChatCompletionStreamChoice {
+                index: 0,
+                delta: ChatCompletionStreamResponseDelta {
+                    role: None,
+                    content: None,
+                    reasoning_content: Some("thinking".to_string()),
+                    tool_calls: None,
+                },
+                finish_reason: None,
+                logprobs: None,
+            }],
+            created: 1,
+            model: "kimi-k2.5".to_string(),
+            system_fingerprint: None,
+            object: "chat.completion.chunk".to_string(),
+            usage: None,
+        })];
 
         let mut processed = Box::pin(process_compatible_stream(tokio_stream::iter(stream_items)));
 
@@ -199,43 +196,38 @@ mod tests {
             events[1],
             LlmResponse::Reasoning { ref chunk } if chunk == "thinking"
         ));
-        assert!(matches!(
-            events.last(),
-            Some(LlmResponse::Done { stop_reason: None })
-        ));
+        assert!(matches!(events.last(), Some(LlmResponse::Done { stop_reason: None })));
     }
 
     #[tokio::test]
     async fn test_process_compatible_stream_handles_tool_calls() {
-        let stream_items = vec![Ok::<ChatCompletionStreamResponse, std::io::Error>(
-            ChatCompletionStreamResponse {
-                id: "chunk_1".to_string(),
-                choices: vec![ChatCompletionStreamChoice {
-                    index: 0,
-                    delta: ChatCompletionStreamResponseDelta {
-                        role: None,
-                        content: None,
-                        reasoning_content: None,
-                        tool_calls: Some(vec![ToolCallDelta {
-                            index: 0,
-                            id: Some("call_1".to_string()),
-                            tool_type: Some("function".to_string()),
-                            function: Some(FunctionCallDelta {
-                                name: Some("tool".to_string()),
-                                arguments: Some("{}".to_string()),
-                            }),
-                        }]),
-                    },
-                    finish_reason: Some(FinishReason::ToolCalls),
-                    logprobs: None,
-                }],
-                created: 1,
-                model: "kimi-k2.5".to_string(),
-                system_fingerprint: None,
-                object: "chat.completion.chunk".to_string(),
-                usage: None,
-            },
-        )];
+        let stream_items = vec![Ok::<ChatCompletionStreamResponse, std::io::Error>(ChatCompletionStreamResponse {
+            id: "chunk_1".to_string(),
+            choices: vec![ChatCompletionStreamChoice {
+                index: 0,
+                delta: ChatCompletionStreamResponseDelta {
+                    role: None,
+                    content: None,
+                    reasoning_content: None,
+                    tool_calls: Some(vec![ToolCallDelta {
+                        index: 0,
+                        id: Some("call_1".to_string()),
+                        tool_type: Some("function".to_string()),
+                        function: Some(FunctionCallDelta {
+                            name: Some("tool".to_string()),
+                            arguments: Some("{}".to_string()),
+                        }),
+                    }]),
+                },
+                finish_reason: Some(FinishReason::ToolCalls),
+                logprobs: None,
+            }],
+            created: 1,
+            model: "kimi-k2.5".to_string(),
+            system_fingerprint: None,
+            object: "chat.completion.chunk".to_string(),
+            usage: None,
+        })];
 
         let mut processed = Box::pin(process_compatible_stream(tokio_stream::iter(stream_items)));
 
@@ -244,14 +236,13 @@ mod tests {
             events.push(event.unwrap());
         }
 
-        assert!(events.iter().any(|e| matches!(e, LlmResponse::ToolRequestStart { id, name } if id == "call_1" && name == "tool")));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, LlmResponse::ToolRequestStart { id, name } if id == "call_1" && name == "tool"))
+        );
         assert!(events.iter().any(|e| matches!(e, LlmResponse::ToolRequestComplete { tool_call } if tool_call.id == "call_1" && tool_call.arguments == "{}")));
-        assert!(matches!(
-            events.last(),
-            Some(LlmResponse::Done {
-                stop_reason: Some(StopReason::ToolCalls)
-            })
-        ));
+        assert!(matches!(events.last(), Some(LlmResponse::Done { stop_reason: Some(StopReason::ToolCalls) })));
     }
 
     #[tokio::test]
@@ -276,9 +267,7 @@ mod tests {
         let mut processed = Box::pin(process_compatible_stream(tokio_stream::iter(vec![Ok::<
             ChatCompletionStreamResponse,
             std::io::Error,
-        >(
-            response,
-        )])));
+        >(response)])));
 
         let mut events = Vec::new();
         while let Some(event) = processed.next().await {
@@ -286,11 +275,6 @@ mod tests {
         }
 
         assert!(matches!(events[0], LlmResponse::Start { .. }));
-        assert!(matches!(
-            events.last(),
-            Some(LlmResponse::Done {
-                stop_reason: Some(StopReason::Length)
-            })
-        ));
+        assert!(matches!(events.last(), Some(LlmResponse::Done { stop_reason: Some(StopReason::Length) })));
     }
 }

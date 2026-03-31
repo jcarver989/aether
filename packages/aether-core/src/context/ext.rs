@@ -48,10 +48,7 @@ struct TurnAccumulator {
 fn apply_user_event(ctx: &mut Context, event: &UserEvent) {
     match event {
         UserEvent::Message { content } => {
-            ctx.add_message(ChatMessage::User {
-                content: content.clone(),
-                timestamp: IsoString::now(),
-            });
+            ctx.add_message(ChatMessage::User { content: content.clone(), timestamp: IsoString::now() });
         }
         UserEvent::ClearContext => {
             ctx.clear_conversation();
@@ -61,18 +58,10 @@ fn apply_user_event(ctx: &mut Context, event: &UserEvent) {
 
 fn apply_agent_event(ctx: &mut Context, event: &AgentMessage, acc: &mut TurnAccumulator) {
     match event {
-        AgentMessage::Text {
-            chunk,
-            is_complete: true,
-            ..
-        } => {
+        AgentMessage::Text { chunk, is_complete: true, .. } => {
             acc.text.clone_from(chunk);
         }
-        AgentMessage::Thought {
-            chunk,
-            is_complete: true,
-            ..
-        } => {
+        AgentMessage::Thought { chunk, is_complete: true, .. } => {
             acc.reasoning.clone_from(chunk);
         }
         AgentMessage::ToolResult { result, .. } => {
@@ -110,18 +99,13 @@ mod tests {
 
     fn system_context() -> Context {
         Context::new(
-            vec![ChatMessage::System {
-                content: "You are helpful.".to_string(),
-                timestamp: IsoString::now(),
-            }],
+            vec![ChatMessage::System { content: "You are helpful.".to_string(), timestamp: IsoString::now() }],
             vec![],
         )
     }
 
     fn user_msg(content: &str) -> UserEvent {
-        UserEvent::Message {
-            content: vec![llm::ContentBlock::text(content)],
-        }
+        UserEvent::Message { content: vec![llm::ContentBlock::text(content)] }
     }
 
     fn user_session(content: &str) -> SessionEvent {
@@ -191,11 +175,7 @@ mod tests {
 
         assert_eq!(ctx.message_count(), 3);
         match &ctx.messages()[1] {
-            ChatMessage::Assistant {
-                content,
-                tool_calls,
-                ..
-            } => {
+            ChatMessage::Assistant { content, tool_calls, .. } => {
                 assert_eq!(content, "Here is the file");
                 assert_eq!(tool_calls.len(), 1);
                 assert_eq!(tool_calls[0].name, "read_file");

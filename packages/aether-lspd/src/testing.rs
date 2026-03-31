@@ -23,11 +23,7 @@ pub trait TestProject {
     }
 
     fn file_path_str(&self, relative_path: &str) -> String {
-        self.root()
-            .join(relative_path)
-            .to_str()
-            .expect("Non-UTF8 path")
-            .to_string()
+        self.root().join(relative_path).to_str().expect("Non-UTF8 path").to_string()
     }
 }
 
@@ -158,10 +154,8 @@ impl NodeProject {
     }
 
     fn install_typescript(&self) -> Result<(), TestProjectError> {
-        let output = Command::new("npm")
-            .args(["install", "--save-dev", "typescript"])
-            .current_dir(self.root())
-            .output()?;
+        let output =
+            Command::new("npm").args(["install", "--save-dev", "typescript"]).current_dir(self.root()).output()?;
 
         if !output.status.success() {
             return Err(TestProjectError::CommandFailed {

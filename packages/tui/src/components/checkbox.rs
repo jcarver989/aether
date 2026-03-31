@@ -43,11 +43,7 @@ impl Component for Checkbox {
 impl Checkbox {
     pub fn render_field(&self, context: &ViewContext, focused: bool) -> Vec<Line> {
         let display = if self.checked { "[x]" } else { "[ ]" };
-        let style = if focused {
-            context.theme.primary()
-        } else {
-            context.theme.text_primary()
-        };
+        let style = if focused { context.theme.primary() } else { context.theme.text_primary() };
         vec![Line::styled(display, style)]
     }
 }

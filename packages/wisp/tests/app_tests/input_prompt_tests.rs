@@ -53,11 +53,7 @@ async fn test_wrapped_input_prompt_rerender_has_single_box() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (32, 24));
 
     renderer.initial_render().unwrap();
-    type_string(
-        &mut renderer,
-        "this input prompt is long enough to wrap across multiple rows",
-    )
-    .await;
+    type_string(&mut renderer, "this input prompt is long enough to wrap across multiple rows").await;
     press_backspace(&mut renderer).await;
     press_backspace(&mut renderer).await;
 
@@ -78,11 +74,7 @@ async fn test_wrapped_input_prompt_rerender_has_single_box() {
         "Expected a single prompt bottom border after wrapped rerender.\nBuffer:\n{}",
         lines.join("\n")
     );
-    assert!(
-        content_rows >= 2,
-        "Expected wrapped prompt content rows.\nBuffer:\n{}",
-        lines.join("\n")
-    );
+    assert!(content_rows >= 2, "Expected wrapped prompt content rows.\nBuffer:\n{}", lines.join("\n"));
 }
 
 #[tokio::test]
@@ -94,9 +86,7 @@ async fn test_resize_after_terminal_reflow_keeps_single_prompt_box() {
     let input = "this input prompt is long enough to wrap across multiple rows and should reflow cleanly on resize";
     type_string(&mut renderer, input).await;
 
-    renderer
-        .test_writer_mut()
-        .resize_preserving_transcript(32, 24);
+    renderer.test_writer_mut().resize_preserving_transcript(32, 24);
     renderer.on_resize_event(32, 24).await.unwrap();
 
     let lines = renderer.writer().get_lines();
@@ -104,12 +94,7 @@ async fn test_resize_after_terminal_reflow_keeps_single_prompt_box() {
     let bottom_count = lines.iter().filter(|l| l.contains('╰')).count();
     let content_rows = lines.iter().filter(|l| l.starts_with('│')).count();
 
-    assert_eq!(
-        top_count,
-        1,
-        "Expected a single prompt top border after resize reflow.\nBuffer:\n{}",
-        lines.join("\n")
-    );
+    assert_eq!(top_count, 1, "Expected a single prompt top border after resize reflow.\nBuffer:\n{}", lines.join("\n"));
     assert_eq!(
         bottom_count,
         1,
@@ -179,18 +164,12 @@ async fn test_paste_closes_file_picker() {
         })
         .await
         .unwrap();
-    assert!(
-        has_file_picker(renderer.writer()),
-        "File picker should be open"
-    );
+    assert!(has_file_picker(renderer.writer()), "File picker should be open");
 
     // Paste should close the picker and append text
     renderer.on_paste("pasted text").await.unwrap();
 
-    assert!(
-        !has_file_picker(renderer.writer()),
-        "File picker should be closed"
-    );
+    assert!(!has_file_picker(renderer.writer()), "File picker should be closed");
     let expected = expected_prompt(80, "@pasted text", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }

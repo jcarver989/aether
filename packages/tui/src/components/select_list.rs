@@ -23,11 +23,7 @@ pub struct SelectList<T: SelectItem> {
 
 impl<T: SelectItem> SelectList<T> {
     pub fn new(items: Vec<T>, placeholder: impl Into<String>) -> Self {
-        Self {
-            items,
-            selected_index: 0,
-            placeholder: placeholder.into(),
-        }
+        Self { items, selected_index: 0, placeholder: placeholder.into() }
     }
 
     pub fn items(&self) -> &[T] {
@@ -130,10 +126,7 @@ impl<T: SelectItem> Component for SelectList<T> {
             self.items
                 .iter()
                 .enumerate()
-                .map(|(i, item)| {
-                    item.render_item(i == self.selected_index, &inner)
-                        .prepend("  ")
-                })
+                .map(|(i, item)| item.render_item(i == self.selected_index, &inner).prepend("  "))
                 .collect(),
         )
     }
@@ -184,10 +177,7 @@ mod tests {
     async fn esc_emits_close() {
         let mut list = SelectList::new(items(&["a"]), "empty");
         let outcome = list.on_event(&key(KeyCode::Esc)).await;
-        assert!(matches!(
-            outcome.unwrap().as_slice(),
-            [SelectListMessage::Close]
-        ));
+        assert!(matches!(outcome.unwrap().as_slice(), [SelectListMessage::Close]));
     }
 
     #[tokio::test]

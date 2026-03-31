@@ -39,12 +39,7 @@ impl Default for TestAgentBuilder {
 
 impl TestAgentBuilder {
     pub fn new() -> Self {
-        Self {
-            messages: Vec::new(),
-            responses: Vec::new(),
-            timeout: None,
-            max_auto_continues: None,
-        }
+        Self { messages: Vec::new(), responses: Vec::new(), timeout: None, max_auto_continues: None }
     }
 
     pub fn user_messages(mut self, user_messages: Vec<UserMessage>) -> Self {
@@ -53,17 +48,11 @@ impl TestAgentBuilder {
     }
 
     pub fn llm_responses(mut self, llm_responses: &[Vec<LlmResponse>]) -> Self {
-        self.responses = llm_responses
-            .iter()
-            .map(|turn| turn.iter().cloned().map(Ok).collect())
-            .collect();
+        self.responses = llm_responses.iter().map(|turn| turn.iter().cloned().map(Ok).collect()).collect();
         self
     }
 
-    pub fn llm_result_responses(
-        mut self,
-        llm_responses: &[Vec<Result<LlmResponse, LlmError>>],
-    ) -> Self {
+    pub fn llm_result_responses(mut self, llm_responses: &[Vec<Result<LlmResponse, LlmError>>]) -> Self {
         self.responses = Vec::from(llm_responses);
         self
     }
@@ -98,10 +87,7 @@ impl TestAgentBuilder {
             command_tx: mcp_tx,
             elicitation_rx: _,
             handle: _mcp_handle,
-        } = mcp()
-            .with_servers(vec![fake_mcp("test", FakeMcpServer::new()).into()])
-            .spawn()
-            .await?;
+        } = mcp().with_servers(vec![fake_mcp("test", FakeMcpServer::new()).into()]).spawn().await?;
 
         let mut builder = agent(llm).tools(mcp_tx, tool_definitions);
         if let Some(timeout) = self.timeout {
@@ -125,9 +111,6 @@ impl TestAgentBuilder {
             }
         }
 
-        Ok(TestAgentResult {
-            messages,
-            captured_contexts,
-        })
+        Ok(TestAgentResult { messages, captured_contexts })
     }
 }

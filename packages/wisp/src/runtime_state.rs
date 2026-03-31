@@ -2,9 +2,7 @@ use crate::cli::Cli;
 use crate::error::AppError;
 use crate::settings::load_or_create_settings;
 use acp_utils::client::{AcpEvent, AcpPromptHandle, AutoApproveClient, spawn_acp_session};
-use agent_client_protocol::{
-    self as acp, Implementation, InitializeRequest, NewSessionRequest, ProtocolVersion,
-};
+use agent_client_protocol::{self as acp, Implementation, InitializeRequest, NewSessionRequest, ProtocolVersion};
 use std::env::current_dir;
 use tokio::sync::mpsc;
 use tui::Theme;
@@ -28,14 +26,9 @@ impl RuntimeState {
         let init_request = InitializeRequest::new(ProtocolVersion::LATEST)
             .client_info(Implementation::new("wisp", env!("CARGO_PKG_VERSION")));
 
-        let session = spawn_acp_session(
-            agent_command,
-            init_request,
-            new_session_request,
-            AutoApproveClient::new,
-        )
-        .await
-        .map_err(AppError::Acp)?;
+        let session = spawn_acp_session(agent_command, init_request, new_session_request, AutoApproveClient::new)
+            .await
+            .map_err(AppError::Acp)?;
 
         let settings = load_or_create_settings();
 

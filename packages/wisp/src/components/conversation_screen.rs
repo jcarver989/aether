@@ -17,18 +17,12 @@ use tokio::sync::oneshot;
 use tui::{Component, Event, Frame, Layout, ViewContext};
 
 pub enum ConversationScreenMessage {
-    SendPrompt {
-        user_input: String,
-        attachments: Vec<PromptAttachment>,
-    },
+    SendPrompt { user_input: String, attachments: Vec<PromptAttachment> },
     ClearScreen,
     NewSession,
     OpenSettings,
     OpenSessionPicker,
-    LoadSession {
-        session_id: SessionId,
-        cwd: PathBuf,
-    },
+    LoadSession { session_id: SessionId, cwd: PathBuf },
 }
 
 pub(crate) enum Modal {
@@ -122,15 +116,13 @@ impl ConversationScreen {
             acp::SessionUpdate::ToolCall(tool_call) => {
                 self.conversation.close_thought_block();
                 self.tool_call_statuses.on_tool_call(tool_call);
-                self.conversation
-                    .ensure_tool_segment(&tool_call.tool_call_id.0);
+                self.conversation.ensure_tool_segment(&tool_call.tool_call_id.0);
             }
             acp::SessionUpdate::ToolCallUpdate(update) => {
                 self.conversation.close_thought_block();
                 self.tool_call_statuses.on_tool_call_update(update);
                 if self.tool_call_statuses.has_tool(&update.tool_call_id.0) {
-                    self.conversation
-                        .ensure_tool_segment(&update.tool_call_id.0);
+                    self.conversation.ensure_tool_segment(&update.tool_call_id.0);
                 }
             }
             acp::SessionUpdate::AvailableCommandsUpdate(update) => {
@@ -139,9 +131,7 @@ impl ConversationScreen {
                     .iter()
                     .map(|cmd| {
                         let hint = match cmd.input {
-                            Some(acp::AvailableCommandInput::Unstructured(ref input)) => {
-                                Some(input.hint.clone())
-                            }
+                            Some(acp::AvailableCommandInput::Unstructured(ref input)) => Some(input.hint.clone()),
                             _ => None,
                         };
                         CommandEntry {
@@ -156,8 +146,7 @@ impl ConversationScreen {
                 self.prompt_composer.set_available_commands(commands);
             }
             acp::SessionUpdate::Plan(plan) => {
-                self.plan_tracker
-                    .replace(plan.entries.clone(), Instant::now());
+                self.plan_tracker.replace(plan.entries.clone(), Instant::now());
             }
             _ => {
                 self.conversation.close_thought_block();
@@ -167,8 +156,7 @@ impl ConversationScreen {
 
     pub fn on_prompt_done(&mut self, stop_reason: acp::StopReason) {
         self.waiting_for_response = false;
-        self.tool_call_statuses
-            .finalize_running(matches!(stop_reason, acp::StopReason::Cancelled));
+        self.tool_call_statuses.finalize_running(matches!(stop_reason, acp::StopReason::Cancelled));
         self.conversation.close_thought_block();
     }
 
@@ -179,8 +167,7 @@ impl ConversationScreen {
 
     pub fn reject_local_prompt(&mut self, message: &str) {
         self.waiting_for_response = false;
-        self.conversation
-            .push_user_message(&format!("[wisp] {message}"));
+        self.conversation.push_user_message(&format!("[wisp] {message}"));
     }
 
     pub fn on_elicitation_request(
@@ -188,16 +175,10 @@ impl ConversationScreen {
         params: acp_utils::notifications::ElicitationParams,
         response_tx: oneshot::Sender<ElicitationResponse>,
     ) {
-        self.active_modal = Some(Modal::Elicitation(ElicitationForm::from_params(
-            params,
-            response_tx,
-        )));
+        self.active_modal = Some(Modal::Elicitation(ElicitationForm::from_params(params, response_tx)));
     }
 
-    pub fn on_sub_agent_progress(
-        &mut self,
-        progress: &acp_utils::notifications::SubAgentProgressParams,
-    ) {
+    pub fn on_sub_agent_progress(&mut self, progress: &acp_utils::notifications::SubAgentProgressParams) {
         self.tool_call_statuses.on_sub_agent_progress(progress);
     }
 
@@ -258,15 +239,9 @@ impl ConversationScreen {
                 PromptComposerMessage::OpenSessionPicker => {
                     out.push(ConversationScreenMessage::OpenSessionPicker);
                 }
-                PromptComposerMessage::SubmitRequested {
-                    user_input,
-                    attachments,
-                } => {
+                PromptComposerMessage::SubmitRequested { user_input, attachments } => {
                     self.waiting_for_response = true;
-                    out.push(ConversationScreenMessage::SendPrompt {
-                        user_input,
-                        attachments,
-                    });
+                    out.push(ConversationScreenMessage::SendPrompt { user_input, attachments });
                 }
             }
         }
@@ -300,13 +275,9 @@ impl Component for ConversationScreen {
     }
 
     fn render(&mut self, ctx: &ViewContext) -> Frame {
-        let conversation_window = ConversationWindow {
-            conversation: &self.conversation,
-            tool_call_statuses: &self.tool_call_statuses,
-        };
-        let plan_view = PlanView {
-            entries: self.plan_tracker.cached_entries(),
-        };
+        let conversation_window =
+            ConversationWindow { conversation: &self.conversation, tool_call_statuses: &self.tool_call_statuses };
+        let plan_view = PlanView { entries: self.plan_tracker.cached_entries() };
 
         let mut layout = Layout::new();
         layout.section(conversation_window.render(ctx));

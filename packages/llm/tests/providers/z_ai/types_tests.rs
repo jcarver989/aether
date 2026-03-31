@@ -23,11 +23,7 @@ fn test_deserialize_zai_response_missing_object_field() {
     // This should not panic and should deserialize successfully
     let result: Result<ChatCompletionStreamResponse, _> = serde_json::from_str(json);
 
-    assert!(
-        result.is_ok(),
-        "Failed to deserialize Z.ai response: {:?}",
-        result.err()
-    );
+    assert!(result.is_ok(), "Failed to deserialize Z.ai response: {:?}", result.err());
 
     let response = result.unwrap();
     assert_eq!(response.id, "202510181239034578873d49744455");
@@ -39,10 +35,7 @@ fn test_deserialize_zai_response_missing_object_field() {
 
     let choice = &response.choices[0];
     assert_eq!(choice.index, 0);
-    assert_eq!(
-        choice.delta.role,
-        Some(async_openai::types::chat::Role::Assistant)
-    );
+    assert_eq!(choice.delta.role, Some(async_openai::types::chat::Role::Assistant));
     assert_eq!(choice.delta.content, Some("\n".to_string()));
 }
 
@@ -66,10 +59,7 @@ fn test_deserialize_zai_response_with_finish_reason() {
     assert!(result.is_ok());
     let response = result.unwrap();
 
-    assert_eq!(
-        response.choices[0].delta.content,
-        Some("Hello world".to_string())
-    );
+    assert_eq!(response.choices[0].delta.content, Some("Hello world".to_string()));
     assert!(response.choices[0].finish_reason.is_some());
 }
 
@@ -91,8 +81,7 @@ fn test_convert_to_openai_type() {
     let response: ChatCompletionStreamResponse = serde_json::from_str(json).unwrap();
 
     // Convert to standard OpenAI type
-    let openai_response: async_openai::types::chat::CreateChatCompletionStreamResponse =
-        response.into();
+    let openai_response: async_openai::types::chat::CreateChatCompletionStreamResponse = response.into();
 
     assert_eq!(openai_response.id, "test123");
     assert_eq!(openai_response.model, "glm-4.6");
@@ -161,11 +150,7 @@ fn test_deserialize_zai_network_error_finish_reason() {
     }"#;
 
     let result: Result<ChatCompletionStreamResponse, _> = serde_json::from_str(json);
-    assert!(
-        result.is_ok(),
-        "Failed to deserialize Z.ai network_error response: {:?}",
-        result.err()
-    );
+    assert!(result.is_ok(), "Failed to deserialize Z.ai network_error response: {:?}", result.err());
 
     let response = result.unwrap();
     assert!(response.choices[0].finish_reason.is_some());
@@ -205,11 +190,6 @@ fn test_zai_network_error_maps_to_stop_reason_error() {
             events.push(event.unwrap());
         }
 
-        assert!(matches!(
-            events.last(),
-            Some(LlmResponse::Done {
-                stop_reason: Some(StopReason::Error)
-            })
-        ));
+        assert!(matches!(events.last(), Some(LlmResponse::Done { stop_reason: Some(StopReason::Error) })));
     });
 }

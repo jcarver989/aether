@@ -13,9 +13,7 @@ impl ThoughtMessage<'_> {
     }
 
     fn format_lines(text: &str, theme: &Theme) -> Vec<Line> {
-        text.lines()
-            .map(|line| Self::format_line(line, theme))
-            .collect()
+        text.lines().map(|line| Self::format_line(line, theme)).collect()
     }
 }
 
@@ -45,9 +43,7 @@ mod tests {
 
     #[test]
     fn prefixes_all_lines_with_border() {
-        let component = ThoughtMessage {
-            text: "line one\nline two",
-        };
+        let component = ThoughtMessage { text: "line one\nline two" };
         let context = ViewContext::new((80, 24));
         let lines = component.render(&context);
         assert_eq!(lines.len(), 2);
@@ -59,9 +55,7 @@ mod tests {
 
     #[test]
     fn wrapped_continuation_rows_remain_muted() {
-        let component = ThoughtMessage {
-            text: "abcdefghijklmnopqrstuvwxyz",
-        };
+        let component = ThoughtMessage { text: "abcdefghijklmnopqrstuvwxyz" };
         let context = ViewContext::new((80, 24));
         let lines = component.render(&context);
         let wrapped = lines[0].soft_wrap(12);
@@ -69,11 +63,7 @@ mod tests {
 
         for row in wrapped.iter().skip(1) {
             assert!(!row.spans().is_empty());
-            assert!(
-                row.spans()
-                    .iter()
-                    .all(|span| span.style().fg == Some(context.theme.muted()))
-            );
+            assert!(row.spans().iter().all(|span| span.style().fg == Some(context.theme.muted())));
         }
     }
 }

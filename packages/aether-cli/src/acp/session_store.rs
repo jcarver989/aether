@@ -29,11 +29,9 @@ pub struct SessionStore {
 
 impl SessionStore {
     pub fn new() -> io::Result<Self> {
-        let home = dirs::home_dir()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Home directory not found"))?;
-        Ok(Self {
-            dir: home.join(".aether/sessions"),
-        })
+        let home =
+            dirs::home_dir().ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Home directory not found"))?;
+        Ok(Self { dir: home.join(".aether/sessions") })
     }
 
     #[cfg(test)]
@@ -110,9 +108,7 @@ impl SessionStore {
                     .and_then(|n| (n > 0).then_some(()))
                     .and_then(|()| serde_json::from_str::<SessionEvent>(second_line.trim()).ok())
                     .and_then(|event| match event {
-                        SessionEvent::User(UserEvent::Message { content }) => {
-                            Some(extract_title(&content))
-                        }
+                        SessionEvent::User(UserEvent::Message { content }) => Some(extract_title(&content)),
                         _ => None,
                     });
 
@@ -142,10 +138,8 @@ impl SessionStore {
 const MAX_TITLE_LEN: usize = 80;
 
 fn extract_title(content: &[llm::ContentBlock]) -> String {
-    let first_line = llm::ContentBlock::first_text(content)
-        .and_then(|text| text.lines().next())
-        .unwrap_or("Media prompt")
-        .trim();
+    let first_line =
+        llm::ContentBlock::first_text(content).and_then(|text| text.lines().next()).unwrap_or("Media prompt").trim();
     if first_line.len() > MAX_TITLE_LEN {
         let end = first_line.floor_char_boundary(MAX_TITLE_LEN);
         format!("{}…", &first_line[..end])
@@ -158,13 +152,7 @@ fn is_streaming_event(event: &SessionEvent) -> bool {
     matches!(
         event,
         SessionEvent::Agent(
-            AgentMessage::Text {
-                is_complete: false,
-                ..
-            } | AgentMessage::Thought {
-                is_complete: false,
-                ..
-            }
+            AgentMessage::Text { is_complete: false, .. } | AgentMessage::Thought { is_complete: false, .. }
         )
     )
 }
@@ -190,9 +178,7 @@ mod tests {
     }
 
     fn user_msg(content: &str) -> SessionEvent {
-        SessionEvent::User(UserEvent::Message {
-            content: vec![llm::ContentBlock::text(content)],
-        })
+        SessionEvent::User(UserEvent::Message { content: vec![llm::ContentBlock::text(content)] })
     }
 
     fn agent_text(msg_id: &str, chunk: &str, complete: bool) -> SessionEvent {
@@ -226,10 +212,7 @@ mod tests {
         let (dir, store) = temp_store();
         store.append_meta("s1", &default_meta()).unwrap();
         let raw = std::fs::read_to_string(dir.path().join("s1.jsonl")).unwrap();
-        assert!(
-            raw.contains("\"selectedMode\""),
-            "missing selectedMode: {raw}"
-        );
+        assert!(raw.contains("\"selectedMode\""), "missing selectedMode: {raw}");
     }
 
     #[test]
@@ -283,9 +266,7 @@ mod tests {
         ];
         let kept = vec![
             agent_text("m", "full", true),
-            SessionEvent::Agent(AgentMessage::Error {
-                message: "oops".to_string(),
-            }),
+            SessionEvent::Agent(AgentMessage::Error { message: "oops".to_string() }),
             SessionEvent::Agent(AgentMessage::Done),
             SessionEvent::Agent(AgentMessage::ToolResult {
                 result: ToolCallResult {
@@ -332,11 +313,7 @@ mod tests {
         store.append_meta("s-old", &old).unwrap();
         store.append_meta("s-new", &new).unwrap();
 
-        let ids: Vec<_> = store
-            .list()
-            .iter()
-            .map(|s| s.meta.session_id.clone())
-            .collect();
+        let ids: Vec<_> = store.list().iter().map(|s| s.meta.session_id.clone()).collect();
         assert_eq!(ids, vec!["s-new", "s-old"]);
     }
 
@@ -354,16 +331,10 @@ mod tests {
 
     #[test]
     fn list_title_extraction() {
-        let cases: &[(&str, Option<&str>)] = &[
-            ("Fix the login bug", Some("Fix the login bug")),
-            ("First line\nSecond\nThird", Some("First line")),
-        ];
+        let cases: &[(&str, Option<&str>)] =
+            &[("Fix the login bug", Some("Fix the login bug")), ("First line\nSecond\nThird", Some("First line"))];
         for (input, expected) in cases {
-            assert_eq!(
-                listed_title(Some(input)).as_deref(),
-                *expected,
-                "input: {input}"
-            );
+            assert_eq!(listed_title(Some(input)).as_deref(), *expected, "input: {input}");
         }
     }
 

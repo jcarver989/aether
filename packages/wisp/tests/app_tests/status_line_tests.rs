@@ -27,29 +27,19 @@ async fn test_status_line_shows_model_from_config_options() {
             "model",
             "Model",
             "openrouter:gpt-4o",
-            vec![acp::SessionConfigSelectOption::new(
-                "openrouter:gpt-4o",
-                "OpenRouter / GPT-4o",
-            )],
+            vec![acp::SessionConfigSelectOption::new("openrouter:gpt-4o", "OpenRouter / GPT-4o")],
         )
         .category(acp::SessionConfigOptionCategory::Model),
     ];
 
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(
-        terminal,
-        "aether-acp".to_string(),
-        &config_options,
-        (80, 24),
-    );
+    let mut renderer = Renderer::new(terminal, "aether-acp".to_string(), &config_options, (80, 24));
 
     renderer.initial_render().unwrap();
 
     let lines = renderer.writer().get_lines();
     assert!(
-        lines
-            .iter()
-            .any(|l| l.contains("aether-acp") && l.contains("OpenRouter / GPT-4o")),
+        lines.iter().any(|l| l.contains("aether-acp") && l.contains("OpenRouter / GPT-4o")),
         "Status line should show agent name and model.\nBuffer:\n{}",
         lines.join("\n")
     );
@@ -62,21 +52,13 @@ async fn test_status_line_updates_on_config_option_update() {
             "model",
             "Model",
             "openrouter:gpt-4o",
-            vec![acp::SessionConfigSelectOption::new(
-                "openrouter:gpt-4o",
-                "OpenRouter / GPT-4o",
-            )],
+            vec![acp::SessionConfigSelectOption::new("openrouter:gpt-4o", "OpenRouter / GPT-4o")],
         )
         .category(acp::SessionConfigOptionCategory::Model),
     ];
 
     let terminal = TestTerminal::new(80, 24);
-    let mut renderer = Renderer::new(
-        terminal,
-        "aether-acp".to_string(),
-        &config_options,
-        (80, 24),
-    );
+    let mut renderer = Renderer::new(terminal, "aether-acp".to_string(), &config_options, (80, 24));
     renderer.initial_render().unwrap();
 
     // Send a ConfigOptionUpdate with a new model
@@ -85,18 +67,13 @@ async fn test_status_line_updates_on_config_option_update() {
             "model",
             "Model",
             "ollama:llama3",
-            vec![acp::SessionConfigSelectOption::new(
-                "ollama:llama3",
-                "Ollama / llama3",
-            )],
+            vec![acp::SessionConfigSelectOption::new("ollama:llama3", "Ollama / llama3")],
         )
         .category(acp::SessionConfigOptionCategory::Model),
     ];
 
     renderer
-        .on_session_update(acp::SessionUpdate::ConfigOptionUpdate(
-            acp::ConfigOptionUpdate::new(new_config_options),
-        ))
+        .on_session_update(acp::SessionUpdate::ConfigOptionUpdate(acp::ConfigOptionUpdate::new(new_config_options)))
         .unwrap();
 
     let lines = renderer.writer().get_lines();
@@ -119,20 +96,14 @@ async fn test_available_commands_update_is_forwarded() {
     renderer.initial_render().unwrap();
 
     renderer
-        .on_session_update(acp::SessionUpdate::AvailableCommandsUpdate(
-            acp::AvailableCommandsUpdate::new(vec![acp::AvailableCommand::new(
-                "search",
-                "Search code",
-            )]),
-        ))
+        .on_session_update(acp::SessionUpdate::AvailableCommandsUpdate(acp::AvailableCommandsUpdate::new(vec![
+            acp::AvailableCommand::new("search", "Search code"),
+        ])))
         .unwrap();
 
     // Open the command picker with /
     send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
 
     let names = command_picker_visible_names(renderer.writer());
-    assert!(
-        names.iter().any(|n| n == "search"),
-        "Command picker should show 'search' command. Got: {names:?}"
-    );
+    assert!(names.iter().any(|n| n == "search"), "Command picker should show 'search' command. Got: {names:?}");
 }

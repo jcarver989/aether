@@ -2,12 +2,11 @@ use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::{AuthMethodsUpdatedParams, McpRequest};
 use agent_client_protocol::{
     self as acp, Agent, AgentCapabilities, AuthMethod, AuthenticateRequest, AuthenticateResponse,
-    AvailableCommandsUpdate, ConfigOptionUpdate, ExtNotification, Implementation,
-    InitializeRequest, InitializeResponse, ListSessionsRequest, ListSessionsResponse,
-    LoadSessionRequest, LoadSessionResponse, McpCapabilities, NewSessionRequest,
-    NewSessionResponse, PromptCapabilities, PromptResponse, ProtocolVersion, SessionId,
-    SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
-    SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse,
+    AvailableCommandsUpdate, ConfigOptionUpdate, ExtNotification, Implementation, InitializeRequest,
+    InitializeResponse, ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
+    McpCapabilities, NewSessionRequest, NewSessionResponse, PromptCapabilities, PromptResponse, ProtocolVersion,
+    SessionId, SessionNotification, SessionUpdate, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse,
+    SetSessionModeRequest, SetSessionModeResponse,
 };
 use llm::catalog::{self, LlmModel, get_local_models};
 use llm::oauth::OAuthCredentialStore;
@@ -25,9 +24,8 @@ use tracing::{error, info};
 use super::config_setting::ConfigSetting;
 use super::mappers::{map_acp_mcp_servers, replay_to_client};
 use super::model_config::{
-    ValidatedMode, build_config_options_from_modes, effective_model,
-    mode_name_for_state_from_modes, model_exists, pick_default_model, resolve_mode_from_modes,
-    supports_prompt_audio, validated_modes_from_specs,
+    ValidatedMode, build_config_options_from_modes, effective_model, mode_name_for_state_from_modes, model_exists,
+    pick_default_model, resolve_mode_from_modes, supports_prompt_audio, validated_modes_from_specs,
 };
 use super::relay::{RelayHandle, SessionCommand, spawn_relay};
 use super::session::Session;
@@ -53,9 +51,7 @@ impl PromptModalities {
     fn from_content(content: &[ContentBlock]) -> Self {
         Self {
             image: content.iter().any(ContentBlock::is_image),
-            audio: content
-                .iter()
-                .any(|block| matches!(block, ContentBlock::Audio { .. })),
+            audio: content.iter().any(|block| matches!(block, ContentBlock::Audio { .. })),
         }
     }
 
@@ -75,12 +71,7 @@ struct SessionConfigState {
 
 impl SessionConfigState {
     fn new(active_model: String) -> Self {
-        Self {
-            active_model,
-            pending_model: None,
-            reasoning_effort: None,
-            selected_mode: None,
-        }
+        Self { active_model, pending_model: None, reasoning_effort: None, selected_mode: None }
     }
 
     fn apply_config_change(
@@ -91,9 +82,7 @@ impl SessionConfigState {
     ) -> Result<(), acp::Error> {
         match setting {
             ConfigSetting::Mode(value) => {
-                let Some((mode_model, mode_reasoning_effort)) =
-                    resolve_mode_from_modes(validated_modes, value)
-                else {
+                let Some((mode_model, mode_reasoning_effort)) = resolve_mode_from_modes(validated_modes, value) else {
                     error!("Unknown or invalid mode: {}", value);
                     return Err(acp::Error::invalid_params());
                 };
@@ -116,8 +105,7 @@ impl SessionConfigState {
 
         let effective = effective_model(&self.active_model, self.pending_model.as_deref());
         if setting.config_id() == ConfigOptionId::Model {
-            self.selected_mode =
-                mode_name_for_state_from_modes(validated_modes, effective, self.reasoning_effort);
+            self.selected_mode = mode_name_for_state_from_modes(validated_modes, effective, self.reasoning_effort);
         }
 
         Ok(())
@@ -145,10 +133,8 @@ pub struct SessionManager {
 impl SessionManager {
     pub fn new(actor_handle: AcpActorHandle) -> Self {
         info!("Creating SessionManager");
-        let session_store = SessionStore::new().map_or_else(
-            |e| panic!("Failed to initialize session store: {e}"),
-            Arc::new,
-        );
+        let session_store =
+            SessionStore::new().map_or_else(|e| panic!("Failed to initialize session store: {e}"), Arc::new);
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             actor_handle,
@@ -181,28 +167,15 @@ impl SessionManager {
         reasoning_effort: Option<ReasoningEffort>,
         modes: Vec<ValidatedMode>,
     ) -> Vec<acp::SessionConfigOption> {
-        let RelayHandle {
-            cmd_tx,
-            mcp_request_tx,
-            join_handle,
-        } = spawn_relay(
-            session,
-            self.actor_handle.clone(),
-            acp_session_id.clone(),
-            self.session_store.clone(),
-        );
+        let RelayHandle { cmd_tx, mcp_request_tx, join_handle } =
+            spawn_relay(session, self.actor_handle.clone(), acp_session_id.clone(), self.session_store.clone());
 
         let mut config = SessionConfigState::new(model.to_string());
         config.reasoning_effort = reasoning_effort;
         config.selected_mode.clone_from(&selected_mode);
 
-        let state = SessionState {
-            relay_tx: cmd_tx,
-            mcp_request_tx,
-            _relay_handle: join_handle,
-            config,
-            modes: modes.clone(),
-        };
+        let state =
+            SessionState { relay_tx: cmd_tx, mcp_request_tx, _relay_handle: join_handle, config, modes: modes.clone() };
 
         let mut sessions = self.sessions.lock().await;
         sessions.insert(session_id.to_string(), state);
@@ -232,9 +205,7 @@ impl SessionManager {
         let command_count = available_commands.len();
         let notification = SessionNotification::new(
             acp_session_id,
-            SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(
-                available_commands,
-            )),
+            SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(available_commands)),
         );
         let actor_handle = self.actor_handle.clone();
         let session_id_log = session_id.to_string();
@@ -242,10 +213,7 @@ impl SessionManager {
             if let Err(e) = actor_handle.send_session_notification(notification).await {
                 error!("Failed to send available commands notification: {:?}", e);
             } else {
-                info!(
-                    "Sent available commands update for session {} ({} commands)",
-                    session_id_log, command_count
-                );
+                info!("Sent available commands update for session {} ({} commands)", session_id_log, command_count);
             }
         });
     }
@@ -288,18 +256,10 @@ fn map_acp_to_content_blocks(blocks: Vec<acp::ContentBlock>) -> Vec<ContentBlock
         .into_iter()
         .map(|block| match block {
             acp::ContentBlock::Text(t) => ContentBlock::text(t.text),
-            acp::ContentBlock::Image(img) => ContentBlock::Image {
-                data: img.data,
-                mime_type: img.mime_type,
-            },
-            acp::ContentBlock::Audio(aud) => ContentBlock::Audio {
-                data: aud.data,
-                mime_type: aud.mime_type,
-            },
+            acp::ContentBlock::Image(img) => ContentBlock::Image { data: img.data, mime_type: img.mime_type },
+            acp::ContentBlock::Audio(aud) => ContentBlock::Audio { data: aud.data, mime_type: aud.mime_type },
             acp::ContentBlock::Resource(r) => ContentBlock::text(format_embedded_resource(&r)),
-            acp::ContentBlock::ResourceLink(l) => {
-                ContentBlock::text(format!("[Resource: {}]", l.uri))
-            }
+            acp::ContentBlock::ResourceLink(l) => ContentBlock::text(format!("[Resource: {}]", l.uri)),
             _ => ContentBlock::text("[Unknown content]"),
         })
         .collect()
@@ -308,12 +268,9 @@ fn map_acp_to_content_blocks(blocks: Vec<acp::ContentBlock>) -> Vec<ContentBlock
 fn select_initial_mode(
     validated_modes: &[ValidatedMode],
 ) -> (Option<String>, Option<(String, Option<ReasoningEffort>)>) {
-    validated_modes.first().map_or((None, None), |mode| {
-        (
-            Some(mode.name.clone()),
-            Some((mode.model.clone(), mode.reasoning_effort)),
-        )
-    })
+    validated_modes
+        .first()
+        .map_or((None, None), |mode| (Some(mode.name.clone()), Some((mode.model.clone(), mode.reasoning_effort))))
 }
 
 fn prompt_capabilities_for_models(models: &[LlmModel]) -> PromptCapabilities {
@@ -328,10 +285,7 @@ fn selected_models(model_value: &str) -> Result<Vec<LlmModel>, acp::Error> {
         .split(',')
         .map(str::trim)
         .filter(|part| !part.is_empty())
-        .map(|part| {
-            part.parse::<LlmModel>()
-                .map_err(|_| acp::Error::invalid_params())
-        })
+        .map(|part| part.parse::<LlmModel>().map_err(|_| acp::Error::invalid_params()))
         .collect()
 }
 
@@ -364,10 +318,7 @@ mod tests {
     const DEEPSEEK: &str = "deepseek:deepseek-chat";
 
     fn available_models() -> Vec<LlmModel> {
-        [SONNET, "anthropic:claude-opus-4-6", DEEPSEEK]
-            .into_iter()
-            .map(|s| s.parse().expect("valid model"))
-            .collect()
+        [SONNET, "anthropic:claude-opus-4-6", DEEPSEEK].into_iter().map(|s| s.parse().expect("valid model")).collect()
     }
 
     fn validated_modes() -> Vec<ValidatedMode> {
@@ -376,10 +327,7 @@ mod tests {
             model: model.into(),
             reasoning_effort: effort,
         };
-        vec![
-            m("Planner", SONNET, Some(RE::High)),
-            m("Coder", DEEPSEEK, None),
-        ]
+        vec![m("Planner", SONNET, Some(RE::High)), m("Coder", DEEPSEEK, None)]
     }
 
     fn apply(
@@ -398,11 +346,7 @@ mod tests {
     #[test]
     fn new_state_has_no_pending_model_or_mode() {
         let s = SessionConfigState::new(DEEPSEEK.into());
-        assert!(
-            (s.pending_model.is_none()
-                && s.reasoning_effort.is_none()
-                && s.selected_mode.is_none())
-        );
+        assert!((s.pending_model.is_none() && s.reasoning_effort.is_none() && s.selected_mode.is_none()));
     }
 
     #[test]
@@ -423,23 +367,13 @@ mod tests {
     #[test]
     fn effort_change_preserves_mode_and_model_change_clears_it() {
         // Changing reasoning effort keeps the selected mode.
-        let (res, s) = apply(
-            SONNET,
-            Some(RE::High),
-            Some("Planner"),
-            ConfigSetting::ReasoningEffort(Some(RE::Low)),
-        );
+        let (res, s) = apply(SONNET, Some(RE::High), Some("Planner"), ConfigSetting::ReasoningEffort(Some(RE::Low)));
         assert!(res.is_ok());
         assert_eq!(s.reasoning_effort, Some(RE::Low));
         assert_eq!(s.selected_mode.as_deref(), Some("Planner"));
 
         // Changing the model to one that doesn't match any mode clears the mode.
-        let (res, s) = apply(
-            SONNET,
-            Some(RE::Medium),
-            Some("Planner"),
-            ConfigSetting::Model(DEEPSEEK.into()),
-        );
+        let (res, s) = apply(SONNET, Some(RE::Medium), Some("Planner"), ConfigSetting::Model(DEEPSEEK.into()));
         assert!(res.is_ok());
         assert_eq!(s.pending_model.as_deref(), Some(DEEPSEEK));
         assert!(s.selected_mode.is_none());
@@ -450,25 +384,20 @@ mod tests {
         let (tx, _rx) = mpsc::unbounded_channel();
         let mut manager = SessionManager::new(AcpActorHandle::new(tx));
         manager.has_oauth_credential = |_| false;
-        let response = manager
-            .initialize(InitializeRequest::new(ProtocolVersion::LATEST))
-            .await
-            .expect("initialize succeeds");
+        let response =
+            manager.initialize(InitializeRequest::new(ProtocolVersion::LATEST)).await.expect("initialize succeeds");
         let json = serde_json::to_string(&response).expect("response serializes");
         assert!(json.contains("\"loadSession\":true"));
     }
 
     #[test]
     fn prompt_capabilities_reflect_available_modalities() {
-        let image_only =
-            prompt_capabilities_for_models(&["anthropic:claude-sonnet-4-5".parse().unwrap()]);
+        let image_only = prompt_capabilities_for_models(&["anthropic:claude-sonnet-4-5".parse().unwrap()]);
         assert!(image_only.image);
         assert!(!image_only.audio);
 
         let audio_capable =
-            prompt_capabilities_for_models(&["gemini:gemini-live-2.5-flash-preview-native-audio"
-                .parse()
-                .unwrap()]);
+            prompt_capabilities_for_models(&["gemini:gemini-live-2.5-flash-preview-native-audio".parse().unwrap()]);
         assert!(!audio_capable.image);
         assert!(audio_capable.audio);
 
@@ -479,31 +408,16 @@ mod tests {
 
     #[test]
     fn validate_prompt_support_requires_all_selected_models_to_support_media() {
-        let image_content = vec![ContentBlock::Image {
-            data: "aW1n".to_string(),
-            mime_type: "image/png".to_string(),
-        }];
-        let audio_content = vec![ContentBlock::Audio {
-            data: "YXVkaW8=".to_string(),
-            mime_type: "audio/wav".to_string(),
-        }];
+        let image_content = vec![ContentBlock::Image { data: "aW1n".to_string(), mime_type: "image/png".to_string() }];
+        let audio_content =
+            vec![ContentBlock::Audio { data: "YXVkaW8=".to_string(), mime_type: "audio/wav".to_string() }];
 
         assert!(validate_prompt_support(SONNET, &image_content).is_ok());
         assert!(validate_prompt_support(DEEPSEEK, &image_content).is_err());
-        assert!(
-            validate_prompt_support(
-                "gemini:gemini-live-2.5-flash-preview-native-audio",
-                &audio_content,
-            )
-            .is_ok()
-        );
+        assert!(validate_prompt_support("gemini:gemini-live-2.5-flash-preview-native-audio", &audio_content,).is_ok());
         assert!(validate_prompt_support(SONNET, &audio_content).is_err());
         assert!(
-            validate_prompt_support(
-                "anthropic:claude-sonnet-4-5,deepseek:deepseek-chat",
-                &image_content,
-            )
-            .is_err()
+            validate_prompt_support("anthropic:claude-sonnet-4-5,deepseek:deepseek-chat", &image_content,).is_err()
         );
         assert!(
             validate_prompt_support(
@@ -527,18 +441,13 @@ impl Agent for SessionManager {
                 AgentCapabilities::new()
                     .load_session(true)
                     .mcp_capabilities(McpCapabilities::new().http(true).sse(true))
-                    .session_capabilities(
-                        acp::SessionCapabilities::new().list(acp::SessionListCapabilities::new()),
-                    )
+                    .session_capabilities(acp::SessionCapabilities::new().list(acp::SessionListCapabilities::new()))
                     .prompt_capabilities(prompt_capabilities_for_models(&available)),
             )
             .auth_methods(auth_methods))
     }
 
-    async fn authenticate(
-        &self,
-        args: AuthenticateRequest,
-    ) -> Result<AuthenticateResponse, acp::Error> {
+    async fn authenticate(&self, args: AuthenticateRequest) -> Result<AuthenticateResponse, acp::Error> {
         info!("Received authenticate request: {:?}", args);
         let method_id = args.method_id.0.as_ref();
         match method_id {
@@ -551,13 +460,8 @@ impl Agent for SessionManager {
             _ => return Err(acp::Error::invalid_params()),
         }
         let auth_methods = build_auth_methods(self.has_oauth_credential);
-        let auth_methods_notification: ExtNotification =
-            AuthMethodsUpdatedParams { auth_methods }.into();
-        if let Err(e) = self
-            .actor_handle
-            .send_ext_notification(auth_methods_notification)
-            .await
-        {
+        let auth_methods_notification: ExtNotification = AuthMethodsUpdatedParams { auth_methods }.into();
+        if let Err(e) = self.actor_handle.send_ext_notification(auth_methods_notification).await {
             error!("Failed to send auth methods updated notification: {:?}", e);
         }
 
@@ -567,10 +471,7 @@ impl Agent for SessionManager {
         let all_models = get_all_models(&available);
         let sessions = self.sessions.lock().await;
         for (id, state) in sessions.iter() {
-            let model = effective_model(
-                &state.config.active_model,
-                state.config.pending_model.as_deref(),
-            );
+            let model = effective_model(&state.config.active_model, state.config.pending_model.as_deref());
             let options = build_config_options_from_modes(
                 &state.modes,
                 &available,
@@ -584,27 +485,18 @@ impl Agent for SessionManager {
                 SessionId::new(id.clone()),
                 SessionUpdate::ConfigOptionUpdate(ConfigOptionUpdate::new(options)),
             );
-            let _ = self
-                .actor_handle
-                .send_session_notification(notification)
-                .await;
+            let _ = self.actor_handle.send_session_notification(notification).await;
         }
 
         Ok(AuthenticateResponse::default())
     }
 
-    async fn new_session(
-        &self,
-        mut args: NewSessionRequest,
-    ) -> Result<NewSessionResponse, acp::Error> {
+    async fn new_session(&self, mut args: NewSessionRequest) -> Result<NewSessionResponse, acp::Error> {
         // Inside a sandbox container the client sends the *host* cwd, but the
         // project is mounted at the container's working directory.
         if std::env::var("AETHER_INSIDE_SANDBOX").is_ok() {
             let container_cwd = std::env::current_dir().unwrap_or_else(|_| "/workspace".into());
-            info!(
-                "Sandbox: remapping cwd {:?} -> {:?}",
-                args.cwd, container_cwd
-            );
+            info!("Sandbox: remapping cwd {:?} -> {:?}", args.cwd, container_cwd);
             args.cwd = container_cwd;
         }
 
@@ -622,37 +514,24 @@ impl Agent for SessionManager {
         let (initial_selected_mode, mode_config) = select_initial_mode(&mode_catalog.modes);
 
         let spec = if let Some(selected_mode) = initial_selected_mode.as_deref() {
-            mode_catalog
-                .catalog
-                .resolve(selected_mode, &args.cwd)
-                .map_err(|e| {
-                    error!(
-                        "Failed to resolve runtime inputs for mode '{}': {e}",
-                        selected_mode
-                    );
-                    acp::Error::invalid_params()
-                })?
+            mode_catalog.catalog.resolve(selected_mode, &args.cwd).map_err(|e| {
+                error!("Failed to resolve runtime inputs for mode '{}': {e}", selected_mode);
+                acp::Error::invalid_params()
+            })?
         } else {
-            mode_catalog
-                .catalog
-                .resolve_default(default_model, None, &args.cwd)
+            mode_catalog.catalog.resolve_default(default_model, None, &args.cwd)
         };
 
         let model_str = spec.model.clone();
         let initial_reasoning_effort = mode_config.and_then(|(_, effort)| effort);
 
-        let session = Session::new(
-            spec,
-            args.cwd.clone(),
-            map_acp_mcp_servers(args.mcp_servers),
-            None,
-            Some(session_id.clone()),
-        )
-        .await
-        .map_err(|e| {
-            error!("Failed to create session: {}", e);
-            acp::Error::internal_error()
-        })?;
+        let session =
+            Session::new(spec, args.cwd.clone(), map_acp_mcp_servers(args.mcp_servers), None, Some(session_id.clone()))
+                .await
+                .map_err(|e| {
+                    error!("Failed to create session: {}", e);
+                    acp::Error::internal_error()
+                })?;
 
         let available_commands = session.list_available_commands().await.map_err(|e| {
             error!("Failed to list available commands: {}", e);
@@ -684,18 +563,14 @@ impl Agent for SessionManager {
 
         info!("Session {} created successfully", session_id);
 
-        let response =
-            NewSessionResponse::new(acp_session_id.clone()).config_options(config_options);
+        let response = NewSessionResponse::new(acp_session_id.clone()).config_options(config_options);
 
         self.spawn_available_commands_notification(available_commands, acp_session_id, &session_id);
 
         Ok(response)
     }
 
-    async fn list_sessions(
-        &self,
-        args: ListSessionsRequest,
-    ) -> Result<ListSessionsResponse, acp::Error> {
+    async fn list_sessions(&self, args: ListSessionsRequest) -> Result<ListSessionsResponse, acp::Error> {
         info!("Listing sessions, cwd filter: {:?}", args.cwd);
         let mut summaries = self.session_store.list();
 
@@ -705,21 +580,14 @@ impl Agent for SessionManager {
 
         let sessions: Vec<acp::SessionInfo> = summaries
             .into_iter()
-            .map(|s| {
-                acp::SessionInfo::new(s.meta.session_id, s.meta.cwd)
-                    .updated_at(s.meta.created_at)
-                    .title(s.title)
-            })
+            .map(|s| acp::SessionInfo::new(s.meta.session_id, s.meta.cwd).updated_at(s.meta.created_at).title(s.title))
             .collect();
 
         info!("Found {} sessions", sessions.len());
         Ok(ListSessionsResponse::new(sessions))
     }
 
-    async fn load_session(
-        &self,
-        args: LoadSessionRequest,
-    ) -> Result<LoadSessionResponse, acp::Error> {
+    async fn load_session(&self, args: LoadSessionRequest) -> Result<LoadSessionResponse, acp::Error> {
         let session_id = args.session_id.0.to_string();
         info!("Loading session: {session_id}");
 
@@ -732,34 +600,21 @@ impl Agent for SessionManager {
         let mode_catalog = Self::load_mode_catalog(&args.cwd).await?;
 
         let spec = if let Some(mode_name) = meta.selected_mode.as_deref() {
-            mode_catalog
-                .catalog
-                .resolve(mode_name, &args.cwd)
-                .map_err(|e| {
-                    error!(
-                        "Failed to resolve runtime inputs for mode '{}': {e}",
-                        mode_name
-                    );
-                    acp::Error::invalid_params()
-                })?
+            mode_catalog.catalog.resolve(mode_name, &args.cwd).map_err(|e| {
+                error!("Failed to resolve runtime inputs for mode '{}': {e}", mode_name);
+                acp::Error::invalid_params()
+            })?
         } else {
             let parsed_model: LlmModel = meta.model.parse().map_err(|e: String| {
                 error!("Failed to parse restored model '{}': {e}", meta.model);
                 acp::Error::invalid_params()
             })?;
-            mode_catalog
-                .catalog
-                .resolve_default(&parsed_model, None, &args.cwd)
+            mode_catalog.catalog.resolve_default(&parsed_model, None, &args.cwd)
         };
 
         let model = spec.model.clone();
 
-        let restored_messages: Vec<_> = context
-            .messages()
-            .iter()
-            .filter(|m| !m.is_system())
-            .cloned()
-            .collect();
+        let restored_messages: Vec<_> = context.messages().iter().filter(|m| !m.is_system()).cloned().collect();
 
         let session = Session::new(
             spec,
@@ -820,10 +675,7 @@ impl Agent for SessionManager {
             })?;
 
             let content = map_acp_to_content_blocks(args.prompt);
-            let effective_model = effective_model(
-                &state.config.active_model,
-                state.config.pending_model.as_deref(),
-            );
+            let effective_model = effective_model(&state.config.active_model, state.config.pending_model.as_deref());
             validate_prompt_support(effective_model, &content)?;
 
             let switch_model = state.config.pending_model.take().and_then(|pending| {
@@ -837,35 +689,21 @@ impl Agent for SessionManager {
 
             let reasoning_effort = state.config.reasoning_effort;
 
-            (
-                state.relay_tx.clone(),
-                content,
-                switch_model,
-                reasoning_effort,
-            )
+            (state.relay_tx.clone(), content, switch_model, reasoning_effort)
         };
 
         let (result_tx, result_rx) = oneshot::channel();
-        relay_tx
-            .send(SessionCommand::Prompt {
-                content,
-                switch_model,
-                reasoning_effort,
-                result_tx,
-            })
-            .await
-            .map_err(|_| {
+        relay_tx.send(SessionCommand::Prompt { content, switch_model, reasoning_effort, result_tx }).await.map_err(
+            |_| {
                 error!("Relay channel closed for session {}", session_id_str);
                 acp::Error::internal_error()
-            })?;
+            },
+        )?;
 
         let stop_reason = result_rx
             .await
             .map_err(|_| {
-                error!(
-                    "Relay dropped result channel for session {}",
-                    session_id_str
-                );
+                error!("Relay dropped result channel for session {}", session_id_str);
                 acp::Error::internal_error()
             })?
             .map_err(|e| {
@@ -908,10 +746,7 @@ impl Agent for SessionManager {
         let config_id = args.config_id.0.to_string();
         let value = args.value.0.to_string();
 
-        info!(
-            "set_session_config_option: session={}, config={}, value={}",
-            session_id_str, config_id, value
-        );
+        info!("set_session_config_option: session={}, config={}, value={}", session_id_str, config_id, value);
 
         let setting = ConfigSetting::parse(&config_id, &value).map_err(|e| {
             error!("{e}");
@@ -927,14 +762,9 @@ impl Agent for SessionManager {
             acp::Error::invalid_params()
         })?;
 
-        state
-            .config
-            .apply_config_change(&state.modes, &available, &setting)?;
+        state.config.apply_config_change(&state.modes, &available, &setting)?;
 
-        let effective_model = effective_model(
-            &state.config.active_model,
-            state.config.pending_model.as_deref(),
-        );
+        let effective_model = effective_model(&state.config.active_model, state.config.pending_model.as_deref());
         let options = build_config_options_from_modes(
             &state.modes,
             &available,
@@ -947,61 +777,39 @@ impl Agent for SessionManager {
         Ok(SetSessionConfigOptionResponse::new(options))
     }
 
-    async fn set_session_mode(
-        &self,
-        args: SetSessionModeRequest,
-    ) -> Result<SetSessionModeResponse, acp::Error> {
+    async fn set_session_mode(&self, args: SetSessionModeRequest) -> Result<SetSessionModeResponse, acp::Error> {
         info!("Received set_session_mode request: {:?}", args);
         Err(acp::Error::method_not_found())
     }
 
     async fn ext_method(&self, args: acp::ExtRequest) -> Result<acp::ExtResponse, acp::Error> {
-        info!(
-            "Received extension method: {}, params: {:?}",
-            args.method, args.params
-        );
-        let null_value: Arc<serde_json::value::RawValue> =
-            serde_json::from_str("null").expect("null is valid JSON");
+        info!("Received extension method: {}, params: {:?}", args.method, args.params);
+        let null_value: Arc<serde_json::value::RawValue> = serde_json::from_str("null").expect("null is valid JSON");
         Ok(null_value.into())
     }
 
     async fn ext_notification(&self, args: acp::ExtNotification) -> Result<(), acp::Error> {
-        info!(
-            "Received extension notification: {}, params: {:?}",
-            args.method, args.params
-        );
+        info!("Received extension notification: {}, params: {:?}", args.method, args.params);
 
         if let Ok(msg) = McpRequest::try_from(&args) {
             match msg {
-                McpRequest::Authenticate {
-                    session_id,
-                    server_name,
-                } => {
+                McpRequest::Authenticate { session_id, server_name } => {
                     let mcp_request_tx = {
                         let sessions = self.sessions.lock().await;
                         let session = sessions.get(&session_id);
                         session
                             .ok_or_else(|| {
-                                error!(
-                                    "Session not found for authenticate_mcp_server: {}",
-                                    session_id
-                                );
+                                error!("Session not found for authenticate_mcp_server: {}", session_id);
                                 acp::Error::invalid_params()
                             })?
                             .mcp_request_tx
                             .clone()
                     };
 
-                    mcp_request_tx
-                        .send(McpRequest::Authenticate {
-                            session_id,
-                            server_name,
-                        })
-                        .await
-                        .map_err(|_| {
-                            error!("MCP request channel closed for session");
-                            acp::Error::internal_error()
-                        })?;
+                    mcp_request_tx.send(McpRequest::Authenticate { session_id, server_name }).await.map_err(|_| {
+                        error!("MCP request channel closed for session");
+                        acp::Error::internal_error()
+                    })?;
                 }
             }
         }

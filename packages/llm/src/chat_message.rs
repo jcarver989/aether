@@ -71,10 +71,7 @@ impl ContentBlock {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EncryptedReasoningContent {
     pub id: String,
-    #[serde(
-        serialize_with = "serialize_llm_model",
-        deserialize_with = "deserialize_llm_model"
-    )]
+    #[serde(serialize_with = "serialize_llm_model", deserialize_with = "deserialize_llm_model")]
     pub model: LlmModel,
     pub content: String,
 }
@@ -94,10 +91,7 @@ pub struct AssistantReasoning {
 
 impl AssistantReasoning {
     pub fn from_parts(summary_text: String, encrypted: Option<EncryptedReasoningContent>) -> Self {
-        Self {
-            summary_text: (!summary_text.is_empty()).then_some(summary_text),
-            encrypted_content: encrypted,
-        }
+        Self { summary_text: (!summary_text.is_empty()).then_some(summary_text), encrypted_content: encrypted }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -160,37 +154,18 @@ impl ChatMessage {
     pub fn estimated_bytes(&self) -> usize {
         match self {
             ChatMessage::System { content, .. }
-            | ChatMessage::Error {
-                message: content, ..
-            }
+            | ChatMessage::Error { message: content, .. }
             | ChatMessage::Summary { content, .. } => content.len(),
-            ChatMessage::User { content, .. } => {
-                content.iter().map(ContentBlock::estimated_bytes).sum()
-            }
-            ChatMessage::Assistant {
-                content,
-                reasoning,
-                tool_calls,
-                ..
-            } => {
+            ChatMessage::User { content, .. } => content.iter().map(ContentBlock::estimated_bytes).sum(),
+            ChatMessage::Assistant { content, reasoning, tool_calls, .. } => {
                 content.len()
                     + reasoning.summary_text.as_ref().map_or(0, String::len)
-                    + reasoning
-                        .encrypted_content
-                        .as_ref()
-                        .map_or(0, |ec| ec.content.len())
-                    + tool_calls
-                        .iter()
-                        .map(|tc| tc.name.len() + tc.arguments.len())
-                        .sum::<usize>()
+                    + reasoning.encrypted_content.as_ref().map_or(0, |ec| ec.content.len())
+                    + tool_calls.iter().map(|tc| tc.name.len() + tc.arguments.len()).sum::<usize>()
             }
-            ChatMessage::ToolCallResult(Ok(result)) => {
-                result.name.len() + result.arguments.len() + result.result.len()
-            }
+            ChatMessage::ToolCallResult(Ok(result)) => result.name.len() + result.arguments.len() + result.result.len(),
             ChatMessage::ToolCallResult(Err(error)) => {
-                error.name.len()
-                    + error.arguments.as_ref().map_or(0, String::len)
-                    + error.error.len()
+                error.name.len() + error.arguments.as_ref().map_or(0, String::len) + error.error.len()
             }
         }
     }
@@ -260,10 +235,7 @@ mod tests {
     #[test]
     fn first_text_returns_first_non_empty_text_block() {
         let parts = vec![
-            ContentBlock::Image {
-                data: "a".to_string(),
-                mime_type: "image/png".to_string(),
-            },
+            ContentBlock::Image { data: "a".to_string(), mime_type: "image/png".to_string() },
             ContentBlock::text(" "),
             ContentBlock::text("hello"),
         ];
@@ -349,10 +321,7 @@ mod tests {
         };
         let msg_without = ChatMessage::Assistant {
             content: "hi".to_string(),
-            reasoning: AssistantReasoning {
-                summary_text: Some("think".to_string()),
-                encrypted_content: None,
-            },
+            reasoning: AssistantReasoning { summary_text: Some("think".to_string()), encrypted_content: None },
             timestamp: IsoString::now(),
             tool_calls: vec![],
         };

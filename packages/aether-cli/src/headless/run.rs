@@ -40,43 +40,25 @@ async fn stream_output(mut rx: mpsc::Receiver<AgentMessage>, format: &OutputForm
 
 fn format_text(msg: &AgentMessage) -> Option<String> {
     match msg {
-        AgentMessage::Text {
-            chunk,
-            is_complete: true,
-            ..
-        } => Some(chunk.clone()),
+        AgentMessage::Text { chunk, is_complete: true, .. } => Some(chunk.clone()),
 
-        AgentMessage::Thought {
-            chunk,
-            is_complete: true,
-            ..
-        } => Some(format!("Thought: {chunk}")),
+        AgentMessage::Thought { chunk, is_complete: true, .. } => Some(format!("Thought: {chunk}")),
 
-        AgentMessage::ToolCall { request, .. } => Some(format!(
-            "Tool call: {}({})",
-            request.name, request.arguments
-        )),
+        AgentMessage::ToolCall { request, .. } => Some(format!("Tool call: {}({})", request.name, request.arguments)),
 
-        AgentMessage::ToolResult { result, .. } => {
-            Some(format!("Tool result [{}]: {}", result.name, result.result))
-        }
+        AgentMessage::ToolResult { result, .. } => Some(format!("Tool result [{}]: {}", result.name, result.result)),
 
-        AgentMessage::ToolError { error, .. } => {
-            Some(format!("Tool error [{}]: {}", error.name, error.error))
-        }
+        AgentMessage::ToolError { error, .. } => Some(format!("Tool error [{}]: {}", error.name, error.error)),
 
         AgentMessage::Error { message } => Some(format!("Error: {message}")),
 
         AgentMessage::Cancelled { message } => Some(format!("Cancelled: {message}")),
 
-        AgentMessage::AutoContinue {
-            attempt,
-            max_attempts,
-        } => Some(format!("Continuing ({attempt}/{max_attempts})...")),
-
-        AgentMessage::ModelSwitched { previous, new } => {
-            Some(format!("Model switched: {previous} -> {new}"))
+        AgentMessage::AutoContinue { attempt, max_attempts } => {
+            Some(format!("Continuing ({attempt}/{max_attempts})..."))
         }
+
+        AgentMessage::ModelSwitched { previous, new } => Some(format!("Model switched: {previous} -> {new}")),
 
         _ => None,
     }
@@ -94,17 +76,9 @@ fn emit_text(msg: &AgentMessage) {
 
 fn emit_event(msg: &AgentMessage) {
     match msg {
-        AgentMessage::Text {
-            chunk,
-            is_complete: true,
-            ..
-        } => tracing::info!(target: "agent", "{chunk}"),
+        AgentMessage::Text { chunk, is_complete: true, .. } => tracing::info!(target: "agent", "{chunk}"),
 
-        AgentMessage::Thought {
-            chunk,
-            is_complete: true,
-            ..
-        } => tracing::info!(target: "agent", thought = %chunk),
+        AgentMessage::Thought { chunk, is_complete: true, .. } => tracing::info!(target: "agent", thought = %chunk),
 
         AgentMessage::ToolCall { request, .. } => {
             tracing::info!(target: "agent", tool = %request.name, arguments = %request.arguments);
@@ -124,10 +98,9 @@ fn emit_event(msg: &AgentMessage) {
             tracing::info!(target: "agent", cancelled = %message);
         }
 
-        AgentMessage::AutoContinue {
-            attempt,
-            max_attempts,
-        } => tracing::info!(target: "agent", "Continuing ({attempt}/{max_attempts})..."),
+        AgentMessage::AutoContinue { attempt, max_attempts } => {
+            tracing::info!(target: "agent", "Continuing ({attempt}/{max_attempts})...")
+        }
 
         AgentMessage::ModelSwitched { previous, new } => {
             tracing::info!(target: "agent", "Model switched: {previous} -> {new}");
@@ -144,15 +117,9 @@ fn setup_tracing(verbose: bool, format: &OutputFormat) {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
 
-    let diag_filter = if verbose {
-        EnvFilter::new("debug,agent=off")
-    } else {
-        EnvFilter::new("error,agent=off")
-    };
+    let diag_filter = if verbose { EnvFilter::new("debug,agent=off") } else { EnvFilter::new("error,agent=off") };
 
-    let diag_layer = fmt::layer()
-        .with_writer(io::stderr)
-        .with_filter(diag_filter);
+    let diag_layer = fmt::layer().with_writer(io::stderr).with_filter(diag_filter);
 
     let agent_filter = filter::filter_fn(|meta| meta.target().starts_with("agent"));
 
@@ -166,24 +133,12 @@ fn setup_tracing(verbose: bool, format: &OutputFormat) {
             }
         }
         OutputFormat::Pretty => {
-            let agent_layer = fmt::layer()
-                .with_writer(io::stdout)
-                .pretty()
-                .with_filter(agent_filter);
-            tracing_subscriber::registry()
-                .with(diag_layer)
-                .with(agent_layer)
-                .init();
+            let agent_layer = fmt::layer().with_writer(io::stdout).pretty().with_filter(agent_filter);
+            tracing_subscriber::registry().with(diag_layer).with(agent_layer).init();
         }
         OutputFormat::Json => {
-            let agent_layer = fmt::layer()
-                .with_writer(io::stdout)
-                .json()
-                .with_filter(agent_filter);
-            tracing_subscriber::registry()
-                .with(diag_layer)
-                .with(agent_layer)
-                .init();
+            let agent_layer = fmt::layer().with_writer(io::stdout).json().with_filter(agent_filter);
+            tracing_subscriber::registry().with(diag_layer).with(agent_layer).init();
         }
     }
 }
@@ -201,11 +156,7 @@ mod tests {
         let buf = Arc::new(Mutex::new(Vec::new()));
         let buf_clone = Arc::clone(&buf);
 
-        let writer = move || -> TestWriter {
-            TestWriter {
-                buf: Arc::clone(&buf_clone),
-            }
-        };
+        let writer = move || -> TestWriter { TestWriter { buf: Arc::clone(&buf_clone) } };
 
         let layer = fmt::layer()
             .with_writer(writer)
@@ -213,9 +164,7 @@ mod tests {
             .with_level(false)
             .with_target(false)
             .with_timer(fmt::time::uptime())
-            .with_filter(tracing_subscriber::filter::filter_fn(|meta| {
-                meta.target().starts_with("agent")
-            }));
+            .with_filter(tracing_subscriber::filter::filter_fn(|meta| meta.target().starts_with("agent")));
 
         let subscriber = tracing_subscriber::registry().with(layer);
 
@@ -264,10 +213,7 @@ mod tests {
         let output = with_test_subscriber(|| {
             emit_event(&AgentMessage::thought("id", "deep thinking", true, "model"));
         });
-        assert!(
-            output.contains("deep thinking"),
-            "expected 'deep thinking' in: {output}"
-        );
+        assert!(output.contains("deep thinking"), "expected 'deep thinking' in: {output}");
     }
 
     #[test]
@@ -328,16 +274,11 @@ mod tests {
 
     #[test]
     fn emit_event_emits_error() {
-        let msg = AgentMessage::Error {
-            message: "something broke".to_string(),
-        };
+        let msg = AgentMessage::Error { message: "something broke".to_string() };
         let output = with_test_subscriber(|| {
             emit_event(&msg);
         });
-        assert!(
-            output.contains("something broke"),
-            "expected 'something broke' in: {output}"
-        );
+        assert!(output.contains("something broke"), "expected 'something broke' in: {output}");
     }
 
     #[test]
@@ -352,18 +293,12 @@ mod tests {
 
     #[test]
     fn emit_text_formats_complete_text() {
-        assert_eq!(
-            format_text(&AgentMessage::text("id", "hello world", true, "m")),
-            Some("hello world".to_string())
-        );
+        assert_eq!(format_text(&AgentMessage::text("id", "hello world", true, "m")), Some("hello world".to_string()));
     }
 
     #[test]
     fn emit_text_skips_incomplete_text() {
-        assert_eq!(
-            format_text(&AgentMessage::text("id", "partial", false, "m")),
-            None
-        );
+        assert_eq!(format_text(&AgentMessage::text("id", "partial", false, "m")), None);
     }
 
     #[test]
@@ -376,10 +311,7 @@ mod tests {
 
     #[test]
     fn emit_text_skips_incomplete_thought() {
-        assert_eq!(
-            format_text(&AgentMessage::thought("id", "partial", false, "m")),
-            None
-        );
+        assert_eq!(format_text(&AgentMessage::thought("id", "partial", false, "m")), None);
     }
 
     #[test]
@@ -392,10 +324,7 @@ mod tests {
             },
             model_name: "test".to_string(),
         };
-        assert_eq!(
-            format_text(&msg),
-            Some(r#"Tool call: bash({"cmd":"ls"})"#.to_string())
-        );
+        assert_eq!(format_text(&msg), Some(r#"Tool call: bash({"cmd":"ls"})"#.to_string()));
     }
 
     #[test]
@@ -420,10 +349,7 @@ mod tests {
             result_meta: None,
             model_name: "test".to_string(),
         };
-        assert_eq!(
-            format_text(&msg),
-            Some("Tool result [bash]: output".to_string())
-        );
+        assert_eq!(format_text(&msg), Some("Tool result [bash]: output".to_string()));
     }
 
     #[test]
@@ -437,50 +363,31 @@ mod tests {
             },
             model_name: "test".to_string(),
         };
-        assert_eq!(
-            format_text(&msg),
-            Some("Tool error [bash]: not found".to_string())
-        );
+        assert_eq!(format_text(&msg), Some("Tool error [bash]: not found".to_string()));
     }
 
     #[test]
     fn emit_text_formats_error() {
-        let msg = AgentMessage::Error {
-            message: "boom".to_string(),
-        };
+        let msg = AgentMessage::Error { message: "boom".to_string() };
         assert_eq!(format_text(&msg), Some("Error: boom".to_string()));
     }
 
     #[test]
     fn emit_text_formats_cancelled() {
-        let msg = AgentMessage::Cancelled {
-            message: "user stopped".to_string(),
-        };
-        assert_eq!(
-            format_text(&msg),
-            Some("Cancelled: user stopped".to_string())
-        );
+        let msg = AgentMessage::Cancelled { message: "user stopped".to_string() };
+        assert_eq!(format_text(&msg), Some("Cancelled: user stopped".to_string()));
     }
 
     #[test]
     fn emit_text_formats_auto_continue() {
-        let msg = AgentMessage::AutoContinue {
-            attempt: 2,
-            max_attempts: 5,
-        };
+        let msg = AgentMessage::AutoContinue { attempt: 2, max_attempts: 5 };
         assert_eq!(format_text(&msg), Some("Continuing (2/5)...".to_string()));
     }
 
     #[test]
     fn emit_text_formats_model_switched() {
-        let msg = AgentMessage::ModelSwitched {
-            previous: "old-model".to_string(),
-            new: "new-model".to_string(),
-        };
-        assert_eq!(
-            format_text(&msg),
-            Some("Model switched: old-model -> new-model".to_string())
-        );
+        let msg = AgentMessage::ModelSwitched { previous: "old-model".to_string(), new: "new-model".to_string() };
+        assert_eq!(format_text(&msg), Some("Model switched: old-model -> new-model".to_string()));
     }
 
     #[test]

@@ -25,11 +25,7 @@ pub struct LspDaemon {
 impl LspDaemon {
     /// Create a daemon with socket and idle-timeout settings.
     pub fn new(socket_path: PathBuf, idle_timeout: Option<Duration>) -> Self {
-        Self {
-            socket_path,
-            idle_timeout,
-            workspace_registry: WorkspaceRegistry::new(),
-        }
+        Self { socket_path, idle_timeout, workspace_registry: WorkspaceRegistry::new() }
     }
 
     /// Run the daemon until shutdown.
@@ -121,13 +117,7 @@ async fn check_idle_timeout(
     last_activity: Arc<RwLock<Instant>>,
     timeout: Option<Duration>,
 ) {
-    check_idle_timeout_with_interval(
-        client_count,
-        last_activity,
-        timeout,
-        Duration::from_secs(10),
-    )
-    .await;
+    check_idle_timeout_with_interval(client_count, last_activity, timeout, Duration::from_secs(10)).await;
 }
 
 /// Wait until idle timeout is reached, polling at a configurable interval.
@@ -182,11 +172,9 @@ fn spawn_shutdown_signal_handler() -> oneshot::Receiver<()> {
     {
         use tokio::signal::unix::{SignalKind, signal};
         spawn(async move {
-            let mut sigterm =
-                signal(SignalKind::terminate()).expect("Failed to register SIGTERM handler");
+            let mut sigterm = signal(SignalKind::terminate()).expect("Failed to register SIGTERM handler");
 
-            let mut sigint =
-                signal(SignalKind::interrupt()).expect("Failed to register SIGINT handler");
+            let mut sigint = signal(SignalKind::interrupt()).expect("Failed to register SIGINT handler");
 
             select! {
                 _ = sigterm.recv() => {
@@ -215,12 +203,7 @@ mod tests {
 
         let result = timeout(
             Duration::from_millis(40),
-            check_idle_timeout_with_interval(
-                client_count,
-                last_activity,
-                None,
-                Duration::from_millis(5),
-            ),
+            check_idle_timeout_with_interval(client_count, last_activity, None, Duration::from_millis(5)),
         )
         .await;
 

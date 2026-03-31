@@ -17,10 +17,7 @@ pub struct ScreenRouter {
 
 impl ScreenRouter {
     pub fn new(git_diff_mode: GitDiffMode) -> Self {
-        Self {
-            screen_mode: ScreenMode::Conversation,
-            git_diff_mode,
-        }
+        Self { screen_mode: ScreenMode::Conversation, git_diff_mode }
     }
 
     pub fn is_git_diff(&self) -> bool {
@@ -92,10 +89,7 @@ impl Component for ScreenRouter {
         let cursor = if self.git_diff_mode.is_comment_input() {
             let line_count = diff_height as usize;
             let comment_cursor = self.git_diff_mode.comment_cursor_col();
-            Cursor::visible(
-                line_count.saturating_sub(1),
-                "Comment: ".len() + comment_cursor,
-            )
+            Cursor::visible(line_count.saturating_sub(1), "Comment: ".len() + comment_cursor)
         } else {
             Cursor::hidden()
         };

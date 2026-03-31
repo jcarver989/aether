@@ -42,19 +42,13 @@ pub async fn find_files_by_name(args: FindInput) -> Result<FindOutput, FindError
     let glob_pattern = match Pattern::new(&args.pattern) {
         Ok(pattern) => pattern,
         Err(e) => {
-            return Err(FindError::InvalidGlobPattern {
-                pattern: args.pattern,
-                reason: e.to_string(),
-            });
+            return Err(FindError::InvalidGlobPattern { pattern: args.pattern, reason: e.to_string() });
         }
     };
 
     // Build walker with configuration
     let mut walker_builder = WalkBuilder::new(search_path);
-    walker_builder
-        .hidden(false)
-        .git_ignore(true)
-        .follow_links(false);
+    walker_builder.hidden(false).git_ignore(true).follow_links(false);
 
     // Use parallel walker for better performance
     let walker = walker_builder.build_parallel();
@@ -94,25 +88,16 @@ pub async fn find_files_by_name(args: FindInput) -> Result<FindOutput, FindError
     drop(glob_pattern_clone);
 
     // Extract results using the remaining Arc reference
-    let mut matches = matching_files
-        .lock()
-        .map_err(|_| FindError::LockFailed)?
-        .clone();
+    let mut matches = matching_files.lock().map_err(|_| FindError::LockFailed)?.clone();
 
     // Sort results by path
     matches.sort();
 
     let count = matches.len();
 
-    let display_meta =
-        ToolDisplayMeta::new("Find files", format!("'{}' ({count} files)", args.pattern));
+    let display_meta = ToolDisplayMeta::new("Find files", format!("'{}' ({count} files)", args.pattern));
 
-    Ok(FindOutput {
-        matches,
-        count,
-        search_path: search_path.to_string(),
-        meta: Some(display_meta.into()),
-    })
+    Ok(FindOutput { matches, count, search_path: search_path.to_string(), meta: Some(display_meta.into()) })
 }
 
 #[cfg(test)]
@@ -143,10 +128,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         create_test_files(temp_dir.path()).unwrap();
 
-        let args = FindInput {
-            pattern: "**/test.rs".to_string(),
-            path: Some(temp_dir.path().to_string_lossy().to_string()),
-        };
+        let args =
+            FindInput { pattern: "**/test.rs".to_string(), path: Some(temp_dir.path().to_string_lossy().to_string()) };
 
         let result = find_files_by_name(args).await.unwrap();
 
@@ -159,28 +142,24 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         create_test_files(temp_dir.path()).unwrap();
 
-        let args = FindInput {
-            pattern: "**/*.rs".to_string(),
-            path: Some(temp_dir.path().to_string_lossy().to_string()),
-        };
+        let args =
+            FindInput { pattern: "**/*.rs".to_string(), path: Some(temp_dir.path().to_string_lossy().to_string()) };
 
         let result = find_files_by_name(args).await.unwrap();
 
         // Should find all .rs files including nested ones
         assert!(result.count >= 4); // test.rs, main.rs, lib.rs, nested.rs
-        assert!(result.matches.iter().all(|p| {
-            std::path::Path::new(p)
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"))
-        }));
+        assert!(
+            result
+                .matches
+                .iter()
+                .all(|p| { std::path::Path::new(p).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("rs")) })
+        );
     }
 
     #[tokio::test]
     async fn test_validation_error_invalid_path() {
-        let args = FindInput {
-            pattern: "**/*.rs".to_string(),
-            path: Some("/nonexistent/path".to_string()),
-        };
+        let args = FindInput { pattern: "**/*.rs".to_string(), path: Some("/nonexistent/path".to_string()) };
 
         let result = find_files_by_name(args).await;
         assert!(matches!(result, Err(FindError::PathNotFound(_))));
@@ -189,10 +168,7 @@ mod tests {
     #[tokio::test]
     async fn test_default_path() {
         // Test that path defaults to current directory
-        let args = FindInput {
-            pattern: "**/*.rs".to_string(),
-            path: None,
-        };
+        let args = FindInput { pattern: "**/*.rs".to_string(), path: None };
 
         let result = find_files_by_name(args).await;
         // Should not error, even if no matches found
@@ -204,10 +180,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         create_test_files(temp_dir.path()).unwrap();
 
-        let args = FindInput {
-            pattern: "**/*.rs".to_string(),
-            path: Some(temp_dir.path().to_string_lossy().to_string()),
-        };
+        let args =
+            FindInput { pattern: "**/*.rs".to_string(), path: Some(temp_dir.path().to_string_lossy().to_string()) };
 
         let result = find_files_by_name(args).await.unwrap();
 

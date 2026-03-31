@@ -19,10 +19,7 @@ pub struct ToolDisplayMeta {
 
 impl ToolDisplayMeta {
     pub fn new(title: impl Into<String>, value: impl Into<String>) -> Self {
-        Self {
-            title: title.into(),
-            value: value.into(),
-        }
+        Self { title: title.into(), value: value.into() }
     }
 }
 
@@ -82,39 +79,23 @@ impl From<ToolDisplayMeta> for ToolResultMeta {
 impl ToolResultMeta {
     /// Create a new metadata wrapper with just display info.
     pub fn new(display: ToolDisplayMeta) -> Self {
-        Self {
-            display,
-            file_diff: None,
-            plan: None,
-        }
+        Self { display, file_diff: None, plan: None }
     }
 
     /// Create a metadata wrapper with a plan.
     pub fn with_plan(display: ToolDisplayMeta, plan: PlanMeta) -> Self {
-        Self {
-            display,
-            file_diff: None,
-            plan: Some(plan),
-        }
+        Self { display, file_diff: None, plan: Some(plan) }
     }
 
     /// Create a metadata wrapper with a file diff.
     pub fn with_file_diff(display: ToolDisplayMeta, file_diff: FileDiff) -> Self {
-        Self {
-            display,
-            file_diff: Some(file_diff),
-            plan: None,
-        }
+        Self { display, file_diff: Some(file_diff), plan: None }
     }
 }
 
 /// Extract a lowercased file extension from a path, for use as a syntax hint.
 pub fn extension_hint(path: &str) -> String {
-    Path::new(path)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or("")
-        .to_lowercase()
+    Path::new(path).extension().and_then(|ext| ext.to_str()).unwrap_or("").to_lowercase()
 }
 
 impl ToolResultMeta {
@@ -139,10 +120,7 @@ pub fn truncate(s: &str, max_length: usize) -> String {
     if s.chars().count() <= max_length {
         s.to_string()
     } else {
-        let mut truncated = s
-            .chars()
-            .take(max_length.saturating_sub(3))
-            .collect::<String>();
+        let mut truncated = s.chars().take(max_length.saturating_sub(3)).collect::<String>();
         truncated.push_str("...");
         truncated
     }
@@ -150,10 +128,7 @@ pub fn truncate(s: &str, max_length: usize) -> String {
 
 /// Extract the filename from a path, handling both Unix and Windows separators.
 pub fn basename(path: &str) -> String {
-    let platform_basename = std::path::Path::new(path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or(path);
+    let platform_basename = std::path::Path::new(path).file_name().and_then(|name| name.to_str()).unwrap_or(path);
 
     if platform_basename.contains('\\') {
         path.rsplit(['/', '\\']).next().unwrap_or(path).to_string()
@@ -170,11 +145,7 @@ mod tests {
         ToolDisplayMeta::new(title, value)
     }
 
-    fn assert_serde_roundtrip<
-        T: Serialize + for<'de> Deserialize<'de> + PartialEq + std::fmt::Debug,
-    >(
-        val: &T,
-    ) {
+    fn assert_serde_roundtrip<T: Serialize + for<'de> Deserialize<'de> + PartialEq + std::fmt::Debug>(val: &T) {
         let json = serde_json::to_string(val).unwrap();
         let parsed: T = serde_json::from_str(&json).unwrap();
         assert_eq!(&parsed, val);
@@ -197,18 +168,9 @@ mod tests {
     fn sample_plan() -> PlanMeta {
         PlanMeta {
             entries: vec![
-                PlanMetaEntry {
-                    content: "Research AI agents".into(),
-                    status: PlanMetaStatus::Completed,
-                },
-                PlanMetaEntry {
-                    content: "Implement tracking".into(),
-                    status: PlanMetaStatus::InProgress,
-                },
-                PlanMetaEntry {
-                    content: "Write tests".into(),
-                    status: PlanMetaStatus::Pending,
-                },
+                PlanMetaEntry { content: "Research AI agents".into(), status: PlanMetaStatus::Completed },
+                PlanMetaEntry { content: "Implement tracking".into(), status: PlanMetaStatus::InProgress },
+                PlanMetaEntry { content: "Write tests".into(), status: PlanMetaStatus::Pending },
             ],
         }
     }
@@ -242,10 +204,7 @@ mod tests {
         let plain: ToolResultMeta = display("Read file", "Cargo.toml, 156 lines").into();
         assert_map_roundtrip(&plain);
 
-        let with_diff = ToolResultMeta::with_file_diff(
-            display("Edit file", "main.rs"),
-            sample_diff(Some("old")),
-        );
+        let with_diff = ToolResultMeta::with_file_diff(display("Edit file", "main.rs"), sample_diff(Some("old")));
         assert_map_roundtrip(&with_diff);
 
         let with_plan = ToolResultMeta::with_plan(
@@ -273,14 +232,7 @@ mod tests {
     fn test_into_result_meta() {
         let d = display("Write file", "main.rs");
         let meta: ToolResultMeta = d.clone().into();
-        assert_eq!(
-            meta,
-            ToolResultMeta {
-                display: d,
-                file_diff: None,
-                plan: None
-            }
-        );
+        assert_eq!(meta, ToolResultMeta { display: d, file_diff: None, plan: None });
     }
 
     #[test]
@@ -288,27 +240,22 @@ mod tests {
         let diff_json = serde_json::to_value(sample_diff(None)).unwrap();
         assert!(diff_json.get("old_text").is_none());
 
-        let meta_json =
-            serde_json::to_value::<ToolResultMeta>(display("Read", "f.rs").into()).unwrap();
+        let meta_json = serde_json::to_value::<ToolResultMeta>(display("Read", "f.rs").into()).unwrap();
         assert!(meta_json.get("plan").is_none());
         assert!(meta_json.get("file_diff").is_none());
     }
 
     #[test]
     fn test_file_diff_missing_old_text_defaults_to_none() {
-        let parsed: FileDiff =
-            serde_json::from_str(r#"{"path":"/tmp/f.rs","new_text":"content"}"#).unwrap();
+        let parsed: FileDiff = serde_json::from_str(r#"{"path":"/tmp/f.rs","new_text":"content"}"#).unwrap();
         assert_eq!(parsed.old_text, None);
     }
 
     #[test]
     fn test_extension_hint() {
-        for (path, expected) in [
-            ("/path/to/main.rs", "rs"),
-            ("README.MD", "md"),
-            ("Makefile", ""),
-            ("/foo/bar/baz.tsx", "tsx"),
-        ] {
+        for (path, expected) in
+            [("/path/to/main.rs", "rs"), ("README.MD", "md"), ("Makefile", ""), ("/foo/bar/baz.tsx", "tsx")]
+        {
             assert_eq!(extension_hint(path), expected, "path: {path}");
         }
     }

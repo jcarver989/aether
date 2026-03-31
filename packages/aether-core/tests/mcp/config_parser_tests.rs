@@ -3,10 +3,7 @@ use std::collections::HashMap;
 use std::env;
 
 async fn parse_configs(json: &str) -> Result<Vec<McpServerConfig>, ParseError> {
-    RawMcpConfig::from_json(json)
-        .unwrap()
-        .into_configs(&HashMap::new())
-        .await
+    RawMcpConfig::from_json(json).unwrap().into_configs(&HashMap::new()).await
 }
 
 async fn parse_one(json: &str) -> McpServerConfig {
@@ -28,11 +25,7 @@ macro_rules! with_env {
     }};
 }
 
-fn assert_http(
-    config: McpServerConfig,
-    expected_name: &str,
-    expected_url: &str,
-) -> McpServerConfig {
+fn assert_http(config: McpServerConfig, expected_name: &str, expected_url: &str) -> McpServerConfig {
     match &config {
         McpServerConfig::Server(ServerConfig::Http { name, config: c }) => {
             assert_eq!(name, expected_name);
@@ -56,12 +49,7 @@ async fn test_parse_stdio_config() {
     );
     with_env!([("GITHUB_TOKEN", "test_token")], {
         match parse_one(&json).await {
-            McpServerConfig::Server(ServerConfig::Stdio {
-                name,
-                command,
-                args,
-                env,
-            }) => {
+            McpServerConfig::Server(ServerConfig::Stdio { name, command, args, env }) => {
                 assert_eq!(name, "githubMcp");
                 assert_eq!(command, "npx");
                 assert_eq!(args, vec!["-y", "@modelcontextprotocol/server-github"]);
@@ -85,34 +73,20 @@ async fn test_parse_http_and_sse_configs() {
     );
     let cfg = with_env!(
         [("API_TOKEN", "secret_token")],
-        assert_http(
-            parse_one(&json).await,
-            "mcpMesh",
-            "http://localhost:3000/mcp"
-        )
+        assert_http(parse_one(&json).await, "mcpMesh", "http://localhost:3000/mcp")
     );
     if let McpServerConfig::Server(ServerConfig::Http { config: c, .. }) = cfg {
         assert_eq!(c.auth_header.as_ref().unwrap(), "Bearer secret_token");
     }
 
     // SSE maps to HTTP internally
-    let json = server_json(
-        "sseServer",
-        r#"{ "type": "sse", "url": "http://localhost:4000/sse", "headers": {} }"#,
-    );
-    assert_http(
-        parse_one(&json).await,
-        "sseServer",
-        "http://localhost:4000/sse",
-    );
+    let json = server_json("sseServer", r#"{ "type": "sse", "url": "http://localhost:4000/sse", "headers": {} }"#);
+    assert_http(parse_one(&json).await, "sseServer", "http://localhost:4000/sse");
 }
 
 #[tokio::test]
 async fn test_missing_env_var_error() {
-    let json = server_json(
-        "test",
-        r#"{ "type": "stdio", "command": "$MISSING_VAR", "args": [] }"#,
-    );
+    let json = server_json("test", r#"{ "type": "stdio", "command": "$MISSING_VAR", "args": [] }"#);
     match parse_configs(&json).await.unwrap_err() {
         ParseError::VarError(_) => (),
         other => panic!("Expected VarError, got {other:?}"),
@@ -147,10 +121,7 @@ async fn test_multiple_servers() {
 
 #[tokio::test]
 async fn test_env_var_in_url() {
-    let json = server_json(
-        "test",
-        r#"{ "type": "http", "url": "http://${HOST}:${PORT}/mcp" }"#,
-    );
+    let json = server_json("test", r#"{ "type": "http", "url": "http://${HOST}:${PORT}/mcp" }"#);
     with_env!([("HOST", "localhost"), ("PORT", "8080")], {
         assert_http(parse_one(&json).await, "test", "http://localhost:8080/mcp");
     });
@@ -179,16 +150,8 @@ async fn test_parse_tool_proxy_config() {
         McpServerConfig::ToolProxy { name, servers } => {
             assert_eq!(name, "proxy");
             assert_eq!(servers.len(), 2);
-            assert!(
-                servers
-                    .iter()
-                    .any(|s| matches!(s, ServerConfig::Stdio { .. }))
-            );
-            assert!(
-                servers
-                    .iter()
-                    .any(|s| matches!(s, ServerConfig::Http { .. }))
-            );
+            assert!(servers.iter().any(|s| matches!(s, ServerConfig::Stdio { .. })));
+            assert!(servers.iter().any(|s| matches!(s, ServerConfig::Http { .. })));
         }
         other => panic!("Expected ToolProxy config, got {other:?}"),
     }
@@ -215,14 +178,8 @@ async fn test_tool_proxy_rejects_nested_in_memory() {
     for (expected_name, json) in &cases {
         match parse_configs(json).await.unwrap_err() {
             ParseError::InvalidNestedConfig(msg) => {
-                assert!(
-                    msg.contains("in-memory"),
-                    "msg should mention in-memory: {msg}"
-                );
-                assert!(
-                    msg.contains(expected_name),
-                    "msg should mention {expected_name}: {msg}"
-                );
+                assert!(msg.contains("in-memory"), "msg should mention in-memory: {msg}");
+                assert!(msg.contains(expected_name), "msg should mention {expected_name}: {msg}");
             }
             other => panic!("Expected InvalidNestedConfig, got {other:?}"),
         }

@@ -1,6 +1,6 @@
 use async_openai::types::responses::{
-    EasyInputContent, EasyInputMessage, FunctionCallOutput, FunctionCallOutputItemParam,
-    FunctionTool, FunctionToolCall, InputItem, Item, MessageType, ReasoningItem, Role, Tool,
+    EasyInputContent, EasyInputMessage, FunctionCallOutput, FunctionCallOutputItemParam, FunctionTool,
+    FunctionToolCall, InputItem, Item, MessageType, ReasoningItem, Role, Tool,
 };
 
 use crate::providers::openai::responses_provider::map_user_content_for_responses;
@@ -26,12 +26,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> crate::Result<(Option<String>, 
                     content: map_user_content_for_responses(content)?,
                 }));
             }
-            ChatMessage::Assistant {
-                content,
-                tool_calls,
-                reasoning,
-                ..
-            } => {
+            ChatMessage::Assistant { content, tool_calls, reasoning, .. } => {
                 if !content.is_empty() {
                     items.push(easy_message(Role::Assistant, content.clone()));
                 }
@@ -56,34 +51,27 @@ pub fn map_messages(messages: &[ChatMessage]) -> crate::Result<(Option<String>, 
             }
             ChatMessage::ToolCallResult(result) => match result {
                 Ok(r) => {
-                    items.push(InputItem::Item(Item::FunctionCallOutput(
-                        FunctionCallOutputItemParam {
-                            call_id: r.id.clone(),
-                            output: FunctionCallOutput::Text(r.result.clone()),
-                            id: None,
-                            status: None,
-                        },
-                    )));
+                    items.push(InputItem::Item(Item::FunctionCallOutput(FunctionCallOutputItemParam {
+                        call_id: r.id.clone(),
+                        output: FunctionCallOutput::Text(r.result.clone()),
+                        id: None,
+                        status: None,
+                    })));
                 }
                 Err(e) => {
-                    items.push(InputItem::Item(Item::FunctionCallOutput(
-                        FunctionCallOutputItemParam {
-                            call_id: e.id.clone(),
-                            output: FunctionCallOutput::Text(format!("Error: {}", e.error)),
-                            id: None,
-                            status: None,
-                        },
-                    )));
+                    items.push(InputItem::Item(Item::FunctionCallOutput(FunctionCallOutputItemParam {
+                        call_id: e.id.clone(),
+                        output: FunctionCallOutput::Text(format!("Error: {}", e.error)),
+                        id: None,
+                        status: None,
+                    })));
                 }
             },
             ChatMessage::Error { message, .. } => {
                 items.push(easy_message(Role::User, format!("[Error: {message}]")));
             }
             ChatMessage::Summary { content, .. } => {
-                items.push(easy_message(
-                    Role::User,
-                    format!("[Summary of previous conversation]\n{content}"),
-                ));
+                items.push(easy_message(Role::User, format!("[Summary of previous conversation]\n{content}")));
             }
         }
     }
@@ -96,13 +84,8 @@ pub fn map_tools(tools: &[ToolDefinition]) -> Result<Vec<Tool>> {
     tools
         .iter()
         .map(|tool| {
-            let parameters: serde_json::Value =
-                serde_json::from_str(&tool.parameters).map_err(|e| {
-                    LlmError::ToolParameterParsing {
-                        tool_name: tool.name.clone(),
-                        error: e.to_string(),
-                    }
-                })?;
+            let parameters: serde_json::Value = serde_json::from_str(&tool.parameters)
+                .map_err(|e| LlmError::ToolParameterParsing { tool_name: tool.name.clone(), error: e.to_string() })?;
 
             Ok(Tool::Function(FunctionTool {
                 name: tool.name.clone(),
@@ -115,11 +98,7 @@ pub fn map_tools(tools: &[ToolDefinition]) -> Result<Vec<Tool>> {
 }
 
 fn easy_message(role: Role, content: String) -> InputItem {
-    InputItem::EasyMessage(EasyInputMessage {
-        role,
-        content: EasyInputContent::Text(content),
-        ..Default::default()
-    })
+    InputItem::EasyMessage(EasyInputMessage { role, content: EasyInputContent::Text(content), ..Default::default() })
 }
 
 #[cfg(test)]
@@ -127,21 +106,14 @@ mod tests {
     use super::*;
     use crate::types::IsoString;
     use crate::{
-        AssistantReasoning, ContentBlock, EncryptedReasoningContent, ToolCallError,
-        ToolCallRequest, ToolCallResult,
+        AssistantReasoning, ContentBlock, EncryptedReasoningContent, ToolCallError, ToolCallRequest, ToolCallResult,
     };
 
     #[test]
     fn map_messages_extracts_system_prompt() {
         let messages = vec![
-            ChatMessage::System {
-                content: "You are helpful".to_string(),
-                timestamp: IsoString::now(),
-            },
-            ChatMessage::User {
-                content: vec![ContentBlock::text("Hello")],
-                timestamp: IsoString::now(),
-            },
+            ChatMessage::System { content: "You are helpful".to_string(), timestamp: IsoString::now() },
+            ChatMessage::User { content: vec![ContentBlock::text("Hello")], timestamp: IsoString::now() },
         ];
 
         let (system, items) = map_messages(&messages).unwrap();
@@ -152,10 +124,7 @@ mod tests {
     #[test]
     fn map_messages_handles_multi_turn_with_tool_calls() {
         let messages = vec![
-            ChatMessage::User {
-                content: vec![ContentBlock::text("Read foo.rs")],
-                timestamp: IsoString::now(),
-            },
+            ChatMessage::User { content: vec![ContentBlock::text("Read foo.rs")], timestamp: IsoString::now() },
             ChatMessage::Assistant {
                 content: "I'll read that file.".to_string(),
                 reasoning: Default::default(),
@@ -216,9 +185,7 @@ mod tests {
         let (_, items) = map_messages(&messages).unwrap();
         assert_eq!(items.len(), 1);
         if let InputItem::Item(Item::FunctionCallOutput(out)) = &items[0] {
-            assert!(
-                matches!(&out.output, FunctionCallOutput::Text(t) if t.contains("Error: command failed"))
-            );
+            assert!(matches!(&out.output, FunctionCallOutput::Text(t) if t.contains("Error: command failed")));
         } else {
             panic!("Expected FunctionCallOutput");
         }
@@ -250,10 +217,7 @@ mod tests {
     #[test]
     fn map_messages_serialization_shape() {
         let messages = vec![
-            ChatMessage::User {
-                content: vec![ContentBlock::text("Hello")],
-                timestamp: IsoString::now(),
-            },
+            ChatMessage::User { content: vec![ContentBlock::text("Hello")], timestamp: IsoString::now() },
             ChatMessage::Assistant {
                 content: "Hi".to_string(),
                 reasoning: Default::default(),
@@ -291,8 +255,7 @@ mod tests {
         let tools = vec![ToolDefinition {
             name: "read_file".to_string(),
             description: "Read a file from disk".to_string(),
-            parameters: r#"{"type": "object", "properties": {"path": {"type": "string"}}}"#
-                .to_string(),
+            parameters: r#"{"type": "object", "properties": {"path": {"type": "string"}}}"#.to_string(),
             server: None,
         }];
 
@@ -301,10 +264,7 @@ mod tests {
         if let Tool::Function(f) = &mapped[0] {
             assert_eq!(f.name, "read_file");
             assert_eq!(f.description.as_deref(), Some("Read a file from disk"));
-            assert_eq!(
-                f.parameters.as_ref().unwrap()["properties"]["path"]["type"],
-                "string"
-            );
+            assert_eq!(f.parameters.as_ref().unwrap()["properties"]["path"]["type"], "string");
         } else {
             panic!("Expected Tool::Function");
         }
@@ -322,9 +282,7 @@ mod tests {
         let result = map_tools(&tools);
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(
-            matches!(err, LlmError::ToolParameterParsing { ref tool_name, .. } if tool_name == "broken")
-        );
+        assert!(matches!(err, LlmError::ToolParameterParsing { ref tool_name, .. } if tool_name == "broken"));
     }
 
     #[test]
@@ -373,16 +331,10 @@ mod tests {
     #[test]
     fn map_messages_with_audio_errors() {
         let messages = vec![ChatMessage::User {
-            content: vec![ContentBlock::Audio {
-                data: "YXVkaW8=".to_string(),
-                mime_type: "audio/wav".to_string(),
-            }],
+            content: vec![ContentBlock::Audio { data: "YXVkaW8=".to_string(), mime_type: "audio/wav".to_string() }],
             timestamp: IsoString::now(),
         }];
 
-        assert!(matches!(
-            map_messages(&messages),
-            Err(LlmError::UnsupportedContent(_))
-        ));
+        assert!(matches!(map_messages(&messages), Err(LlmError::UnsupportedContent(_))));
     }
 }

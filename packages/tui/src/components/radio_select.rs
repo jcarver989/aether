@@ -18,11 +18,7 @@ impl RadioSelect {
     }
 
     pub fn to_json(&self) -> serde_json::Value {
-        self.options
-            .get(self.selected)
-            .map_or(serde_json::Value::Null, |o| {
-                serde_json::Value::String(o.value.clone())
-            })
+        self.options.get(self.selected).map_or(serde_json::Value::Null, |o| serde_json::Value::String(o.value.clone()))
     }
 
     fn render_inline(&self, context: &ViewContext) -> Line {
@@ -39,11 +35,7 @@ impl RadioSelect {
             .enumerate()
             .map(|(j, opt)| {
                 let marker = if j == self.selected { "● " } else { "○ " };
-                let style = if j == self.selected {
-                    Style::fg(context.theme.primary())
-                } else {
-                    Style::default()
-                };
+                let style = if j == self.selected { Style::fg(context.theme.primary()) } else { Style::default() };
                 Line::with_style(format!("{marker}{}", opt.title), style)
             })
             .collect()
@@ -81,11 +73,7 @@ impl Component for RadioSelect {
 
 impl RadioSelect {
     pub fn render_field(&self, context: &ViewContext, focused: bool) -> Vec<Line> {
-        if focused {
-            self.render_options(context)
-        } else {
-            vec![self.render_inline(context)]
-        }
+        if focused { self.render_options(context) } else { vec![self.render_inline(context)] }
     }
 }
 
@@ -100,21 +88,9 @@ mod tests {
 
     fn sample_options() -> Vec<SelectOption> {
         vec![
-            SelectOption {
-                value: "a".into(),
-                title: "Alpha".into(),
-                description: None,
-            },
-            SelectOption {
-                value: "b".into(),
-                title: "Beta".into(),
-                description: None,
-            },
-            SelectOption {
-                value: "c".into(),
-                title: "Gamma".into(),
-                description: None,
-            },
+            SelectOption { value: "a".into(), title: "Alpha".into(), description: None },
+            SelectOption { value: "b".into(), title: "Beta".into(), description: None },
+            SelectOption { value: "c".into(), title: "Gamma".into(), description: None },
         ]
     }
 

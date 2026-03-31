@@ -2,13 +2,11 @@ use super::mappers::{map_messages, map_tools};
 use super::oauth::CodexTokenManager;
 use super::streaming::process_response_stream;
 use crate::oauth::credential_store::OAuthCredentialStore;
-use crate::provider::{
-    LlmResponseStream, ProviderFactory, StreamingModelProvider, get_context_window,
-};
+use crate::provider::{LlmResponseStream, ProviderFactory, StreamingModelProvider, get_context_window};
 use crate::{Context, LlmError, Result};
 use async_openai::types::responses::{
-    CreateResponse, IncludeEnum, InputParam, Reasoning, ReasoningEffort, ReasoningSummary,
-    ResponseStreamEvent, ResponseTextParam, TextResponseFormatConfiguration, Verbosity,
+    CreateResponse, IncludeEnum, InputParam, Reasoning, ReasoningEffort, ReasoningSummary, ResponseStreamEvent,
+    ResponseTextParam, TextResponseFormatConfiguration, Verbosity,
 };
 use eventsource_stream::Eventsource;
 use futures::StreamExt;
@@ -27,24 +25,14 @@ pub struct CodexProvider {
 
 impl CodexProvider {
     pub fn new(token_manager: CodexTokenManager<OAuthCredentialStore>) -> Self {
-        Self {
-            client: reqwest::Client::new(),
-            model: "gpt-5.4".to_string(),
-            token_manager: Arc::new(token_manager),
-        }
+        Self { client: reqwest::Client::new(), model: "gpt-5.4".to_string(), token_manager: Arc::new(token_manager) }
     }
 
     fn build_request(&self, context: &Context) -> Result<CreateResponse> {
         let (system_prompt, input) = map_messages(context.messages())?;
-        let tools = if context.tools().is_empty() {
-            None
-        } else {
-            Some(map_tools(context.tools())?)
-        };
+        let tools = if context.tools().is_empty() { None } else { Some(map_tools(context.tools())?) };
 
-        let codex_effort = context
-            .reasoning_effort()
-            .map_or(ReasoningEffort::Medium, to_codex_effort);
+        let codex_effort = context.reasoning_effort().map_or(ReasoningEffort::Medium, to_codex_effort);
 
         Ok(CreateResponse {
             model: Some(self.model.clone()),
@@ -53,10 +41,7 @@ impl CodexProvider {
             tools,
             store: Some(false),
             stream: Some(true),
-            reasoning: Some(Reasoning {
-                effort: Some(codex_effort),
-                summary: Some(ReasoningSummary::Auto),
-            }),
+            reasoning: Some(Reasoning { effort: Some(codex_effort), summary: Some(ReasoningSummary::Auto) }),
             include: Some(vec![IncludeEnum::ReasoningEncryptedContent]),
             text: Some(ResponseTextParam {
                 format: TextResponseFormatConfiguration::Text,
@@ -78,13 +63,9 @@ impl CodexProvider {
         );
         headers.insert(
             "chatgpt-account-id",
-            HeaderValue::from_str(&account_id)
-                .map_err(|e| LlmError::InvalidApiKey(e.to_string()))?,
+            HeaderValue::from_str(&account_id).map_err(|e| LlmError::InvalidApiKey(e.to_string()))?,
         );
-        headers.insert(
-            "OpenAI-Beta",
-            HeaderValue::from_static("responses=experimental"),
-        );
+        headers.insert("OpenAI-Beta", HeaderValue::from_static("responses=experimental"));
         headers.insert("originator", HeaderValue::from_static("codex_cli_rs"));
 
         Ok(headers)
@@ -119,18 +100,13 @@ impl CodexProvider {
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
 
             if status.as_u16() == 401 || status.as_u16() == 403 {
                 self.token_manager.clear_cache().await;
             }
 
-            return Err(LlmError::ApiError(format!(
-                "Codex API request failed with status {status}: {error_text}"
-            )));
+            return Err(LlmError::ApiError(format!("Codex API request failed with status {status}: {error_text}")));
         }
 
         let event_stream = response.bytes_stream().eventsource().filter_map(|result| {
@@ -139,10 +115,7 @@ impl CodexProvider {
                 Ok(event) => match serde_json::from_str::<ResponseStreamEvent>(&event.data) {
                     Ok(parsed) => Some(Ok(parsed)),
                     Err(e) => {
-                        debug!(
-                            "Failed to parse Codex SSE line: {} - Error: {e}",
-                            event.data
-                        );
+                        debug!("Failed to parse Codex SSE line: {} - Error: {e}", event.data);
                         None
                     }
                 },
@@ -169,9 +142,7 @@ impl ProviderFactory for CodexProvider {
 
 impl StreamingModelProvider for CodexProvider {
     fn model(&self) -> Option<crate::LlmModel> {
-        format!("{}:{}", super::PROVIDER_ID, self.model)
-            .parse()
-            .ok()
+        format!("{}:{}", super::PROVIDER_ID, self.model).parse().ok()
     }
 
     fn context_window(&self) -> Option<u32> {
@@ -249,10 +220,7 @@ mod tests {
     fn build_request_simple() {
         let provider = create_test_provider();
         let context = Context::new(
-            vec![ChatMessage::User {
-                content: vec![ContentBlock::text("Hello")],
-                timestamp: IsoString::now(),
-            }],
+            vec![ChatMessage::User { content: vec![ContentBlock::text("Hello")], timestamp: IsoString::now() }],
             vec![],
         );
 
@@ -274,20 +242,13 @@ mod tests {
         let provider = create_test_provider();
         let context = Context::new(
             vec![
-                ChatMessage::System {
-                    content: "You are helpful".to_string(),
-                    timestamp: IsoString::now(),
-                },
-                ChatMessage::User {
-                    content: vec![ContentBlock::text("Hello")],
-                    timestamp: IsoString::now(),
-                },
+                ChatMessage::System { content: "You are helpful".to_string(), timestamp: IsoString::now() },
+                ChatMessage::User { content: vec![ContentBlock::text("Hello")], timestamp: IsoString::now() },
             ],
             vec![ToolDefinition {
                 name: "bash".to_string(),
                 description: "Run a command".to_string(),
-                parameters: r#"{"type": "object", "properties": {"cmd": {"type": "string"}}}"#
-                    .to_string(),
+                parameters: r#"{"type": "object", "properties": {"cmd": {"type": "string"}}}"#.to_string(),
                 server: None,
             }],
         );
@@ -313,10 +274,7 @@ mod tests {
     fn build_request_defaults_to_medium_effort() {
         let provider = create_test_provider();
         let context = Context::new(
-            vec![ChatMessage::User {
-                content: vec![ContentBlock::text("Hi")],
-                timestamp: IsoString::now(),
-            }],
+            vec![ChatMessage::User { content: vec![ContentBlock::text("Hi")], timestamp: IsoString::now() }],
             vec![],
         );
 
@@ -329,10 +287,7 @@ mod tests {
     fn build_request_uses_context_reasoning_effort() {
         let provider = create_test_provider();
         let mut context = Context::new(
-            vec![ChatMessage::User {
-                content: vec![ContentBlock::text("Think hard")],
-                timestamp: IsoString::now(),
-            }],
+            vec![ChatMessage::User { content: vec![ContentBlock::text("Think hard")], timestamp: IsoString::now() }],
             vec![],
         );
         context.set_reasoning_effort(Some(crate::ReasoningEffort::High));
@@ -346,10 +301,7 @@ mod tests {
     fn build_request_serializes_correctly() {
         let provider = create_test_provider();
         let context = Context::new(
-            vec![ChatMessage::User {
-                content: vec![ContentBlock::text("Hi")],
-                timestamp: IsoString::now(),
-            }],
+            vec![ChatMessage::User { content: vec![ContentBlock::text("Hi")], timestamp: IsoString::now() }],
             vec![],
         );
 
@@ -368,10 +320,7 @@ mod tests {
     fn build_request_includes_prompt_cache_key_when_set() {
         let provider = create_test_provider();
         let mut context = Context::new(
-            vec![ChatMessage::User {
-                content: vec![ContentBlock::text("Hi")],
-                timestamp: IsoString::now(),
-            }],
+            vec![ChatMessage::User { content: vec![ContentBlock::text("Hi")], timestamp: IsoString::now() }],
             vec![],
         );
         context.set_prompt_cache_key(Some("session-abc".to_string()));
@@ -384,10 +333,7 @@ mod tests {
     fn build_request_omits_prompt_cache_key_when_unset() {
         let provider = create_test_provider();
         let context = Context::new(
-            vec![ChatMessage::User {
-                content: vec![ContentBlock::text("Hi")],
-                timestamp: IsoString::now(),
-            }],
+            vec![ChatMessage::User { content: vec![ContentBlock::text("Hi")], timestamp: IsoString::now() }],
             vec![],
         );
 

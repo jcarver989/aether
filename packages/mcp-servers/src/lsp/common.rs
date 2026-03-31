@@ -58,16 +58,10 @@ pub fn find_word_boundary_match(line: &str, symbol: &str) -> Option<usize> {
     let mut search_start = 0;
     while let Some(pos) = line[search_start..].find(symbol) {
         let abs_pos = search_start + pos;
-        let before_ok = abs_pos == 0
-            || !line[..abs_pos]
-                .chars()
-                .last()
-                .is_some_and(|c| c.is_alphanumeric() || c == '_');
+        let before_ok =
+            abs_pos == 0 || !line[..abs_pos].chars().last().is_some_and(|c| c.is_alphanumeric() || c == '_');
         let after_ok = abs_pos + symbol.len() >= line.len()
-            || !line[abs_pos + symbol.len()..]
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_alphanumeric() || c == '_');
+            || !line[abs_pos + symbol.len()..].chars().next().is_some_and(|c| c.is_alphanumeric() || c == '_');
 
         if before_ok && after_ok {
             return Some(abs_pos);
@@ -99,9 +93,7 @@ pub fn find_symbol_line(content: &str, symbol: &str) -> Option<u32> {
 /// # Returns
 /// The column position (0-indexed) of the first occurrence of the symbol on that line.
 pub fn find_symbol_column(content: &str, symbol: &str, line: u32) -> Result<u32, LspError> {
-    let line_idx = line
-        .checked_sub(1)
-        .ok_or_else(|| LspError::Transport("Line number must be >= 1".to_string()))?;
+    let line_idx = line.checked_sub(1).ok_or_else(|| LspError::Transport("Line number must be >= 1".to_string()))?;
 
     let line_content = content
         .lines()
@@ -120,12 +112,7 @@ pub use aether_lspd::path_to_uri;
 ///
 /// Returns lines formatted as `"  {line_number}\t{content}"`, matching the
 /// `read_file` tool output convention.
-pub fn extract_context(
-    content: &str,
-    start_line: u32,
-    end_line: u32,
-    context_lines: u32,
-) -> String {
+pub fn extract_context(content: &str, start_line: u32, end_line: u32, context_lines: u32) -> String {
     let lines: Vec<&str> = content.lines().collect();
     #[allow(clippy::cast_possible_truncation)] // line counts won't exceed u32
     let total = lines.len() as u32;
@@ -144,13 +131,7 @@ pub fn extract_context(
         let idx = (line_num - 1) as usize;
         if let Some(line) = lines.get(idx) {
             use std::fmt::Write;
-            let _ = writeln!(
-                buf,
-                "{:>width$}\t{}",
-                line_num,
-                line,
-                width = width as usize
-            );
+            let _ = writeln!(buf, "{:>width$}\t{}", line_num, line, width = width as usize);
         }
     }
 
@@ -306,18 +287,12 @@ mod tests {
 
     #[test]
     fn test_word_boundary_match_basic() {
-        assert_eq!(
-            find_word_boundary_match("use std::HashMap;", "HashMap"),
-            Some(9)
-        );
+        assert_eq!(find_word_boundary_match("use std::HashMap;", "HashMap"), Some(9));
     }
 
     #[test]
     fn test_word_boundary_match_no_partial() {
-        assert_eq!(
-            find_word_boundary_match("let x = HashMapExtra;", "HashMap"),
-            None
-        );
+        assert_eq!(find_word_boundary_match("let x = HashMapExtra;", "HashMap"), None);
     }
 
     // --- find_symbol_line tests ---

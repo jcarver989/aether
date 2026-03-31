@@ -53,9 +53,7 @@ pub struct OAuthCredentialStore {
 impl OAuthCredentialStore {
     /// Create a new store for the given server/provider ID.
     pub fn new(server_id: &str) -> Self {
-        Self {
-            server_id: server_id.to_string(),
-        }
+        Self { server_id: server_id.to_string() }
     }
 
     /// Load the raw `OAuthCredential` for this store's server ID.
@@ -72,10 +70,7 @@ impl OAuthCredentialStore {
 
     /// Check synchronously whether credentials exist for a given server ID.
     pub fn has_credential(server_id: &str) -> bool {
-        keychain_entry(server_id)
-            .ok()
-            .and_then(|e| e.get_secret().ok())
-            .is_some()
+        keychain_entry(server_id).ok().and_then(|e| e.get_secret().ok()).is_some()
     }
 
     fn load_sync(&self) -> Result<Option<OAuthCredential>, OAuthError> {
@@ -96,38 +91,25 @@ impl OAuthCredentialStore {
 }
 
 impl OAuthCredentialStorage for OAuthCredentialStore {
-    async fn load_credential(
-        &self,
-        server_id: &str,
-    ) -> Result<Option<OAuthCredential>, OAuthError> {
+    async fn load_credential(&self, server_id: &str) -> Result<Option<OAuthCredential>, OAuthError> {
         let server_id = server_id.to_string();
         spawn_blocking(move || load_from_keychain(&server_id)).await
     }
 
-    async fn save_credential(
-        &self,
-        server_id: &str,
-        credential: OAuthCredential,
-    ) -> Result<(), OAuthError> {
+    async fn save_credential(&self, server_id: &str, credential: OAuthCredential) -> Result<(), OAuthError> {
         let server_id = server_id.to_string();
         spawn_blocking(move || save_to_keychain(&server_id, &credential)).await
     }
 
     fn has_credential(&self, server_id: &str) -> bool {
-        keychain_entry(server_id)
-            .ok()
-            .and_then(|e| e.get_secret().ok())
-            .is_some()
+        keychain_entry(server_id).ok().and_then(|e| e.get_secret().ok()).is_some()
     }
 }
 
 #[async_trait]
 impl CredentialStore for OAuthCredentialStore {
     async fn load(&self) -> Result<Option<StoredCredentials>, AuthError> {
-        let cred = self
-            .load_credential()
-            .await
-            .map_err(|e| AuthError::InternalError(e.to_string()))?;
+        let cred = self.load_credential().await.map_err(|e| AuthError::InternalError(e.to_string()))?;
 
         Ok(cred.map(|c| {
             let token_response = build_token_response(&c);
@@ -142,10 +124,7 @@ impl CredentialStore for OAuthCredentialStore {
 
         let expires_at = token.expires_in().map(|duration| {
             let now_ms = u64::try_from(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis(),
+                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis(),
             )
             .unwrap_or(u64::MAX);
             let duration_ms = u64::try_from(duration.as_millis()).unwrap_or(u64::MAX);
@@ -159,16 +138,12 @@ impl CredentialStore for OAuthCredentialStore {
             expires_at,
         };
 
-        self.save_credential(credential)
-            .await
-            .map_err(|e| AuthError::InternalError(e.to_string()))
+        self.save_credential(credential).await.map_err(|e| AuthError::InternalError(e.to_string()))
     }
 
     async fn clear(&self) -> Result<(), AuthError> {
         let store = self.clone();
-        spawn_blocking(move || store.delete_sync())
-            .await
-            .map_err(|e| AuthError::InternalError(e.to_string()))
+        spawn_blocking(move || store.delete_sync()).await.map_err(|e| AuthError::InternalError(e.to_string()))
     }
 }
 
@@ -189,9 +164,8 @@ fn load_from_keychain(server_id: &str) -> Result<Option<OAuthCredential>, OAuthE
 
 fn save_to_keychain(server_id: &str, credential: &OAuthCredential) -> Result<(), OAuthError> {
     let entry = keychain_entry(server_id)?;
-    let blob = serde_json::to_vec(credential).map_err(|err| {
-        OAuthError::CredentialStore(format!("failed to serialize credential: {err}"))
-    })?;
+    let blob = serde_json::to_vec(credential)
+        .map_err(|err| OAuthError::CredentialStore(format!("failed to serialize credential: {err}")))?;
     entry.set_secret(&blob)?;
     Ok(())
 }
@@ -208,10 +182,7 @@ async fn spawn_blocking<T: Send + 'static>(
 ///
 /// The upstream struct is `#[non_exhaustive]` with no constructor, so this is
 /// the only way to build one from outside the crate.
-fn build_stored_credentials(
-    client_id: &str,
-    token_response: Option<&OAuthTokenResponse>,
-) -> StoredCredentials {
+fn build_stored_credentials(client_id: &str, token_response: Option<&OAuthTokenResponse>) -> StoredCredentials {
     // granted_scopes and token_received_at have #[serde(default)] so we can omit them.
     serde_json::from_value(serde_json::json!({
         "client_id": client_id,
@@ -233,10 +204,7 @@ fn build_token_response(cred: &OAuthCredential) -> OAuthTokenResponse {
 
     if let Some(expires_at_millis) = cred.expires_at {
         let now_millis = u64::try_from(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis(),
         )
         .unwrap_or(u64::MAX);
 

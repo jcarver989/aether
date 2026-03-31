@@ -46,10 +46,7 @@ pub struct LspNotification {
 pub enum DaemonResponse {
     Initialized,
     Pong,
-    LspResult {
-        client_id: i64,
-        result: Result<Value, LspErrorResponse>,
-    },
+    LspResult { client_id: i64, result: Result<Value, LspErrorResponse> },
     Error(ProtocolError),
 }
 
@@ -71,17 +68,11 @@ pub struct ProtocolError {
 
 impl ProtocolError {
     pub fn new(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-            client_id: None,
-        }
+        Self { message: message.into(), client_id: None }
     }
 
     pub fn with_client_id(message: impl Into<String>, client_id: i64) -> Self {
-        Self {
-            message: message.into(),
-            client_id: Some(client_id),
-        }
+        Self { message: message.into(), client_id: Some(client_id) }
     }
 }
 
@@ -93,10 +84,7 @@ pub fn extract_document_uri(method: &str, params: &Value) -> Option<Uri> {
     if !method.starts_with("textDocument/") {
         return None;
     }
-    params
-        .pointer("/textDocument/uri")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse().ok())
+    params.pointer("/textDocument/uri").and_then(|v| v.as_str()).and_then(|s| s.parse().ok())
 }
 
 /// Maximum message size (16 MB)
@@ -118,18 +106,13 @@ where
     let len = u32::from_be_bytes(len_buf);
 
     if len > MAX_MESSAGE_SIZE {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("Message too large: {len} bytes"),
-        ));
+        return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Message too large: {len} bytes")));
     }
 
     let mut buf = vec![0u8; len as usize];
     reader.read_exact(&mut buf).await?;
 
-    serde_json::from_slice(&buf)
-        .map(Some)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+    serde_json::from_slice(&buf).map(Some).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 /// Write a length-prefixed frame to an async writer
@@ -141,10 +124,7 @@ where
     let json = serde_json::to_vec(message)?;
 
     if json.len() > MAX_MESSAGE_SIZE as usize {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("Message too large: {} bytes", json.len()),
-        ));
+        return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Message too large: {} bytes", json.len())));
     }
 
     let len = u32::try_from(json.len()).unwrap_or(u32::MAX);
@@ -176,9 +156,7 @@ mod tests {
         let json = serde_json::to_string(&req).unwrap();
         let decoded: DaemonRequest = serde_json::from_str(&json).unwrap();
         match decoded {
-            DaemonRequest::LspCall {
-                client_id, method, ..
-            } => {
+            DaemonRequest::LspCall { client_id, method, .. } => {
                 assert_eq!(client_id, 42);
                 assert_eq!(method, "textDocument/definition");
             }

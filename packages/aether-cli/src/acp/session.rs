@@ -71,9 +71,7 @@ impl Session {
     }
 
     /// Lists available slash commands by querying MCP prompts
-    pub async fn list_available_commands(
-        &self,
-    ) -> Result<Vec<acp::AvailableCommand>, Box<dyn std::error::Error>> {
+    pub async fn list_available_commands(&self) -> Result<Vec<acp::AvailableCommand>, Box<dyn std::error::Error>> {
         let (tx, rx) = oneshot::channel();
 
         self.mcp_tx
@@ -81,14 +79,9 @@ impl Session {
             .await
             .map_err(|e| format!("Failed to send ListPrompts command: {e}"))?;
 
-        let prompts = rx
-            .await
-            .map_err(|e| format!("Failed to receive prompts: {e}"))??;
+        let prompts = rx.await.map_err(|e| format!("Failed to receive prompts: {e}"))??;
 
-        let prompt_commands: Vec<_> = prompts
-            .iter()
-            .map(map_mcp_prompt_to_available_command)
-            .collect();
+        let prompt_commands: Vec<_> = prompts.iter().map(map_mcp_prompt_to_available_command).collect();
 
         Ok(merge_builtin_commands(prompt_commands))
     }

@@ -9,8 +9,6 @@ pub enum ProviderCredential {
 
 impl ProviderCredential {
     pub fn api_key(key: &str) -> Self {
-        Self::ApiKey {
-            key: key.to_string(),
-        }
+        Self::ApiKey { key: key.to_string() }
     }
 }

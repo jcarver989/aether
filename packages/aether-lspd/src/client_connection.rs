@@ -1,6 +1,5 @@
 use crate::protocol::{
-    DaemonRequest, DaemonResponse, LspErrorResponse, ProtocolError, extract_document_uri,
-    read_frame, write_frame,
+    DaemonRequest, DaemonResponse, LspErrorResponse, ProtocolError, extract_document_uri, read_frame, write_frame,
 };
 use crate::workspace_registry::WorkspaceRegistry;
 use crate::workspace_session::WorkspaceSession;
@@ -29,10 +28,7 @@ pub async fn handle_client(stream: UnixStream, registry: WorkspaceRegistry, clie
     let _ = writer_task.await;
 }
 
-async fn run_writer(
-    mut writer: WriteHalf<UnixStream>,
-    mut response_rx: mpsc::Receiver<DaemonResponse>,
-) {
+async fn run_writer(mut writer: WriteHalf<UnixStream>, mut response_rx: mpsc::Receiver<DaemonResponse>) {
     while let Some(response) = response_rx.recv().await {
         if let Err(err) = write_frame(&mut writer, &response).await {
             tracing::debug!(%err, "Error writing daemon response");
@@ -65,25 +61,18 @@ async fn run_reader(
                 let _ = response_tx.send(DaemonResponse::Pong).await;
             }
             Some(DaemonRequest::Disconnect) => break,
-            Some(DaemonRequest::Initialize(init)) => match registry
-                .get_or_spawn(&init.workspace_root, init.language)
-                .await
-            {
-                Ok(session) => {
-                    state = ConnectionState::Bound { session };
-                    let _ = response_tx.send(DaemonResponse::Initialized).await;
+            Some(DaemonRequest::Initialize(init)) => {
+                match registry.get_or_spawn(&init.workspace_root, init.language).await {
+                    Ok(session) => {
+                        state = ConnectionState::Bound { session };
+                        let _ = response_tx.send(DaemonResponse::Initialized).await;
+                    }
+                    Err(err) => {
+                        let _ = response_tx.send(DaemonResponse::Error(ProtocolError::new(err.to_string()))).await;
+                    }
                 }
-                Err(err) => {
-                    let _ = response_tx
-                        .send(DaemonResponse::Error(ProtocolError::new(err.to_string())))
-                        .await;
-                }
-            },
-            Some(DaemonRequest::LspCall {
-                client_id,
-                method,
-                params,
-            }) => {
+            }
+            Some(DaemonRequest::LspCall { client_id, method, params }) => {
                 let ConnectionState::Bound { session } = &state else {
                     let _ = send_not_initialized(client_id, &response_tx).await;
                     continue;
@@ -96,16 +85,13 @@ async fn run_reader(
                     None
                 };
 
-                let result =
-                    request_with_retry(session, &method, params, TRANSIENT_RETRY_LIMIT).await;
+                let result = request_with_retry(session, &method, params, TRANSIENT_RETRY_LIMIT).await;
 
                 if let Some(uri) = opened_uri {
                     session.close_document(&uri).await;
                 }
 
-                let _ = response_tx
-                    .send(DaemonResponse::LspResult { client_id, result })
-                    .await;
+                let _ = response_tx.send(DaemonResponse::LspResult { client_id, result }).await;
             }
             Some(DaemonRequest::GetDiagnostics { client_id, uri }) => {
                 let ConnectionState::Bound { session } = &state else {
@@ -114,13 +100,9 @@ async fn run_reader(
                 };
 
                 let diagnostics = session.get_diagnostics(uri.as_ref()).await;
-                let result = serde_json::to_value(&diagnostics).map_err(|err| LspErrorResponse {
-                    code: -1,
-                    message: err.to_string(),
-                });
-                let _ = response_tx
-                    .send(DaemonResponse::LspResult { client_id, result })
-                    .await;
+                let result = serde_json::to_value(&diagnostics)
+                    .map_err(|err| LspErrorResponse { code: -1, message: err.to_string() });
+                let _ = response_tx.send(DaemonResponse::LspResult { client_id, result }).await;
             }
             Some(DaemonRequest::QueueDiagnosticRefresh { client_id, uri }) => {
                 let ConnectionState::Bound { session } = &state else {
@@ -129,12 +111,7 @@ async fn run_reader(
                 };
 
                 session.queue_diagnostic_refresh(uri).await;
-                let _ = response_tx
-                    .send(DaemonResponse::LspResult {
-                        client_id,
-                        result: Ok(Value::Null),
-                    })
-                    .await;
+                let _ = response_tx.send(DaemonResponse::LspResult { client_id, result: Ok(Value::Null) }).await;
             }
             None => {}
         }
@@ -145,11 +122,7 @@ async fn send_not_initialized(
     client_id: i64,
     tx: &mpsc::Sender<DaemonResponse>,
 ) -> Result<(), mpsc::error::SendError<DaemonResponse>> {
-    tx.send(DaemonResponse::Error(ProtocolError::with_client_id(
-        "Not initialized",
-        client_id,
-    )))
-    .await
+    tx.send(DaemonResponse::Error(ProtocolError::with_client_id("Not initialized", client_id))).await
 }
 
 async fn request_with_retry(

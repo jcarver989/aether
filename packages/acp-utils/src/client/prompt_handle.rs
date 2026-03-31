@@ -67,17 +67,11 @@ impl AcpPromptHandle {
         text: &str,
         content: Option<Vec<acp::ContentBlock>>,
     ) -> Result<(), AcpClientError> {
-        self.send(PromptCommand::Prompt {
-            session_id: session_id.clone(),
-            text: text.to_string(),
-            content,
-        })
+        self.send(PromptCommand::Prompt { session_id: session_id.clone(), text: text.to_string(), content })
     }
 
     pub fn cancel(&self, session_id: &acp::SessionId) -> Result<(), AcpClientError> {
-        self.send(PromptCommand::Cancel {
-            session_id: session_id.clone(),
-        })
+        self.send(PromptCommand::Cancel { session_id: session_id.clone() })
     }
 
     pub fn set_config_option(
@@ -104,42 +98,24 @@ impl AcpPromptHandle {
         })
     }
 
-    pub fn authenticate(
-        &self,
-        session_id: &acp::SessionId,
-        method_id: &str,
-    ) -> Result<(), AcpClientError> {
-        self.send(PromptCommand::Authenticate {
-            session_id: session_id.clone(),
-            method_id: method_id.to_string(),
-        })
+    pub fn authenticate(&self, session_id: &acp::SessionId, method_id: &str) -> Result<(), AcpClientError> {
+        self.send(PromptCommand::Authenticate { session_id: session_id.clone(), method_id: method_id.to_string() })
     }
 
     pub fn list_sessions(&self) -> Result<(), AcpClientError> {
         self.send(PromptCommand::ListSessions)
     }
 
-    pub fn load_session(
-        &self,
-        session_id: &acp::SessionId,
-        cwd: &Path,
-    ) -> Result<(), AcpClientError> {
-        self.send(PromptCommand::LoadSession {
-            session_id: session_id.clone(),
-            cwd: cwd.to_path_buf(),
-        })
+    pub fn load_session(&self, session_id: &acp::SessionId, cwd: &Path) -> Result<(), AcpClientError> {
+        self.send(PromptCommand::LoadSession { session_id: session_id.clone(), cwd: cwd.to_path_buf() })
     }
 
     pub fn new_session(&self, cwd: &Path) -> Result<(), AcpClientError> {
-        self.send(PromptCommand::NewSession {
-            cwd: cwd.to_path_buf(),
-        })
+        self.send(PromptCommand::NewSession { cwd: cwd.to_path_buf() })
     }
 
     fn send(&self, cmd: PromptCommand) -> Result<(), AcpClientError> {
-        self.cmd_tx
-            .send(cmd)
-            .map_err(|_| AcpClientError::AgentCrashed("command channel closed".into()))
+        self.cmd_tx.send(cmd).map_err(|_| AcpClientError::AgentCrashed("command channel closed".into()))
     }
 }
 
@@ -166,9 +142,7 @@ mod tests {
 
         let cmd = rx.try_recv().unwrap();
         match cmd {
-            PromptCommand::Prompt {
-                session_id, text, ..
-            } => {
+            PromptCommand::Prompt { session_id, text, .. } => {
                 assert_eq!(session_id.0.as_ref(), "sess-1");
                 assert_eq!(text, "hello");
             }
@@ -194,17 +168,11 @@ mod tests {
         let handle = AcpPromptHandle { cmd_tx: tx };
         let session_id = acp::SessionId::new("sess-1");
 
-        handle
-            .set_config_option(&session_id, "model", "gpt-4o")
-            .unwrap();
+        handle.set_config_option(&session_id, "model", "gpt-4o").unwrap();
 
         let cmd = rx.try_recv().unwrap();
         match cmd {
-            PromptCommand::SetConfigOption {
-                session_id,
-                config_id,
-                value,
-            } => {
+            PromptCommand::SetConfigOption { session_id, config_id, value } => {
                 assert_eq!(session_id.0.as_ref(), "sess-1");
                 assert_eq!(config_id, "model");
                 assert_eq!(value, "gpt-4o");
@@ -220,17 +188,11 @@ mod tests {
         let session_id = acp::SessionId::new("sess-1");
         let content = vec![acp::ContentBlock::Text(acp::TextContent::new("attached"))];
 
-        handle
-            .prompt(&session_id, "hello", Some(content.clone()))
-            .unwrap();
+        handle.prompt(&session_id, "hello", Some(content.clone())).unwrap();
 
         let cmd = rx.try_recv().unwrap();
         match cmd {
-            PromptCommand::Prompt {
-                session_id,
-                text,
-                content: Some(extra),
-            } => {
+            PromptCommand::Prompt { session_id, text, content: Some(extra) } => {
                 assert_eq!(session_id.0.as_ref(), "sess-1");
                 assert_eq!(text, "hello");
                 assert_eq!(extra, content);

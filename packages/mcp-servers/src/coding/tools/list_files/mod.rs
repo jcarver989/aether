@@ -49,34 +49,19 @@ pub struct ListFilesResult {
 pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, ListFilesError> {
     use std::os::unix::fs::PermissionsExt;
 
-    let target_path = args
-        .path
-        .as_deref()
-        .filter(|p| !p.is_empty())
-        .unwrap_or(".");
+    let target_path = args.path.as_deref().filter(|p| !p.is_empty()).unwrap_or(".");
     let include_hidden = args.include_hidden.unwrap_or(false);
 
     let mut files = Vec::new();
 
     // Read directory entries
-    let mut entries = tokio::fs::read_dir(target_path)
-        .await
-        .map_err(|e| ListFilesError::ReadDirFailed(e.to_string()))?;
+    let mut entries =
+        tokio::fs::read_dir(target_path).await.map_err(|e| ListFilesError::ReadDirFailed(e.to_string()))?;
 
-    while let Some(entry) = entries
-        .next_entry()
-        .await
-        .map_err(|e| ListFilesError::ReadEntryFailed(e.to_string()))?
-    {
+    while let Some(entry) = entries.next_entry().await.map_err(|e| ListFilesError::ReadEntryFailed(e.to_string()))? {
         let path = entry.path();
-        let entry_file_type = entry
-            .file_type()
-            .await
-            .map_err(|e| ListFilesError::MetadataFailed(e.to_string()))?;
-        let metadata = entry
-            .metadata()
-            .await
-            .map_err(|e| ListFilesError::MetadataFailed(e.to_string()))?;
+        let entry_file_type = entry.file_type().await.map_err(|e| ListFilesError::MetadataFailed(e.to_string()))?;
+        let metadata = entry.metadata().await.map_err(|e| ListFilesError::MetadataFailed(e.to_string()))?;
 
         let name = entry.file_name().to_string_lossy().to_string();
 
@@ -95,15 +80,13 @@ pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, ListFile
 
         let permissions = format!("{:o}", metadata.permissions().mode() & 0o777);
 
-        let modified = metadata
-            .modified()
-            .ok()
-            .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
-            .and_then(|duration| {
-                let secs = i64::try_from(duration.as_secs()).unwrap_or(i64::MAX);
-                chrono::DateTime::from_timestamp(secs, 0)
-                    .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
-            });
+        let modified =
+            metadata.modified().ok().and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok()).and_then(
+                |duration| {
+                    let secs = i64::try_from(duration.as_secs()).unwrap_or(i64::MAX);
+                    chrono::DateTime::from_timestamp(secs, 0).map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+                },
+            );
 
         files.push(FileInfo {
             name,
@@ -120,10 +103,7 @@ pub async fn list_files(args: ListFilesArgs) -> Result<ListFilesResult, ListFile
 
     let total_count = files.len();
 
-    let display_meta = ToolDisplayMeta::new(
-        "List files",
-        format!("{} ({total_count} items)", basename(target_path)),
-    );
+    let display_meta = ToolDisplayMeta::new("List files", format!("{} ({total_count} items)", basename(target_path)));
 
     Ok(ListFilesResult {
         status: "success".to_string(),
@@ -156,11 +136,8 @@ mod tests {
         .await
         .unwrap();
 
-        let file_info = result
-            .files
-            .iter()
-            .find(|file| file.name == "link_dir")
-            .expect("directory symlink should be returned");
+        let file_info =
+            result.files.iter().find(|file| file.name == "link_dir").expect("directory symlink should be returned");
         assert!(matches!(file_info.file_type, FileType::Symlink));
     }
 
@@ -179,11 +156,7 @@ mod tests {
         .await
         .unwrap();
 
-        let file_info = result
-            .files
-            .iter()
-            .find(|file| file.name == "link.txt")
-            .expect("symlink should be returned");
+        let file_info = result.files.iter().find(|file| file.name == "link.txt").expect("symlink should be returned");
         assert!(matches!(file_info.file_type, FileType::Symlink));
     }
 
@@ -207,12 +180,7 @@ mod tests {
         let original_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(temp_dir.path()).unwrap();
 
-        let result = list_files(ListFilesArgs {
-            path: Some("".to_string()),
-            include_hidden: None,
-        })
-        .await
-        .unwrap();
+        let result = list_files(ListFilesArgs { path: Some("".to_string()), include_hidden: None }).await.unwrap();
 
         std::env::set_current_dir(original_dir).unwrap();
 

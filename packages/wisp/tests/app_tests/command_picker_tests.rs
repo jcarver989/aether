@@ -12,10 +12,7 @@ async fn test_slash_opens_command_picker() {
 
     send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
 
-    assert!(
-        has_command_picker(renderer.writer()),
-        "Typing / on empty buffer should open command picker"
-    );
+    assert!(has_command_picker(renderer.writer()), "Typing / on empty buffer should open command picker");
 }
 
 #[tokio::test]
@@ -26,10 +23,7 @@ async fn test_slash_mid_input_no_picker() {
 
     type_string(&mut renderer, "hello/").await;
 
-    assert!(
-        !has_command_picker(renderer.writer()),
-        "Typing / mid-input should not open command picker"
-    );
+    assert!(!has_command_picker(renderer.writer()), "Typing / mid-input should not open command picker");
 }
 
 #[tokio::test]
@@ -39,17 +33,11 @@ async fn test_command_picker_esc_clears() {
     renderer.initial_render().unwrap();
 
     send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
-    assert!(
-        has_command_picker(renderer.writer()),
-        "Command picker should be open"
-    );
+    assert!(has_command_picker(renderer.writer()), "Command picker should be open");
 
     send_key(&mut renderer, KeyCode::Esc, KeyModifiers::empty()).await;
 
-    assert!(
-        !has_command_picker(renderer.writer()),
-        "Esc should close command picker"
-    );
+    assert!(!has_command_picker(renderer.writer()), "Esc should close command picker");
     let lines = renderer.writer().get_lines();
     assert!(
         lines.iter().any(|l| l.contains('/')),
@@ -65,17 +53,11 @@ async fn test_command_picker_backspace_empty_closes() {
     renderer.initial_render().unwrap();
 
     send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
-    assert!(
-        has_command_picker(renderer.writer()),
-        "Command picker should be open"
-    );
+    assert!(has_command_picker(renderer.writer()), "Command picker should be open");
 
     send_key(&mut renderer, KeyCode::Backspace, KeyModifiers::empty()).await;
 
-    assert!(
-        !has_command_picker(renderer.writer()),
-        "Backspace on empty query should close command picker"
-    );
+    assert!(!has_command_picker(renderer.writer()), "Backspace on empty query should close command picker");
 }
 
 #[tokio::test]
@@ -85,26 +67,18 @@ async fn test_available_commands_update_stored() {
     renderer.initial_render().unwrap();
 
     renderer
-        .on_session_update(acp::SessionUpdate::AvailableCommandsUpdate(
-            acp::AvailableCommandsUpdate::new(vec![
-                acp::AvailableCommand::new("search", "Search code"),
-                acp::AvailableCommand::new("web", "Browse the web"),
-            ]),
-        ))
+        .on_session_update(acp::SessionUpdate::AvailableCommandsUpdate(acp::AvailableCommandsUpdate::new(vec![
+            acp::AvailableCommand::new("search", "Search code"),
+            acp::AvailableCommand::new("web", "Browse the web"),
+        ])))
         .unwrap();
 
     // Open command picker and verify commands appear in rendered output
     send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
 
     let names = command_picker_visible_names(renderer.writer());
-    assert!(
-        names.iter().any(|n| n == "search"),
-        "Picker should show 'search' command. Got: {names:?}"
-    );
-    assert!(
-        names.iter().any(|n| n == "web"),
-        "Picker should show 'web' command. Got: {names:?}"
-    );
+    assert!(names.iter().any(|n| n == "search"), "Picker should show 'search' command. Got: {names:?}");
+    assert!(names.iter().any(|n| n == "web"), "Picker should show 'web' command. Got: {names:?}");
 }
 
 #[tokio::test]
@@ -114,16 +88,11 @@ async fn test_available_commands_update_extracts_hint() {
     renderer.initial_render().unwrap();
 
     renderer
-        .on_session_update(acp::SessionUpdate::AvailableCommandsUpdate(
-            acp::AvailableCommandsUpdate::new(vec![
-                acp::AvailableCommand::new("search", "Search code").input(
-                    acp::AvailableCommandInput::Unstructured(acp::UnstructuredCommandInput::new(
-                        "query pattern",
-                    )),
-                ),
-                acp::AvailableCommand::new("config", "Open settings"),
-            ]),
-        ))
+        .on_session_update(acp::SessionUpdate::AvailableCommandsUpdate(acp::AvailableCommandsUpdate::new(vec![
+            acp::AvailableCommand::new("search", "Search code")
+                .input(acp::AvailableCommandInput::Unstructured(acp::UnstructuredCommandInput::new("query pattern"))),
+            acp::AvailableCommand::new("config", "Open settings"),
+        ])))
         .unwrap();
 
     // Open command picker and verify the hint appears in rendered output
@@ -145,26 +114,17 @@ async fn test_command_picker_shows_mcp_commands() {
 
     // Feed available commands
     renderer
-        .on_session_update(acp::SessionUpdate::AvailableCommandsUpdate(
-            acp::AvailableCommandsUpdate::new(vec![acp::AvailableCommand::new(
-                "search",
-                "Search code",
-            )]),
-        ))
+        .on_session_update(acp::SessionUpdate::AvailableCommandsUpdate(acp::AvailableCommandsUpdate::new(vec![
+            acp::AvailableCommand::new("search", "Search code"),
+        ])))
         .unwrap();
 
     // Open picker
     send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
 
     let names = command_picker_visible_names(renderer.writer());
-    assert!(
-        names.iter().any(|n| n == "settings"),
-        "Picker should include built-in settings command. Got: {names:?}",
-    );
-    assert!(
-        names.iter().any(|n| n == "search"),
-        "Picker should include MCP search command. Got: {names:?}",
-    );
+    assert!(names.iter().any(|n| n == "settings"), "Picker should include built-in settings command. Got: {names:?}",);
+    assert!(names.iter().any(|n| n == "search"), "Picker should include MCP search command. Got: {names:?}",);
 }
 
 #[tokio::test]
@@ -174,10 +134,7 @@ async fn test_command_picker_ctrl_c_exits() {
     renderer.initial_render().unwrap();
 
     send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
-    assert!(
-        has_command_picker(renderer.writer()),
-        "Command picker should be open"
-    );
+    assert!(has_command_picker(renderer.writer()), "Command picker should be open");
 
     let action = renderer
         .on_key_event(KeyEvent {

@@ -26,9 +26,7 @@ impl FileSystemStore {
     }
 
     fn result_file(&self, run_id: Uuid, eval_id: Uuid) -> PathBuf {
-        self.run_dir(run_id)
-            .join("results")
-            .join(format!("{eval_id}.json"))
+        self.run_dir(run_id).join("results").join(format!("{eval_id}.json"))
     }
 
     fn results_dir(&self, run_id: Uuid) -> PathBuf {
@@ -71,11 +69,7 @@ fn group_traces_by_eval(events: Vec<TraceEvent>) -> HashMap<String, Vec<TraceEve
     for event in events {
         // Try to find eval_id from current span first
         let eval_id = if let Some(span_info) = &event.span {
-            span_info
-                .extra
-                .get("eval_id")
-                .and_then(|v| v.as_str())
-                .map(std::string::ToString::to_string)
+            span_info.extra.get("eval_id").and_then(|v| v.as_str()).map(std::string::ToString::to_string)
         } else {
             None
         };
@@ -83,11 +77,7 @@ fn group_traces_by_eval(events: Vec<TraceEvent>) -> HashMap<String, Vec<TraceEve
         // If not found in current span, check parent spans
         let eval_id = eval_id.or_else(|| {
             event.spans.iter().find_map(|parent_span| {
-                parent_span
-                    .extra
-                    .get("eval_id")
-                    .and_then(|v| v.as_str())
-                    .map(std::string::ToString::to_string)
+                parent_span.extra.get("eval_id").and_then(|v| v.as_str()).map(std::string::ToString::to_string)
             })
         });
 
@@ -95,10 +85,7 @@ fn group_traces_by_eval(events: Vec<TraceEvent>) -> HashMap<String, Vec<TraceEve
             grouped.entry(eval_id).or_default().push(event);
         } else {
             // Ungrouped events
-            grouped
-                .entry("_ungrouped".to_string())
-                .or_default()
-                .push(event);
+            grouped.entry("_ungrouped".to_string()).or_default().push(event);
         }
     }
 
@@ -125,12 +112,8 @@ impl ResultsStore for FileSystemStore {
 
         // Sort by directory modification time (most recent first)
         run_ids.sort_by(|a, b| {
-            let a_modified = fs::metadata(self.run_dir(*a))
-                .and_then(|m| m.modified())
-                .ok();
-            let b_modified = fs::metadata(self.run_dir(*b))
-                .and_then(|m| m.modified())
-                .ok();
+            let a_modified = fs::metadata(self.run_dir(*a)).and_then(|m| m.modified()).ok();
+            let b_modified = fs::metadata(self.run_dir(*b)).and_then(|m| m.modified()).ok();
             b_modified.cmp(&a_modified)
         });
 
@@ -163,11 +146,7 @@ impl ResultsStore for FileSystemStore {
 
                     match result {
                         Ok(eval_result) => results.push(eval_result),
-                        Err(e) => tracing::warn!(
-                            "Failed to read/parse eval result file {:?}: {}",
-                            path,
-                            e
-                        ),
+                        Err(e) => tracing::warn!("Failed to read/parse eval result file {:?}: {}", path, e),
                     }
                 }
             }
@@ -204,11 +183,7 @@ impl ResultsStore for FileSystemStore {
         tracing::debug!("Parsed {} total trace events", all_events.len());
 
         let grouped = group_traces_by_eval(all_events);
-        tracing::debug!(
-            "Grouped into {} groups: {:?}",
-            grouped.len(),
-            grouped.keys().collect::<Vec<_>>()
-        );
+        tracing::debug!("Grouped into {} groups: {:?}", grouped.len(), grouped.keys().collect::<Vec<_>>());
 
         // Use eval_id as the key (converted to string)
         let eval_id_str = eval_id.to_string();
@@ -231,11 +206,7 @@ impl ResultsStore for FileSystemStore {
             .open(traces_file)
             .expect("Failed to open traces file");
 
-        Box::new(
-            fmt::layer()
-                .json()
-                .with_writer(move || file.try_clone().expect("Failed to clone file handle")),
-        )
+        Box::new(fmt::layer().json().with_writer(move || file.try_clone().expect("Failed to clone file handle")))
     }
 }
 
@@ -254,10 +225,7 @@ mod tests {
 
         assert_eq!(span.name, "eval_task");
         assert!(span.extra.get("eval_id").is_some());
-        assert_eq!(
-            span.extra.get("eval_id").and_then(|v| v.as_str()),
-            Some("09373995-4265-4d6d-9315-26914861a182")
-        );
+        assert_eq!(span.extra.get("eval_id").and_then(|v| v.as_str()), Some("09373995-4265-4d6d-9315-26914861a182"));
     }
 
     #[test]

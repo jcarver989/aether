@@ -28,15 +28,13 @@ impl PromptCatalog {
             .filter_map(Result::ok)
             .filter(|e| e.path().is_dir() && !e.file_name().to_string_lossy().starts_with('.'))
             .filter(|e| e.path().join(SKILL_FILENAME).is_file())
-            .filter_map(
-                |e| match PromptFile::parse(&e.path().join(SKILL_FILENAME)) {
-                    Ok(spec) => Some(spec),
-                    Err(err) => {
-                        tracing::warn!("Skipping invalid skill at {}: {err}", e.path().display());
-                        None
-                    }
-                },
-            )
+            .filter_map(|e| match PromptFile::parse(&e.path().join(SKILL_FILENAME)) {
+                Ok(spec) => Some(spec),
+                Err(err) => {
+                    tracing::warn!("Skipping invalid skill at {}: {err}", e.path().display());
+                    None
+                }
+            })
             .collect();
 
         validate_catalog(&prompts)?;
@@ -66,10 +64,7 @@ impl PromptCatalog {
 
     /// Find all prompt specs whose read triggers match the given project-relative path.
     pub fn matching_rules(&self, relative_path: &str) -> Vec<&PromptFile> {
-        self.specs
-            .iter()
-            .filter(|s| s.triggers.matches_read(relative_path))
-            .collect()
+        self.specs.iter().filter(|s| s.triggers.matches_read(relative_path)).collect()
     }
 }
 
@@ -77,9 +72,7 @@ fn validate_catalog(specs: &[PromptFile]) -> Result<(), SettingsError> {
     let mut seen_names = HashSet::new();
     for spec in specs {
         if !seen_names.insert(&spec.name) {
-            return Err(SettingsError::DuplicatePromptName {
-                name: spec.name.clone(),
-            });
+            return Err(SettingsError::DuplicatePromptName { name: spec.name.clone() });
         }
     }
     Ok(())
@@ -188,33 +181,18 @@ mod tests {
     #[test]
     fn reject_duplicate_names() {
         let dir = create_temp_project();
-        write_skill(
-            dir.path(),
-            "foo",
-            "---\ndescription: First\nuser-invocable: true\n---\nContent.",
-        );
+        write_skill(dir.path(), "foo", "---\ndescription: First\nuser-invocable: true\n---\nContent.");
         // Second skill with explicit name override to "foo"
-        write_skill(
-            dir.path(),
-            "bar",
-            "---\nname: foo\ndescription: Second\nuser-invocable: true\n---\nContent.",
-        );
+        write_skill(dir.path(), "bar", "---\nname: foo\ndescription: Second\nuser-invocable: true\n---\nContent.");
 
         let result = PromptCatalog::from_dir(dir.path());
-        assert!(matches!(
-            result,
-            Err(SettingsError::DuplicatePromptName { .. })
-        ));
+        assert!(matches!(result, Err(SettingsError::DuplicatePromptName { .. })));
     }
 
     #[test]
     fn reject_missing_description() {
         let dir = create_temp_project();
-        write_skill(
-            dir.path(),
-            "bad",
-            "---\ndescription: \"\"\nuser-invocable: true\n---\nContent.",
-        );
+        write_skill(dir.path(), "bad", "---\ndescription: \"\"\nuser-invocable: true\n---\nContent.");
 
         let catalog = PromptCatalog::from_dir(dir.path());
         // Should be skipped with a warning (parsed OK but validation fails in parse_skill_file)
@@ -224,11 +202,7 @@ mod tests {
     #[test]
     fn reject_no_activation_surface() {
         let dir = create_temp_project();
-        write_skill(
-            dir.path(),
-            "noop",
-            "---\ndescription: Does nothing\n---\nContent.",
-        );
+        write_skill(dir.path(), "noop", "---\ndescription: Does nothing\n---\nContent.");
 
         let catalog = PromptCatalog::from_dir(dir.path());
         // Should be skipped with a warning
@@ -238,11 +212,7 @@ mod tests {
     #[test]
     fn name_defaults_to_directory_name() {
         let dir = create_temp_project();
-        write_skill(
-            dir.path(),
-            "my-skill",
-            "---\ndescription: My skill\nagent-invocable: true\n---\nContent.",
-        );
+        write_skill(dir.path(), "my-skill", "---\ndescription: My skill\nagent-invocable: true\n---\nContent.");
 
         let catalog = PromptCatalog::from_dir(dir.path()).unwrap();
         assert_eq!(catalog.all()[0].name, "my-skill");
@@ -274,11 +244,7 @@ mod tests {
             "ts-rules",
             "---\ndescription: TS rules\ntriggers:\n  read:\n    - \"src/**/*.ts\"\n---\nTS rules.",
         );
-        write_skill(
-            dir.path(),
-            "commit",
-            "---\ndescription: Commit\nuser-invocable: true\n---\nCommit.",
-        );
+        write_skill(dir.path(), "commit", "---\ndescription: Commit\nuser-invocable: true\n---\nCommit.");
 
         let catalog = PromptCatalog::from_dir(dir.path()).unwrap();
         let matches = catalog.matching_rules("src/main.rs");
@@ -311,16 +277,8 @@ mod tests {
     #[test]
     fn skips_hidden_directories() {
         let dir = create_temp_project();
-        write_skill(
-            dir.path(),
-            ".archived",
-            "---\ndescription: Archived\nuser-invocable: true\n---\nOld.",
-        );
-        write_skill(
-            dir.path(),
-            "visible",
-            "---\ndescription: Visible\nuser-invocable: true\n---\nNew.",
-        );
+        write_skill(dir.path(), ".archived", "---\ndescription: Archived\nuser-invocable: true\n---\nOld.");
+        write_skill(dir.path(), "visible", "---\ndescription: Visible\nuser-invocable: true\n---\nNew.");
 
         let catalog = PromptCatalog::from_dir(dir.path()).unwrap();
         assert_eq!(catalog.all().len(), 1);

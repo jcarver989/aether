@@ -16,11 +16,7 @@ pub struct TextField {
 impl TextField {
     pub fn new(value: String) -> Self {
         let cursor_pos = value.len();
-        Self {
-            value,
-            cursor_pos,
-            content_width: usize::MAX,
-        }
+        Self { value, cursor_pos, content_width: usize::MAX }
     }
 
     pub fn set_content_width(&mut self, width: usize) {
@@ -78,8 +74,7 @@ impl TextField {
 
     fn delete_after_cursor(&mut self) {
         if let Some(c) = self.value[self.cursor_pos..].chars().next() {
-            self.value
-                .drain(self.cursor_pos..self.cursor_pos + c.len_utf8());
+            self.value.drain(self.cursor_pos..self.cursor_pos + c.len_utf8());
         }
     }
 
@@ -230,10 +225,8 @@ impl Component for TextField {
                         Some(vec![])
                     }
                     KeyCode::Left => {
-                        self.cursor_pos = self.value[..self.cursor_pos]
-                            .char_indices()
-                            .next_back()
-                            .map_or(0, |(i, _)| i);
+                        self.cursor_pos =
+                            self.value[..self.cursor_pos].char_indices().next_back().map_or(0, |(i, _)| i);
                         Some(vec![])
                     }
                     KeyCode::Right => {
@@ -502,11 +495,7 @@ mod tests {
         for (text, cursor, k, expected) in cases {
             let mut f = cursor.map_or_else(|| field(text), |c| field_at(text, c));
             send_key(&mut f, k).await;
-            assert_eq!(
-                f.cursor_pos(),
-                expected,
-                "failed for {k:?} on {text:?} at {cursor:?}"
-            );
+            assert_eq!(f.cursor_pos(), expected, "failed for {k:?} on {text:?} at {cursor:?}");
         }
     }
 
@@ -521,11 +510,7 @@ mod tests {
         for (text, cursor, width, expected) in cases {
             let mut f = cursor.map_or_else(|| field(text), |c| field_at(text, c));
             f.move_cursor_up(width);
-            assert_eq!(
-                f.cursor_pos(),
-                expected,
-                "up failed: {text:?} cursor={cursor:?} w={width}"
-            );
+            assert_eq!(f.cursor_pos(), expected, "up failed: {text:?} cursor={cursor:?} w={width}");
         }
     }
 
@@ -552,11 +537,7 @@ mod tests {
         for (text, cursor, width, expected) in cases {
             let mut f = cursor.map_or_else(|| field(text), |c| field_at(text, c));
             f.move_cursor_down(width);
-            assert_eq!(
-                f.cursor_pos(),
-                expected,
-                "down failed: {text:?} cursor={cursor:?} w={width}"
-            );
+            assert_eq!(f.cursor_pos(), expected, "down failed: {text:?} cursor={cursor:?} w={width}");
         }
     }
 }

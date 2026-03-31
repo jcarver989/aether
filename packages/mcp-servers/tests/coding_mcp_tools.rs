@@ -7,20 +7,14 @@ use std::fs;
 async fn test_read_file_tool() {
     // Create server and client
     let server_service = CodingMcp::new();
-    let client_info = ClientInfo::new(
-        Default::default(),
-        Implementation::new("test-client", "0.1.0"),
-    );
+    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
 
-    let (_server_handle, client) = connect(server_service, client_info)
-        .await
-        .expect("Failed to connect MCP server and client");
+    let (_server_handle, client) =
+        connect(server_service, client_info).await.expect("Failed to connect MCP server and client");
 
     // Create test file
     let test_content = "Hello, World!\nThis is a test file.";
-    tokio::fs::write("/tmp/test_read_file.txt", test_content)
-        .await
-        .expect("Failed to create test file");
+    tokio::fs::write("/tmp/test_read_file.txt", test_content).await.expect("Failed to create test file");
 
     // Test read_file tool
     let result = client
@@ -41,8 +35,7 @@ async fn test_read_file_tool() {
     assert!(result.content.len() == 1);
     if let Some(content) = result.content.first() {
         if let Some(text_content) = content.as_text() {
-            let parsed: serde_json::Value =
-                serde_json::from_str(&text_content.text).expect("Invalid JSON response");
+            let parsed: serde_json::Value = serde_json::from_str(&text_content.text).expect("Invalid JSON response");
             assert_eq!(parsed["status"], "success");
 
             // Verify line-numbered content format (should read full file by default)
@@ -65,14 +58,10 @@ async fn test_read_file_tool() {
 async fn test_write_file_tool() {
     // Create server and client
     let server_service = CodingMcp::new();
-    let client_info = ClientInfo::new(
-        Default::default(),
-        Implementation::new("test-client", "0.1.0"),
-    );
+    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
 
-    let (_server_handle, client) = connect(server_service, client_info)
-        .await
-        .expect("Failed to connect MCP server and client");
+    let (_server_handle, client) =
+        connect(server_service, client_info).await.expect("Failed to connect MCP server and client");
 
     let test_content = "This is test content written by the tool.";
     let test_path = "/tmp/test_write_file.txt";
@@ -97,14 +86,8 @@ async fn test_write_file_tool() {
     assert!(result.content.len() == 1);
     if let Some(content) = result.content.first() {
         if let Some(text_content) = content.as_text() {
-            let parsed: serde_json::Value =
-                serde_json::from_str(&text_content.text).expect("Invalid JSON response");
-            assert!(
-                parsed["message"]
-                    .as_str()
-                    .unwrap()
-                    .contains("Successfully wrote")
-            );
+            let parsed: serde_json::Value = serde_json::from_str(&text_content.text).expect("Invalid JSON response");
+            assert!(parsed["message"].as_str().unwrap().contains("Successfully wrote"));
             assert_eq!(parsed["bytesWritten"], test_content.len());
             assert_eq!(parsed["filePath"], test_path);
         } else {
@@ -115,9 +98,7 @@ async fn test_write_file_tool() {
     }
 
     // Verify file was actually written
-    let file_content = tokio::fs::read_to_string(test_path)
-        .await
-        .expect("Failed to read written file");
+    let file_content = tokio::fs::read_to_string(test_path).await.expect("Failed to read written file");
     assert_eq!(file_content, test_content);
 
     // Clean up
@@ -128,14 +109,10 @@ async fn test_write_file_tool() {
 async fn test_bash_tool() {
     // Create server and client
     let server_service = CodingMcp::new();
-    let client_info = ClientInfo::new(
-        Default::default(),
-        Implementation::new("test-client", "0.1.0"),
-    );
+    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
 
-    let (_server_handle, client) = connect(server_service, client_info)
-        .await
-        .expect("Failed to connect MCP server and client");
+    let (_server_handle, client) =
+        connect(server_service, client_info).await.expect("Failed to connect MCP server and client");
 
     // Test bash tool with a simple command
     let result = client
@@ -156,15 +133,9 @@ async fn test_bash_tool() {
     assert!(result.content.len() == 1);
     if let Some(content) = result.content.first() {
         if let Some(text_content) = content.as_text() {
-            let parsed: serde_json::Value =
-                serde_json::from_str(&text_content.text).expect("Invalid JSON response");
+            let parsed: serde_json::Value = serde_json::from_str(&text_content.text).expect("Invalid JSON response");
             assert_eq!(parsed["exitCode"], 0);
-            assert!(
-                parsed["output"]
-                    .as_str()
-                    .unwrap()
-                    .contains("Hello from bash")
-            );
+            assert!(parsed["output"].as_str().unwrap().contains("Hello from bash"));
             assert_eq!(parsed["killed"], false);
         } else {
             panic!("Expected text content");
@@ -178,22 +149,16 @@ async fn test_bash_tool() {
 async fn test_edit_file_tool() {
     // Create server and client
     let server_service = CodingMcp::new();
-    let client_info = ClientInfo::new(
-        Default::default(),
-        Implementation::new("test-client", "0.1.0"),
-    );
+    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
 
-    let (_server_handle, client) = connect(server_service, client_info)
-        .await
-        .expect("Failed to connect MCP server and client");
+    let (_server_handle, client) =
+        connect(server_service, client_info).await.expect("Failed to connect MCP server and client");
 
     let test_path = "/tmp/test_edit_file.txt";
     let initial_content = "Hello, World!\nThis is a test.";
 
     // Create initial file
-    tokio::fs::write(test_path, initial_content)
-        .await
-        .expect("Failed to create test file");
+    tokio::fs::write(test_path, initial_content).await.expect("Failed to create test file");
 
     // First, read the file (required by safety check)
     client
@@ -231,8 +196,7 @@ async fn test_edit_file_tool() {
     assert!(result.content.len() == 1);
     if let Some(content) = result.content.first() {
         if let Some(text_content) = content.as_text() {
-            let parsed: serde_json::Value =
-                serde_json::from_str(&text_content.text).expect("Invalid JSON response");
+            let parsed: serde_json::Value = serde_json::from_str(&text_content.text).expect("Invalid JSON response");
             assert_eq!(parsed["status"], "success");
             assert_eq!(parsed["replacementsMade"], 1);
         } else {
@@ -243,15 +207,11 @@ async fn test_edit_file_tool() {
     }
 
     // Verify file was actually edited
-    let file_content = tokio::fs::read_to_string(test_path)
-        .await
-        .expect("Failed to read edited file");
+    let file_content = tokio::fs::read_to_string(test_path).await.expect("Failed to read edited file");
     assert_eq!(file_content, "Hello, Rust!\nThis is a test.");
 
     // Test replace_all flag
-    tokio::fs::write(test_path, "test test test")
-        .await
-        .expect("Failed to write test file");
+    tokio::fs::write(test_path, "test test test").await.expect("Failed to write test file");
 
     // Read the file again before editing
     client
@@ -287,15 +247,12 @@ async fn test_edit_file_tool() {
 
     if let Some(content) = result.content.first() {
         if let Some(text_content) = content.as_text() {
-            let parsed: serde_json::Value =
-                serde_json::from_str(&text_content.text).expect("Invalid JSON response");
+            let parsed: serde_json::Value = serde_json::from_str(&text_content.text).expect("Invalid JSON response");
             assert_eq!(parsed["replacementsMade"], 3);
         }
     }
 
-    let file_content = tokio::fs::read_to_string(test_path)
-        .await
-        .expect("Failed to read edited file");
+    let file_content = tokio::fs::read_to_string(test_path).await.expect("Failed to read edited file");
     assert_eq!(file_content, "TEST TEST TEST");
 
     // Clean up
@@ -306,14 +263,10 @@ async fn test_edit_file_tool() {
 async fn test_list_files_tool() {
     // Create server and client
     let server_service = CodingMcp::new();
-    let client_info = ClientInfo::new(
-        Default::default(),
-        Implementation::new("test-client", "0.1.0"),
-    );
+    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
 
-    let (_server_handle, client) = connect(server_service, client_info)
-        .await
-        .expect("Failed to connect MCP server and client");
+    let (_server_handle, client) =
+        connect(server_service, client_info).await.expect("Failed to connect MCP server and client");
 
     // Create test directory and files
     let test_dir = "/tmp/test_list_files";
@@ -322,11 +275,9 @@ async fn test_list_files_tool() {
 
     // Create some test files
     fs::write(format!("{test_dir}/file1.txt"), "content1").expect("Failed to create test file 1");
-    fs::write(format!("{test_dir}/file2.rs"), "fn main() {}")
-        .expect("Failed to create test file 2");
+    fs::write(format!("{test_dir}/file2.rs"), "fn main() {}").expect("Failed to create test file 2");
     fs::create_dir(format!("{test_dir}/subdir")).expect("Failed to create subdirectory");
-    fs::write(format!("{test_dir}/.hidden_file"), "hidden content")
-        .expect("Failed to create hidden file");
+    fs::write(format!("{test_dir}/.hidden_file"), "hidden content").expect("Failed to create hidden file");
 
     // Test list_files tool
     let result = client
@@ -347,18 +298,12 @@ async fn test_list_files_tool() {
     assert!(result.content.len() == 1);
     if let Some(content) = result.content.first() {
         if let Some(text_content) = content.as_text() {
-            let parsed: serde_json::Value =
-                serde_json::from_str(&text_content.text).expect("Invalid JSON response");
+            let parsed: serde_json::Value = serde_json::from_str(&text_content.text).expect("Invalid JSON response");
             assert_eq!(parsed["status"], "success");
             assert_eq!(parsed["totalCount"], 3); // Should not include hidden file by default
 
-            let files = parsed["files"]
-                .as_array()
-                .expect("Files should be an array");
-            let file_names: Vec<String> = files
-                .iter()
-                .map(|f| f["name"].as_str().unwrap().to_string())
-                .collect();
+            let files = parsed["files"].as_array().expect("Files should be an array");
+            let file_names: Vec<String> = files.iter().map(|f| f["name"].as_str().unwrap().to_string()).collect();
 
             assert!(file_names.contains(&"file1.txt".to_string()));
             assert!(file_names.contains(&"file2.rs".to_string()));
@@ -389,8 +334,7 @@ async fn test_list_files_tool() {
 
     if let Some(content) = result_with_hidden.content.first() {
         if let Some(text_content) = content.as_text() {
-            let parsed: serde_json::Value =
-                serde_json::from_str(&text_content.text).expect("Invalid JSON response");
+            let parsed: serde_json::Value = serde_json::from_str(&text_content.text).expect("Invalid JSON response");
             assert_eq!(parsed["totalCount"], 4); // Should include hidden file now
         }
     }

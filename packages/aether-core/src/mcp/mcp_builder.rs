@@ -2,8 +2,8 @@ use llm::ToolDefinition;
 use mcp_utils::client::oauth::OAuthHandler;
 
 use mcp_utils::client::{
-    ElicitationRequest, McpError, McpManager, McpServerConfig, McpServerStatusEntry, ParseError,
-    RawMcpConfig, ServerFactory, ServerInstructions, root_from_path,
+    ElicitationRequest, McpError, McpManager, McpServerConfig, McpServerStatusEntry, ParseError, RawMcpConfig,
+    ServerFactory, ServerInstructions, root_from_path,
 };
 
 use super::run_mcp_task::{McpCommand, run_mcp_task};
@@ -59,11 +59,7 @@ impl McpBuilder {
         self
     }
 
-    pub fn register_in_memory_server(
-        mut self,
-        name: impl Into<String>,
-        factory: ServerFactory,
-    ) -> Self {
+    pub fn register_in_memory_server(mut self, name: impl Into<String>, factory: ServerFactory) -> Self {
         self.factories.insert(name.into(), factory);
         self
     }
@@ -91,21 +87,15 @@ impl McpBuilder {
     }
 
     pub async fn spawn(self) -> Result<McpSpawnResult, McpError> {
-        let (mcp_command_tx, mcp_command_rx) =
-            mpsc::channel::<McpCommand>(self.mcp_channel_capacity);
-        let (elicitation_tx, elicitation_rx) =
-            mpsc::channel::<ElicitationRequest>(self.mcp_channel_capacity);
+        let (mcp_command_tx, mcp_command_rx) = mpsc::channel::<McpCommand>(self.mcp_channel_capacity);
+        let (elicitation_tx, elicitation_rx) = mpsc::channel::<ElicitationRequest>(self.mcp_channel_capacity);
 
         let mut mcp_manager = McpManager::new(elicitation_tx, self.oauth_handler);
         mcp_manager.add_mcps(self.mcp_configs).await?;
 
         // Set workspace roots if provided
         if !self.roots.is_empty() {
-            let roots = self
-                .roots
-                .into_iter()
-                .map(|path| root_from_path(&path, None))
-                .collect();
+            let roots = self.roots.into_iter().map(|path| root_from_path(&path, None)).collect();
             mcp_manager.set_roots(roots).await?;
         }
 

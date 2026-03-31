@@ -105,10 +105,7 @@ impl App {
             AcpEvent::PromptError(error) => {
                 self.conversation_screen.on_prompt_error(&error);
             }
-            AcpEvent::ElicitationRequest {
-                params,
-                response_tx,
-            } => self.on_elicitation_request(params, response_tx),
+            AcpEvent::ElicitationRequest { params, response_tx } => self.on_elicitation_request(params, response_tx),
             AcpEvent::AuthenticateComplete { method_id } => {
                 self.on_authenticate_complete(&method_id);
             }
@@ -117,26 +114,17 @@ impl App {
             }
             AcpEvent::SessionsListed { sessions } => {
                 let current_id = &self.session_id;
-                let filtered: Vec<_> = sessions
-                    .into_iter()
-                    .filter(|s| s.session_id != *current_id)
-                    .collect();
+                let filtered: Vec<_> = sessions.into_iter().filter(|s| s.session_id != *current_id).collect();
                 self.conversation_screen.open_session_picker(filtered);
             }
             // SessionLoaded intentionally does NOT restore previous config selections:
             // when the user loads an existing session, the server's stored config for
             // that session is authoritative.
-            AcpEvent::SessionLoaded {
-                session_id,
-                config_options,
-            } => {
+            AcpEvent::SessionLoaded { session_id, config_options } => {
                 self.session_id = session_id;
                 self.update_config_options(&config_options);
             }
-            AcpEvent::NewSessionCreated {
-                session_id,
-                config_options,
-            } => {
+            AcpEvent::NewSessionCreated { session_id, config_options } => {
                 let previous_selections = current_config_selections(&self.config_options);
                 self.session_id = session_id;
                 self.update_config_options(&config_options);
@@ -155,9 +143,7 @@ impl App {
             return;
         }
 
-        if self.keybindings.toggle_git_diff.matches(key_event)
-            && !self.conversation_screen.has_modal()
-        {
+        if self.keybindings.toggle_git_diff.matches(key_event) && !self.conversation_screen.has_modal() {
             if let Some(msg) = self.screen_router.toggle_git_diff() {
                 self.handle_screen_router_message(commands, msg).await;
             }
@@ -167,12 +153,7 @@ impl App {
         let event = Event::Key(key_event);
 
         if self.screen_router.is_git_diff() {
-            for msg in self
-                .screen_router
-                .on_event(&event)
-                .await
-                .unwrap_or_default()
-            {
+            for msg in self.screen_router.on_event(&event).await.unwrap_or_default() {
                 self.handle_screen_router_message(commands, msg).await;
             }
         } else if self.settings_overlay.is_some() {
@@ -190,18 +171,12 @@ impl App {
     async fn submit_prompt(&mut self, user_input: String, attachments: Vec<PromptAttachment>) {
         let outcome = build_attachment_blocks(&attachments).await;
         self.conversation_screen.conversation.push_user_message("");
-        self.conversation_screen
-            .conversation
-            .push_user_message(&user_input);
+        self.conversation_screen.conversation.push_user_message(&user_input);
         for placeholder in &outcome.transcript_placeholders {
-            self.conversation_screen
-                .conversation
-                .push_user_message(placeholder);
+            self.conversation_screen.conversation.push_user_message(placeholder);
         }
         for w in outcome.warnings {
-            self.conversation_screen
-                .conversation
-                .push_user_message(&format!("[wisp] {w}"));
+            self.conversation_screen.conversation.push_user_message(&format!("[wisp] {w}"));
         }
 
         if let Some(message) = self.media_support_error(&outcome.blocks) {
@@ -212,11 +187,7 @@ impl App {
         let _ = self.prompt_handle.prompt(
             &self.session_id,
             &user_input,
-            if outcome.blocks.is_empty() {
-                None
-            } else {
-                Some(outcome.blocks)
-            },
+            if outcome.blocks.is_empty() { None } else { Some(outcome.blocks) },
         );
     }
 
@@ -227,10 +198,7 @@ impl App {
     ) {
         for msg in outcome.unwrap_or_default() {
             match msg {
-                ConversationScreenMessage::SendPrompt {
-                    user_input,
-                    attachments,
-                } => {
+                ConversationScreenMessage::SendPrompt { user_input, attachments } => {
                     self.conversation_screen.waiting_for_response = true;
                     self.submit_prompt(user_input, attachments).await;
                 }
@@ -259,18 +227,14 @@ impl App {
     fn handle_fallthrough_keybindings(&self, key_event: KeyEvent) {
         if self.keybindings.cycle_reasoning.matches(key_event) {
             if let Some((id, val)) = settings::cycle_reasoning_option(&self.config_options) {
-                let _ = self
-                    .prompt_handle
-                    .set_config_option(&self.session_id, &id, &val);
+                let _ = self.prompt_handle.set_config_option(&self.session_id, &id, &val);
             }
             return;
         }
 
         if self.keybindings.cycle_mode.matches(key_event) {
             if let Some((id, val)) = settings::cycle_quick_option(&self.config_options) {
-                let _ = self
-                    .prompt_handle
-                    .set_config_option(&self.session_id, &id, &val);
+                let _ = self.prompt_handle.set_config_option(&self.session_id, &id, &val);
             }
             return;
         }
@@ -283,11 +247,7 @@ impl App {
         }
     }
 
-    async fn handle_settings_overlay_event(
-        &mut self,
-        commands: &mut Vec<RendererCommand>,
-        event: &Event,
-    ) {
+    async fn handle_settings_overlay_event(&mut self, commands: &mut Vec<RendererCommand>, event: &Event) {
         let Some(ref mut overlay) = self.settings_overlay else {
             return;
         };
@@ -300,17 +260,13 @@ impl App {
                     return;
                 }
                 SettingsMessage::SetConfigOption { config_id, value } => {
-                    let _ =
-                        self.prompt_handle
-                            .set_config_option(&self.session_id, &config_id, &value);
+                    let _ = self.prompt_handle.set_config_option(&self.session_id, &config_id, &value);
                 }
                 SettingsMessage::SetTheme(theme) => {
                     commands.push(RendererCommand::SetTheme(theme));
                 }
                 SettingsMessage::AuthenticateServer(name) => {
-                    let _ = self
-                        .prompt_handle
-                        .authenticate_mcp_server(&self.session_id, &name);
+                    let _ = self.prompt_handle.authenticate_mcp_server(&self.session_id, &name);
                 }
                 SettingsMessage::AuthenticateProvider(ref method_id) => {
                     if let Some(ref mut overlay) = self.settings_overlay {
@@ -323,11 +279,8 @@ impl App {
     }
 
     fn open_settings_overlay(&mut self) {
-        self.settings_overlay = Some(settings::create_overlay(
-            &self.config_options,
-            &self.server_statuses,
-            &self.auth_methods,
-        ));
+        self.settings_overlay =
+            Some(settings::create_overlay(&self.config_options, &self.server_statuses, &self.auth_methods));
     }
 
     fn update_config_options(&mut self, config_options: &[acp::SessionConfigOption]) {
@@ -349,30 +302,17 @@ impl App {
         for (id, old_value) in previous {
             let still_exists = new_selections.iter().any(|(new_id, _)| new_id == id);
             if !still_exists {
-                tracing::debug!(
-                    config_id = id,
-                    "config option no longer present in new session"
-                );
+                tracing::debug!(config_id = id, "config option no longer present in new session");
                 continue;
             }
-            let server_reset = new_selections
-                .iter()
-                .any(|(new_id, new_val)| new_id == id && new_val != old_value);
-            if server_reset
-                && let Err(e) =
-                    self.prompt_handle
-                        .set_config_option(&self.session_id, id, old_value)
-            {
+            let server_reset = new_selections.iter().any(|(new_id, new_val)| new_id == id && new_val != old_value);
+            if server_reset && let Err(e) = self.prompt_handle.set_config_option(&self.session_id, id, old_value) {
                 tracing::warn!(config_id = id, error = %e, "failed to restore config option");
             }
         }
     }
 
-    async fn handle_screen_router_message(
-        &mut self,
-        commands: &mut Vec<RendererCommand>,
-        msg: ScreenRouterMessage,
-    ) {
+    async fn handle_screen_router_message(&mut self, commands: &mut Vec<RendererCommand>, msg: ScreenRouterMessage) {
         match msg {
             ScreenRouterMessage::LoadGitDiff | ScreenRouterMessage::RefreshGitDiff => {
                 self.git_diff_mode_mut().complete_load().await;
@@ -408,15 +348,13 @@ impl App {
         response_tx: oneshot::Sender<acp_utils::notifications::ElicitationResponse>,
     ) {
         self.settings_overlay = None;
-        self.conversation_screen
-            .on_elicitation_request(params, response_tx);
+        self.conversation_screen.on_elicitation_request(params, response_tx);
     }
 
     fn on_ext_notification(&mut self, notification: &acp::ExtNotification) {
         use acp_utils::notifications::{
-            AUTH_METHODS_UPDATED_METHOD, AuthMethodsUpdatedParams, CONTEXT_CLEARED_METHOD,
-            CONTEXT_USAGE_METHOD, ContextUsageParams, McpNotification, SUB_AGENT_PROGRESS_METHOD,
-            SubAgentProgressParams,
+            AUTH_METHODS_UPDATED_METHOD, AuthMethodsUpdatedParams, CONTEXT_CLEARED_METHOD, CONTEXT_USAGE_METHOD,
+            ContextUsageParams, McpNotification, SUB_AGENT_PROGRESS_METHOD, SubAgentProgressParams,
         };
 
         match notification.method.as_ref() {
@@ -425,21 +363,17 @@ impl App {
                 self.context_usage_pct = None;
             }
             CONTEXT_USAGE_METHOD => {
-                if let Ok(params) =
-                    serde_json::from_str::<ContextUsageParams>(notification.params.get())
-                {
+                if let Ok(params) = serde_json::from_str::<ContextUsageParams>(notification.params.get()) {
                     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                     {
-                        self.context_usage_pct = params.usage_ratio.map(|usage_ratio| {
-                            ((1.0 - usage_ratio) * 100.0).clamp(0.0, 100.0).round() as u8
-                        });
+                        self.context_usage_pct = params
+                            .usage_ratio
+                            .map(|usage_ratio| ((1.0 - usage_ratio) * 100.0).clamp(0.0, 100.0).round() as u8);
                     }
                 }
             }
             SUB_AGENT_PROGRESS_METHOD => {
-                if let Ok(progress) =
-                    serde_json::from_str::<SubAgentProgressParams>(notification.params.get())
-                {
+                if let Ok(progress) = serde_json::from_str::<SubAgentProgressParams>(notification.params.get()) {
                     self.conversation_screen.on_sub_agent_progress(&progress);
                 }
             }
@@ -449,9 +383,7 @@ impl App {
                 }
             }
             _ => {
-                if let Ok(McpNotification::ServerStatus { servers }) =
-                    McpNotification::try_from(notification)
-                {
+                if let Ok(McpNotification::ServerStatus { servers }) = McpNotification::try_from(notification) {
                     if let Some(ref mut overlay) = self.settings_overlay {
                         overlay.update_server_statuses(servers.clone());
                     }
@@ -475,12 +407,8 @@ impl App {
     }
 
     fn media_support_error(&self, blocks: &[acp::ContentBlock]) -> Option<String> {
-        let requires_image = blocks
-            .iter()
-            .any(|block| matches!(block, acp::ContentBlock::Image(_)));
-        let requires_audio = blocks
-            .iter()
-            .any(|block| matches!(block, acp::ContentBlock::Audio(_)));
+        let requires_image = blocks.iter().any(|block| matches!(block, acp::ContentBlock::Image(_)));
+        let requires_audio = blocks.iter().any(|block| matches!(block, acp::ContentBlock::Audio(_)));
 
         if !requires_image && !requires_audio {
             return None;
@@ -493,21 +421,14 @@ impl App {
             return Some("ACP agent does not support audio input.".to_string());
         }
 
-        let option = self
-            .config_options
-            .iter()
-            .find(|option| option.id.0.as_ref() == ConfigOptionId::Model.as_str())?;
+        let option =
+            self.config_options.iter().find(|option| option.id.0.as_ref() == ConfigOptionId::Model.as_str())?;
         let acp::SessionConfigKind::Select(select) = &option.kind else {
             return None;
         };
 
-        let values: Vec<_> = select
-            .current_value
-            .0
-            .split(',')
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .collect();
+        let values: Vec<_> =
+            select.current_value.0.split(',').map(str::trim).filter(|value| !value.is_empty()).collect();
 
         if values.is_empty() {
             return None;
@@ -552,8 +473,7 @@ impl Component for App {
             Event::Paste(_) => {
                 self.settings_overlay = None;
                 let outcome = self.conversation_screen.on_event(event).await;
-                self.handle_conversation_messages(&mut commands, outcome)
-                    .await;
+                self.handle_conversation_messages(&mut commands, outcome).await;
             }
             Event::Tick => {
                 let now = Instant::now();
@@ -565,8 +485,7 @@ impl Component for App {
                         self.handle_screen_router_message(&mut commands, msg).await;
                     }
                 } else if self.settings_overlay.is_some() {
-                    self.handle_settings_overlay_event(&mut commands, event)
-                        .await;
+                    self.handle_settings_overlay_event(&mut commands, event).await;
                 }
             }
             Event::Resize(_) => {}
@@ -643,10 +562,7 @@ pub(crate) mod test_helpers {
 
     pub fn make_app_with_config_recording(
         config_options: &[acp::SessionConfigOption],
-    ) -> (
-        App,
-        tokio::sync::mpsc::UnboundedReceiver<acp_utils::client::PromptCommand>,
-    ) {
+    ) -> (App, tokio::sync::mpsc::UnboundedReceiver<acp_utils::client::PromptCommand>) {
         let (handle, rx) = AcpPromptHandle::recording();
         let app = App::new(
             SessionId::new("test"),
@@ -675,10 +591,7 @@ pub(crate) mod test_helpers {
     pub fn make_app_with_config_and_capabilities_recording(
         config_options: &[acp::SessionConfigOption],
         prompt_capabilities: acp::PromptCapabilities,
-    ) -> (
-        App,
-        tokio::sync::mpsc::UnboundedReceiver<acp_utils::client::PromptCommand>,
-    ) {
+    ) -> (App, tokio::sync::mpsc::UnboundedReceiver<acp_utils::client::PromptCommand>) {
         let (handle, rx) = AcpPromptHandle::recording();
         let app = App::new(
             SessionId::new("test"),
@@ -717,15 +630,11 @@ mod tests {
     }
 
     fn frame_contains(output: &Frame, text: &str) -> bool {
-        output
-            .lines()
-            .iter()
-            .any(|line| line.plain_text().contains(text))
+        output.lines().iter().any(|line| line.plain_text().contains(text))
     }
 
     async fn send_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
-        app.on_event(&Event::Key(KeyEvent::new(code, modifiers)))
-            .await;
+        app.on_event(&Event::Key(KeyEvent::new(code, modifiers))).await;
     }
 
     fn setup_themes_dir(files: &[&str]) -> TempDir {
@@ -742,10 +651,7 @@ mod tests {
         acp::PlanEntry::new(name, acp::PlanEntryPriority::Medium, status)
     }
 
-    fn mode_model_options(
-        mode_val: impl Into<String>,
-        model_val: impl Into<String>,
-    ) -> Vec<acp::SessionConfigOption> {
+    fn mode_model_options(mode_val: impl Into<String>, model_val: impl Into<String>) -> Vec<acp::SessionConfigOption> {
         vec![
             acp::SessionConfigOption::select(
                 "mode",
@@ -777,25 +683,13 @@ mod tests {
                 "Model",
                 "anthropic:claude-sonnet-4-5",
                 vec![
-                    acp::SessionConfigSelectOption::new(
-                        "anthropic:claude-sonnet-4-5",
-                        "Claude Sonnet",
-                    )
-                    .meta(
-                        SelectOptionMeta {
-                            reasoning_levels: vec![],
-                            supports_image: true,
-                            supports_audio: false,
-                        }
-                        .into_meta(),
+                    acp::SessionConfigSelectOption::new("anthropic:claude-sonnet-4-5", "Claude Sonnet").meta(
+                        SelectOptionMeta { reasoning_levels: vec![], supports_image: true, supports_audio: false }
+                            .into_meta(),
                     ),
                     acp::SessionConfigSelectOption::new("deepseek:deepseek-chat", "DeepSeek").meta(
-                        SelectOptionMeta {
-                            reasoning_levels: vec![],
-                            supports_image: false,
-                            supports_audio: false,
-                        }
-                        .into_meta(),
+                        SelectOptionMeta { reasoning_levels: vec![], supports_image: false, supports_audio: false }
+                            .into_meta(),
                     ),
                 ],
             )
@@ -814,11 +708,7 @@ mod tests {
 
         let temp_dir = setup_themes_dir(&["catppuccin.tmTheme", "nord.tmTheme"]);
         with_wisp_home(temp_dir.path(), || {
-            let settings = WispSettings {
-                theme: WispThemeSettings {
-                    file: Some("nord.tmTheme".to_string()),
-                },
-            };
+            let settings = WispSettings { theme: WispThemeSettings { file: Some("nord.tmTheme".to_string()) } };
             save_settings(&settings).unwrap();
             let mut app = make_app();
             app.open_settings_overlay();
@@ -830,23 +720,18 @@ mod tests {
     fn command_picker_cursor_stays_in_input_prompt() {
         let mut app = make_app();
         let mut renderer = make_renderer();
-        app.conversation_screen
-            .prompt_composer
-            .open_command_picker_with_entries(vec![CommandEntry {
-                name: "settings".to_string(),
-                description: "Open settings".to_string(),
-                has_input: false,
-                hint: None,
-                builtin: true,
-            }]);
+        app.conversation_screen.prompt_composer.open_command_picker_with_entries(vec![CommandEntry {
+            name: "settings".to_string(),
+            description: "Open settings".to_string(),
+            has_input: false,
+            hint: None,
+            builtin: true,
+        }]);
 
         let context = ViewContext::new((120, 40));
         let output = render_app(&mut renderer, &mut app, &context);
-        let input_row = output
-            .lines()
-            .iter()
-            .position(|line| line.plain_text().contains("> "))
-            .expect("input prompt should exist");
+        let input_row =
+            output.lines().iter().position(|line| line.plain_text().contains("> ")).expect("input prompt should exist");
         assert_eq!(output.cursor().row, input_row);
     }
 
@@ -863,15 +748,9 @@ mod tests {
         app.open_settings_overlay();
 
         let ctx = ViewContext::new((120, 40));
-        assert!(frame_contains(
-            &render_app(&mut renderer, &mut app, &ctx),
-            "Configuration"
-        ));
+        assert!(frame_contains(&render_app(&mut renderer, &mut app, &ctx), "Configuration"));
         app.settings_overlay = None;
-        assert!(!frame_contains(
-            &render_app(&mut renderer, &mut app, &ctx),
-            "Configuration"
-        ));
+        assert!(!frame_contains(&render_app(&mut renderer, &mut app, &ctx), "Configuration"));
     }
 
     #[test]
@@ -887,10 +766,7 @@ mod tests {
                 acp::SessionConfigSelectOption::new("c:z", "Gamma / Z"),
             ],
         )];
-        assert_eq!(
-            extract_model_display(&options).as_deref(),
-            Some("Alpha / X + Beta / Y")
-        );
+        assert_eq!(extract_model_display(&options).as_deref(), Some("Alpha / X + Beta / Y"));
     }
 
     #[test]
@@ -916,9 +792,7 @@ mod tests {
         let grace_period = app.conversation_screen.plan_tracker.grace_period;
         app.conversation_screen.plan_tracker.replace(
             vec![make_plan_entry("1", acp::PlanEntryStatus::Completed)],
-            Instant::now()
-                .checked_sub(grace_period + Duration::from_millis(1))
-                .unwrap(),
+            Instant::now().checked_sub(grace_period + Duration::from_millis(1)).unwrap(),
         );
         app.conversation_screen.plan_tracker.on_tick(Instant::now());
 
@@ -931,18 +805,14 @@ mod tests {
         let mut app = make_app();
         let v0 = app.conversation_screen.plan_tracker.version();
 
-        app.conversation_screen.plan_tracker.replace(
-            vec![make_plan_entry("Task A", acp::PlanEntryStatus::Pending)],
-            Instant::now(),
-        );
+        app.conversation_screen
+            .plan_tracker
+            .replace(vec![make_plan_entry("Task A", acp::PlanEntryStatus::Pending)], Instant::now());
         let v1 = app.conversation_screen.plan_tracker.version();
         assert!(v1 > v0, "replace should increment version");
 
         app.conversation_screen.plan_tracker.clear();
-        assert!(
-            app.conversation_screen.plan_tracker.version() > v1,
-            "clear should increment version"
-        );
+        assert!(app.conversation_screen.plan_tracker.version() > v1, "clear should increment version");
     }
 
     #[test]
@@ -966,18 +836,9 @@ mod tests {
         let lines = render_component(|ctx| picker.render(ctx), 60, 10).get_lines();
 
         let has = |text: &str| lines.iter().any(|l| l.contains(text));
-        assert!(
-            !has("Current session title"),
-            "current session should be filtered out"
-        );
-        assert!(
-            has("First other session"),
-            "first other session should be present"
-        );
-        assert!(
-            has("Second other session"),
-            "second other session should be present"
-        );
+        assert!(!has("Current session title"), "current session should be filtered out");
+        assert!(has("First other session"), "first other session should be present");
+        assert!(has("Second other session"), "second other session should be present");
     }
 
     #[tokio::test]
@@ -987,10 +848,7 @@ mod tests {
         app.keybindings.exit = KeyBinding::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
 
         send_key(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
-        assert!(
-            !app.exit_requested(),
-            "default Ctrl+C should no longer exit"
-        );
+        assert!(!app.exit_requested(), "default Ctrl+C should no longer exit");
 
         send_key(&mut app, KeyCode::Char('q'), KeyModifiers::CONTROL).await;
         assert!(app.exit_requested(), "custom Ctrl+Q should exit");
@@ -1023,21 +881,16 @@ mod tests {
     async fn ctrl_g_blocked_during_elicitation() {
         let mut app = make_app();
         app.conversation_screen.active_modal =
-            Some(crate::components::conversation_screen::Modal::Elicitation(
-                ElicitationForm::from_params(
-                    acp_utils::notifications::ElicitationParams {
-                        message: "test".to_string(),
-                        schema: acp_utils::ElicitationSchema::builder().build().unwrap(),
-                    },
-                    tokio::sync::oneshot::channel().0,
-                ),
-            ));
+            Some(crate::components::conversation_screen::Modal::Elicitation(ElicitationForm::from_params(
+                acp_utils::notifications::ElicitationParams {
+                    message: "test".to_string(),
+                    schema: acp_utils::ElicitationSchema::builder().build().unwrap(),
+                },
+                tokio::sync::oneshot::channel().0,
+            )));
 
         send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
-        assert!(
-            !app.screen_router.is_git_diff(),
-            "git diff should not open during elicitation"
-        );
+        assert!(!app.screen_router.is_git_diff(), "git diff should not open during elicitation");
     }
 
     #[tokio::test]
@@ -1065,20 +918,12 @@ mod tests {
         let mut commands = Vec::new();
         app.handle_screen_router_message(
             &mut commands,
-            ScreenRouterMessage::SendPrompt {
-                user_input: "Looks good".to_string(),
-            },
+            ScreenRouterMessage::SendPrompt { user_input: "Looks good".to_string() },
         )
         .await;
 
-        assert!(
-            !app.screen_router.is_git_diff(),
-            "successful submit should exit git diff mode"
-        );
-        assert!(
-            app.conversation_screen.waiting_for_response,
-            "submit should transition into waiting state"
-        );
+        assert!(!app.screen_router.is_git_diff(), "successful submit should exit git diff mode");
+        assert!(app.conversation_screen.waiting_for_response, "submit should transition into waiting state");
 
         let cmd = rx.try_recv().expect("expected Prompt command to be sent");
         match cmd {
@@ -1098,32 +943,19 @@ mod tests {
         let mut commands = Vec::new();
         app.handle_screen_router_message(
             &mut commands,
-            ScreenRouterMessage::SendPrompt {
-                user_input: "Needs follow-up".to_string(),
-            },
+            ScreenRouterMessage::SendPrompt { user_input: "Needs follow-up".to_string() },
         )
         .await;
 
-        assert!(
-            app.screen_router.is_git_diff(),
-            "blocked submit should keep git diff mode open"
-        );
-        assert!(
-            rx.try_recv().is_err(),
-            "no prompt should be sent while waiting"
-        );
+        assert!(app.screen_router.is_git_diff(), "blocked submit should keep git diff mode open");
+        assert!(rx.try_recv().is_err(), "no prompt should be sent while waiting");
     }
 
     #[tokio::test]
     async fn mouse_scroll_ignored_in_conversation_mode() {
         use tui::{MouseEvent, MouseEventKind};
         let mut app = make_app();
-        let mouse = MouseEvent {
-            kind: MouseEventKind::ScrollDown,
-            column: 0,
-            row: 0,
-            modifiers: KeyModifiers::NONE,
-        };
+        let mouse = MouseEvent { kind: MouseEventKind::ScrollDown, column: 0, row: 0, modifiers: KeyModifiers::NONE };
         app.on_event(&Event::Mouse(mouse)).await;
     }
 
@@ -1134,10 +966,7 @@ mod tests {
         let mut commands = Vec::new();
         app.handle_conversation_messages(
             &mut commands,
-            Some(vec![ConversationScreenMessage::SendPrompt {
-                user_input: "hello".to_string(),
-                attachments: vec![],
-            }]),
+            Some(vec![ConversationScreenMessage::SendPrompt { user_input: "hello".to_string(), attachments: vec![] }]),
         )
         .await;
 
@@ -1146,10 +975,7 @@ mod tests {
             .conversation
             .segments()
             .any(|seg| matches!(seg, SegmentContent::UserMessage(text) if text == "hello"));
-        assert!(
-            has_hello,
-            "conversation buffer should contain the user input"
-        );
+        assert!(has_hello, "conversation buffer should contain the user input");
     }
 
     #[tokio::test]
@@ -1167,10 +993,7 @@ mod tests {
             &mut commands,
             Some(vec![ConversationScreenMessage::SendPrompt {
                 user_input: "listen".to_string(),
-                attachments: vec![PromptAttachment {
-                    path: audio_path,
-                    display_name: "clip.wav".to_string(),
-                }],
+                attachments: vec![PromptAttachment { path: audio_path, display_name: "clip.wav".to_string() }],
             }]),
         )
         .await;
@@ -1182,18 +1005,12 @@ mod tests {
             .conversation
             .segments()
             .filter_map(|segment| match segment {
-                crate::components::conversation_window::SegmentContent::UserMessage(text) => {
-                    Some(text.clone())
-                }
+                crate::components::conversation_window::SegmentContent::UserMessage(text) => Some(text.clone()),
                 _ => None,
             })
             .collect();
         assert!(messages.iter().any(|text| text == "listen"));
-        assert!(
-            messages
-                .iter()
-                .any(|text| text == "[audio attachment: clip.wav]")
-        );
+        assert!(messages.iter().any(|text| text == "[audio attachment: clip.wav]"));
         assert!(messages.iter().any(|text| {
             text == "[wisp] ACP agent does not support audio input."
                 || text == "[wisp] Current model selection does not support audio input."
@@ -1205,18 +1022,12 @@ mod tests {
         use crate::components::conversation_window::SegmentContent;
         let mut app = make_app();
 
-        app.on_session_update(&acp::SessionUpdate::UserMessageChunk(
-            acp::ContentChunk::new(acp::ContentBlock::Image(acp::ImageContent::new(
-                "aW1n",
-                "image/png",
-            ))),
-        ));
-        app.on_session_update(&acp::SessionUpdate::UserMessageChunk(
-            acp::ContentChunk::new(acp::ContentBlock::Audio(acp::AudioContent::new(
-                "YXVkaW8=",
-                "audio/wav",
-            ))),
-        ));
+        app.on_session_update(&acp::SessionUpdate::UserMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Image(
+            acp::ImageContent::new("aW1n", "image/png"),
+        ))));
+        app.on_session_update(&acp::SessionUpdate::UserMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Audio(
+            acp::AudioContent::new("YXVkaW8=", "audio/wav"),
+        ))));
 
         let segments: Vec<_> = app.conversation_screen.conversation.segments().collect();
         assert!(matches!(
@@ -1233,16 +1044,10 @@ mod tests {
     fn prompt_composer_open_settings() {
         let mut app = make_app();
         let mut commands = Vec::new();
-        tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(app.handle_conversation_messages(
-                &mut commands,
-                Some(vec![ConversationScreenMessage::OpenSettings]),
-            ));
-        assert!(
-            app.settings_overlay.is_some(),
-            "settings overlay should be opened"
+        tokio::runtime::Runtime::new().unwrap().block_on(
+            app.handle_conversation_messages(&mut commands, Some(vec![ConversationScreenMessage::OpenSettings])),
         );
+        assert!(app.settings_overlay.is_some(), "settings overlay should be opened");
     }
 
     #[test]
@@ -1257,61 +1062,37 @@ mod tests {
     async fn tick_advances_spinner_animations() {
         let mut app = make_app();
         let tool_call = acp::ToolCall::new("tool-1".to_string(), "test_tool");
-        app.conversation_screen
-            .tool_call_statuses
-            .on_tool_call(&tool_call);
-        app.conversation_screen
-            .progress_indicator
-            .update(0, 1, true);
+        app.conversation_screen.tool_call_statuses.on_tool_call(&tool_call);
+        app.conversation_screen.progress_indicator.update(0, 1, true);
 
         let ctx = ViewContext::new((80, 24));
-        let tool_before = app
-            .conversation_screen
-            .tool_call_statuses
-            .render_tool("tool-1", &ctx);
+        let tool_before = app.conversation_screen.tool_call_statuses.render_tool("tool-1", &ctx);
         let prog_before = app.conversation_screen.progress_indicator.render(&ctx);
 
         app.on_event(&Event::Tick).await;
 
-        let tool_after = app
-            .conversation_screen
-            .tool_call_statuses
-            .render_tool("tool-1", &ctx);
+        let tool_after = app.conversation_screen.tool_call_statuses.render_tool("tool-1", &ctx);
         let prog_after = app.conversation_screen.progress_indicator.render(&ctx);
 
-        assert_ne!(
-            tool_before[0].plain_text(),
-            tool_after[0].plain_text(),
-            "tick should advance tool spinner"
-        );
-        assert_ne!(
-            prog_before[0].plain_text(),
-            prog_after[0].plain_text(),
-            "tick should advance progress spinner"
-        );
+        assert_ne!(tool_before[0].plain_text(), tool_after[0].plain_text(), "tick should advance tool spinner");
+        assert_ne!(prog_before[0].plain_text(), prog_after[0].plain_text(), "tick should advance progress spinner");
     }
 
     #[test]
     fn on_prompt_error_clears_waiting_state() {
         let mut app = make_app();
         app.conversation_screen.waiting_for_response = true;
-        app.conversation_screen
-            .on_prompt_error(&acp::Error::internal_error());
+        app.conversation_screen.on_prompt_error(&acp::Error::internal_error());
         assert!(!app.conversation_screen.waiting_for_response);
         assert!(!app.exit_requested());
     }
 
     #[test]
     fn auth_events_and_connection_close_exit_behavior() {
-        let mut app = make_app_with_auth(vec![acp::AuthMethod::Agent(acp::AuthMethodAgent::new(
-            "anthropic",
-            "Anthropic",
-        ))]);
+        let mut app =
+            make_app_with_auth(vec![acp::AuthMethod::Agent(acp::AuthMethodAgent::new("anthropic", "Anthropic"))]);
         app.on_authenticate_complete("anthropic");
-        assert!(
-            !app.exit_requested(),
-            "authenticate_complete should not exit"
-        );
+        assert!(!app.exit_requested(), "authenticate_complete should not exit");
 
         let mut app = make_app();
         app.on_authenticate_failed("anthropic", "bad token");
@@ -1326,15 +1107,9 @@ mod tests {
     async fn clear_screen_returns_clear_command() {
         let mut app = make_app();
         let mut commands = Vec::new();
-        app.handle_conversation_messages(
-            &mut commands,
-            Some(vec![ConversationScreenMessage::ClearScreen]),
-        )
-        .await;
+        app.handle_conversation_messages(&mut commands, Some(vec![ConversationScreenMessage::ClearScreen])).await;
         assert!(
-            commands
-                .iter()
-                .any(|c| matches!(c, RendererCommand::ClearScreen)),
+            commands.iter().any(|c| matches!(c, RendererCommand::ClearScreen)),
             "should contain ClearScreen command"
         );
     }
@@ -1351,8 +1126,7 @@ mod tests {
     fn new_session_restores_changed_config_selections() {
         use acp_utils::client::PromptCommand;
 
-        let (mut app, mut rx) =
-            make_app_with_config_recording(&mode_model_options("Planner", "gpt-4o"));
+        let (mut app, mut rx) = make_app_with_config_recording(&mode_model_options("Planner", "gpt-4o"));
         app.update_config_options(&mode_model_options("Coder", "gpt-4o"));
 
         app.on_acp_event(AcpEvent::NewSessionCreated {
@@ -1365,17 +1139,12 @@ mod tests {
 
         let cmd = rx.try_recv().expect("expected a SetConfigOption command");
         match cmd {
-            PromptCommand::SetConfigOption {
-                config_id, value, ..
-            } => {
+            PromptCommand::SetConfigOption { config_id, value, .. } => {
                 assert_eq!(config_id, "mode");
                 assert_eq!(value, "Coder");
             }
             other => panic!("expected SetConfigOption, got {other:?}"),
         }
-        assert!(
-            rx.try_recv().is_err(),
-            "model was unchanged, no extra command expected"
-        );
+        assert!(rx.try_recv().is_err(), "model was unchanged, no extra command expected");
     }
 }

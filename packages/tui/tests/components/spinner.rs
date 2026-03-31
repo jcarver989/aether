@@ -22,12 +22,7 @@ fn visible_tick_0_renders_first_frame() {
     let term = render_component(|ctx| spinner.render(ctx), 80, 24);
     let lines = term.get_lines();
     let expected = BRAILLE_FRAMES[0].to_string();
-    assert!(
-        lines[0].contains(&expected),
-        "Expected '{}' in buffer, got: '{}'",
-        expected,
-        lines[0]
-    );
+    assert!(lines[0].contains(&expected), "Expected '{}' in buffer, got: '{}'", expected, lines[0]);
 }
 
 #[test]
@@ -38,12 +33,7 @@ fn tick_1_renders_second_frame() {
     let term = render_component(|ctx| spinner.render(ctx), 80, 24);
     let lines = term.get_lines();
     let expected = BRAILLE_FRAMES[1].to_string();
-    assert!(
-        lines[0].contains(&expected),
-        "Expected '{}' in buffer, got: '{}'",
-        expected,
-        lines[0]
-    );
+    assert!(lines[0].contains(&expected), "Expected '{}' in buffer, got: '{}'", expected, lines[0]);
 }
 
 #[test]

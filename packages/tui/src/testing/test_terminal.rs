@@ -13,10 +13,7 @@ pub struct Cell {
 
 impl Default for Cell {
     fn default() -> Self {
-        Self {
-            ch: ' ',
-            style: Style::default(),
-        }
+        Self { ch: ' ', style: Style::default() }
     }
 }
 
@@ -116,15 +113,9 @@ impl TestTerminal {
         let split_at = wrapped.len().saturating_sub(rows_usize);
         let (scrollback, visible) = wrapped.split_at(split_at);
 
-        self.scrollback = scrollback
-            .iter()
-            .map(|line| Self::line_to_row(line, columns))
-            .collect();
+        self.scrollback = scrollback.iter().map(|line| Self::line_to_row(line, columns)).collect();
 
-        self.buffer = visible
-            .iter()
-            .map(|line| Self::line_to_row(line, columns))
-            .collect();
+        self.buffer = visible.iter().map(|line| Self::line_to_row(line, columns)).collect();
 
         while self.buffer.len() < rows_usize {
             self.buffer.push(vec![Cell::default(); columns as usize]);
@@ -137,28 +128,15 @@ impl TestTerminal {
     }
 
     fn line_to_row(line: &str, columns: u16) -> Vec<Cell> {
-        let mut row: Vec<Cell> = line
-            .chars()
-            .take(columns as usize)
-            .map(|ch| Cell::new(ch, Style::default()))
-            .collect();
+        let mut row: Vec<Cell> =
+            line.chars().take(columns as usize).map(|ch| Cell::new(ch, Style::default())).collect();
         row.resize(columns as usize, Cell::default());
         row
     }
 
     /// Get all lines as a vector of strings (trailing whitespace trimmed)
     pub fn get_lines(&self) -> Vec<String> {
-        self.buffer
-            .iter()
-            .map(|cells| {
-                cells
-                    .iter()
-                    .map(|c| c.ch)
-                    .collect::<String>()
-                    .trim_end()
-                    .to_string()
-            })
-            .collect()
+        self.buffer.iter().map(|cells| cells.iter().map(|c| c.ch).collect::<String>().trim_end().to_string()).collect()
     }
 
     /// Get full terminal transcript (scrollback history + visible buffer).
@@ -166,14 +144,7 @@ impl TestTerminal {
         self.scrollback
             .iter()
             .chain(self.buffer.iter())
-            .map(|cells| {
-                cells
-                    .iter()
-                    .map(|c| c.ch)
-                    .collect::<String>()
-                    .trim_end()
-                    .to_string()
-            })
+            .map(|cells| cells.iter().map(|c| c.ch).collect::<String>().trim_end().to_string())
             .collect()
     }
 
@@ -185,10 +156,7 @@ impl TestTerminal {
 
     /// Get the style at a specific buffer position.
     pub fn get_style_at(&self, row: usize, col: usize) -> Style {
-        self.buffer
-            .get(row)
-            .and_then(|r| r.get(col))
-            .map_or(Style::default(), |c| c.style)
+        self.buffer.get(row).and_then(|r| r.get(col)).map_or(Style::default(), |c| c.style)
     }
 
     /// Find the first occurrence of `text` on the given row and return its style.
@@ -223,10 +191,7 @@ impl TestTerminal {
 
     /// Move cursor to absolute position
     pub fn move_to(&mut self, col: u16, row: u16) {
-        self.cursor = (
-            col.min(self.size.0.saturating_sub(1)),
-            row.min(self.size.1.saturating_sub(1)),
-        );
+        self.cursor = (col.min(self.size.0.saturating_sub(1)), row.min(self.size.1.saturating_sub(1)));
         self.pending_wrap = false;
     }
 
@@ -256,8 +221,7 @@ impl TestTerminal {
                 if self.cursor.1 >= self.size.1.saturating_sub(1) {
                     let removed = self.buffer.remove(0);
                     self.scrollback.push(removed);
-                    self.buffer
-                        .push(vec![Cell::default(); self.size.0 as usize]);
+                    self.buffer.push(vec![Cell::default(); self.size.0 as usize]);
                 } else {
                     self.cursor.1 += 1;
                 }
@@ -289,8 +253,7 @@ impl TestTerminal {
             if self.cursor.1 >= self.size.1.saturating_sub(1) {
                 let removed = self.buffer.remove(0);
                 self.scrollback.push(removed);
-                self.buffer
-                    .push(vec![Cell::default(); self.size.0 as usize]);
+                self.buffer.push(vec![Cell::default(); self.size.0 as usize]);
             } else {
                 self.cursor.1 += 1;
             }
@@ -362,8 +325,7 @@ impl TestTerminal {
         if let Some(cmd) = chars.next() {
             match cmd {
                 'H' | 'f' => {
-                    let parts: Vec<u16> =
-                        params.split(';').filter_map(|s| s.parse().ok()).collect();
+                    let parts: Vec<u16> = params.split(';').filter_map(|s| s.parse().ok()).collect();
                     let row = parts.first().copied().unwrap_or(1).saturating_sub(1);
                     let col = parts.get(1).copied().unwrap_or(1).saturating_sub(1);
                     self.move_to(col, row);
@@ -396,11 +358,7 @@ impl TestTerminal {
                         0 => {
                             for row in self.cursor.1..self.size.1 {
                                 if let Some(r) = self.buffer.get_mut(row as usize) {
-                                    let start = if row == self.cursor.1 {
-                                        self.cursor.0 as usize
-                                    } else {
-                                        0
-                                    };
+                                    let start = if row == self.cursor.1 { self.cursor.0 as usize } else { 0 };
                                     for cell in r.iter_mut().skip(start) {
                                         *cell = Cell::default();
                                     }
@@ -736,14 +694,7 @@ mod tests {
         let mut term = TestTerminal::new(80, 24);
         write!(term, "\x1b[38;2;255;128;0mrgb\x1b[0m").unwrap();
         term.flush().unwrap();
-        assert_eq!(
-            term.get_style_at(0, 0).fg,
-            Some(Color::Rgb {
-                r: 255,
-                g: 128,
-                b: 0
-            })
-        );
+        assert_eq!(term.get_style_at(0, 0).fg, Some(Color::Rgb { r: 255, g: 128, b: 0 }));
     }
 
     #[test]

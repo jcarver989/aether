@@ -3,14 +3,10 @@ use similar::{DiffOp, TextDiff};
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::components::sub_agent_tracker::{
-    SUB_AGENT_VISIBLE_TOOL_LIMIT, SubAgentState, SubAgentTracker,
-};
+use crate::components::sub_agent_tracker::{SUB_AGENT_VISIBLE_TOOL_LIMIT, SubAgentState, SubAgentTracker};
 use crate::components::tracked_tool_call::TrackedToolCall;
 use tui::BRAILLE_FRAMES as FRAMES;
-use tui::{
-    DiffLine, DiffPreview, DiffTag, Line, SplitDiffCell, SplitDiffRow, ViewContext, render_diff,
-};
+use tui::{DiffLine, DiffPreview, DiffTag, Line, SplitDiffCell, SplitDiffRow, ViewContext, render_diff};
 
 pub const MAX_TOOL_ARG_LENGTH: usize = 200;
 
@@ -27,10 +23,7 @@ pub(crate) fn render_tool_tree(
     let mut lines = if has_sub_agents {
         Vec::new()
     } else {
-        tool_calls
-            .get(id)
-            .map(|tc| tool_call_view(tc, tick).render(context))
-            .unwrap_or_default()
+        tool_calls.get(id).map(|tc| tool_call_view(tc, tick).render(context)).unwrap_or_default()
     };
 
     if let Some(agents) = sub_agents.get(id) {
@@ -40,17 +33,11 @@ pub(crate) fn render_tool_tree(
             }
             lines.push(render_agent_header(agent, tick, context));
 
-            let hidden_count = agent
-                .tool_order
-                .len()
-                .saturating_sub(SUB_AGENT_VISIBLE_TOOL_LIMIT);
+            let hidden_count = agent.tool_order.len().saturating_sub(SUB_AGENT_VISIBLE_TOOL_LIMIT);
 
             if hidden_count > 0 {
                 let mut summary = Line::default();
-                summary.push_styled(
-                    format!("  … {hidden_count} earlier tool calls"),
-                    context.theme.muted(),
-                );
+                summary.push_styled(format!("  … {hidden_count} earlier tool calls"), context.theme.muted());
                 lines.push(summary);
             }
 
@@ -62,11 +49,7 @@ pub(crate) fn render_tool_tree(
                 .peekable();
 
             while let Some(tc) = visible.next() {
-                let connector = if visible.peek().is_some() {
-                    "  ├─ "
-                } else {
-                    "  └─ "
-                };
+                let connector = if visible.peek().is_some() { "  ├─ " } else { "  └─ " };
 
                 let view = tool_call_view(tc, tick);
                 for tool_line in view.render(context) {
@@ -171,27 +154,13 @@ pub(super) fn compute_diff_preview(diff: &acp::Diff) -> DiffPreview {
         process_diff_op(*op, &old_lines, &new_lines, &mut state);
     }
 
-    let DiffBuildState {
-        mut lines,
-        mut rows,
-        mut first_change_line,
-        ..
-    } = state;
+    let DiffBuildState { mut lines, mut rows, mut first_change_line, .. } = state;
 
     trim_context(&mut lines, &mut rows, &mut first_change_line);
 
-    let lang_hint = Path::new(&diff.path)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or("")
-        .to_lowercase();
+    let lang_hint = Path::new(&diff.path).extension().and_then(|ext| ext.to_str()).unwrap_or("").to_lowercase();
 
-    DiffPreview {
-        lines,
-        rows,
-        lang_hint,
-        start_line: first_change_line,
-    }
+    DiffPreview { lines, rows, lang_hint, start_line: first_change_line }
 }
 
 #[derive(Default)]
@@ -215,90 +184,54 @@ fn process_diff_op(op: DiffOp, old: &[&str], new: &[&str], s: &mut DiffBuildStat
                 s.old_line_num += 1;
                 s.new_line_num += 1;
                 let content = get_line(old, old_index + i).to_string();
-                s.lines.push(DiffLine {
-                    tag: DiffTag::Context,
-                    content: content.clone(),
-                });
+                s.lines.push(DiffLine { tag: DiffTag::Context, content: content.clone() });
                 s.rows.push(SplitDiffRow {
                     left: Some(SplitDiffCell {
                         tag: DiffTag::Context,
                         content: content.clone(),
                         line_number: Some(s.old_line_num),
                     }),
-                    right: Some(SplitDiffCell {
-                        tag: DiffTag::Context,
-                        content,
-                        line_number: Some(s.new_line_num),
-                    }),
+                    right: Some(SplitDiffCell { tag: DiffTag::Context, content, line_number: Some(s.new_line_num) }),
                 });
             }
         }
-        DiffOp::Delete {
-            old_index, old_len, ..
-        } => {
+        DiffOp::Delete { old_index, old_len, .. } => {
             if s.first_change_line.is_none() {
                 s.first_change_line = Some(s.old_line_num + 1);
             }
             for i in 0..old_len {
                 s.old_line_num += 1;
                 let content = get_line(old, old_index + i).to_string();
-                s.lines.push(DiffLine {
-                    tag: DiffTag::Removed,
-                    content: content.clone(),
-                });
+                s.lines.push(DiffLine { tag: DiffTag::Removed, content: content.clone() });
                 s.rows.push(SplitDiffRow {
-                    left: Some(SplitDiffCell {
-                        tag: DiffTag::Removed,
-                        content,
-                        line_number: Some(s.old_line_num),
-                    }),
+                    left: Some(SplitDiffCell { tag: DiffTag::Removed, content, line_number: Some(s.old_line_num) }),
                     right: None,
                 });
             }
         }
-        DiffOp::Insert {
-            new_index, new_len, ..
-        } => {
+        DiffOp::Insert { new_index, new_len, .. } => {
             if s.first_change_line.is_none() {
                 s.first_change_line = Some(s.old_line_num + 1);
             }
             for i in 0..new_len {
                 s.new_line_num += 1;
                 let content = get_line(new, new_index + i).to_string();
-                s.lines.push(DiffLine {
-                    tag: DiffTag::Added,
-                    content: content.clone(),
-                });
+                s.lines.push(DiffLine { tag: DiffTag::Added, content: content.clone() });
                 s.rows.push(SplitDiffRow {
                     left: None,
-                    right: Some(SplitDiffCell {
-                        tag: DiffTag::Added,
-                        content,
-                        line_number: Some(s.new_line_num),
-                    }),
+                    right: Some(SplitDiffCell { tag: DiffTag::Added, content, line_number: Some(s.new_line_num) }),
                 });
             }
         }
-        DiffOp::Replace {
-            old_index,
-            old_len,
-            new_index,
-            new_len,
-        } => {
+        DiffOp::Replace { old_index, old_len, new_index, new_len } => {
             if s.first_change_line.is_none() {
                 s.first_change_line = Some(s.old_line_num + 1);
             }
             for i in 0..old_len {
-                s.lines.push(DiffLine {
-                    tag: DiffTag::Removed,
-                    content: get_line(old, old_index + i).to_string(),
-                });
+                s.lines.push(DiffLine { tag: DiffTag::Removed, content: get_line(old, old_index + i).to_string() });
             }
             for i in 0..new_len {
-                s.lines.push(DiffLine {
-                    tag: DiffTag::Added,
-                    content: get_line(new, new_index + i).to_string(),
-                });
+                s.lines.push(DiffLine { tag: DiffTag::Added, content: get_line(new, new_index + i).to_string() });
             }
             for i in 0..old_len.max(new_len) {
                 let left = (i < old_len).then(|| {
@@ -323,11 +256,7 @@ fn process_diff_op(op: DiffOp, old: &[&str], new: &[&str], s: &mut DiffBuildStat
     }
 }
 
-fn trim_context(
-    lines: &mut Vec<DiffLine>,
-    rows: &mut Vec<SplitDiffRow>,
-    first_change_line: &mut Option<usize>,
-) {
+fn trim_context(lines: &mut Vec<DiffLine>, rows: &mut Vec<SplitDiffRow>, first_change_line: &mut Option<usize>) {
     const CONTEXT_LINES: usize = 3;
 
     let first_change_idx = lines.iter().position(|l| l.tag != DiffTag::Context);
@@ -377,10 +306,7 @@ mod tests {
     use super::*;
 
     fn make_large_file(num_lines: usize) -> String {
-        (1..=num_lines)
-            .map(|i| format!("line {i}"))
-            .collect::<Vec<_>>()
-            .join("\n")
+        (1..=num_lines).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n")
     }
 
     fn replace_line(text: &str, line_num: usize, replacement: &str) -> String {
@@ -427,10 +353,7 @@ mod tests {
         let preview = compute_diff_preview(&diff);
 
         let start = preview.start_line.expect("start_line should be set");
-        assert!(
-            start >= 42,
-            "start_line should be near the edit (line 45), got {start}"
-        );
+        assert!(start >= 42, "start_line should be near the edit (line 45), got {start}");
     }
 
     #[test]
@@ -442,10 +365,7 @@ mod tests {
 
         assert!(!preview.rows.is_empty(), "rows should not be empty");
         // The replace op should produce a paired row with both left (removed) and right (added)
-        let paired = preview
-            .rows
-            .iter()
-            .find(|r| r.left.is_some() && r.right.is_some() && !is_context_row(r));
+        let paired = preview.rows.iter().find(|r| r.left.is_some() && r.right.is_some() && !is_context_row(r));
         assert!(paired.is_some(), "should have a paired replace row");
         let row = paired.unwrap();
         assert_eq!(row.left.as_ref().unwrap().tag, DiffTag::Removed);
@@ -461,10 +381,7 @@ mod tests {
         let diff = acp::Diff::new("test.txt", new).old_text(old);
         let preview = compute_diff_preview(&diff);
 
-        let delete_row = preview
-            .rows
-            .iter()
-            .find(|r| r.left.as_ref().is_some_and(|c| c.tag == DiffTag::Removed));
+        let delete_row = preview.rows.iter().find(|r| r.left.as_ref().is_some_and(|c| c.tag == DiffTag::Removed));
         assert!(delete_row.is_some(), "should have a delete row");
         assert!(delete_row.unwrap().right.is_none());
     }
@@ -476,10 +393,7 @@ mod tests {
         let diff = acp::Diff::new("test.txt", new).old_text(old);
         let preview = compute_diff_preview(&diff);
 
-        let insert_row = preview
-            .rows
-            .iter()
-            .find(|r| r.right.as_ref().is_some_and(|c| c.tag == DiffTag::Added));
+        let insert_row = preview.rows.iter().find(|r| r.right.as_ref().is_some_and(|c| c.tag == DiffTag::Added));
         assert!(insert_row.is_some(), "should have an insert row");
         assert!(insert_row.unwrap().left.is_none());
     }
@@ -492,16 +406,8 @@ mod tests {
         let preview = compute_diff_preview(&diff);
 
         // Both should be trimmed to roughly the same size (3 context + changes + 3 context)
-        assert!(
-            preview.lines.len() <= 10,
-            "lines should be trimmed, got {}",
-            preview.lines.len()
-        );
-        assert!(
-            preview.rows.len() <= 10,
-            "rows should be trimmed, got {}",
-            preview.rows.len()
-        );
+        assert!(preview.lines.len() <= 10, "lines should be trimmed, got {}", preview.lines.len());
+        assert!(preview.rows.len() <= 10, "rows should be trimmed, got {}", preview.rows.len());
 
         // Both should contain change indicators
         let has_line_change = preview.lines.iter().any(|l| l.tag != DiffTag::Context);

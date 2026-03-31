@@ -29,11 +29,7 @@ impl Default for TextInput {
 
 impl TextInput {
     pub fn new(keybindings: Keybindings) -> Self {
-        Self {
-            field: TextField::new(String::new()),
-            mentions: Vec::new(),
-            keybindings,
-        }
+        Self { field: TextField::new(String::new()), mentions: Vec::new(), keybindings }
     }
 
     pub fn set_content_width(&mut self, width: usize) {
@@ -48,9 +44,7 @@ impl TextInput {
     /// whose query extends beyond the `@` trigger character.
     pub fn cursor_index(&self, picker_query_len: Option<usize>) -> usize {
         if let Some(query_len) = picker_query_len {
-            let at_pos = self
-                .active_mention_start()
-                .unwrap_or(self.field.value.len());
+            let at_pos = self.active_mention_start().unwrap_or(self.field.value.len());
             at_pos + 1 + query_len
         } else {
             self.field.cursor_pos()
@@ -94,11 +88,7 @@ impl TextInput {
 
     pub fn apply_file_selection(&mut self, path: PathBuf, display_name: String) {
         let mention = format!("@{display_name}");
-        self.mentions.push(SelectedFileMention {
-            mention: mention.clone(),
-            path,
-            display_name,
-        });
+        self.mentions.push(SelectedFileMention { mention: mention.clone(), path, display_name });
 
         if let Some(at_pos) = self.active_mention_start() {
             let mut s = self.field.value[..at_pos].to_string();
@@ -153,21 +143,14 @@ impl TextInput {
         }
 
         // Delegate cursor navigation, char input, and backspace to TextField
-        self.field
-            .on_event(&Event::Key(*key_event))
-            .await
-            .map(|_| vec![])
+        self.field.on_event(&Event::Key(*key_event)).await.map(|_| vec![])
     }
 }
 
 fn mention_start(input: &str) -> Option<usize> {
     let at_pos = input.rfind('@')?;
     let prefix = &input[..at_pos];
-    if prefix.is_empty() || prefix.chars().last().is_some_and(char::is_whitespace) {
-        Some(at_pos)
-    } else {
-        None
-    }
+    if prefix.is_empty() || prefix.chars().last().is_some_and(char::is_whitespace) { Some(at_pos) } else { None }
 }
 
 #[cfg(test)]
@@ -274,10 +257,7 @@ mod tests {
     async fn slash_on_empty_returns_open_command_picker() {
         let mut input = TextInput::default();
         let outcome = input.on_event(&key(KeyCode::Char('/'))).await;
-        assert!(matches!(
-            outcome.as_deref(),
-            Some([TextInputMessage::OpenCommandPicker])
-        ));
+        assert!(matches!(outcome.as_deref(), Some([TextInputMessage::OpenCommandPicker])));
         assert_eq!(input.buffer(), "/");
     }
 
@@ -285,10 +265,7 @@ mod tests {
     async fn at_sign_returns_open_file_picker() {
         let mut input = TextInput::default();
         let outcome = input.on_event(&key(KeyCode::Char('@'))).await;
-        assert!(matches!(
-            outcome.as_deref(),
-            Some([TextInputMessage::OpenFilePicker])
-        ));
+        assert!(matches!(outcome.as_deref(), Some([TextInputMessage::OpenFilePicker])));
         assert_eq!(input.buffer(), "@");
     }
 
@@ -296,10 +273,7 @@ mod tests {
     async fn enter_returns_submit() {
         let mut input = input_with("hello", None);
         let outcome = input.on_event(&key(KeyCode::Enter)).await;
-        assert!(matches!(
-            outcome.as_deref(),
-            Some([TextInputMessage::Submit])
-        ));
+        assert!(matches!(outcome.as_deref(), Some([TextInputMessage::Submit])));
     }
 
     #[test]
@@ -346,10 +320,8 @@ mod tests {
 
     #[tokio::test]
     async fn up_on_first_row_goes_home_down_on_last_row_goes_end() {
-        let cases = [
-            (3, KeyCode::Up, 0, "up on single row -> home"),
-            (0, KeyCode::Down, 5, "down on single row -> end"),
-        ];
+        let cases =
+            [(3, KeyCode::Up, 0, "up on single row -> home"), (0, KeyCode::Down, 5, "down on single row -> end")];
         for (cur, code, expected, label) in cases {
             let mut input = input_with_width("hello", cur, 20);
             input.on_event(&key(code)).await;

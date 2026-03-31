@@ -8,29 +8,13 @@ use crate::notifications::{ElicitationParams, ElicitationResponse};
 pub enum AcpEvent {
     SessionUpdate(Box<SessionUpdate>),
     ExtNotification(ExtNotification),
-    ElicitationRequest {
-        params: ElicitationParams,
-        response_tx: oneshot::Sender<ElicitationResponse>,
-    },
+    ElicitationRequest { params: ElicitationParams, response_tx: oneshot::Sender<ElicitationResponse> },
     PromptDone(StopReason),
     PromptError(Error),
-    AuthenticateComplete {
-        method_id: String,
-    },
-    AuthenticateFailed {
-        method_id: String,
-        error: String,
-    },
-    SessionsListed {
-        sessions: Vec<acp::SessionInfo>,
-    },
-    SessionLoaded {
-        session_id: acp::SessionId,
-        config_options: Vec<acp::SessionConfigOption>,
-    },
-    NewSessionCreated {
-        session_id: acp::SessionId,
-        config_options: Vec<acp::SessionConfigOption>,
-    },
+    AuthenticateComplete { method_id: String },
+    AuthenticateFailed { method_id: String, error: String },
+    SessionsListed { sessions: Vec<acp::SessionInfo> },
+    SessionLoaded { session_id: acp::SessionId, config_options: Vec<acp::SessionConfigOption> },
+    NewSessionCreated { session_id: acp::SessionId, config_options: Vec<acp::SessionConfigOption> },
     ConnectionClosed,
 }

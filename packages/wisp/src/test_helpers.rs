@@ -2,9 +2,7 @@ use crate::settings::WISP_HOME_ENV_MUTEX;
 use std::path::Path;
 
 pub fn with_wisp_home(path: &Path, f: impl FnOnce()) {
-    let _guard = WISP_HOME_ENV_MUTEX
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _guard = WISP_HOME_ENV_MUTEX.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let old = std::env::var_os("WISP_HOME");
     unsafe { std::env::set_var("WISP_HOME", path) };
     f();

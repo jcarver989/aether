@@ -71,9 +71,7 @@ pub fn setup_logging(log_dir: Option<&str>) {
     tracing_subscriber::fmt()
         .with_writer(daily(dir, "wisp.log"))
         .with_ansi(false)
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .init();
 }
 

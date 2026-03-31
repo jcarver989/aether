@@ -6,9 +6,8 @@ use rmcp::{
         wrapper::{Json, Parameters},
     },
     model::{
-        GetPromptRequestParams, GetPromptResult, Implementation, ListPromptsResult,
-        PaginatedRequestParams, Prompt, PromptArgument, PromptMessage, PromptMessageRole,
-        ServerCapabilities, ServerInfo,
+        GetPromptRequestParams, GetPromptResult, Implementation, ListPromptsResult, PaginatedRequestParams, Prompt,
+        PromptArgument, PromptMessage, PromptMessageRole, ServerCapabilities, ServerInfo,
     },
     service::RequestContext,
     tool, tool_handler, tool_router,
@@ -22,8 +21,8 @@ use tokio::sync::RwLock;
 use utils::substitution::substitute_parameters;
 
 use super::tools::{
-    LoadSkillsInput, LoadSkillsOutput, SaveNoteInput, SaveNoteOutput, SearchNotesInput,
-    SearchNotesOutput, SkillFile, SkillRequest, save_note,
+    LoadSkillsInput, LoadSkillsOutput, SaveNoteInput, SaveNoteOutput, SearchNotesInput, SearchNotesOutput, SkillFile,
+    SkillRequest, save_note,
 };
 use crate::skills::tools::search_notes::search_notes;
 use aether_project::{PromptCatalog, SKILL_FILENAME};
@@ -41,8 +40,7 @@ impl SkillsMcpArgs {
         let mut full_args = vec!["skills-mcp".to_string()];
         full_args.extend(args);
 
-        Self::try_parse_from(full_args)
-            .map_err(|e| format!("Failed to parse SkillsMcp arguments: {e}"))
+        Self::try_parse_from(full_args).map_err(|e| format!("Failed to parse SkillsMcp arguments: {e}"))
     }
 }
 
@@ -94,10 +92,7 @@ impl SkillsMcp {
         let skills_dir = base_dir.join("skills");
         let notes_dir = base_dir.join("notes");
         let catalog = PromptCatalog::from_dir(&skills_dir).unwrap_or_else(|e| {
-            tracing::warn!(
-                "Failed to load skill catalog from {}: {e}",
-                skills_dir.display()
-            );
+            tracing::warn!("Failed to load skill catalog from {}: {e}", skills_dir.display());
             PromptCatalog::empty()
         });
 
@@ -134,11 +129,7 @@ impl SkillsMcp {
                     let _ = writeln!(instructions, "- **{}**: {}", skill.name, skill.description);
                 } else {
                     let tags = skill.tags.join(", ");
-                    let _ = writeln!(
-                        instructions,
-                        "- **{}** [{}]: {}",
-                        skill.name, tags, skill.description
-                    );
+                    let _ = writeln!(instructions, "- **{}** [{}]: {}", skill.name, tags, skill.description);
                 }
             }
         }
@@ -146,10 +137,7 @@ impl SkillsMcp {
         instructions
     }
 
-    fn resolve_skill_file(
-        &self,
-        request: &SkillRequest,
-    ) -> Result<(PathBuf, String), SkillFileError> {
+    fn resolve_skill_file(&self, request: &SkillRequest) -> Result<(PathBuf, String), SkillFileError> {
         let skill_dir = self.skills_dir.join(&request.name);
         if !skill_dir.is_dir() {
             return Err(SkillFileError::SkillNotFound(request.name.clone()));
@@ -224,10 +212,7 @@ impl SkillsMcp {
 
     fn load_skill_file(&self, request: &SkillRequest) -> SkillFile {
         let name = request.name.clone();
-        let path = request
-            .path
-            .clone()
-            .unwrap_or_else(|| SKILL_FILENAME.to_string());
+        let path = request.path.clone().unwrap_or_else(|| SKILL_FILENAME.to_string());
 
         let result = self.resolve_skill_file(request).and_then(|(resolved, _)| {
             fs::read_to_string(&resolved).map_err(|e| match e.kind() {
@@ -238,26 +223,11 @@ impl SkillsMcp {
 
         match result {
             Ok(content) => {
-                let available_files = if path == SKILL_FILENAME {
-                    self.list_available_files(&name)
-                } else {
-                    Vec::new()
-                };
-                SkillFile {
-                    name,
-                    path,
-                    content: Some(content),
-                    error: None,
-                    available_files,
-                }
+                let available_files =
+                    if path == SKILL_FILENAME { self.list_available_files(&name) } else { Vec::new() };
+                SkillFile { name, path, content: Some(content), error: None, available_files }
             }
-            Err(e) => SkillFile {
-                name,
-                path,
-                content: None,
-                error: Some(e.to_string()),
-                available_files: Vec::new(),
-            },
+            Err(e) => SkillFile { name, path, content: None, error: Some(e.to_string()), available_files: Vec::new() },
         }
     }
 }
@@ -273,14 +243,9 @@ impl ServerHandler for SkillsMcp {
             Ok(catalog) => Self::build_instructions(&catalog),
             Err(_) => Self::build_instructions(&PromptCatalog::empty()),
         };
-        ServerInfo::new(
-            ServerCapabilities::builder()
-                .enable_prompts()
-                .enable_tools()
-                .build(),
-        )
-        .with_server_info(Implementation::new("skills-mcp", "0.1.0"))
-        .with_instructions(instructions)
+        ServerInfo::new(ServerCapabilities::builder().enable_prompts().enable_tools().build())
+            .with_server_info(Implementation::new("skills-mcp", "0.1.0"))
+            .with_instructions(instructions)
     }
 
     async fn list_prompts(
@@ -293,22 +258,14 @@ impl ServerHandler for SkillsMcp {
             .slash_commands()
             .map(|s| {
                 let arguments = s.argument_hint.as_ref().map(|hint| {
-                    vec![
-                        PromptArgument::new("ARGUMENTS")
-                            .with_description(hint.clone())
-                            .with_required(false),
-                    ]
+                    vec![PromptArgument::new("ARGUMENTS").with_description(hint.clone()).with_required(false)]
                 });
 
                 Prompt::new(s.name.clone(), Some(s.description.clone()), arguments)
             })
             .collect();
 
-        Ok(ListPromptsResult {
-            prompts,
-            next_cursor: None,
-            meta: None,
-        })
+        Ok(ListPromptsResult { prompts, next_cursor: None, meta: None })
     }
 
     async fn get_prompt(
@@ -320,9 +277,7 @@ impl ServerHandler for SkillsMcp {
         let spec = catalog
             .slash_commands()
             .find(|s| s.name == request.name.as_str())
-            .ok_or_else(|| {
-                McpError::invalid_params(format!("Prompt '{}' not found", request.name), None)
-            })?;
+            .ok_or_else(|| McpError::invalid_params(format!("Prompt '{}' not found", request.name), None))?;
 
         let body = spec.body.clone();
 
@@ -344,27 +299,17 @@ impl ServerHandler for SkillsMcp {
 impl SkillsMcp {
     #[doc = include_str!("tools/get_skills/description.md")]
     #[tool]
-    pub async fn get_skills(
-        &self,
-        request: Parameters<LoadSkillsInput>,
-    ) -> Result<Json<LoadSkillsOutput>, String> {
+    pub async fn get_skills(&self, request: Parameters<LoadSkillsInput>) -> Result<Json<LoadSkillsOutput>, String> {
         let Parameters(args) = request;
 
-        let files: Vec<SkillFile> = args
-            .requests
-            .into_iter()
-            .map(|req| self.load_skill_file(&req))
-            .collect();
+        let files: Vec<SkillFile> = args.requests.into_iter().map(|req| self.load_skill_file(&req)).collect();
 
         Ok(Json(LoadSkillsOutput { files }))
     }
 
     #[doc = include_str!("tools/save_note/description.md")]
     #[tool]
-    pub async fn save_note(
-        &self,
-        request: Parameters<SaveNoteInput>,
-    ) -> Result<Json<SaveNoteOutput>, String> {
+    pub async fn save_note(&self, request: Parameters<SaveNoteInput>) -> Result<Json<SaveNoteOutput>, String> {
         let Parameters(input) = request;
         let today = today_string();
         let result = save_note(&input, &self.notes_dir, &today).map_err(|e| e.to_string())?;
@@ -373,10 +318,7 @@ impl SkillsMcp {
 
     #[doc = include_str!("tools/search_notes/description.md")]
     #[tool]
-    pub async fn search_notes(
-        &self,
-        request: Parameters<SearchNotesInput>,
-    ) -> Result<Json<SearchNotesOutput>, String> {
+    pub async fn search_notes(&self, request: Parameters<SearchNotesInput>) -> Result<Json<SearchNotesOutput>, String> {
         let Parameters(input) = request;
         let result = search_notes(&input, &self.notes_dir).map_err(|e| e.to_string())?;
         Ok(Json(result))
@@ -416,10 +358,7 @@ mod tests {
         );
 
         let server = SkillsMcp::new(temp_dir.path().to_path_buf());
-        let result = server.load_skill_file(&SkillRequest {
-            name: "test-skill".to_string(),
-            path: None,
-        });
+        let result = server.load_skill_file(&SkillRequest { name: "test-skill".to_string(), path: None });
 
         assert_eq!(result.name, "test-skill");
         assert_eq!(result.path, "SKILL.md");
@@ -439,10 +378,8 @@ mod tests {
         );
 
         let server = SkillsMcp::new(temp_dir.path().to_path_buf());
-        let result = server.load_skill_file(&SkillRequest {
-            name: "test-skill".to_string(),
-            path: Some("traits.md".to_string()),
-        });
+        let result = server
+            .load_skill_file(&SkillRequest { name: "test-skill".to_string(), path: Some("traits.md".to_string()) });
 
         assert_eq!(result.path, "traits.md");
         assert_eq!(result.content.unwrap(), "# Traits content");
@@ -472,18 +409,11 @@ mod tests {
     #[test]
     fn test_reject_absolute_path() {
         let temp_dir = TempDir::new().unwrap();
-        create_skill(
-            &temp_dir,
-            "test-skill",
-            "---\ndescription: Test\nagent-invocable: true\n---\n# Test",
-            &[],
-        );
+        create_skill(&temp_dir, "test-skill", "---\ndescription: Test\nagent-invocable: true\n---\n# Test", &[]);
 
         let server = SkillsMcp::new(temp_dir.path().to_path_buf());
-        let result = server.load_skill_file(&SkillRequest {
-            name: "test-skill".to_string(),
-            path: Some("/etc/passwd".to_string()),
-        });
+        let result = server
+            .load_skill_file(&SkillRequest { name: "test-skill".to_string(), path: Some("/etc/passwd".to_string()) });
 
         assert!(result.error.unwrap().contains("Absolute paths"));
     }
@@ -491,12 +421,7 @@ mod tests {
     #[test]
     fn test_reject_traversal() {
         let temp_dir = TempDir::new().unwrap();
-        create_skill(
-            &temp_dir,
-            "test-skill",
-            "---\ndescription: Test\nagent-invocable: true\n---\n# Test",
-            &[],
-        );
+        create_skill(&temp_dir, "test-skill", "---\ndescription: Test\nagent-invocable: true\n---\n# Test", &[]);
 
         let server = SkillsMcp::new(temp_dir.path().to_path_buf());
         let result = server.load_skill_file(&SkillRequest {
@@ -510,18 +435,11 @@ mod tests {
     #[test]
     fn test_reject_directory() {
         let temp_dir = TempDir::new().unwrap();
-        create_skill(
-            &temp_dir,
-            "test-skill",
-            "---\ndescription: Test\nagent-invocable: true\n---\n# Test",
-            &[],
-        );
+        create_skill(&temp_dir, "test-skill", "---\ndescription: Test\nagent-invocable: true\n---\n# Test", &[]);
 
         let server = SkillsMcp::new(temp_dir.path().to_path_buf());
-        let result = server.load_skill_file(&SkillRequest {
-            name: "test-skill".to_string(),
-            path: Some(".".to_string()),
-        });
+        let result =
+            server.load_skill_file(&SkillRequest { name: "test-skill".to_string(), path: Some(".".to_string()) });
 
         assert!(result.error.unwrap().contains("directory"));
     }
@@ -542,22 +460,11 @@ mod tests {
         );
 
         let server = SkillsMcp::new(temp_dir.path().to_path_buf());
-        let result = server.load_skill_file(&SkillRequest {
-            name: "test-skill".to_string(),
-            path: None,
-        });
+        let result = server.load_skill_file(&SkillRequest { name: "test-skill".to_string(), path: None });
 
         assert_eq!(result.available_files.len(), 3);
-        assert!(
-            result
-                .available_files
-                .contains(&"error-handling.md".to_string())
-        );
-        assert!(
-            result
-                .available_files
-                .contains(&"references/REF.md".to_string())
-        );
+        assert!(result.available_files.contains(&"error-handling.md".to_string()));
+        assert!(result.available_files.contains(&"references/REF.md".to_string()));
         assert!(result.available_files.contains(&"traits.md".to_string()));
         assert!(!result.available_files.contains(&"SKILL.md".to_string()));
     }
@@ -568,10 +475,7 @@ mod tests {
         fs::create_dir_all(temp_dir.path().join("skills")).unwrap();
 
         let server = SkillsMcp::new(temp_dir.path().to_path_buf());
-        let result = server.load_skill_file(&SkillRequest {
-            name: "nonexistent".to_string(),
-            path: None,
-        });
+        let result = server.load_skill_file(&SkillRequest { name: "nonexistent".to_string(), path: None });
 
         assert!(result.error.unwrap().contains("not found"));
     }
@@ -579,12 +483,7 @@ mod tests {
     #[test]
     fn test_file_not_found() {
         let temp_dir = TempDir::new().unwrap();
-        create_skill(
-            &temp_dir,
-            "test-skill",
-            "---\ndescription: Test\nagent-invocable: true\n---\n# Test",
-            &[],
-        );
+        create_skill(&temp_dir, "test-skill", "---\ndescription: Test\nagent-invocable: true\n---\n# Test", &[]);
 
         let server = SkillsMcp::new(temp_dir.path().to_path_buf());
         let result = server.load_skill_file(&SkillRequest {
@@ -604,36 +503,18 @@ mod tests {
             "---\ndescription: Rust skill\nagent-invocable: true\n---\n# Rust\n\nSee [traits](./traits.md).",
             &[("traits.md", "# Traits")],
         );
-        create_skill(
-            &temp_dir,
-            "python",
-            "---\ndescription: Python skill\nagent-invocable: true\n---\n# Python",
-            &[],
-        );
+        create_skill(&temp_dir, "python", "---\ndescription: Python skill\nagent-invocable: true\n---\n# Python", &[]);
 
         let server = SkillsMcp::new(temp_dir.path().to_path_buf());
         let input = LoadSkillsInput {
             requests: vec![
-                SkillRequest {
-                    name: "rust".to_string(),
-                    path: None,
-                },
-                SkillRequest {
-                    name: "rust".to_string(),
-                    path: Some("traits.md".to_string()),
-                },
-                SkillRequest {
-                    name: "python".to_string(),
-                    path: None,
-                },
+                SkillRequest { name: "rust".to_string(), path: None },
+                SkillRequest { name: "rust".to_string(), path: Some("traits.md".to_string()) },
+                SkillRequest { name: "python".to_string(), path: None },
             ],
         };
 
-        let files: Vec<SkillFile> = input
-            .requests
-            .into_iter()
-            .map(|req| server.load_skill_file(&req))
-            .collect();
+        let files: Vec<SkillFile> = input.requests.into_iter().map(|req| server.load_skill_file(&req)).collect();
 
         assert_eq!(files.len(), 3);
 
@@ -655,36 +536,18 @@ mod tests {
     #[test]
     fn test_mixed_success_failure() {
         let temp_dir = TempDir::new().unwrap();
-        create_skill(
-            &temp_dir,
-            "exists",
-            "---\ndescription: Exists\nagent-invocable: true\n---\n# Exists",
-            &[],
-        );
+        create_skill(&temp_dir, "exists", "---\ndescription: Exists\nagent-invocable: true\n---\n# Exists", &[]);
 
         let server = SkillsMcp::new(temp_dir.path().to_path_buf());
         let input = LoadSkillsInput {
             requests: vec![
-                SkillRequest {
-                    name: "exists".to_string(),
-                    path: None,
-                },
-                SkillRequest {
-                    name: "nonexistent".to_string(),
-                    path: None,
-                },
-                SkillRequest {
-                    name: "exists".to_string(),
-                    path: Some("missing.md".to_string()),
-                },
+                SkillRequest { name: "exists".to_string(), path: None },
+                SkillRequest { name: "nonexistent".to_string(), path: None },
+                SkillRequest { name: "exists".to_string(), path: Some("missing.md".to_string()) },
             ],
         };
 
-        let files: Vec<SkillFile> = input
-            .requests
-            .into_iter()
-            .map(|req| server.load_skill_file(&req))
-            .collect();
+        let files: Vec<SkillFile> = input.requests.into_iter().map(|req| server.load_skill_file(&req)).collect();
 
         assert_eq!(files.len(), 3);
 

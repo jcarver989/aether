@@ -1,9 +1,7 @@
 use crate::language_catalog::LanguageId;
 use crate::protocol::LspNotification;
 use crate::uri::uri_to_path;
-use lsp_types::notification::{
-    DidCloseTextDocument, DidOpenTextDocument, DidSaveTextDocument, Notification,
-};
+use lsp_types::notification::{DidCloseTextDocument, DidOpenTextDocument, DidSaveTextDocument, Notification};
 use lsp_types::{
     DidCloseTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams, FileEvent,
     TextDocumentIdentifier, TextDocumentItem, Uri,
@@ -103,12 +101,7 @@ impl DocumentCoordinator {
         let state = self.state.read().await;
         changes
             .into_iter()
-            .filter(|change| {
-                state
-                    .documents
-                    .get(&change.uri)
-                    .is_none_or(|entry| !entry.is_open)
-            })
+            .filter(|change| state.documents.get(&change.uri).is_none_or(|entry| !entry.is_open))
             .collect()
     }
 }
@@ -119,23 +112,12 @@ fn hash_content(content: &str) -> u64 {
     hasher.finish()
 }
 
-fn open_and_save_notifications(
-    uri: &Uri,
-    file_path: &str,
-    content: String,
-) -> Vec<LspNotification> {
-    vec![
-        open_notification(uri, file_path, 1, content),
-        save_notification(uri),
-    ]
+fn open_and_save_notifications(uri: &Uri, file_path: &str, content: String) -> Vec<LspNotification> {
+    vec![open_notification(uri, file_path, 1, content), save_notification(uri)]
 }
 
 fn reopen_notifications(uri: &Uri, file_path: &str, content: String) -> Vec<LspNotification> {
-    vec![
-        close_notification(uri),
-        open_notification(uri, file_path, 1, content),
-        save_notification(uri),
-    ]
+    vec![close_notification(uri), open_notification(uri, file_path, 1, content), save_notification(uri)]
 }
 
 fn open_notification(uri: &Uri, file_path: &str, version: i32, content: String) -> LspNotification {
@@ -148,31 +130,17 @@ fn open_notification(uri: &Uri, file_path: &str, version: i32, content: String) 
             text: content,
         },
     };
-    LspNotification {
-        method: DidOpenTextDocument::METHOD.to_string(),
-        params: serde_json::to_value(&params).unwrap(),
-    }
+    LspNotification { method: DidOpenTextDocument::METHOD.to_string(), params: serde_json::to_value(&params).unwrap() }
 }
 
 fn save_notification(uri: &Uri) -> LspNotification {
-    let params = DidSaveTextDocumentParams {
-        text_document: TextDocumentIdentifier { uri: uri.clone() },
-        text: None,
-    };
-    LspNotification {
-        method: DidSaveTextDocument::METHOD.to_string(),
-        params: serde_json::to_value(&params).unwrap(),
-    }
+    let params = DidSaveTextDocumentParams { text_document: TextDocumentIdentifier { uri: uri.clone() }, text: None };
+    LspNotification { method: DidSaveTextDocument::METHOD.to_string(), params: serde_json::to_value(&params).unwrap() }
 }
 
 fn close_notification(uri: &Uri) -> LspNotification {
-    let params = DidCloseTextDocumentParams {
-        text_document: TextDocumentIdentifier { uri: uri.clone() },
-    };
-    LspNotification {
-        method: DidCloseTextDocument::METHOD.to_string(),
-        params: serde_json::to_value(&params).unwrap(),
-    }
+    let params = DidCloseTextDocumentParams { text_document: TextDocumentIdentifier { uri: uri.clone() } };
+    LspNotification { method: DidCloseTextDocument::METHOD.to_string(), params: serde_json::to_value(&params).unwrap() }
 }
 
 #[cfg(test)]
@@ -193,10 +161,7 @@ mod tests {
         let uri = uri_for(&path);
         let coordinator = DocumentCoordinator::new();
 
-        assert!(matches!(
-            coordinator.prepare_request_document(&uri).await,
-            SyncPlan::Sync(_)
-        ));
+        assert!(matches!(coordinator.prepare_request_document(&uri).await, SyncPlan::Sync(_)));
 
         let close = coordinator.release_request_document(&uri).await.unwrap();
         assert_eq!(close.method, DidCloseTextDocument::METHOD);

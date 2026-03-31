@@ -46,9 +46,7 @@ pub struct LspRegistry {
 
 impl Debug for LspRegistry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LspRegistry")
-            .field("root_path", &self.root_path)
-            .finish_non_exhaustive()
+        f.debug_struct("LspRegistry").field("root_path", &self.root_path).finish_non_exhaustive()
     }
 }
 
@@ -57,10 +55,7 @@ impl LspRegistry {
     ///
     /// LSP server configurations are managed by the daemon.
     pub fn new(root_path: PathBuf) -> Self {
-        Self {
-            clients: RwLock::new(HashMap::new()),
-            root_path,
-        }
+        Self { clients: RwLock::new(HashMap::new()), root_path }
     }
 
     /// Create a new registry and spawn LSP servers for detected project languages.
@@ -90,10 +85,7 @@ impl LspRegistry {
     /// Get or connect to the LSP daemon client for a specific language
     ///
     /// Returns None if no LSP is configured for this language or if connection fails.
-    pub async fn get_or_spawn_for_language(
-        &self,
-        language_id: LanguageId,
-    ) -> Option<Arc<LspClient>> {
+    pub async fn get_or_spawn_for_language(&self, language_id: LanguageId) -> Option<Arc<LspClient>> {
         let client_key = self.client_key(language_id)?;
 
         // Check if already connected
@@ -119,11 +111,7 @@ impl LspRegistry {
                 Some(client)
             }
             Err(e) => {
-                tracing::error!(
-                    "Failed to connect to LSP daemon for {:?}: {}",
-                    language_id,
-                    e
-                );
+                tracing::error!("Failed to connect to LSP daemon for {:?}: {}", language_id, e);
                 None
             }
         }
@@ -157,17 +145,12 @@ impl LspRegistry {
     /// at boot time so LSPs can start indexing immediately.
     pub async fn spawn_project_lsps(&self) {
         let languages = self.detect_project_languages();
-        let spawn_futures: Vec<_> = languages
-            .iter()
-            .map(|&lang| async move { (lang, self.get_or_spawn_for_language(lang).await) })
-            .collect();
+        let spawn_futures: Vec<_> =
+            languages.iter().map(|&lang| async move { (lang, self.get_or_spawn_for_language(lang).await) }).collect();
 
         for (lang, result) in join_all(spawn_futures).await {
             if result.is_some() {
-                tracing::info!(
-                    "Connected to LSP daemon for {:?} based on project detection",
-                    lang
-                );
+                tracing::info!("Connected to LSP daemon for {:?} based on project detection", lang);
             }
         }
     }
@@ -186,10 +169,7 @@ impl LspRegistry {
             (LanguageId::TypeScript, HashSet::from(["package.json"])),
             (LanguageId::Go, HashSet::from(["go.mod"])),
             (LanguageId::Cpp, HashSet::from(["CMakeLists.txt"])),
-            (
-                LanguageId::Python,
-                HashSet::from(["pyproject.toml", "setup.py", "requirements.txt"]),
-            ),
+            (LanguageId::Python, HashSet::from(["pyproject.toml", "setup.py", "requirements.txt"])),
         ];
 
         mappings
@@ -209,22 +189,12 @@ impl LspRegistry {
     /// Accepts a 1-indexed `line` (as provided by the user / document symbols) and
     /// returns a [`ResolvedSymbol`] with 0-indexed `line` and `column`, ready for
     /// LSP protocol calls.
-    pub async fn resolve_symbol(
-        &self,
-        file_path: &str,
-        symbol: &str,
-        line: u32,
-    ) -> Result<ResolvedSymbol, LspError> {
+    pub async fn resolve_symbol(&self, file_path: &str, symbol: &str, line: u32) -> Result<ResolvedSymbol, LspError> {
         let content = tokio::fs::read_to_string(file_path).await?;
         let column = find_symbol_column(&content, symbol, line)?;
         let uri = path_to_uri(Path::new(file_path)).map_err(LspError::Transport)?;
         let client = self.require_client(file_path).await?;
-        Ok(ResolvedSymbol {
-            uri,
-            line: line - 1,
-            column,
-            client,
-        })
+        Ok(ResolvedSymbol { uri, line: line - 1, column, client })
     }
 
     /// Collect diagnostics from LSP clients.
@@ -233,10 +203,7 @@ impl LspRegistry {
     /// diagnostics for that specific document URI.
     /// If `file_path` is `None`, iterates every active client and returns all
     /// diagnostics grouped by file path.
-    pub async fn collect_diagnostics(
-        &self,
-        file_path: Option<&str>,
-    ) -> HashMap<String, Vec<Diagnostic>> {
+    pub async fn collect_diagnostics(&self, file_path: Option<&str>) -> HashMap<String, Vec<Diagnostic>> {
         if let Some(file_path) = file_path {
             return self.collect_file_diagnostics(file_path).await;
         }
@@ -289,11 +256,7 @@ impl LspRegistry {
     }
 
     fn resolve_path(&self, file_path: &str) -> PathBuf {
-        if Path::new(file_path).is_absolute() {
-            PathBuf::from(file_path)
-        } else {
-            self.root_path.join(file_path)
-        }
+        if Path::new(file_path).is_absolute() { PathBuf::from(file_path) } else { self.root_path.join(file_path) }
     }
 
     /// Get the LSP client for a file, returning an error if none is configured.
@@ -322,20 +285,14 @@ mod tests {
     fn client_key_uses_shared_socket_identity_for_typescript_family() {
         let registry = LspRegistry::new(PathBuf::from("/tmp"));
 
-        assert_eq!(
-            registry.client_key(LanguageId::TypeScript),
-            registry.client_key(LanguageId::TypeScriptReact)
-        );
+        assert_eq!(registry.client_key(LanguageId::TypeScript), registry.client_key(LanguageId::TypeScriptReact));
     }
 
     #[test]
     fn client_key_uses_shared_socket_identity_for_c_family() {
         let registry = LspRegistry::new(PathBuf::from("/tmp"));
 
-        assert_eq!(
-            registry.client_key(LanguageId::C),
-            registry.client_key(LanguageId::Cpp)
-        );
+        assert_eq!(registry.client_key(LanguageId::C), registry.client_key(LanguageId::Cpp));
     }
 
     #[test]

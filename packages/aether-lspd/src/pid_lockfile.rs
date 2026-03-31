@@ -21,23 +21,14 @@ impl PidLockfile {
         }
 
         let file = {
-            let mut file = OpenOptions::new()
-                .read(true)
-                .write(true)
-                .create(true)
-                .truncate(false)
-                .open(path)?;
+            let mut file = OpenOptions::new().read(true).write(true).create(true).truncate(false).open(path)?;
 
             #[cfg(unix)]
             {
                 use std::os::unix::io::AsRawFd;
-                let result =
-                    unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+                let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
                 if result != 0 {
-                    return Err(io::Error::new(
-                        io::ErrorKind::WouldBlock,
-                        "Lockfile is held by another process",
-                    ));
+                    return Err(io::Error::new(io::ErrorKind::WouldBlock, "Lockfile is held by another process"));
                 }
             }
 
@@ -48,10 +39,7 @@ impl PidLockfile {
             file
         };
 
-        Ok(Self {
-            path: path.to_path_buf(),
-            _file: file,
-        })
+        Ok(Self { path: path.to_path_buf(), _file: file })
     }
 }
 

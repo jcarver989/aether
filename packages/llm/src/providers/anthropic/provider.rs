@@ -1,9 +1,7 @@
 use super::mappers::{map_messages, map_tools};
 use super::streaming::process_anthropic_stream;
 use super::types::{Request, Thinking};
-use crate::provider::{
-    LlmResponseStream, ProviderFactory, StreamingModelProvider, get_context_window,
-};
+use crate::provider::{LlmResponseStream, ProviderFactory, StreamingModelProvider, get_context_window};
 use crate::{Context, LlmError, ReasoningEffort, Result};
 use async_stream;
 use eventsource_stream::Eventsource;
@@ -60,11 +58,7 @@ impl AnthropicProvider {
 
     pub(crate) fn build_request(&self, context: &Context) -> Result<Request> {
         let (system_prompt, messages) = map_messages(context.messages())?;
-        let tools = if context.tools().is_empty() {
-            None
-        } else {
-            Some(map_tools(context.tools())?)
-        };
+        let tools = if context.tools().is_empty() { None } else { Some(map_tools(context.tools())?) };
 
         let mut request = Request::new(self.model.clone(), messages)
             .with_max_tokens(self.max_tokens)
@@ -108,8 +102,7 @@ impl AnthropicProvider {
         }
 
         Err(LlmError::MissingApiKey(
-            "No Anthropic credentials found. Set ANTHROPIC_API_KEY environment variable."
-                .to_string(),
+            "No Anthropic credentials found. Set ANTHROPIC_API_KEY environment variable.".to_string(),
         ))
     }
 
@@ -127,10 +120,7 @@ impl AnthropicProvider {
         request: Request,
         headers: header::HeaderMap,
     ) -> Result<impl futures::Stream<Item = Result<String>>> {
-        let base_url = self
-            .base_url
-            .as_deref()
-            .unwrap_or("https://api.anthropic.com");
+        let base_url = self.base_url.as_deref().unwrap_or("https://api.anthropic.com");
         let url = format!("{base_url}/v1/messages");
 
         debug!("Sending request to Anthropic API: {url}");
@@ -151,13 +141,8 @@ impl AnthropicProvider {
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(LlmError::ApiError(format!(
-                "Anthropic API request failed with status {status}: {error_text}"
-            )));
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(LlmError::ApiError(format!("Anthropic API request failed with status {status}: {error_text}")));
         }
 
         let event_stream = response.bytes_stream().eventsource();
@@ -165,11 +150,7 @@ impl AnthropicProvider {
             std::future::ready(match result {
                 Ok(event) => {
                     let data = event.data;
-                    if data == "[DONE]" {
-                        None
-                    } else {
-                        Some(Ok(data))
-                    }
+                    if data == "[DONE]" { None } else { Some(Ok(data)) }
                 }
                 Err(e) => Some(Err(LlmError::IoError(e.to_string()))),
             })
@@ -240,10 +221,7 @@ impl StreamingModelProvider for AnthropicProvider {
 }
 
 fn build_client() -> Result<Client> {
-    Client::builder()
-        .timeout(Duration::from_secs(60))
-        .build()
-        .map_err(|e| LlmError::HttpClientCreation(e.to_string()))
+    Client::builder().timeout(Duration::from_secs(60)).build().map_err(|e| LlmError::HttpClientCreation(e.to_string()))
 }
 
 fn effort_to_budget_tokens(effort: ReasoningEffort) -> u32 {
@@ -256,10 +234,7 @@ fn effort_to_budget_tokens(effort: ReasoningEffort) -> u32 {
 
 fn should_redact_header(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
-    lower == "authorization"
-        || lower == "x-api-key"
-        || lower.contains("secret")
-        || lower.contains("token")
+    lower == "authorization" || lower == "x-api-key" || lower.contains("secret") || lower.contains("token")
 }
 
 fn format_headers(headers: &header::HeaderMap) -> String {
@@ -304,12 +279,7 @@ mod tests {
     fn build_headers_uses_api_key() {
         let provider = AnthropicProvider::new(Some("test-api-key".to_string())).unwrap();
         let headers = provider.build_headers().expect("headers");
-        assert_eq!(
-            headers
-                .get("x-api-key")
-                .and_then(|value| value.to_str().ok()),
-            Some("test-api-key")
-        );
+        assert_eq!(headers.get("x-api-key").and_then(|value| value.to_str().ok()), Some("test-api-key"));
         assert!(headers.get(AUTHORIZATION).is_none());
         assert!(headers.get("anthropic-beta").is_none());
     }
@@ -319,10 +289,7 @@ mod tests {
         let provider = create_test_provider();
 
         let context = Context::new(
-            vec![ChatMessage::User {
-                content: vec![ContentBlock::text("Hello")],
-                timestamp: IsoString::now(),
-            }],
+            vec![ChatMessage::User { content: vec![ContentBlock::text("Hello")], timestamp: IsoString::now() }],
             vec![],
         );
 
@@ -340,20 +307,13 @@ mod tests {
 
         let context = Context::new(
             vec![
-                ChatMessage::System {
-                    content: "You are helpful".to_string(),
-                    timestamp: IsoString::now(),
-                },
-                ChatMessage::User {
-                    content: vec![ContentBlock::text("Hello")],
-                    timestamp: IsoString::now(),
-                },
+                ChatMessage::System { content: "You are helpful".to_string(), timestamp: IsoString::now() },
+                ChatMessage::User { content: vec![ContentBlock::text("Hello")], timestamp: IsoString::now() },
             ],
             vec![ToolDefinition {
                 name: "search".to_string(),
                 description: "Search for information".to_string(),
-                parameters: r#"{"type": "object", "properties": {"query": {"type": "string"}}}"#
-                    .to_string(),
+                parameters: r#"{"type": "object", "properties": {"query": {"type": "string"}}}"#.to_string(),
                 server: None,
             }],
         );
@@ -382,20 +342,13 @@ mod tests {
 
         let context = Context::new(
             vec![
-                ChatMessage::System {
-                    content: "Hello".to_string(),
-                    timestamp: IsoString::now(),
-                },
-                ChatMessage::User {
-                    content: vec![ContentBlock::text("Hello")],
-                    timestamp: IsoString::now(),
-                },
+                ChatMessage::System { content: "Hello".to_string(), timestamp: IsoString::now() },
+                ChatMessage::User { content: vec![ContentBlock::text("Hello")], timestamp: IsoString::now() },
             ],
             vec![ToolDefinition {
                 name: "search".to_string(),
                 description: "Search for information".to_string(),
-                parameters: r#"{"type": "object", "properties": {"query": {"type": "string"}}}"#
-                    .to_string(),
+                parameters: r#"{"type": "object", "properties": {"query": {"type": "string"}}}"#.to_string(),
                 server: None,
             }],
         );
@@ -407,10 +360,7 @@ mod tests {
             match system {
                 SystemContent::Blocks(blocks) => {
                     assert_eq!(blocks.len(), 1);
-                    let SystemContentBlock::Text {
-                        text,
-                        cache_control,
-                    } = &blocks[0];
+                    let SystemContentBlock::Text { text, cache_control } = &blocks[0];
                     assert_eq!(text, "Hello");
                     assert!(cache_control.is_some());
                 }
@@ -431,10 +381,7 @@ mod tests {
         let provider = create_test_provider();
 
         let mut context = Context::new(
-            vec![ChatMessage::User {
-                content: vec![ContentBlock::text("Think hard")],
-                timestamp: IsoString::now(),
-            }],
+            vec![ChatMessage::User { content: vec![ContentBlock::text("Think hard")], timestamp: IsoString::now() }],
             vec![],
         );
         context.set_reasoning_effort(Some(crate::ReasoningEffort::High));
@@ -453,10 +400,7 @@ mod tests {
     fn test_build_request_without_reasoning_effort_has_no_thinking() {
         let provider = create_test_provider();
         let context = Context::new(
-            vec![ChatMessage::User {
-                content: vec![ContentBlock::text("Hello")],
-                timestamp: IsoString::now(),
-            }],
+            vec![ChatMessage::User { content: vec![ContentBlock::text("Hello")], timestamp: IsoString::now() }],
             vec![],
         );
 
@@ -466,15 +410,10 @@ mod tests {
 
     #[test]
     fn test_build_request_thinking_bumps_max_tokens_if_needed() {
-        let provider = AnthropicProvider::new(Some("test-api-key".to_string()))
-            .unwrap()
-            .with_max_tokens(500);
+        let provider = AnthropicProvider::new(Some("test-api-key".to_string())).unwrap().with_max_tokens(500);
 
         let mut context = Context::new(
-            vec![ChatMessage::User {
-                content: vec![ContentBlock::text("Hi")],
-                timestamp: IsoString::now(),
-            }],
+            vec![ChatMessage::User { content: vec![ContentBlock::text("Hi")], timestamp: IsoString::now() }],
             vec![],
         );
         context.set_reasoning_effort(Some(crate::ReasoningEffort::Low));
@@ -492,19 +431,13 @@ mod tests {
     #[test]
     fn test_anthropic_provider_display_name() {
         let provider = create_test_provider();
-        assert_eq!(
-            provider.display_name(),
-            "Anthropic (claude-sonnet-4-5-20250929)"
-        );
+        assert_eq!(provider.display_name(), "Anthropic (claude-sonnet-4-5-20250929)");
     }
 
     #[test]
     fn test_anthropic_provider_display_name_default() {
         let provider = AnthropicProvider::new(Some("test-api-key".to_string())).unwrap();
-        assert_eq!(
-            provider.display_name(),
-            "Anthropic (claude-sonnet-4-5-20250929)"
-        );
+        assert_eq!(provider.display_name(), "Anthropic (claude-sonnet-4-5-20250929)");
     }
 
     #[test]
