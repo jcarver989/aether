@@ -13,9 +13,8 @@ use crate::providers::{
     openrouter::OpenRouterProvider,
 };
 use crate::{LlmError, ProviderFactory, StreamingModelProvider, alloyed::AlloyedModelProvider};
+use futures::future::BoxFuture;
 use std::collections::HashMap;
-use std::future::Future;
-use std::pin::Pin;
 
 #[doc = include_str!("docs/parser.md")]
 pub struct ModelProviderParser {
@@ -136,7 +135,7 @@ impl ModelProviderParser {
 ///
 /// Takes a model name and returns a boxed future that resolves to a `StreamingModelProvider`
 pub type CreateProviderFn =
-    Box<dyn Fn(&str) -> Pin<Box<dyn Future<Output = Result<Box<dyn StreamingModelProvider>>> + Send>> + Send + Sync>;
+    Box<dyn Fn(&str) -> BoxFuture<'static, Result<Box<dyn StreamingModelProvider>>> + Send + Sync>;
 
 #[cfg(test)]
 mod tests {
