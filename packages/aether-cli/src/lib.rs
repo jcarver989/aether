@@ -1,9 +1,9 @@
 #![doc = include_str!("../README.md")]
 
 pub mod acp;
+pub mod agent;
 pub mod error;
 pub mod headless;
-pub mod init;
 pub mod prompt;
 pub mod resolve;
 pub mod runtime;
