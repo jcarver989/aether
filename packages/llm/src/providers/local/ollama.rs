@@ -21,7 +21,7 @@ impl OllamaProvider {
 }
 
 impl ProviderFactory for OllamaProvider {
-    fn from_env() -> Result<Self> {
+    async fn from_env() -> Result<Self> {
         Ok(Self { model: String::new(), client: Client::with_config(get_local_config("http://localhost:11434/v1")) })
     }
 

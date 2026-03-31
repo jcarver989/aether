@@ -155,7 +155,7 @@ async fn handle_prompt(
 ) -> Result<acp::StopReason, RelayError> {
     if let Some(model) = switch_model {
         let parser = ModelProviderParser::default();
-        let (provider, _) = parser.parse(&model).map_err(|e| RelayError::SwitchModelFailed(format!("{e}")))?;
+        let (provider, _) = parser.parse(&model).await.map_err(|e| RelayError::SwitchModelFailed(format!("{e}")))?;
         ctx.agent_tx
             .send(UserMessage::SwitchModel(provider))
             .await

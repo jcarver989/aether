@@ -67,8 +67,8 @@ impl AgentBuilder {
     ///
     /// The LLM provider is derived from `spec.model` via `ModelProviderParser`.
     /// `base_prompts` are prepended before the spec's own prompts.
-    pub fn from_spec(spec: &AgentSpec, base_prompts: Vec<Prompt>) -> Result<Self> {
-        let (provider, _) = ModelProviderParser::default().parse(&spec.model)?;
+    pub async fn from_spec(spec: &AgentSpec, base_prompts: Vec<Prompt>) -> Result<Self> {
+        let (provider, _) = ModelProviderParser::default().parse(&spec.model).await?;
         let mut builder = Self::new(Arc::from(provider));
         for prompt in base_prompts {
             builder = builder.system_prompt(prompt);
@@ -251,8 +251,8 @@ mod tests {
         assert_eq!(rendered, "first\n\nsecond\n\nthird");
     }
 
-    #[test]
-    fn from_spec_accepts_alloy_model_specs() {
+    #[tokio::test]
+    async fn from_spec_accepts_alloy_model_specs() {
         let spec = AgentSpec {
             name: "alloy".to_string(),
             description: "alloy".to_string(),
@@ -264,7 +264,7 @@ mod tests {
             tools: ToolFilter::default(),
         };
 
-        let builder = AgentBuilder::from_spec(&spec, vec![]);
+        let builder = AgentBuilder::from_spec(&spec, vec![]).await;
         assert!(builder.is_ok());
     }
 }

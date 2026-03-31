@@ -22,7 +22,7 @@ impl Default for LlamaCppProvider {
 }
 
 impl ProviderFactory for LlamaCppProvider {
-    fn from_env() -> Result<Self> {
+    async fn from_env() -> Result<Self> {
         Ok(Self::default())
     }
 

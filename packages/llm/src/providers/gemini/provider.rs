@@ -39,7 +39,7 @@ impl GeminiProvider {
 }
 
 impl ProviderFactory for GeminiProvider {
-    fn from_env() -> Result<Self> {
+    async fn from_env() -> Result<Self> {
         Ok(Self::new(None))
     }
 

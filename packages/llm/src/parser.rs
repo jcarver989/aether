@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-
+use crate::Result;
 use crate::catalog::LlmModel;
 #[cfg(feature = "bedrock")]
 use crate::providers::bedrock::BedrockProvider;
@@ -14,6 +13,9 @@ use crate::providers::{
     openrouter::OpenRouterProvider,
 };
 use crate::{LlmError, ProviderFactory, StreamingModelProvider, alloyed::AlloyedModelProvider};
+use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 
 #[doc = include_str!("docs/parser.md")]
 pub struct ModelProviderParser {
@@ -56,23 +58,32 @@ impl ModelProviderParser {
         mut self,
         name: impl Into<String>,
     ) -> Self {
-        self.factories.insert(name.into(), Box::new(|model| Ok(Box::new(P::from_env()?.with_model(model)))));
+        self.factories.insert(
+            name.into(),
+            Box::new(|model: &str| {
+                let model = model.to_string();
+                Box::pin(async move { Ok(Box::new(P::from_env().await?.with_model(&model)) as _) })
+            }),
+        );
         self
     }
 
     pub fn with_openai_provider(mut self, name: impl Into<String>, config: &'static generic::ProviderConfig) -> Self {
         self.factories.insert(
             name.into(),
-            Box::new(move |model| Ok(Box::new(GenericOpenAiProvider::from_env(config)?.with_model(model)))),
+            Box::new(move |model: &str| {
+                let model = model.to_string();
+                Box::pin(async move { Ok(Box::new(GenericOpenAiProvider::from_env(config)?.with_model(&model)) as _) })
+            }),
         );
         self
     }
 
     /// Create a provider from a typed `LlmModel`
-    pub fn create_provider(&self, model: &LlmModel) -> crate::Result<Box<dyn StreamingModelProvider>> {
+    pub async fn create_provider(&self, model: &LlmModel) -> Result<Box<dyn StreamingModelProvider>> {
         let key = model.provider();
         let factory = self.factories.get(key).ok_or_else(|| LlmError::Other(format!("Unknown provider: {key}")))?;
-        factory(&model.model_id())
+        factory(&model.model_id()).await
     }
 
     /// Parse a model specification string and create a provider instance.
@@ -85,7 +96,7 @@ impl ModelProviderParser {
     /// - `"provider:model"` - Single provider (e.g., "anthropic:claude-3.5-sonnet")
     /// - `"provider1:model1,provider2:model2"` - Multiple providers create an `AlloyedModelProvider`
     ///
-    pub fn parse(&self, models_str: &str) -> crate::Result<(Box<dyn StreamingModelProvider>, LlmModel)> {
+    pub async fn parse(&self, models_str: &str) -> Result<(Box<dyn StreamingModelProvider>, LlmModel)> {
         let provider_model_pairs: Vec<&str> = models_str.split(',').map(str::trim).collect();
         if provider_model_pairs.is_empty() {
             return Err(LlmError::Other("No models provided".to_string()));
@@ -102,7 +113,7 @@ impl ModelProviderParser {
                 .get(provider_name)
                 .ok_or_else(|| LlmError::Other(format!("Unknown provider: {provider_name}")))?;
 
-            providers.push(factory(model)?);
+            providers.push(factory(model).await?);
 
             if first_identity.is_none() {
                 first_identity = Some(pair.parse::<LlmModel>().map_err(LlmError::Other)?);
@@ -123,27 +134,27 @@ impl ModelProviderParser {
 
 /// Factory function type for creating model providers
 ///
-/// Takes a model name and returns a boxed `StreamingModelProvider`
-pub type CreateProviderFn = Box<dyn Fn(&str) -> crate::Result<Box<dyn StreamingModelProvider>> + Send + Sync>;
+/// Takes a model name and returns a boxed future that resolves to a `StreamingModelProvider`
+pub type CreateProviderFn =
+    Box<dyn Fn(&str) -> Pin<Box<dyn Future<Output = Result<Box<dyn StreamingModelProvider>>> + Send>> + Send + Sync>;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_parse_llamacpp() {
+    #[tokio::test]
+    async fn test_parse_llamacpp() {
         let parser = ModelProviderParser::default();
-        let result = parser.parse("llamacpp");
+        let result = parser.parse("llamacpp").await;
         assert!(result.is_ok());
         let (_, model) = result.unwrap();
         assert_eq!(model, LlmModel::LlamaCpp(String::new()));
     }
 
-    #[test]
-    fn test_parse_anthropic() {
+    #[tokio::test]
+    async fn test_parse_anthropic() {
         let parser = ModelProviderParser::default();
-        let result = parser.parse("anthropic:claude-3-5-sonnet-20241022");
-        // Will fail without API key or credentials, but should parse successfully
+        let result = parser.parse("anthropic:claude-3-5-sonnet-20241022").await;
         match result {
             Ok((_, model)) => {
                 assert_eq!(model, LlmModel::Anthropic(crate::catalog::AnthropicModel::Claude35Sonnet20241022));
@@ -161,99 +172,91 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_parse_ollama() {
+    #[tokio::test]
+    async fn test_parse_ollama() {
         let parser = ModelProviderParser::default();
-        let result = parser.parse("ollama:llama3.2");
+        let result = parser.parse("ollama:llama3.2").await;
         assert!(result.is_ok());
         let (_, model) = result.unwrap();
         assert_eq!(model, LlmModel::Ollama("llama3.2".to_string()));
     }
 
-    #[test]
-    fn test_parse_openai() {
+    #[tokio::test]
+    async fn test_parse_openai() {
         let parser = ModelProviderParser::default();
-        let result = parser.parse("openai:gpt-4.1");
+        let result = parser.parse("openai:gpt-4.1").await;
         if let Err(e) = result {
             let err = e.to_string();
             assert!(err.contains("API") || err.contains("OPENAI"), "Should fail on API key, not parsing. Got: {err}");
         }
     }
 
-    #[test]
-    fn test_parse_openrouter() {
+    #[tokio::test]
+    async fn test_parse_openrouter() {
         let parser = ModelProviderParser::default();
-        let result = parser.parse("openrouter:google/gemini-2.5-flash");
-        // Will fail without API key, but should parse successfully
+        let result = parser.parse("openrouter:google/gemini-2.5-flash").await;
         if let Err(e) = result {
             let err = e.to_string();
             assert!(err.contains("API") || err.contains("OPENROUTER"), "Should fail on API key, not parsing");
         }
     }
 
-    #[test]
-    fn test_parse_gemini() {
+    #[tokio::test]
+    async fn test_parse_gemini() {
         let parser = ModelProviderParser::default();
-        let result = parser.parse("gemini:gemini-2.5-flash");
-        // Will fail without API key, but should parse successfully
+        let result = parser.parse("gemini:gemini-2.5-flash").await;
         if let Err(e) = result {
             let err = e.to_string();
             assert!(err.contains("API") || err.contains("GEMINI"), "Should fail on API key, not parsing");
         }
     }
 
-    #[test]
-    fn test_parse_provider_without_model() {
+    #[tokio::test]
+    async fn test_parse_provider_without_model() {
         let parser = ModelProviderParser::default();
-        let result = parser.parse("anthropic");
-        // Will fail because either ANTHROPIC_API_KEY is not set,
-        // or the empty model string doesn't match any catalog model
+        let result = parser.parse("anthropic").await;
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_parse_unknown_provider() {
+    #[tokio::test]
+    async fn test_parse_unknown_provider() {
         let parser = ModelProviderParser::default();
-        let result = parser.parse("unknown:model");
+        let result = parser.parse("unknown:model").await;
         assert!(result.is_err());
         if let Err(e) = result {
             assert!(e.to_string().contains("Unknown provider"));
         }
     }
 
-    #[test]
-    fn test_with_custom_provider() {
+    #[tokio::test]
+    async fn test_with_custom_provider() {
         let parser = ModelProviderParser::default().with_provider::<OllamaProvider>("custom");
 
-        // Custom providers work for creating providers via create_provider
         let model = LlmModel::Ollama("test-model".to_string());
-        // The factory was registered under "custom", but create_provider uses model.provider()
-        // which returns "ollama". So we test that the ollama factory works.
-        let result = parser.create_provider(&model);
+        let result = parser.create_provider(&model).await;
         assert!(result.is_ok());
     }
 
-    #[test]
-    fn test_parse_single_provider() {
+    #[tokio::test]
+    async fn test_parse_single_provider() {
         let parser = ModelProviderParser::default();
-        let result = parser.parse("llamacpp");
+        let result = parser.parse("llamacpp").await;
         assert!(result.is_ok());
     }
 
-    #[test]
-    fn test_parse_multiple_providers() {
+    #[tokio::test]
+    async fn test_parse_multiple_providers() {
         let parser = ModelProviderParser::default();
-        let result = parser.parse("llamacpp,ollama:llama3.2");
+        let result = parser.parse("llamacpp,ollama:llama3.2").await;
         assert!(result.is_ok());
         let (_, model) = result.unwrap();
-        // For alloyed, uses the first provider's identity
         assert_eq!(model, LlmModel::LlamaCpp(String::new()));
     }
 
-    #[test]
-    fn test_parse_with_spaces() {
+    #[tokio::test]
+    async fn test_parse_with_spaces() {
         let parser = ModelProviderParser::default();
-        let result = parser.parse("llamacpp , ollama:llama3.2");
+        let result = parser.parse("llamacpp , ollama:llama3.2").await;
         assert!(result.is_ok());
     }
 

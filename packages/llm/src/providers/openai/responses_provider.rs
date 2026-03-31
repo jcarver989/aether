@@ -45,7 +45,7 @@ pub struct OpenAiProvider {
 }
 
 impl ProviderFactory for OpenAiProvider {
-    fn from_env() -> Result<Self> {
+    async fn from_env() -> Result<Self> {
         let api_key =
             std::env::var("OPENAI_API_KEY").map_err(|_| LlmError::MissingApiKey("OPENAI_API_KEY".to_string()))?;
 

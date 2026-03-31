@@ -104,11 +104,8 @@ impl BedrockProvider {
 }
 
 impl ProviderFactory for BedrockProvider {
-    fn from_env() -> Result<Self> {
-        let handle = tokio::runtime::Handle::try_current()
-            .map_err(|e| LlmError::Other(format!("No Tokio runtime available: {e}")))?;
-
-        Ok(tokio::task::block_in_place(|| handle.block_on(Self::new())))
+    async fn from_env() -> Result<Self> {
+        Ok(Self::new().await)
     }
 
     fn with_model(self, model: &str) -> Self {
