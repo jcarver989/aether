@@ -8,13 +8,9 @@ use mcp_utils::ServiceExt;
 use std::path::{Path, PathBuf};
 use tracing::{debug, warn};
 
-/// Extension trait that adds built-in MCP server registration to [`McpBuilder`].
+#[doc = include_str!("docs/mcp_builder_ext.md")]
 pub trait McpBuilderExt {
-    /// Registers all built-in in-memory MCP server factories (coding, skills,
-    /// subagents, survey, tasks) and workspace roots onto this builder.
-    ///
-    /// Callers can chain additional configuration (`.with_servers()`,
-    /// `.from_json_file()`, etc.) on the returned builder before spawning.
+    /// Registers all built-in in-memory MCP server factories and workspace roots.
     fn with_builtin_servers(self, cwd: PathBuf, roots_path: &Path) -> Self;
 }
 

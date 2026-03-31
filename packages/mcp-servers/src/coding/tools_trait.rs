@@ -12,10 +12,7 @@ use super::tools::list_files::{ListFilesArgs, ListFilesResult};
 use super::tools::read_file::{ReadFileArgs, ReadFileResult};
 use super::tools::write_file::{WriteFileArgs, WriteFileResponse};
 
-/// Trait defining the underlying implementation for coding tool operations.
-///
-/// This trait covers file I/O, shell, and search operations.
-/// LSP operations are handled separately via [`crate::lsp::LspRegistry`].
+#[doc = include_str!("../docs/coding_tools.md")]
 pub trait CodingTools: Send + Sync + Debug {
     /// Read a file's contents
     fn read_file(

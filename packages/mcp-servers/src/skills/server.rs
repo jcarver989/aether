@@ -46,7 +46,7 @@ impl SkillsMcpArgs {
     }
 }
 
-/// MCP server for unified prompt artifacts (skills, slash commands, and rules).
+#[doc = include_str!("../docs/skills_mcp.md")]
 #[derive(Clone)]
 pub struct SkillsMcp {
     skills_dir: PathBuf,

@@ -68,7 +68,7 @@ impl<T, E: std::fmt::Display> IntoMcpResult<T> for Result<T, E> {
     }
 }
 
-/// Controls whether tool calls require user approval before executing.
+#[doc = include_str!("../docs/permission_mode.md")]
 #[derive(Debug, Clone, Default, PartialEq, clap::ValueEnum)]
 pub enum PermissionMode {
     /// Everything auto-executes (current default behavior).
@@ -126,6 +126,7 @@ impl CodingMcpArgs {
     }
 }
 
+#[doc = include_str!("../docs/coding_mcp.md")]
 #[derive(Debug)]
 pub struct CodingMcp<T: CodingTools = DefaultCodingTools> {
     tool_router: ToolRouter<Self>,

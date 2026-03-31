@@ -9,6 +9,21 @@ Pre-built [MCP](https://modelcontextprotocol.io/) tool servers for Aether agents
 | `tasks` | [`TasksMcp`](src/tasks/README.md) | Hierarchical task management with dependencies |
 | `subagents` | [`SubAgentsMcp`](src/subagents/README.md) | Spawn and orchestrate sub-agents |
 
+## Documentation
+
+Full API documentation is available on [docs.rs](https://docs.rs/aether-mcp-servers).
+
+Key entry points:
+- [`CodingMcp`] -- file I/O, shell, search, and LSP tools
+- [`CodingTools`](coding::CodingTools) -- trait for custom tool backends
+- [`LspMcp`](lsp::LspMcp) -- standalone LSP code intelligence server
+- [`LspRegistry`](lsp::LspRegistry) -- manages LSP daemon connections
+- [`TasksMcp`](tasks::TasksMcp) -- hierarchical task management
+- [`SkillsMcp`](skills::SkillsMcp) -- skill prompts and slash commands
+- [`SubAgentsMcp`](subagents::SubAgentsMcp) -- sub-agent orchestration
+- [`SurveyMcp`](survey::SurveyMcp) -- structured user input collection
+- [`McpBuilderExt`] -- register all servers in one call
+
 ## Using with Aether (mcp.json)
 
 These servers use Aether's `in-memory` transport type -- they run inside your agent process, not as separate subprocesses. Wire them up in `mcp.json`:

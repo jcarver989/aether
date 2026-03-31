@@ -4,7 +4,7 @@ use std::sync::RwLock;
 
 use aether_project::{PromptCatalog, PromptFile};
 
-/// State for tracking read rules and which have been activated.
+#[doc = include_str!("../docs/prompt_rule_matcher.md")]
 #[derive(Debug)]
 pub struct PromptRuleMatcher {
     catalog: PromptCatalog,

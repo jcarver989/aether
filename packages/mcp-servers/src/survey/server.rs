@@ -25,7 +25,7 @@ fn parse_schema(value: serde_json::Value) -> Result<ElicitationSchema, String> {
     from_value(normalized).map_err(|e| format!("Invalid schema: {e}"))
 }
 
-/// MCP server that provides an `ask_user` tool for eliciting structured input.
+#[doc = include_str!("../docs/survey_mcp.md")]
 #[derive(Clone)]
 pub struct SurveyMcp {
     tool_router: ToolRouter<Self>,
