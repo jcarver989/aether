@@ -57,8 +57,7 @@ impl FilePicker {
         self.combobox.query()
     }
 
-    #[cfg(test)]
-    fn new_with_entries(entries: Vec<FileMatch>) -> Self {
+    pub fn new_with_entries(entries: Vec<FileMatch>) -> Self {
         Self { combobox: Combobox::new(entries) }
     }
 }

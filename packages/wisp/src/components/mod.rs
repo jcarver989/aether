@@ -15,7 +15,7 @@ pub mod input_prompt;
 pub mod model_selector;
 pub mod patch_renderer;
 pub(crate) mod plan_tracker;
-pub(crate) mod plan_view;
+pub mod plan_view;
 pub mod progress_indicator;
 pub(crate) mod prompt_composer;
 pub mod provider_login;
