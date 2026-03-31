@@ -148,14 +148,14 @@ fn build_form() -> Form {
                 label: "Agent Name".to_string(),
                 description: None,
                 required: true,
-                kind: FormFieldKind::Text(TextField::new("".to_string())),
+                kind: FormFieldKind::Text(TextField::new(String::new())),
             },
             FormField {
                 name: "description".to_string(),
                 label: "Description".to_string(),
                 description: None,
                 required: true,
-                kind: FormFieldKind::Text(TextField::new("".to_string())),
+                kind: FormFieldKind::Text(TextField::new(String::new())),
             },
             FormField {
                 name: "servers".to_string(),

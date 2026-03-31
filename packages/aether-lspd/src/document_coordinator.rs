@@ -67,9 +67,8 @@ impl DocumentCoordinator {
 
     pub(crate) async fn prepare_request_document(&self, uri: &Uri) -> SyncPlan {
         let file_path = uri_to_path(uri);
-        let content = match read_to_string(&file_path).await {
-            Ok(content) => content,
-            Err(_) => return SyncPlan::Failed,
+        let Ok(content) = read_to_string(&file_path).await else {
+            return SyncPlan::Failed;
         };
 
         let content_hash = hash_content(&content);

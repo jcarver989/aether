@@ -222,7 +222,7 @@ pub struct GeneratedOutput {
     pub rust_source: String,
     /// Per-provider markdown documentation keyed by provider identifier.
     ///
-    /// Keys are provider dev_ids (e.g. `"anthropic"`, `"ollama"`) and values
+    /// Keys are provider `dev_ids` (e.g. `"anthropic"`, `"ollama"`) and values
     /// are markdown strings suitable for `#![doc = include_str!(...)]`.
     pub provider_docs: HashMap<String, String>,
 }
@@ -293,8 +293,7 @@ fn collect_models_from(
             let input_modalities = m
                 .modalities
                 .as_ref()
-                .map(|md| md.input.clone())
-                .unwrap_or_else(|| vec!["text".to_string()]);
+                .map_or_else(|| vec!["text".to_string()], |md| md.input.clone());
             ModelInfo {
                 variant_name: model_id_to_variant(&m.id),
                 model_id: m.id.clone(),
@@ -459,7 +458,7 @@ fn emit_provider_impls(out: &mut String, provider_models: &ProviderModels) {
                 out,
                 models,
                 |m| m.input_modalities.contains(&mod_owned).to_string(),
-                |val| val.to_string(),
+                std::string::ToString::to_string,
             );
             pushln(out, "        }");
             pushln(out, "    }");
@@ -476,34 +475,39 @@ fn emit_provider_impls(out: &mut String, provider_models: &ProviderModels) {
         pushln(out, "}");
         blank(out);
 
-        // FromStr for provider model
-        pushln(out, format!("impl std::str::FromStr for {enum_name} {{"));
-        pushln(out, "    type Err = String;");
-        blank(out);
-        pushln(out, "    #[allow(clippy::too_many_lines)]");
-        pushln(out, "    fn from_str(s: &str) -> Result<Self, Self::Err> {");
-        pushln(out, "        match s {");
-        for model in models {
-            pushln(
-                out,
-                format!(
-                    "            \"{}\" => Ok(Self::{}),",
-                    model.model_id, model.variant_name
-                ),
-            );
-        }
+        emit_from_str_impl(out, &enum_name, cfg.parser_name, models);
+    }
+}
+
+fn emit_from_str_impl(
+    out: &mut String,
+    enum_name: &str,
+    parser_name: &str,
+    models: &[ModelInfo],
+) {
+    pushln(out, format!("impl std::str::FromStr for {enum_name} {{"));
+    pushln(out, "    type Err = String;");
+    blank(out);
+    pushln(out, "    #[allow(clippy::too_many_lines)]");
+    pushln(out, "    fn from_str(s: &str) -> Result<Self, Self::Err> {");
+    pushln(out, "        match s {");
+    for model in models {
         pushln(
             out,
             format!(
-                "            _ => Err(format!(\"Unknown {} model: '{{s}}'\")),",
-                cfg.parser_name
+                "            \"{}\" => Ok(Self::{}),",
+                model.model_id, model.variant_name
             ),
         );
-        pushln(out, "        }");
-        pushln(out, "    }");
-        pushln(out, "}");
-        blank(out);
     }
+    pushln(
+        out,
+        format!("            _ => Err(format!(\"Unknown {parser_name} model: '{{s}}'\")),"),
+    );
+    pushln(out, "        }");
+    pushln(out, "    }");
+    pushln(out, "}");
+    blank(out);
 }
 
 /// Emit match arms grouped by value to avoid clippy `match_same_arms`.
@@ -1042,7 +1046,7 @@ fn emit_provider_docs(ctx: &CodegenCtx) -> HashMap<String, String> {
         let models = &ctx.provider_models[cfg.dev_id];
         let mut doc = String::new();
 
-        pushln(&mut doc, format!("{} LLM provider.", cfg.display_name));
+        pushln(&mut doc, format!("`{}` LLM provider.", cfg.display_name));
         blank(&mut doc);
 
         // Authentication
@@ -1093,7 +1097,7 @@ fn emit_provider_docs(ctx: &CodegenCtx) -> HashMap<String, String> {
             pushln(
                 &mut doc,
                 format!(
-                    "| `{}` | {} | {} | {} | {} | {} |",
+                    "| `{}` | `{}` | `{}` | {} | {} | {} |",
                     model.model_id, model.display_name, ctx_str, reasoning, image, audio
                 ),
             );
@@ -1105,7 +1109,7 @@ fn emit_provider_docs(ctx: &CodegenCtx) -> HashMap<String, String> {
     // Dynamic providers
     for dyn_cfg in DYNAMIC_PROVIDERS {
         let mut doc = String::new();
-        pushln(&mut doc, format!("{} LLM provider.", dyn_cfg.display_name));
+        pushln(&mut doc, format!("`{}` LLM provider.", dyn_cfg.display_name));
         blank(&mut doc);
         pushln(
             &mut doc,
@@ -1126,9 +1130,9 @@ fn format_context_window(tokens: u32) -> String {
     if tokens == 0 {
         return "unknown".to_string();
     }
-    if tokens >= 1_000_000 && tokens % 1_000_000 == 0 {
+    if tokens >= 1_000_000 && tokens.is_multiple_of(1_000_000) {
         format!("{}M", tokens / 1_000_000)
-    } else if tokens >= 1_000 && tokens % 1_000 == 0 {
+    } else if tokens >= 1_000 && tokens.is_multiple_of(1_000) {
         format!("{}k", tokens / 1_000)
     } else {
         format_number(tokens)
@@ -1549,13 +1553,13 @@ mod tests {
         let output = generate(tmp.path()).unwrap();
 
         let anthropic_doc = &output.provider_docs["anthropic"];
-        assert!(anthropic_doc.contains("Anthropic LLM provider."));
+        assert!(anthropic_doc.contains("`Anthropic` LLM provider."));
         assert!(anthropic_doc.contains("`ANTHROPIC_API_KEY`"));
-        assert!(anthropic_doc.contains("| `claude-test` | Claude Test | 200k | yes | yes |  |"));
+        assert!(anthropic_doc.contains("| `claude-test` | `Claude Test` | `200k` | yes | yes |  |"));
 
         // Dynamic providers get a short doc
         let ollama_doc = &output.provider_docs["ollama"];
-        assert!(ollama_doc.contains("Ollama LLM provider."));
+        assert!(ollama_doc.contains("`Ollama` LLM provider."));
         assert!(ollama_doc.contains("any model name at runtime"));
     }
 

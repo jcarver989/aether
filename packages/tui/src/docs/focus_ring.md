@@ -35,4 +35,4 @@ Returned by [`handle_key`](FocusRing::handle_key):
 
 - **`FocusChanged`** — Focus moved to a different index.
 - **`Unchanged`** — A focus key was pressed but focus didn't move (e.g. at boundary without wrap).
-- **`Ignored`** — The key was not Tab or BackTab.
+- **`Ignored`** — The key was not Tab or `BackTab`.

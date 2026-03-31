@@ -3,8 +3,8 @@ use super::credential_store::OAuthCredentialStore;
 use super::handler::OAuthHandler;
 use rmcp::transport::auth::{AuthClient, AuthorizationManager, OAuthState};
 
-fn create_credential_store(server_id: &str) -> Result<OAuthCredentialStore, OAuthError> {
-    Ok(OAuthCredentialStore::new(server_id))
+fn create_credential_store(server_id: &str) -> OAuthCredentialStore {
+    OAuthCredentialStore::new(server_id)
 }
 
 /// Returns `Ok(Some(manager))` if credentials were found and initialized successfully,
@@ -13,7 +13,7 @@ pub async fn create_auth_manager_from_store(
     server_id: &str,
     base_url: &str,
 ) -> Result<Option<AuthorizationManager>, OAuthError> {
-    let credential_store = create_credential_store(server_id)?;
+    let credential_store = create_credential_store(server_id);
 
     let mut auth_manager = AuthorizationManager::new(base_url)
         .await
@@ -45,7 +45,7 @@ pub async fn perform_oauth_flow(
         .await
         .map_err(|e| OAuthError::Rmcp(format!("OAuth init failed: {e}")))?;
 
-    let credential_store = create_credential_store(server_id)?;
+    let credential_store = create_credential_store(server_id);
     if let OAuthState::Unauthorized(ref mut manager) = oauth_state {
         manager.set_credential_store(credential_store);
     }

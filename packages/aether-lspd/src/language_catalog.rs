@@ -473,9 +473,7 @@ pub(crate) fn server_kind_for_language(id: LanguageId) -> Option<ServerKind> {
 }
 
 pub(crate) fn socket_identity_for_language(id: LanguageId) -> &'static str {
-    server_kind_for_language(id)
-        .map(ServerKind::as_str)
-        .unwrap_or_else(|| id.as_str())
+    server_kind_for_language(id).map_or_else(|| id.as_str(), ServerKind::as_str)
 }
 
 pub(crate) fn resolved_config_for_language(language: LanguageId) -> Option<LspConfig> {

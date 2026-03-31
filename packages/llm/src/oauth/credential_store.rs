@@ -131,7 +131,7 @@ impl CredentialStore for OAuthCredentialStore {
 
         Ok(cred.map(|c| {
             let token_response = build_token_response(&c);
-            build_stored_credentials(c.client_id, Some(token_response))
+            build_stored_credentials(&c.client_id, Some(&token_response))
         }))
     }
 
@@ -209,8 +209,8 @@ async fn spawn_blocking<T: Send + 'static>(
 /// The upstream struct is `#[non_exhaustive]` with no constructor, so this is
 /// the only way to build one from outside the crate.
 fn build_stored_credentials(
-    client_id: String,
-    token_response: Option<OAuthTokenResponse>,
+    client_id: &str,
+    token_response: Option<&OAuthTokenResponse>,
 ) -> StoredCredentials {
     // granted_scopes and token_received_at have #[serde(default)] so we can omit them.
     serde_json::from_value(serde_json::json!({

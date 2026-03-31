@@ -1,6 +1,6 @@
 # aether-llm
 
-Multi-provider LLM abstraction layer for Rust. Write your code once, then swap between Anthropic, OpenAI, OpenRouter, Ollama, and more by changing a single string.
+Multi-provider LLM abstraction layer for Rust. Write your code once, then swap between Anthropic, `OpenAI`, `OpenRouter`, Ollama, and more by changing a single string.
 
 ## Quick start
 
@@ -137,8 +137,8 @@ let provider = AnthropicProvider::from_env()
 | Provider | Example model string | Env var |
 |----------|---------------------|---------|
 | Anthropic | `anthropic:claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY` |
-| OpenAI | `openai:gpt-4o` | `OPENAI_API_KEY` |
-| OpenRouter | `openrouter:moonshotai/kimi-k2` | `OPENROUTER_API_KEY` |
+| `OpenAI` | `openai:gpt-4o` | `OPENAI_API_KEY` |
+| `OpenRouter` | `openrouter:moonshotai/kimi-k2` | `OPENROUTER_API_KEY` |
 | ZAI | `zai:GLM-4.6` | `ZAI_API_KEY` |
 | AWS Bedrock | `bedrock:us.anthropic.claude-sonnet-4-5-20250929-v1:0` | AWS credentials |
 | Ollama | `ollama:llama3.2` | None (local) |
@@ -169,7 +169,7 @@ Key entry points:
 |---------|-------------|
 | `bedrock` | AWS Bedrock provider support |
 | `oauth` | OAuth authentication (used by Codex provider) |
-| `codex` | OpenAI Codex provider (implies `oauth`) |
+| `codex` | `OpenAI` Codex provider (implies `oauth`) |
 
 ## License
 

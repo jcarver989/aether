@@ -15,9 +15,8 @@ async fn discover_ollama() -> Vec<LlmModel> {
         std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_string());
     let url = format!("{base}/api/tags");
 
-    let body = match fetch(&url).await {
-        Some(b) => b,
-        None => return Vec::new(),
+    let Some(body) = fetch(&url).await else {
+        return Vec::new();
     };
 
     match serde_json::from_str::<OllamaTagsResponse>(&body) {
@@ -38,9 +37,8 @@ async fn discover_llama_cpp() -> Vec<LlmModel> {
         std::env::var("LLAMA_CPP_HOST").unwrap_or_else(|_| "http://localhost:8080".to_string());
     let url = format!("{base}/v1/models");
 
-    let body = match fetch(&url).await {
-        Some(b) => b,
-        None => return Vec::new(),
+    let Some(body) = fetch(&url).await else {
+        return Vec::new();
     };
 
     match serde_json::from_str::<OpenAiModelsResponse>(&body) {
