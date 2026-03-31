@@ -1,3 +1,5 @@
+#![doc = include_str!(concat!(env!("OUT_DIR"), "/docs/llamacpp.md"))]
+
 use super::util::get_local_config;
 use crate::providers::openai::OpenAiChatProvider;
 use crate::{ProviderFactory, Result};

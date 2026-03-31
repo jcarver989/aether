@@ -1,6 +1,136 @@
 # aether-llm
 
-Multi-provider LLM abstraction layer for the Aether AI agent framework.
+Multi-provider LLM abstraction layer for Rust. Write your code once, then swap between Anthropic, OpenAI, OpenRouter, Ollama, and more by changing a single string.
+
+## Quick start
+
+Parse a `"provider:model"` string into a provider, build a context, and stream the response:
+
+```rust,no_run
+use llm::parser::ModelProviderParser;
+use llm::types::IsoString;
+use llm::{ChatMessage, ContentBlock, Context, LlmResponse, StreamingModelProvider};
+use tokio_stream::StreamExt;
+
+#[tokio::main]
+async fn main() -> llm::Result<()> {
+    let parser = ModelProviderParser::default();
+    let (provider, _model) = parser.parse("anthropic:claude-sonnet-4-5-20250929")?;
+
+    let context = Context::new(
+        vec![ChatMessage::User {
+            content: vec![ContentBlock::text("Explain ownership in Rust in two sentences.")],
+            timestamp: IsoString::now(),
+        }],
+        vec![],
+    );
+
+    let mut stream = provider.stream_response(&context);
+    while let Some(Ok(event)) = stream.next().await {
+        if let LlmResponse::Text { chunk } = event {
+            print!("{chunk}");
+        }
+    }
+    Ok(())
+}
+```
+
+## Examples
+
+### Conversation with a system prompt
+
+```rust,no_run
+use llm::types::IsoString;
+use llm::{ChatMessage, ContentBlock, Context};
+
+let context = Context::new(
+    vec![
+        ChatMessage::System {
+            content: "You are a helpful assistant that responds in haiku.".into(),
+            timestamp: IsoString::now(),
+        },
+        ChatMessage::User {
+            content: vec![ContentBlock::text("What is Rust?")],
+            timestamp: IsoString::now(),
+        },
+    ],
+    vec![], // no tools
+);
+```
+
+### Tool use
+
+Define tools with JSON Schema, then feed results back after execution:
+
+```rust,no_run
+use llm::types::IsoString;
+use llm::{
+    AssistantReasoning, ChatMessage, ContentBlock, Context, ToolCallResult, ToolDefinition,
+};
+
+let tools = vec![ToolDefinition {
+    name: "get_weather".into(),
+    description: "Get current weather for a city".into(),
+    parameters: r#"{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}"#.into(),
+    server: None,
+}];
+
+let mut context = Context::new(
+    vec![ChatMessage::User {
+        content: vec![ContentBlock::text("What's the weather in Tokyo?")],
+        timestamp: IsoString::now(),
+    }],
+    tools,
+);
+
+// After streaming the response and executing the tool call,
+// feed the result back into the context:
+context.push_assistant_turn(
+    "Let me check the weather.",
+    AssistantReasoning::default(),
+    vec![Ok(ToolCallResult {
+        id: "call_1".into(),
+        name: "get_weather".into(),
+        arguments: r#"{"city":"Tokyo"}"#.into(),
+        result: "72F, sunny".into(),
+    })],
+);
+// Then call provider.stream_response(&context) again for the final answer.
+```
+
+### Switching providers
+
+`ModelProviderParser` accepts any supported `"provider:model"` string, so switching is a one-line change:
+
+```rust,no_run
+use llm::parser::ModelProviderParser;
+
+let parser = ModelProviderParser::default();
+
+// Cloud providers (need API keys in env)
+let (provider, _) = parser.parse("anthropic:claude-sonnet-4-5-20250929").unwrap();
+let (provider, _) = parser.parse("openai:gpt-4o").unwrap();
+let (provider, _) = parser.parse("openrouter:moonshotai/kimi-k2").unwrap();
+
+// Local models (no API key needed)
+let (provider, _) = parser.parse("ollama:llama3.2").unwrap();
+let (provider, _) = parser.parse("llamacpp").unwrap();
+```
+
+### Direct provider construction
+
+When you need fine-grained control (temperature, max tokens), construct the provider directly:
+
+```rust,no_run
+use llm::providers::anthropic::AnthropicProvider;
+use llm::ProviderFactory;
+
+let provider = AnthropicProvider::from_env()
+    .unwrap()
+    .with_model("claude-sonnet-4-5-20250929")
+    .with_temperature(0.7)
+    .with_max_tokens(4096);
+```
 
 ## Providers
 
@@ -32,18 +162,6 @@ Key entry points:
 - **`ChatMessage`** -- Message enum with variants for user, assistant, and tool call messages.
 - **`ToolDefinition`** -- Describes a tool the model can invoke (name, description, JSON schema).
 - **`LlmModel`** -- Catalog of known models with metadata (context window, capabilities).
-
-## Usage
-
-```rust,no_run
-use llm::providers::openrouter::OpenRouterProvider;
-use llm::StreamingModelProvider;
-
-// Create a provider from a model string
-let provider = OpenRouterProvider::default("moonshotai/kimi-k2").unwrap();
-println!("Using model: {:?}", provider.model());
-println!("Context window: {:?}", provider.context_window());
-```
 
 ## Feature Flags
 

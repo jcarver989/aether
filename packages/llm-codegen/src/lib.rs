@@ -216,15 +216,29 @@ struct CodegenCtx {
     provider_models: ProviderModels,
 }
 
-/// Run the codegen, returning the generated Rust source.
-pub fn generate(models_json_path: &Path) -> Result<String, String> {
+/// Output of the code generator.
+pub struct GeneratedOutput {
+    /// The generated Rust source (for `generated.rs`).
+    pub rust_source: String,
+    /// Per-provider markdown documentation keyed by provider identifier.
+    ///
+    /// Keys are provider dev_ids (e.g. `"anthropic"`, `"ollama"`) and values
+    /// are markdown strings suitable for `#![doc = include_str!(...)]`.
+    pub provider_docs: HashMap<String, String>,
+}
+
+/// Run the codegen, returning the generated Rust source and per-provider docs.
+pub fn generate(models_json_path: &Path) -> Result<GeneratedOutput, String> {
     let json_bytes = std::fs::read_to_string(models_json_path).map_err(|e| format!("read: {e}"))?;
     let data: ModelsDevData =
         serde_json::from_str(&json_bytes).map_err(|e| format!("parse: {e}"))?;
 
     let provider_models = build_provider_models(&data)?;
     let ctx = CodegenCtx { provider_models };
-    Ok(emit_generated_source(&ctx))
+    Ok(GeneratedOutput {
+        rust_source: emit_generated_source(&ctx),
+        provider_docs: emit_provider_docs(&ctx),
+    })
 }
 
 fn build_provider_models(data: &ModelsDevData) -> Result<ProviderModels, String> {
@@ -1015,6 +1029,106 @@ fn escape_rust_string(raw: &str) -> String {
     raw.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+fn emit_provider_docs(ctx: &CodegenCtx) -> HashMap<String, String> {
+    let mut docs = HashMap::new();
+
+    for cfg in PROVIDERS {
+        let models = &ctx.provider_models[cfg.dev_id];
+        let mut doc = String::new();
+
+        pushln(&mut doc, format!("{} LLM provider.", cfg.display_name));
+        blank(&mut doc);
+
+        // Authentication
+        pushln(&mut doc, "# Authentication");
+        blank(&mut doc);
+        match cfg.env_var {
+            Some(var) => pushln(&mut doc, format!("Set the `{var}` environment variable.")),
+            None if cfg.oauth_provider_id.is_some() => {
+                pushln(&mut doc, "This provider uses OAuth authentication.");
+            }
+            None => {
+                pushln(&mut doc, "Uses the default AWS credential chain (environment variables, config files, IAM roles).");
+            }
+        }
+        blank(&mut doc);
+
+        // Supported models table
+        pushln(&mut doc, "# Supported models");
+        blank(&mut doc);
+        pushln(
+            &mut doc,
+            "| Model ID | Name | Context | Reasoning | Image | Audio |",
+        );
+        pushln(
+            &mut doc,
+            "|----------|------|---------|-----------|-------|-------|",
+        );
+        for model in models {
+            let ctx_str = format_context_window(model.context_window);
+            let reasoning = if model.reasoning_levels.is_empty() {
+                ""
+            } else {
+                "yes"
+            };
+            let image = if model.input_modalities.contains(&"image".to_string()) {
+                "yes"
+            } else {
+                ""
+            };
+            let audio = if model.input_modalities.contains(&"audio".to_string()) {
+                "yes"
+            } else {
+                ""
+            };
+            pushln(
+                &mut doc,
+                format!(
+                    "| `{}` | {} | {} | {} | {} | {} |",
+                    model.model_id, model.display_name, ctx_str, reasoning, image, audio
+                ),
+            );
+        }
+
+        docs.insert(cfg.dev_id.to_string(), doc);
+    }
+
+    // Dynamic providers
+    for dyn_cfg in DYNAMIC_PROVIDERS {
+        let mut doc = String::new();
+        pushln(
+            &mut doc,
+            format!("{} LLM provider.", dyn_cfg.display_name),
+        );
+        blank(&mut doc);
+        pushln(
+            &mut doc,
+            format!(
+                "This provider accepts any model name at runtime (e.g. `{}:my-model`).",
+                dyn_cfg.parser_name
+            ),
+        );
+        pushln(&mut doc, "No API key is required.");
+        docs.insert(dyn_cfg.parser_name.to_string(), doc);
+    }
+
+    docs
+}
+
+/// Format a token count as human-readable (e.g. `1_000_000` → `1M`, `200_000` → `200k`).
+fn format_context_window(tokens: u32) -> String {
+    if tokens == 0 {
+        return "unknown".to_string();
+    }
+    if tokens >= 1_000_000 && tokens % 1_000_000 == 0 {
+        format!("{}M", tokens / 1_000_000)
+    } else if tokens >= 1_000 && tokens % 1_000 == 0 {
+        format!("{}k", tokens / 1_000)
+    } else {
+        format_number(tokens)
+    }
+}
+
 fn pushln(out: &mut String, line: impl AsRef<str>) {
     writeln!(out, "{}", line.as_ref()).expect("writing to String should not fail");
 }
@@ -1302,7 +1416,7 @@ mod tests {
         let tmp = NamedTempFile::new().expect("temp file");
         let json = serde_json::to_string(data).expect("serialize fixture");
         std::fs::write(tmp.path(), json).expect("write fixture");
-        generate(tmp.path()).expect("codegen succeeds")
+        generate(tmp.path()).expect("codegen succeeds").rust_source
     }
 
     fn minimal_models_dev_json() -> Value {
@@ -1389,6 +1503,52 @@ mod tests {
         let source = generate_from_value(&data);
         let from_str_matches = source.matches("\"shared-model\" => Ok(Self::SharedModel),").count();
         assert_eq!(from_str_matches, 1);
+    }
+
+    #[test]
+    fn generate_emits_provider_docs() {
+        let mut data = minimal_models_dev_json();
+        let root = data.as_object_mut().unwrap();
+        let anthropic = root
+            .get_mut("anthropic")
+            .and_then(Value::as_object_mut)
+            .unwrap();
+
+        anthropic.insert(
+            "models".to_string(),
+            json!({
+                "claude-test": {
+                    "id": "claude-test",
+                    "name": "Claude Test",
+                    "tool_call": true,
+                    "reasoning": true,
+                    "limit": {"context": 200_000, "output": 0},
+                    "modalities": {"input": ["text", "image"]}
+                }
+            }),
+        );
+
+        let tmp = NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), serde_json::to_string(&data).unwrap()).unwrap();
+        let output = generate(tmp.path()).unwrap();
+
+        let anthropic_doc = &output.provider_docs["anthropic"];
+        assert!(anthropic_doc.contains("Anthropic LLM provider."));
+        assert!(anthropic_doc.contains("`ANTHROPIC_API_KEY`"));
+        assert!(anthropic_doc.contains("| `claude-test` | Claude Test | 200k | yes | yes |  |"));
+
+        // Dynamic providers get a short doc
+        let ollama_doc = &output.provider_docs["ollama"];
+        assert!(ollama_doc.contains("Ollama LLM provider."));
+        assert!(ollama_doc.contains("any model name at runtime"));
+    }
+
+    #[test]
+    fn format_context_window_formats_correctly() {
+        assert_eq!(format_context_window(1_000_000), "1M");
+        assert_eq!(format_context_window(200_000), "200k");
+        assert_eq!(format_context_window(8_000), "8k");
+        assert_eq!(format_context_window(0), "unknown");
     }
 
     #[test]
