@@ -78,10 +78,7 @@ pub struct TaskUpdateOutput {
 }
 
 /// Update an existing task's fields
-pub fn execute_task_update(
-    input: TaskUpdateInput,
-    store: &mut TaskStore,
-) -> Result<TaskUpdateOutput, TaskStoreError> {
+pub fn execute_task_update(input: TaskUpdateInput, store: &mut TaskStore) -> Result<TaskUpdateOutput, TaskStoreError> {
     let id = TaskId::from(input.id.as_str());
 
     let changes: Vec<String> = [
@@ -114,9 +111,7 @@ pub fn execute_task_update(
         description: input.description,
         status: input.status,
         assignee: input.assignee,
-        deps: input
-            .deps
-            .map(|d| d.iter().map(|s| TaskId::from(s.as_str())).collect()),
+        deps: input.deps.map(|d| d.iter().map(|s| TaskId::from(s.as_str())).collect()),
         summary: input.summary,
         decisions: input.decisions,
         facts: input.facts,
@@ -145,16 +140,9 @@ pub fn execute_task_update(
         if newly_ready.is_empty() {
             format!("Completed task '{}'", task.title)
         } else if newly_ready.len() == 1 {
-            format!(
-                "Completed task '{}'. 1 task is now ready: {}",
-                task.title, newly_ready[0].title
-            )
+            format!("Completed task '{}'. 1 task is now ready: {}", task.title, newly_ready[0].title)
         } else {
-            format!(
-                "Completed task '{}'. {} tasks are now ready",
-                task.title,
-                newly_ready.len()
-            )
+            format!("Completed task '{}'. {} tasks are now ready", task.title, newly_ready.len())
         }
     } else {
         format!("Updated {} on task {}", changes.join(", "), id)
@@ -189,11 +177,8 @@ mod tests {
 
         let task = store.create_tree("Original", None).unwrap();
 
-        let input = TaskUpdateInput {
-            id: task.id.to_string(),
-            title: Some("Updated title".to_string()),
-            ..Default::default()
-        };
+        let input =
+            TaskUpdateInput { id: task.id.to_string(), title: Some("Updated title".to_string()), ..Default::default() };
 
         let output = execute_task_update(input, &mut store).unwrap();
 
@@ -208,11 +193,8 @@ mod tests {
 
         let task = store.create_tree("Task", None).unwrap();
 
-        let input = TaskUpdateInput {
-            id: task.id.to_string(),
-            status: Some(TaskStatus::InProgress),
-            ..Default::default()
-        };
+        let input =
+            TaskUpdateInput { id: task.id.to_string(), status: Some(TaskStatus::InProgress), ..Default::default() };
 
         let output = execute_task_update(input, &mut store).unwrap();
 
@@ -301,15 +283,7 @@ mod tests {
         let sub1 = store.add_subtask(&root.id, "Subtask 1").unwrap();
         let sub2 = store.add_subtask(&root.id, "Subtask 2").unwrap();
 
-        store
-            .update(
-                &sub2.id,
-                TaskUpdate {
-                    deps: Some(vec![sub1.id.clone()]),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
+        store.update(&sub2.id, TaskUpdate { deps: Some(vec![sub1.id.clone()]), ..Default::default() }).unwrap();
 
         let input = TaskUpdateInput {
             id: sub1.id.to_string(),

@@ -18,10 +18,7 @@ async fn test_ctrl_c_exits_while_file_picker_is_open() {
         })
         .await
         .unwrap();
-    assert!(
-        has_file_picker(renderer.writer()),
-        "File picker should be open after typing @"
-    );
+    assert!(has_file_picker(renderer.writer()), "File picker should be open after typing @");
 
     let action = renderer
         .on_key_event(KeyEvent {
@@ -51,10 +48,7 @@ async fn test_space_closes_file_picker_without_selection() {
         })
         .await
         .unwrap();
-    assert!(
-        has_file_picker(renderer.writer()),
-        "File picker should be open"
-    );
+    assert!(has_file_picker(renderer.writer()), "File picker should be open");
 
     renderer
         .on_key_event(KeyEvent {
@@ -66,8 +60,5 @@ async fn test_space_closes_file_picker_without_selection() {
         .await
         .unwrap();
 
-    assert!(
-        !has_file_picker(renderer.writer()),
-        "File picker should be closed"
-    );
+    assert!(!has_file_picker(renderer.writer()), "File picker should be closed");
 }

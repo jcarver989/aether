@@ -4,10 +4,7 @@ use crate::components::file_list_renderer::{render_file_list_cell, render_file_t
 use crate::components::file_tree::FileTree;
 pub use crate::components::patch_renderer::build_patch_lines;
 use crate::git_diff::{FileDiff, FileStatus, PatchLineKind};
-use tui::{
-    Component, Event, Frame, KeyCode, Line, MouseEvent, MouseEventKind, Style, ViewContext,
-    truncate_text,
-};
+use tui::{Component, Event, Frame, KeyCode, Line, MouseEvent, MouseEventKind, Style, ViewContext, truncate_text};
 
 pub enum GitDiffViewMessage {
     Close,
@@ -26,14 +23,8 @@ impl GitDiffView<'_> {
 }
 
 pub(crate) fn diff_layout(total_width: usize, delta: i16) -> (usize, usize) {
-    let base = (total_width / 3)
-        .clamp(20, 28)
-        .min(total_width.saturating_sub(4));
-    #[allow(
-        clippy::cast_possible_wrap,
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss
-    )]
+    let base = (total_width / 3).clamp(20, 28).min(total_width.saturating_sub(4));
+    #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let left = (base as i16 + delta).clamp(12, (total_width / 2) as i16) as usize;
     let right = total_width.saturating_sub(left + 1);
     (left, right)
@@ -41,11 +32,7 @@ pub(crate) fn diff_layout(total_width: usize, delta: i16) -> (usize, usize) {
 
 pub(crate) fn should_use_split_patch(total_width: usize, delta: i16, file: &FileDiff) -> bool {
     let (_left_width, right_width) = diff_layout(total_width, delta);
-    let has_removals = file
-        .hunks
-        .iter()
-        .flat_map(|h| &h.lines)
-        .any(|line| line.kind == PatchLineKind::Removed);
+    let has_removals = file.hunks.iter().flat_map(|h| &h.lines).any(|line| line.kind == PatchLineKind::Removed);
 
     right_width >= 80 && has_removals
 }
@@ -61,33 +48,20 @@ fn render_git_diff_state(state: &GitDiffViewState, context: &ViewContext) -> Vec
     let available_height = context.size.height as usize;
 
     match &state.load_state {
-        GitDiffLoadState::Loading => {
-            render_message_layout("Loading...", left_width, available_height, theme)
+        GitDiffLoadState::Loading => render_message_layout("Loading...", left_width, available_height, theme),
+        GitDiffLoadState::Empty => {
+            render_message_layout("No changes in working tree relative to HEAD", left_width, available_height, theme)
         }
-        GitDiffLoadState::Empty => render_message_layout(
-            "No changes in working tree relative to HEAD",
-            left_width,
-            available_height,
-            theme,
-        ),
         GitDiffLoadState::Error { message } => {
             let msg = format!("Git diff unavailable: {message}");
             render_message_layout(&msg, left_width, available_height, theme)
         }
-        GitDiffLoadState::Ready(doc) if doc.files.is_empty() => render_message_layout(
-            "No changes in working tree relative to HEAD",
-            left_width,
-            available_height,
-            theme,
-        ),
-        GitDiffLoadState::Ready(doc) => render_ready(
-            &doc.files,
-            state,
-            left_width,
-            right_width,
-            available_height,
-            context,
-        ),
+        GitDiffLoadState::Ready(doc) if doc.files.is_empty() => {
+            render_message_layout("No changes in working tree relative to HEAD", left_width, available_height, theme)
+        }
+        GitDiffLoadState::Ready(doc) => {
+            render_ready(&doc.files, state, left_width, right_width, available_height, context)
+        }
     }
 }
 
@@ -285,8 +259,7 @@ impl GitDiffView<'_> {
                 vec![]
             }
             KeyCode::Char(c) => {
-                let byte_pos =
-                    char_to_byte_pos(&self.state.comment_buffer, self.state.comment_cursor);
+                let byte_pos = char_to_byte_pos(&self.state.comment_buffer, self.state.comment_cursor);
                 self.state.comment_buffer.insert(byte_pos, c);
                 self.state.comment_cursor += 1;
                 vec![]
@@ -294,8 +267,7 @@ impl GitDiffView<'_> {
             KeyCode::Backspace => {
                 if self.state.comment_cursor > 0 {
                     self.state.comment_cursor -= 1;
-                    let byte_pos =
-                        char_to_byte_pos(&self.state.comment_buffer, self.state.comment_cursor);
+                    let byte_pos = char_to_byte_pos(&self.state.comment_buffer, self.state.comment_cursor);
                     self.state.comment_buffer.remove(byte_pos);
                 }
                 vec![]
@@ -327,28 +299,13 @@ fn render_ready(
     let selected_file = &files[selected];
 
     let show_comment_bar = state.focus == PatchFocus::CommentInput;
-    let content_height = if show_comment_bar {
-        available_height.saturating_sub(1)
-    } else {
-        available_height
-    };
+    let content_height = if show_comment_bar { available_height.saturating_sub(1) } else { available_height };
 
-    let visible_entries = state
-        .file_tree
-        .as_ref()
-        .map(FileTree::visible_entries)
-        .unwrap_or_default();
-    let tree_selected = state
-        .file_tree
-        .as_ref()
-        .map_or(0, FileTree::selected_visible);
+    let visible_entries = state.file_tree.as_ref().map(FileTree::visible_entries).unwrap_or_default();
+    let tree_selected = state.file_tree.as_ref().map_or(0, FileTree::selected_visible);
     let file_scroll = state.file_list_scroll;
 
-    let file_list_len = if visible_entries.is_empty() {
-        files.len()
-    } else {
-        visible_entries.len()
-    };
+    let file_list_len = if visible_entries.is_empty() { files.len() } else { visible_entries.len() };
     let row_count = content_height.max(file_list_len);
     let mut rows = Vec::with_capacity(available_height);
 
@@ -362,39 +319,20 @@ fn render_ready(
             let indicator = format!(
                 " [{} comment{}] s:submit u:undo",
                 state.queued_comments.len(),
-                if state.queued_comments.len() == 1 {
-                    ""
-                } else {
-                    "s"
-                },
+                if state.queued_comments.len() == 1 { "" } else { "s" },
             );
             let padded = truncate_text(&indicator, left_width);
             let pad = left_width.saturating_sub(padded.chars().count());
-            line.push_with_style(
-                padded.as_ref(),
-                Style::fg(theme.accent()).bg_color(theme.sidebar_bg()),
-            );
+            line.push_with_style(padded.as_ref(), Style::fg(theme.accent()).bg_color(theme.sidebar_bg()));
             if pad > 0 {
-                line.push_with_style(
-                    " ".repeat(pad),
-                    Style::default().bg_color(theme.sidebar_bg()),
-                );
+                line.push_with_style(" ".repeat(pad), Style::default().bg_color(theme.sidebar_bg()));
             }
         } else if !visible_entries.is_empty() {
             let scrolled_i = i + file_scroll;
             if let Some(entry) = visible_entries.get(scrolled_i) {
-                render_file_tree_cell(
-                    &mut line,
-                    entry,
-                    scrolled_i == tree_selected,
-                    left_width,
-                    theme,
-                );
+                render_file_tree_cell(&mut line, entry, scrolled_i == tree_selected, left_width, theme);
             } else {
-                line.push_with_style(
-                    " ".repeat(left_width),
-                    Style::default().bg_color(theme.sidebar_bg()),
-                );
+                line.push_with_style(" ".repeat(left_width), Style::default().bg_color(theme.sidebar_bg()));
             }
         } else {
             render_file_list_cell(&mut line, files, i, selected, left_width, theme);
@@ -417,37 +355,21 @@ fn render_ready(
     }
 
     if show_comment_bar {
-        rows.push(render_comment_bar(
-            &state.comment_buffer,
-            left_width,
-            right_width,
-            theme,
-        ));
+        rows.push(render_comment_bar(&state.comment_buffer, left_width, right_width, theme));
     }
 
     rows
 }
 
-fn render_comment_bar(
-    comment_buffer: &str,
-    left_width: usize,
-    right_width: usize,
-    theme: &tui::Theme,
-) -> Line {
+fn render_comment_bar(comment_buffer: &str, left_width: usize, right_width: usize, theme: &tui::Theme) -> Line {
     let mut bar = Line::default();
     let label = format!("Comment: {comment_buffer}");
     let total = left_width + 1 + right_width;
     let truncated = truncate_text(&label, total);
-    bar.push_with_style(
-        truncated.as_ref(),
-        Style::fg(theme.text_primary()).bg_color(theme.highlight_bg()),
-    );
+    bar.push_with_style(truncated.as_ref(), Style::fg(theme.text_primary()).bg_color(theme.highlight_bg()));
     let bar_width = truncated.chars().count();
     if bar_width < total {
-        bar.push_with_style(
-            " ".repeat(total - bar_width),
-            Style::default().bg_color(theme.highlight_bg()),
-        );
+        bar.push_with_style(" ".repeat(total - bar_width), Style::default().bg_color(theme.highlight_bg()));
     }
     bar
 }
@@ -491,8 +413,8 @@ fn render_patch_cell(
         let patch_row = row - 2;
         let scrolled_row = patch_row + patch_scroll;
         if scrolled_row < patch_lines.len() {
-            let is_cursor = matches!(focus, PatchFocus::Patch | PatchFocus::CommentInput)
-                && scrolled_row == cursor_line;
+            let is_cursor =
+                matches!(focus, PatchFocus::Patch | PatchFocus::CommentInput) && scrolled_row == cursor_line;
             if is_cursor {
                 append_with_cursor_highlight(line, &patch_lines[scrolled_row], theme);
             } else {
@@ -514,19 +436,11 @@ fn append_with_cursor_highlight(dest: &mut Line, source: &Line, theme: &tui::The
     }
 }
 
-fn render_message_layout(
-    message: &str,
-    left_width: usize,
-    available_height: usize,
-    theme: &tui::Theme,
-) -> Vec<Line> {
+fn render_message_layout(message: &str, left_width: usize, available_height: usize, theme: &tui::Theme) -> Vec<Line> {
     let mut rows = Vec::with_capacity(available_height);
     for i in 0..available_height {
         let mut line = Line::default();
-        line.push_with_style(
-            " ".repeat(left_width),
-            Style::default().bg_color(theme.sidebar_bg()),
-        );
+        line.push_with_style(" ".repeat(left_width), Style::default().bg_color(theme.sidebar_bg()));
         line.push_with_style(" ", Style::default().bg_color(theme.code_bg()));
         if i == 0 {
             line.push_with_style(message, Style::fg(theme.text_secondary()));
@@ -605,18 +519,8 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
-    fn patch_line(
-        kind: PatchLineKind,
-        text: &str,
-        old: Option<usize>,
-        new: Option<usize>,
-    ) -> PatchLine {
-        PatchLine {
-            kind,
-            text: text.to_string(),
-            old_line_no: old,
-            new_line_no: new,
-        }
+    fn patch_line(kind: PatchLineKind, text: &str, old: Option<usize>, new: Option<usize>) -> PatchLine {
+        PatchLine { kind, text: text.to_string(), old_line_no: old, new_line_no: new }
     }
 
     fn hunk(header: &str, old: (usize, usize), new: (usize, usize), lines: Vec<PatchLine>) -> Hunk {
@@ -630,19 +534,8 @@ mod tests {
         }
     }
 
-    fn file_diff(
-        path: &str,
-        old_path: Option<&str>,
-        status: FileStatus,
-        hunks: Vec<Hunk>,
-    ) -> FileDiff {
-        FileDiff {
-            old_path: old_path.map(str::to_string),
-            path: path.to_string(),
-            status,
-            hunks,
-            binary: false,
-        }
+    fn file_diff(path: &str, old_path: Option<&str>, status: FileStatus, hunks: Vec<Hunk>) -> FileDiff {
+        FileDiff { old_path: old_path.map(str::to_string), path: path.to_string(), status, hunks, binary: false }
     }
 
     fn make_test_doc() -> GitDiffDocument {
@@ -722,23 +615,13 @@ mod tests {
     }
 
     async fn send_key(view: &mut GitDiffView<'_>, code: KeyCode) -> Vec<GitDiffViewMessage> {
-        view.on_event(&Event::Key(key(code)))
-            .await
-            .unwrap_or_default()
+        view.on_event(&Event::Key(key(code))).await.unwrap_or_default()
     }
 
-    async fn send_mouse(
-        view: &mut GitDiffView<'_>,
-        kind: MouseEventKind,
-    ) -> Vec<GitDiffViewMessage> {
-        view.on_event(&Event::Mouse(MouseEvent {
-            kind,
-            column: 0,
-            row: 0,
-            modifiers: KeyModifiers::NONE,
-        }))
-        .await
-        .unwrap_or_default()
+    async fn send_mouse(view: &mut GitDiffView<'_>, kind: MouseEventKind) -> Vec<GitDiffViewMessage> {
+        view.on_event(&Event::Mouse(MouseEvent { kind, column: 0, row: 0, modifiers: KeyModifiers::NONE }))
+            .await
+            .unwrap_or_default()
     }
 
     fn has_msg(msgs: &[GitDiffViewMessage], pred: fn(&GitDiffViewMessage) -> bool) -> bool {
@@ -749,9 +632,7 @@ mod tests {
     async fn key_emits_expected_message() {
         let cases: Vec<(KeyCode, fn(&GitDiffViewMessage) -> bool)> = vec![
             (KeyCode::Esc, |m| matches!(m, GitDiffViewMessage::Close)),
-            (KeyCode::Char('r'), |m| {
-                matches!(m, GitDiffViewMessage::Refresh)
-            }),
+            (KeyCode::Char('r'), |m| matches!(m, GitDiffViewMessage::Refresh)),
         ];
         for (code, pred) in cases {
             let mut state = make_view_state(make_test_doc());
@@ -825,18 +706,8 @@ mod tests {
                 None,
                 FileStatus::Modified,
                 vec![
-                    hunk(
-                        h1,
-                        (1, 1),
-                        (1, 1),
-                        vec![patch_line(HunkHeader, h1, None, None)],
-                    ),
-                    hunk(
-                        h2,
-                        (5, 1),
-                        (5, 1),
-                        vec![patch_line(HunkHeader, h2, None, None)],
-                    ),
+                    hunk(h1, (1, 1), (1, 1), vec![patch_line(HunkHeader, h1, None, None)]),
+                    hunk(h2, (5, 1), (5, 1), vec![patch_line(HunkHeader, h2, None, None)]),
                 ],
             )],
         };
@@ -886,15 +757,10 @@ mod tests {
     async fn s_submits_review() {
         let mut state = make_state_with_cache();
         state.focus = PatchFocus::Patch;
-        state
-            .queued_comments
-            .push(queued_comment("line", "looks good", PatchLineKind::Context));
+        state.queued_comments.push(queued_comment("line", "looks good", PatchLineKind::Context));
         let mut view = GitDiffView { state: &mut state };
         let msgs = send_key(&mut view, KeyCode::Char('s')).await;
-        assert!(has_msg(&msgs, |m| matches!(
-            m,
-            GitDiffViewMessage::SubmitPrompt(_)
-        )));
+        assert!(has_msg(&msgs, |m| matches!(m, GitDiffViewMessage::SubmitPrompt(_))));
         assert_eq!(
             view.state.queued_comments.len(),
             1,
@@ -915,12 +781,8 @@ mod tests {
     async fn u_removes_last_comment() {
         let mut state = make_state_with_cache();
         state.focus = PatchFocus::Patch;
-        state
-            .queued_comments
-            .push(queued_comment("line1", "first", PatchLineKind::Context));
-        state
-            .queued_comments
-            .push(queued_comment("line2", "second", PatchLineKind::Added));
+        state.queued_comments.push(queued_comment("line1", "first", PatchLineKind::Context));
+        state.queued_comments.push(queued_comment("line2", "second", PatchLineKind::Added));
         let mut view = GitDiffView { state: &mut state };
         send_key(&mut view, KeyCode::Char('u')).await;
         assert_eq!(view.state.queued_comments.len(), 1);
@@ -1012,10 +874,7 @@ mod tests {
             h,
             (1, 1),
             (1, 1),
-            vec![
-                patch_line(HunkHeader, h, None, None),
-                patch_line(Context, "line", Some(1), Some(1)),
-            ],
+            vec![patch_line(HunkHeader, h, None, None), patch_line(Context, "line", Some(1), Some(1))],
         )]
     }
 
@@ -1037,9 +896,7 @@ mod tests {
     #[tokio::test]
     async fn h_in_file_list_collapses_directory() {
         let mut state = make_tree_state();
-        state.file_tree = Some(crate::components::file_tree::FileTree::from_files(
-            &make_tree_doc().files,
-        ));
+        state.file_tree = Some(crate::components::file_tree::FileTree::from_files(&make_tree_doc().files));
         // Tree: lib/ (dir), c.rs, src/ (dir), a.rs, b.rs
         // Select "src/" dir (visible index 2)
         state.file_tree.as_mut().unwrap().navigate(2);
@@ -1050,22 +907,14 @@ mod tests {
         send_key(&mut view, KeyCode::Char('h')).await;
 
         // src/ should be collapsed, hiding a.rs and b.rs
-        let entries_after = view
-            .state
-            .file_tree
-            .as_ref()
-            .unwrap()
-            .visible_entries()
-            .len();
+        let entries_after = view.state.file_tree.as_ref().unwrap().visible_entries().len();
         assert_eq!(entries_after, 3); // lib/, c.rs, src/ (collapsed)
     }
 
     #[tokio::test]
     async fn enter_on_directory_expands_it() {
         let mut state = make_tree_state();
-        state.file_tree = Some(crate::components::file_tree::FileTree::from_files(
-            &make_tree_doc().files,
-        ));
+        state.file_tree = Some(crate::components::file_tree::FileTree::from_files(&make_tree_doc().files));
         // Collapse src/ first
         state.file_tree.as_mut().unwrap().navigate(2);
         state.file_tree.as_mut().unwrap().collapse_or_parent();
@@ -1076,23 +925,13 @@ mod tests {
 
         // Should expand, stay in FileList
         assert_eq!(view.state.focus, PatchFocus::FileList);
-        assert_eq!(
-            view.state
-                .file_tree
-                .as_ref()
-                .unwrap()
-                .visible_entries()
-                .len(),
-            5
-        );
+        assert_eq!(view.state.file_tree.as_ref().unwrap().visible_entries().len(), 5);
     }
 
     #[tokio::test]
     async fn enter_on_file_switches_to_patch() {
         let mut state = make_tree_state();
-        state.file_tree = Some(crate::components::file_tree::FileTree::from_files(
-            &make_tree_doc().files,
-        ));
+        state.file_tree = Some(crate::components::file_tree::FileTree::from_files(&make_tree_doc().files));
         // Navigate to c.rs (visible index 1, which is a file)
         state.file_tree.as_mut().unwrap().navigate(1);
 

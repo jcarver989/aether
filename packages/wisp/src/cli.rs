@@ -12,9 +12,6 @@ pub struct Cli {
     )]
     pub agent: String,
 
-    #[arg(
-        long = "log-dir",
-        help = "Path to log file directory (default: /tmp/wisp-logs)"
-    )]
+    #[arg(long = "log-dir", help = "Path to log file directory (default: /tmp/wisp-logs)")]
     pub log_dir: Option<String>,
 }

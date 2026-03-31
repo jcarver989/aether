@@ -12,14 +12,9 @@ async fn create_test_client(
     rmcp::service::RunningService<rmcp::RoleClient, ClientInfo>,
 ) {
     let server_service = SkillsMcp::new(test_dir.to_path_buf());
-    let client_info = ClientInfo::new(
-        Default::default(),
-        Implementation::new("test-client", "0.1.0"),
-    );
+    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
 
-    connect(server_service, client_info)
-        .await
-        .expect("Failed to connect MCP server and client")
+    connect(server_service, client_info).await.expect("Failed to connect MCP server and client")
 }
 
 fn call_tool_params(name: &str, args: serde_json::Value) -> CallToolRequestParams {
@@ -53,12 +48,7 @@ async fn test_save_note_creates_new() {
     let parsed = parse_tool_result(&result);
     assert_eq!(parsed["topic"], "agent-spec");
     assert_eq!(parsed["status"], "created");
-    assert!(
-        parsed["content"]
-            .as_str()
-            .unwrap()
-            .contains("Core owns AgentSpec")
-    );
+    assert!(parsed["content"].as_str().unwrap().contains("Core owns AgentSpec"));
 
     // Verify file on disk
     let note_md = temp_dir.path().join("notes/agent-spec.md");
@@ -265,11 +255,8 @@ async fn test_toc_excludes_agent_authored_skills() {
     // Create a human-authored skill
     let human_dir = skills_dir.join("human-skill");
     std::fs::create_dir_all(&human_dir).unwrap();
-    std::fs::write(
-        human_dir.join("SKILL.md"),
-        "---\ndescription: Human skill\nagent-invocable: true\n---\nContent.\n",
-    )
-    .unwrap();
+    std::fs::write(human_dir.join("SKILL.md"), "---\ndescription: Human skill\nagent-invocable: true\n---\nContent.\n")
+        .unwrap();
 
     let server = SkillsMcp::new(temp_dir.path().to_path_buf());
     let info = server.get_info();
@@ -279,10 +266,7 @@ async fn test_toc_excludes_agent_authored_skills() {
         !instructions.contains("**agent-skill**"),
         "TOC should not include agent-authored skills, got: {instructions}"
     );
-    assert!(
-        instructions.contains("**human-skill**"),
-        "TOC should include human-authored skills, got: {instructions}"
-    );
+    assert!(instructions.contains("**human-skill**"), "TOC should include human-authored skills, got: {instructions}");
 }
 
 #[tokio::test]
@@ -337,26 +321,9 @@ async fn test_full_lifecycle() {
     let parsed = parse_tool_result(&result);
     let results = parsed["results"].as_array().unwrap();
     assert_eq!(results.len(), 1);
-    assert!(
-        results[0]["content"]
-            .as_str()
-            .unwrap()
-            .contains("Second insight.")
-    );
-    assert!(
-        results[0]["tags"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|t| t == "test")
-    );
-    assert!(
-        results[0]["tags"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|t| t == "lifecycle")
-    );
+    assert!(results[0]["content"].as_str().unwrap().contains("Second insight."));
+    assert!(results[0]["tags"].as_array().unwrap().iter().any(|t| t == "test"));
+    assert!(results[0]["tags"].as_array().unwrap().iter().any(|t| t == "lifecycle"));
 
     // 4. get_skills still works for curated skills
     let skills_dir = temp_dir.path().join("skills").join("curated");
@@ -377,10 +344,5 @@ async fn test_full_lifecycle() {
         .await
         .unwrap();
     let parsed = parse_tool_result(&result);
-    assert!(
-        parsed["files"][0]["content"]
-            .as_str()
-            .unwrap()
-            .contains("Hand-written skill.")
-    );
+    assert!(parsed["files"][0]["content"].as_str().unwrap().contains("Hand-written skill."));
 }

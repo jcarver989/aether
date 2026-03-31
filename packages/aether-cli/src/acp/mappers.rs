@@ -2,10 +2,9 @@ use acp_utils::notifications::{ContextClearedParams, ContextUsageParams, SubAgen
 use acp_utils::server::AcpActorHandle;
 use aether_core::events::{AgentMessage, SubAgentProgressPayload};
 use agent_client_protocol::{
-    self as acp, Content, ContentBlock, ContentChunk, Diff, HttpHeader, McpServer, PlanEntry,
-    PlanEntryPriority, PlanEntryStatus, SessionId, SessionNotification, SessionUpdate, StopReason,
-    TextContent, ToolCall, ToolCallContent, ToolCallId, ToolCallStatus, ToolCallUpdate,
-    ToolCallUpdateFields,
+    self as acp, Content, ContentBlock, ContentChunk, Diff, HttpHeader, McpServer, PlanEntry, PlanEntryPriority,
+    PlanEntryStatus, SessionId, SessionNotification, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallContent,
+    ToolCallId, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields,
 };
 use llm::{ToolCallError, ToolCallRequest, ToolCallResult};
 use mcp_utils::client::{McpServerConfig, ServerConfig};
@@ -21,32 +20,18 @@ use aether_core::context::ext::{SessionEvent, UserEvent};
 /// and creates a slash command that clients can invoke.
 pub fn map_mcp_prompt_to_available_command(prompt: &McpPrompt) -> acp::AvailableCommand {
     // Extract the base command name by removing the namespace prefix
-    let command_name = prompt
-        .name
-        .split("__")
-        .last()
-        .unwrap_or(prompt.name.as_ref())
-        .to_string();
+    let command_name = prompt.name.split("__").last().unwrap_or(prompt.name.as_ref()).to_string();
 
     // Extract the input hint from the unified prompt format's ARGUMENTS parameter,
     // falling back to a generic hint.
     let hint = prompt
         .arguments
         .as_ref()
-        .and_then(|args| {
-            args.iter()
-                .find(|a| a.name.as_str() == "ARGUMENTS")
-                .and_then(|a| a.description.as_deref())
-        })
+        .and_then(|args| args.iter().find(|a| a.name.as_str() == "ARGUMENTS").and_then(|a| a.description.as_deref()))
         .unwrap_or("optional arguments");
-    let input = Some(acp::AvailableCommandInput::Unstructured(
-        acp::UnstructuredCommandInput::new(hint),
-    ));
+    let input = Some(acp::AvailableCommandInput::Unstructured(acp::UnstructuredCommandInput::new(hint)));
 
-    let description = prompt
-        .description
-        .clone()
-        .unwrap_or_else(|| "No description available".to_string());
+    let description = prompt.description.clone().unwrap_or_else(|| "No description available".to_string());
 
     acp::AvailableCommand::new(command_name, description).input(input)
 }
@@ -77,31 +62,16 @@ fn try_map_mcp_server(server: McpServer) -> Option<McpServerConfig> {
             .into(),
         ),
 
-        Http(http) => Some(
-            ServerConfig::Http {
-                name: http.name,
-                config: http_config(http.url, &http.headers),
-            }
-            .into(),
-        ),
+        Http(http) => Some(ServerConfig::Http { name: http.name, config: http_config(http.url, &http.headers) }.into()),
 
-        Sse(sse) => Some(
-            ServerConfig::Http {
-                name: sse.name,
-                config: http_config(sse.url, &sse.headers),
-            }
-            .into(),
-        ),
+        Sse(sse) => Some(ServerConfig::Http { name: sse.name, config: http_config(sse.url, &sse.headers) }.into()),
 
         _ => None,
     }
 }
 
 fn http_config(url: String, headers: &[HttpHeader]) -> StreamableHttpClientTransportConfig {
-    let auth_header = headers
-        .iter()
-        .find(|h| h.name.eq_ignore_ascii_case("authorization"))
-        .map(|h| h.value.clone());
+    let auth_header = headers.iter().find(|h| h.name.eq_ignore_ascii_case("authorization")).map(|h| h.value.clone());
 
     let mut config = StreamableHttpClientTransportConfig::with_uri(url);
     if let Some(auth) = auth_header {
@@ -130,72 +100,35 @@ fn map_agent_message_to_notification(
     mode: NotificationMode,
 ) -> Option<SessionNotification> {
     match msg {
-        AgentMessage::Text {
-            chunk, is_complete, ..
-        } => map_chunk_to_notification(
-            session_id,
-            chunk,
-            *is_complete,
-            mode,
-            SessionUpdate::AgentMessageChunk,
-        ),
-
-        AgentMessage::Thought {
-            chunk, is_complete, ..
-        } => map_chunk_to_notification(
-            session_id,
-            chunk,
-            *is_complete,
-            mode,
-            SessionUpdate::AgentThoughtChunk,
-        ),
-
-        AgentMessage::ToolCall { request, .. } => {
-            Some(map_tool_call_to_notification(session_id, request))
+        AgentMessage::Text { chunk, is_complete, .. } => {
+            map_chunk_to_notification(session_id, chunk, *is_complete, mode, SessionUpdate::AgentMessageChunk)
         }
 
-        AgentMessage::ToolCallUpdate {
-            tool_call_id,
-            chunk,
-            ..
-        } => Some(map_tool_call_update_to_notification(
-            session_id,
-            tool_call_id,
-            chunk,
-        )),
-
-        AgentMessage::ToolResult {
-            result,
-            result_meta,
-            ..
-        } => Some(map_tool_result_to_notification(
-            session_id,
-            result,
-            result_meta.as_ref(),
-        )),
-
-        AgentMessage::ToolError { error, .. } => {
-            Some(map_tool_error_to_notification(session_id, error))
+        AgentMessage::Thought { chunk, is_complete, .. } => {
+            map_chunk_to_notification(session_id, chunk, *is_complete, mode, SessionUpdate::AgentThoughtChunk)
         }
 
-        AgentMessage::ToolProgress {
-            request,
-            progress,
-            total,
-            message,
-        } => map_tool_progress_to_notification(
-            session_id,
-            request,
-            *progress,
-            *total,
-            message.as_ref(),
-        ),
+        AgentMessage::ToolCall { request, .. } => Some(map_tool_call_to_notification(session_id, request)),
+
+        AgentMessage::ToolCallUpdate { tool_call_id, chunk, .. } => {
+            Some(map_tool_call_update_to_notification(session_id, tool_call_id, chunk))
+        }
+
+        AgentMessage::ToolResult { result, result_meta, .. } => {
+            Some(map_tool_result_to_notification(session_id, result, result_meta.as_ref()))
+        }
+
+        AgentMessage::ToolError { error, .. } => Some(map_tool_error_to_notification(session_id, error)),
+
+        AgentMessage::ToolProgress { request, progress, total, message } => {
+            map_tool_progress_to_notification(session_id, request, *progress, *total, message.as_ref())
+        }
 
         AgentMessage::Error { message } => Some(acp::SessionNotification::new(
             session_id,
-            SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
-                TextContent::new(format!("[Error] {message}")),
-            ))),
+            SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(TextContent::new(format!(
+                "[Error] {message}"
+            ))))),
         )),
 
         AgentMessage::ContextUsageUpdate { .. }
@@ -211,11 +144,7 @@ fn map_agent_message_to_notification(
 
 pub fn try_into_ext_notification(msg: &AgentMessage) -> Option<acp::ExtNotification> {
     match msg {
-        AgentMessage::ContextUsageUpdate {
-            usage_ratio,
-            tokens_used,
-            context_limit,
-        } => {
+        AgentMessage::ContextUsageUpdate { usage_ratio, tokens_used, context_limit } => {
             let params = ContextUsageParams {
                 usage_ratio: *usage_ratio,
                 tokens_used: *tokens_used,
@@ -223,9 +152,7 @@ pub fn try_into_ext_notification(msg: &AgentMessage) -> Option<acp::ExtNotificat
             };
             Some(params.into())
         }
-        AgentMessage::ToolProgress {
-            request, message, ..
-        } => {
+        AgentMessage::ToolProgress { request, message, .. } => {
             let msg_str = message.as_ref()?;
             let params = try_parse_sub_agent_progress(msg_str, request)?;
             Some(params.into())
@@ -244,18 +171,9 @@ pub fn try_extract_plan_notification(
     let entries = plan_meta
         .entries
         .iter()
-        .map(|e| {
-            PlanEntry::new(
-                e.content.clone(),
-                PlanEntryPriority::Medium,
-                plan_status_to_acp(e.status),
-            )
-        })
+        .map(|e| PlanEntry::new(e.content.clone(), PlanEntryPriority::Medium, plan_status_to_acp(e.status)))
         .collect();
-    Some(SessionNotification::new(
-        session_id,
-        SessionUpdate::Plan(acp::Plan::new(entries)),
-    ))
+    Some(SessionNotification::new(session_id, SessionUpdate::Plan(acp::Plan::new(entries))))
 }
 
 /// Convert internal plan status to ACP protocol status.
@@ -292,26 +210,18 @@ fn map_chunk_to_notification(
 
     Some(acp::SessionNotification::new(
         session_id,
-        wrap(ContentChunk::new(ContentBlock::Text(TextContent::new(
-            chunk.to_owned(),
-        )))),
+        wrap(ContentChunk::new(ContentBlock::Text(TextContent::new(chunk.to_owned())))),
     ))
 }
 
-fn map_tool_call_to_notification(
-    session_id: SessionId,
-    request: &ToolCallRequest,
-) -> SessionNotification {
+fn map_tool_call_to_notification(session_id: SessionId, request: &ToolCallRequest) -> SessionNotification {
     let raw_input = serde_json::from_str(&request.arguments).ok();
     SessionNotification::new(
         session_id,
         SessionUpdate::ToolCall(
-            ToolCall::new(
-                ToolCallId::new(request.id.clone()),
-                humanize_tool_name(&request.name),
-            )
-            .status(acp::ToolCallStatus::InProgress)
-            .raw_input(raw_input),
+            ToolCall::new(ToolCallId::new(request.id.clone()), humanize_tool_name(&request.name))
+                .status(acp::ToolCallStatus::InProgress)
+                .raw_input(raw_input),
         ),
     )
 }
@@ -320,21 +230,12 @@ fn parse_tool_call_chunk(chunk: &str) -> serde_json::Value {
     serde_json::from_str(chunk).unwrap_or_else(|_| serde_json::Value::String(chunk.to_string()))
 }
 
-fn map_tool_call_update_to_notification(
-    session_id: SessionId,
-    tool_call_id: &str,
-    chunk: &str,
-) -> SessionNotification {
-    let fields = ToolCallUpdateFields::new()
-        .status(ToolCallStatus::InProgress)
-        .raw_input(parse_tool_call_chunk(chunk));
+fn map_tool_call_update_to_notification(session_id: SessionId, tool_call_id: &str, chunk: &str) -> SessionNotification {
+    let fields = ToolCallUpdateFields::new().status(ToolCallStatus::InProgress).raw_input(parse_tool_call_chunk(chunk));
 
     SessionNotification::new(
         session_id,
-        SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
-            ToolCallId::new(tool_call_id.to_string()),
-            fields,
-        )),
+        SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(ToolCallId::new(tool_call_id.to_string()), fields)),
     )
 }
 
@@ -354,9 +255,8 @@ fn map_tool_result_to_notification(
     result: &ToolCallResult,
     result_meta: Option<&ToolResultMeta>,
 ) -> SessionNotification {
-    let mut content = vec![ToolCallContent::Content(Content::new(ContentBlock::Text(
-        TextContent::new(result.result.clone()),
-    )))];
+    let mut content =
+        vec![ToolCallContent::Content(Content::new(ContentBlock::Text(TextContent::new(result.result.clone()))))];
 
     if let Some(rm) = result_meta
         && let Some(fd) = &rm.file_diff
@@ -368,9 +268,7 @@ fn map_tool_result_to_notification(
         content.push(ToolCallContent::Diff(diff));
     }
 
-    let mut fields = ToolCallUpdateFields::new()
-        .status(ToolCallStatus::Completed)
-        .content(content);
+    let mut fields = ToolCallUpdateFields::new().status(ToolCallStatus::Completed).content(content);
 
     if let Some(rm) = result_meta {
         fields = fields.title(&rm.display.title);
@@ -389,19 +287,14 @@ fn map_tool_result_to_notification(
     SessionNotification::new(session_id, SessionUpdate::ToolCallUpdate(update))
 }
 
-fn map_tool_error_to_notification(
-    session_id: SessionId,
-    error: &ToolCallError,
-) -> SessionNotification {
+fn map_tool_error_to_notification(session_id: SessionId, error: &ToolCallError) -> SessionNotification {
     SessionNotification::new(
         session_id,
         SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
             ToolCallId::new(error.id.clone()),
-            ToolCallUpdateFields::new()
-                .status(ToolCallStatus::Failed)
-                .content(vec![ToolCallContent::Content(Content::new(
-                    ContentBlock::Text(TextContent::new(error.error.clone())),
-                ))]),
+            ToolCallUpdateFields::new().status(ToolCallStatus::Failed).content(vec![ToolCallContent::Content(
+                Content::new(ContentBlock::Text(TextContent::new(error.error.clone()))),
+            )]),
         )),
     )
 }
@@ -415,17 +308,12 @@ fn map_tool_progress_to_notification(
 ) -> Option<SessionNotification> {
     tracing::info!("Tool progress: {message:?}");
 
-    if message
-        .and_then(|msg_str| try_parse_sub_agent_progress(msg_str, request))
-        .is_some()
-    {
+    if message.and_then(|msg_str| try_parse_sub_agent_progress(msg_str, request)).is_some() {
         return None;
     }
 
     if let Some(result_meta) = message.and_then(|m| try_parse_display_meta(m)) {
-        let fields = ToolCallUpdateFields::new()
-            .status(ToolCallStatus::InProgress)
-            .title(&result_meta.display.title);
+        let fields = ToolCallUpdateFields::new().status(ToolCallStatus::InProgress).title(&result_meta.display.title);
 
         let mut update = ToolCallUpdate::new(ToolCallId::new(request.id.clone()), fields);
 
@@ -435,37 +323,26 @@ fn map_tool_progress_to_notification(
             update = update.meta(meta_map);
         }
 
-        return Some(SessionNotification::new(
-            session_id,
-            SessionUpdate::ToolCallUpdate(update),
-        ));
+        return Some(SessionNotification::new(session_id, SessionUpdate::ToolCallUpdate(update)));
     }
 
     let total_str = total.map_or_else(|| "?".to_string(), |t| t.to_string());
-    let progress_text = message.map_or_else(
-        || format!("Progress: {progress}/{total_str}"),
-        |msg| format!("{msg} ({progress}/{total_str})"),
-    );
+    let progress_text = message
+        .map_or_else(|| format!("Progress: {progress}/{total_str}"), |msg| format!("{msg} ({progress}/{total_str})"));
 
     Some(SessionNotification::new(
         session_id,
         SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
             ToolCallId::new(request.id.clone()),
-            ToolCallUpdateFields::new()
-                .status(ToolCallStatus::InProgress)
-                .content(vec![ToolCallContent::Content(Content::new(
-                    ContentBlock::Text(TextContent::new(progress_text)),
-                ))]),
+            ToolCallUpdateFields::new().status(ToolCallStatus::InProgress).content(vec![ToolCallContent::Content(
+                Content::new(ContentBlock::Text(TextContent::new(progress_text))),
+            )]),
         )),
     ))
 }
 
 /// Replay session events to the client as ACP notifications.
-pub async fn replay_to_client(
-    events: &[SessionEvent],
-    actor_handle: &AcpActorHandle,
-    session_id: &SessionId,
-) {
+pub async fn replay_to_client(events: &[SessionEvent], actor_handle: &AcpActorHandle, session_id: &SessionId) {
     for event in events {
         let notifications: Vec<_> = match event {
             SessionEvent::User(UserEvent::Message { content }) => content
@@ -473,19 +350,15 @@ pub async fn replay_to_client(
                 .map(|block| {
                     SessionNotification::new(
                         session_id.clone(),
-                        SessionUpdate::UserMessageChunk(ContentChunk::new(map_user_content_block(
-                            block,
-                        ))),
+                        SessionUpdate::UserMessageChunk(ContentChunk::new(map_user_content_block(block))),
                     )
                 })
                 .collect(),
-            SessionEvent::Agent(message) => map_agent_message_to_notification(
-                session_id.clone(),
-                message,
-                NotificationMode::Replay,
-            )
-            .into_iter()
-            .collect(),
+            SessionEvent::Agent(message) => {
+                map_agent_message_to_notification(session_id.clone(), message, NotificationMode::Replay)
+                    .into_iter()
+                    .collect()
+            }
             SessionEvent::User(_) => Vec::new(),
         };
 
@@ -514,10 +387,7 @@ fn try_parse_display_meta(message: &str) -> Option<ToolResultMeta> {
 }
 
 /// Attempt to parse a tool progress message as sub-agent progress.
-fn try_parse_sub_agent_progress(
-    message: &str,
-    request: &llm::ToolCallRequest,
-) -> Option<SubAgentProgressParams> {
+fn try_parse_sub_agent_progress(message: &str, request: &llm::ToolCallRequest) -> Option<SubAgentProgressParams> {
     let payload: SubAgentProgressPayload = serde_json::from_str(message).ok()?;
 
     Some(SubAgentProgressParams {
@@ -562,23 +432,18 @@ mod tests {
             message: Some(serialized_msg.clone()),
         };
 
-        let notification =
-            map_agent_message_to_session_notification(session_id.clone(), &tool_progress);
+        let notification = map_agent_message_to_session_notification(session_id.clone(), &tool_progress);
 
         assert!(notification.is_none());
 
         let ext = try_into_ext_notification(&tool_progress).expect("ext notification");
         assert_eq!(ext.method.as_ref(), SUB_AGENT_PROGRESS_METHOD);
 
-        let parsed: SubAgentProgressParams =
-            serde_json::from_str(ext.params.get()).expect("valid JSON");
+        let parsed: SubAgentProgressParams = serde_json::from_str(ext.params.get()).expect("valid JSON");
         assert_eq!(parsed.parent_tool_id, "call_123");
         assert_eq!(parsed.task_id, "task_1");
         assert_eq!(parsed.agent_name, "sub-agent");
-        assert!(matches!(
-            parsed.event,
-            acp_utils::notifications::SubAgentEvent::Other
-        ));
+        assert!(matches!(parsed.event, acp_utils::notifications::SubAgentEvent::Other));
     }
 
     #[tokio::test]
@@ -589,25 +454,15 @@ mod tests {
         let events = vec![SessionEvent::User(UserEvent::Message {
             content: vec![
                 llm::ContentBlock::text("hello"),
-                llm::ContentBlock::Image {
-                    data: "aW1n".to_string(),
-                    mime_type: "image/png".to_string(),
-                },
-                llm::ContentBlock::Audio {
-                    data: "YXVkaW8=".to_string(),
-                    mime_type: "audio/wav".to_string(),
-                },
+                llm::ContentBlock::Image { data: "aW1n".to_string(), mime_type: "image/png".to_string() },
+                llm::ContentBlock::Audio { data: "YXVkaW8=".to_string(), mime_type: "audio/wav".to_string() },
             ],
         })];
 
         let responder = tokio::spawn(async move {
             let mut updates = Vec::new();
             for _ in 0..3 {
-                if let Some(AcpRequest::SessionNotification {
-                    notification,
-                    response_tx,
-                }) = rx.recv().await
-                {
+                if let Some(AcpRequest::SessionNotification { notification, response_tx }) = rx.recv().await {
                     updates.push(notification.update);
                     let _ = response_tx.send(Ok(()));
                 }
@@ -645,8 +500,7 @@ mod tests {
             model_name: "TestModel".to_string(),
         };
 
-        let notification =
-            map_agent_message_to_session_notification(session_id, &thought).expect("notification");
+        let notification = map_agent_message_to_session_notification(session_id, &thought).expect("notification");
 
         match notification.update {
             acp::SessionUpdate::AgentThoughtChunk(chunk) => match chunk.content {
@@ -669,8 +523,7 @@ mod tests {
             model_name: "TestModel".to_string(),
         };
 
-        let notification =
-            map_agent_message_to_session_notification(session_id, &message).expect("notification");
+        let notification = map_agent_message_to_session_notification(session_id, &message).expect("notification");
 
         match notification.update {
             acp::SessionUpdate::ToolCall(tool_call) => {
@@ -691,17 +544,13 @@ mod tests {
             model_name: "TestModel".to_string(),
         };
 
-        let notification =
-            map_agent_message_to_session_notification(session_id, &message).expect("notification");
+        let notification = map_agent_message_to_session_notification(session_id, &message).expect("notification");
 
         match notification.update {
             acp::SessionUpdate::ToolCallUpdate(update) => {
                 assert_eq!(update.tool_call_id.0.as_ref(), "call_1");
                 assert_eq!(update.fields.status, Some(acp::ToolCallStatus::InProgress));
-                assert_eq!(
-                    update.fields.raw_input,
-                    Some(serde_json::json!({ "filePath": "Cargo.toml" }))
-                );
+                assert_eq!(update.fields.raw_input, Some(serde_json::json!({ "filePath": "Cargo.toml" })));
             }
             other => panic!("Expected ToolCallUpdate, got {other:?}"),
         }
@@ -716,18 +565,13 @@ mod tests {
             model_name: "TestModel".to_string(),
         };
 
-        let live =
-            map_agent_message_to_notification(session_id.clone(), &message, NotificationMode::Live)
-                .expect("live notification");
-        let replay =
-            map_agent_message_to_notification(session_id, &message, NotificationMode::Replay)
-                .expect("replay notification");
+        let live = map_agent_message_to_notification(session_id.clone(), &message, NotificationMode::Live)
+            .expect("live notification");
+        let replay = map_agent_message_to_notification(session_id, &message, NotificationMode::Replay)
+            .expect("replay notification");
 
         match (live.update, replay.update) {
-            (
-                acp::SessionUpdate::ToolCallUpdate(live),
-                acp::SessionUpdate::ToolCallUpdate(replay),
-            ) => {
+            (acp::SessionUpdate::ToolCallUpdate(live), acp::SessionUpdate::ToolCallUpdate(replay)) => {
                 assert_eq!(live.tool_call_id.0, replay.tool_call_id.0);
                 assert_eq!(live.fields.status, replay.fields.status);
                 assert_eq!(live.fields.raw_input, replay.fields.raw_input);
@@ -762,25 +606,20 @@ mod tests {
         for (message, expected_text) in cases {
             let session_id = acp::SessionId::new("test-session");
             assert!(
-                map_agent_message_to_notification(
-                    session_id.clone(),
-                    &message,
-                    NotificationMode::Live
-                )
-                .is_none(),
+                map_agent_message_to_notification(session_id.clone(), &message, NotificationMode::Live).is_none(),
                 "live mode should skip completed chunk"
             );
 
-            let notification =
-                map_agent_message_to_notification(session_id, &message, NotificationMode::Replay)
-                    .expect("replay notification");
+            let notification = map_agent_message_to_notification(session_id, &message, NotificationMode::Replay)
+                .expect("replay notification");
 
             match notification.update {
-                acp::SessionUpdate::AgentMessageChunk(chunk)
-                | acp::SessionUpdate::AgentThoughtChunk(chunk) => match chunk.content {
-                    acp::ContentBlock::Text(text) => assert_eq!(text.text, expected_text),
-                    other => panic!("Expected text content, got {other:?}"),
-                },
+                acp::SessionUpdate::AgentMessageChunk(chunk) | acp::SessionUpdate::AgentThoughtChunk(chunk) => {
+                    match chunk.content {
+                        acp::ContentBlock::Text(text) => assert_eq!(text.text, expected_text),
+                        other => panic!("Expected text content, got {other:?}"),
+                    }
+                }
                 other => panic!("Expected chunk update, got {other:?}"),
             }
         }
@@ -790,17 +629,11 @@ mod tests {
     fn test_context_cleared_maps_to_ext_notification() {
         let ext = try_into_ext_notification(&AgentMessage::ContextCleared)
             .expect("context cleared should emit ext notification");
-        assert_eq!(
-            ext.method.as_ref(),
-            acp_utils::notifications::CONTEXT_CLEARED_METHOD
-        );
+        assert_eq!(ext.method.as_ref(), acp_utils::notifications::CONTEXT_CLEARED_METHOD);
 
         let parsed: acp_utils::notifications::ContextClearedParams =
             serde_json::from_str(ext.params.get()).expect("valid JSON");
-        assert_eq!(
-            parsed,
-            acp_utils::notifications::ContextClearedParams::default()
-        );
+        assert_eq!(parsed, acp_utils::notifications::ContextClearedParams::default());
     }
 
     #[test]
@@ -819,8 +652,7 @@ mod tests {
             message: Some("not valid json".to_string()),
         };
 
-        let notification =
-            map_agent_message_to_session_notification(session_id.clone(), &tool_progress);
+        let notification = map_agent_message_to_session_notification(session_id.clone(), &tool_progress);
 
         assert!(notification.is_some());
 
@@ -852,12 +684,7 @@ mod tests {
         assert_eq!(configs.len(), 1);
 
         match &configs[0] {
-            McpServerConfig::Server(ServerConfig::Stdio {
-                name,
-                command,
-                args,
-                env,
-            }) => {
+            McpServerConfig::Server(ServerConfig::Stdio { name, command, args, env }) => {
                 assert_eq!(name, "my-server");
                 assert_eq!(command, "/usr/bin/server");
                 assert_eq!(args, &["--port", "8080"]);
@@ -870,9 +697,8 @@ mod tests {
     #[test]
     fn test_map_acp_http_server() {
         let server = acp::McpServer::Http(
-            acp::McpServerHttp::new("http-server", "https://example.com/mcp").headers(vec![
-                acp::HttpHeader::new("Authorization", "Bearer token123"),
-            ]),
+            acp::McpServerHttp::new("http-server", "https://example.com/mcp")
+                .headers(vec![acp::HttpHeader::new("Authorization", "Bearer token123")]),
         );
 
         let configs = map_acp_mcp_servers(vec![server]);
@@ -890,10 +716,7 @@ mod tests {
 
     #[test]
     fn test_map_acp_sse_server() {
-        let server = acp::McpServer::Sse(acp::McpServerSse::new(
-            "sse-server",
-            "https://example.com/sse",
-        ));
+        let server = acp::McpServer::Sse(acp::McpServerSse::new("sse-server", "https://example.com/sse"));
 
         let configs = map_acp_mcp_servers(vec![server]);
         assert_eq!(configs.len(), 1);
@@ -913,10 +736,7 @@ mod tests {
         assert_eq!(humanize_tool_name("coding__read_file"), "Read file");
         assert_eq!(humanize_tool_name("read_file"), "Read file");
         assert_eq!(humanize_tool_name("bash"), "Bash");
-        assert_eq!(
-            humanize_tool_name("plugins__coding__read_file"),
-            "Read file"
-        );
+        assert_eq!(humanize_tool_name("plugins__coding__read_file"), "Read file");
     }
 
     #[test]
@@ -935,21 +755,14 @@ mod tests {
         let notification = map_tool_result_to_notification(session_id, &result, Some(&rm));
         match notification.update {
             acp::SessionUpdate::ToolCallUpdate(update) => {
-                assert_eq!(
-                    update.fields.title.as_deref(),
-                    Some("Read file"),
-                    "native title should be set"
-                );
+                assert_eq!(update.fields.title.as_deref(), Some("Read file"), "native title should be set");
                 let meta = update.meta.expect("meta should be present");
                 assert_eq!(
                     meta.get("display_value").and_then(|v| v.as_str()),
                     Some("Cargo.toml, 156 lines"),
                     "display_value should be a flat key in _meta"
                 );
-                assert!(
-                    meta.get("display").is_none(),
-                    "old nested display object should not be in _meta"
-                );
+                assert!(meta.get("display").is_none(), "old nested display object should not be in _meta");
             }
             other => panic!("Expected ToolCallUpdate, got {other:?}"),
         }
@@ -984,20 +797,13 @@ mod tests {
             ToolDisplayMeta::new("Todo", "Research AI agents"),
             PlanMeta {
                 entries: vec![
-                    PlanMetaEntry {
-                        content: "Research AI agents".to_string(),
-                        status: PlanMetaStatus::InProgress,
-                    },
-                    PlanMetaEntry {
-                        content: "Write tests".to_string(),
-                        status: PlanMetaStatus::Pending,
-                    },
+                    PlanMetaEntry { content: "Research AI agents".to_string(), status: PlanMetaStatus::InProgress },
+                    PlanMetaEntry { content: "Write tests".to_string(), status: PlanMetaStatus::Pending },
                 ],
             },
         );
 
-        let notification =
-            try_extract_plan_notification(session_id, Some(&meta)).expect("should produce plan");
+        let notification = try_extract_plan_notification(session_id, Some(&meta)).expect("should produce plan");
         match notification.update {
             acp::SessionUpdate::Plan(plan) => {
                 assert_eq!(plan.entries.len(), 2);
@@ -1034,28 +840,20 @@ mod tests {
             arguments: "{}".to_string(),
         };
 
-        let notification =
-            map_tool_progress_to_notification(session_id, &request, 0.0, None, Some(&serialized))
-                .expect("should produce notification");
+        let notification = map_tool_progress_to_notification(session_id, &request, 0.0, None, Some(&serialized))
+            .expect("should produce notification");
 
         match notification.update {
             acp::SessionUpdate::ToolCallUpdate(update) => {
                 assert_eq!(&*update.tool_call_id.0, "call_789");
-                assert_eq!(
-                    update.fields.title.as_deref(),
-                    Some("Read file"),
-                    "native title should be set"
-                );
+                assert_eq!(update.fields.title.as_deref(), Some("Read file"), "native title should be set");
                 let meta_map = update.meta.expect("meta should be present");
                 assert_eq!(
                     meta_map.get("display_value").and_then(|v| v.as_str()),
                     Some("main.rs"),
                     "display_value should be a flat key in _meta"
                 );
-                assert!(
-                    meta_map.get("display").is_none(),
-                    "old nested display object should not be in _meta"
-                );
+                assert!(meta_map.get("display").is_none(), "old nested display object should not be in _meta");
                 assert_eq!(update.fields.status, Some(acp::ToolCallStatus::InProgress));
                 // Should NOT have content (no text progress fallback)
                 assert!(update.fields.content.is_none());

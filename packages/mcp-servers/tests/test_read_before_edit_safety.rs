@@ -41,11 +41,7 @@ async fn test_edit_file_after_read_succeeds() {
     let mcp = CodingMcp::new();
 
     // First read the file
-    let read_args = ReadFileArgs {
-        file_path: test_file.to_string_lossy().to_string(),
-        offset: None,
-        limit: None,
-    };
+    let read_args = ReadFileArgs { file_path: test_file.to_string_lossy().to_string(), offset: None, limit: None };
     let read_result = mcp.test_read_file(read_args).await;
     assert!(read_result.is_ok());
 
@@ -75,10 +71,8 @@ async fn test_write_existing_file_without_read_fails() {
     let mcp = CodingMcp::new();
 
     // Try to write without reading first
-    let write_args = WriteFileArgs {
-        file_path: test_file.to_string_lossy().to_string(),
-        content: "new content".to_string(),
-    };
+    let write_args =
+        WriteFileArgs { file_path: test_file.to_string_lossy().to_string(), content: "new content".to_string() };
 
     let result = mcp.test_write_file(write_args).await;
 
@@ -99,19 +93,13 @@ async fn test_write_existing_file_after_read_succeeds() {
     let mcp = CodingMcp::new();
 
     // First read the file
-    let read_args = ReadFileArgs {
-        file_path: test_file.to_string_lossy().to_string(),
-        offset: None,
-        limit: None,
-    };
+    let read_args = ReadFileArgs { file_path: test_file.to_string_lossy().to_string(), offset: None, limit: None };
     let read_result = mcp.test_read_file(read_args).await;
     assert!(read_result.is_ok());
 
     // Now write should succeed
-    let write_args = WriteFileArgs {
-        file_path: test_file.to_string_lossy().to_string(),
-        content: "new content".to_string(),
-    };
+    let write_args =
+        WriteFileArgs { file_path: test_file.to_string_lossy().to_string(), content: "new content".to_string() };
 
     let result = mcp.test_write_file(write_args).await;
     assert!(result.is_ok());
@@ -130,10 +118,8 @@ async fn test_write_new_file_without_read_succeeds() {
     let mcp = CodingMcp::new();
 
     // Write to a file that doesn't exist - should succeed
-    let write_args = WriteFileArgs {
-        file_path: test_file.to_string_lossy().to_string(),
-        content: "new file content".to_string(),
-    };
+    let write_args =
+        WriteFileArgs { file_path: test_file.to_string_lossy().to_string(), content: "new file content".to_string() };
 
     let result = mcp.test_write_file(write_args).await;
     assert!(result.is_ok());
@@ -156,11 +142,7 @@ async fn test_multiple_files_tracked_independently() {
     let mcp = CodingMcp::new();
 
     // Read file1
-    let read_args = ReadFileArgs {
-        file_path: file1.to_string_lossy().to_string(),
-        offset: None,
-        limit: None,
-    };
+    let read_args = ReadFileArgs { file_path: file1.to_string_lossy().to_string(), offset: None, limit: None };
     mcp.test_read_file(read_args).await.unwrap();
 
     // Edit file1 should succeed
@@ -191,11 +173,8 @@ async fn test_failed_read_doesnt_track_file() {
     let mcp = CodingMcp::new();
 
     // Try to read a file that doesn't exist
-    let read_args = ReadFileArgs {
-        file_path: nonexistent_file.to_string_lossy().to_string(),
-        offset: None,
-        limit: None,
-    };
+    let read_args =
+        ReadFileArgs { file_path: nonexistent_file.to_string_lossy().to_string(), offset: None, limit: None };
     let result = mcp.test_read_file(read_args).await;
     assert!(result.is_err());
 

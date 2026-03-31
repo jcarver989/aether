@@ -11,8 +11,7 @@ pub async fn discover_local_models() -> Vec<LlmModel> {
 }
 
 async fn discover_ollama() -> Vec<LlmModel> {
-    let base =
-        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_string());
+    let base = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_string());
     let url = format!("{base}/api/tags");
 
     let Some(body) = fetch(&url).await else {
@@ -20,11 +19,7 @@ async fn discover_ollama() -> Vec<LlmModel> {
     };
 
     match serde_json::from_str::<OllamaTagsResponse>(&body) {
-        Ok(resp) => resp
-            .models
-            .into_iter()
-            .map(|m| LlmModel::Ollama(m.name))
-            .collect(),
+        Ok(resp) => resp.models.into_iter().map(|m| LlmModel::Ollama(m.name)).collect(),
         Err(e) => {
             debug!("Failed to parse Ollama response: {e}");
             Vec::new()
@@ -33,8 +28,7 @@ async fn discover_ollama() -> Vec<LlmModel> {
 }
 
 async fn discover_llama_cpp() -> Vec<LlmModel> {
-    let base =
-        std::env::var("LLAMA_CPP_HOST").unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let base = std::env::var("LLAMA_CPP_HOST").unwrap_or_else(|_| "http://localhost:8080".to_string());
     let url = format!("{base}/v1/models");
 
     let Some(body) = fetch(&url).await else {
@@ -42,11 +36,7 @@ async fn discover_llama_cpp() -> Vec<LlmModel> {
     };
 
     match serde_json::from_str::<OpenAiModelsResponse>(&body) {
-        Ok(resp) => resp
-            .data
-            .into_iter()
-            .map(|m| LlmModel::LlamaCpp(m.id))
-            .collect(),
+        Ok(resp) => resp.data.into_iter().map(|m| LlmModel::LlamaCpp(m.id)).collect(),
         Err(e) => {
             debug!("Failed to parse LlamaCpp response: {e}");
             Vec::new()
@@ -100,11 +90,7 @@ mod tests {
     fn parse_ollama_tags_response() {
         let json = r#"{"models":[{"name":"llama3.2"},{"name":"codellama:7b"}]}"#;
         let resp: OllamaTagsResponse = serde_json::from_str(json).unwrap();
-        let models: Vec<LlmModel> = resp
-            .models
-            .into_iter()
-            .map(|m| LlmModel::Ollama(m.name))
-            .collect();
+        let models: Vec<LlmModel> = resp.models.into_iter().map(|m| LlmModel::Ollama(m.name)).collect();
 
         assert_eq!(models.len(), 2);
         assert_eq!(models[0], LlmModel::Ollama("llama3.2".to_string()));
@@ -115,11 +101,7 @@ mod tests {
     fn parse_llamacpp_models_response() {
         let json = r#"{"object":"list","data":[{"id":"my-model","object":"model"}]}"#;
         let resp: OpenAiModelsResponse = serde_json::from_str(json).unwrap();
-        let models: Vec<LlmModel> = resp
-            .data
-            .into_iter()
-            .map(|m| LlmModel::LlamaCpp(m.id))
-            .collect();
+        let models: Vec<LlmModel> = resp.data.into_iter().map(|m| LlmModel::LlamaCpp(m.id)).collect();
 
         assert_eq!(models.len(), 1);
         assert_eq!(models[0], LlmModel::LlamaCpp("my-model".to_string()));

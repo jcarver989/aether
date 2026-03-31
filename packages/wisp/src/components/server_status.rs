@@ -21,24 +21,14 @@ impl SelectItem for ServerItem {
             }
             McpServerStatus::Failed { .. } => {
                 if selected {
-                    Line::with_style(
-                        text,
-                        context
-                            .theme
-                            .selected_row_style_with_fg(context.theme.error()),
-                    )
+                    Line::with_style(text, context.theme.selected_row_style_with_fg(context.theme.error()))
                 } else {
                     Line::styled(text, context.theme.error())
                 }
             }
             McpServerStatus::NeedsOAuth => {
                 if selected {
-                    Line::with_style(
-                        text,
-                        context
-                            .theme
-                            .selected_row_style_with_fg(context.theme.warning()),
-                    )
+                    Line::with_style(text, context.theme.selected_row_style_with_fg(context.theme.warning()))
                 } else {
                     Line::styled(text, context.theme.warning())
                 }
@@ -103,9 +93,7 @@ pub fn server_status_summary(statuses: &[McpServerStatusEntry]) -> String {
 impl ServerStatusOverlay {
     pub fn new(entries: Vec<McpServerStatusEntry>) -> Self {
         let items: Vec<ServerItem> = entries.into_iter().map(ServerItem).collect();
-        Self {
-            list: SelectList::new(items, "no MCP servers configured"),
-        }
+        Self { list: SelectList::new(items, "no MCP servers configured") }
     }
 
     pub fn update_entries(&mut self, entries: Vec<McpServerStatusEntry>) {
@@ -123,19 +111,11 @@ mod tests {
 
     fn sample_entries() -> Vec<McpServerStatusEntry> {
         vec![
-            McpServerStatusEntry {
-                name: "github".to_string(),
-                status: McpServerStatus::Connected { tool_count: 5 },
-            },
-            McpServerStatusEntry {
-                name: "linear".to_string(),
-                status: McpServerStatus::NeedsOAuth,
-            },
+            McpServerStatusEntry { name: "github".to_string(), status: McpServerStatus::Connected { tool_count: 5 } },
+            McpServerStatusEntry { name: "linear".to_string(), status: McpServerStatus::NeedsOAuth },
             McpServerStatusEntry {
                 name: "slack".to_string(),
-                status: McpServerStatus::Failed {
-                    error: "connection timeout".to_string(),
-                },
+                status: McpServerStatus::Failed { error: "connection timeout".to_string() },
             },
         ]
     }
@@ -176,20 +156,10 @@ mod tests {
     async fn navigation_wraps_around() {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
 
-        overlay
-            .on_event(&Event::Key(tui::KeyEvent::new(
-                tui::KeyCode::Up,
-                tui::KeyModifiers::NONE,
-            )))
-            .await;
+        overlay.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Up, tui::KeyModifiers::NONE))).await;
         assert_eq!(overlay.list.selected_index(), 2);
 
-        overlay
-            .on_event(&Event::Key(tui::KeyEvent::new(
-                tui::KeyCode::Down,
-                tui::KeyModifiers::NONE,
-            )))
-            .await;
+        overlay.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Down, tui::KeyModifiers::NONE))).await;
         assert_eq!(overlay.list.selected_index(), 0);
     }
 
@@ -198,12 +168,8 @@ mod tests {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
         overlay.list.set_selected(1); // linear - NeedsOAuth
 
-        let outcome = overlay
-            .on_event(&Event::Key(tui::KeyEvent::new(
-                tui::KeyCode::Enter,
-                tui::KeyModifiers::NONE,
-            )))
-            .await;
+        let outcome =
+            overlay.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Enter, tui::KeyModifiers::NONE))).await;
         let messages = outcome.unwrap();
         match messages.as_slice() {
             [ServerStatusMessage::Authenticate(name)] => assert_eq!(name, "linear"),
@@ -216,24 +182,16 @@ mod tests {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
         // index 0 = github (Connected)
 
-        let outcome = overlay
-            .on_event(&Event::Key(tui::KeyEvent::new(
-                tui::KeyCode::Enter,
-                tui::KeyModifiers::NONE,
-            )))
-            .await;
+        let outcome =
+            overlay.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Enter, tui::KeyModifiers::NONE))).await;
         assert!(outcome.unwrap().is_empty());
     }
 
     #[tokio::test]
     async fn esc_closes_overlay() {
         let mut overlay = ServerStatusOverlay::new(sample_entries());
-        let outcome = overlay
-            .on_event(&Event::Key(tui::KeyEvent::new(
-                tui::KeyCode::Esc,
-                tui::KeyModifiers::NONE,
-            )))
-            .await;
+        let outcome =
+            overlay.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Esc, tui::KeyModifiers::NONE))).await;
         let messages = outcome.unwrap();
         assert!(matches!(messages.as_slice(), [ServerStatusMessage::Close]));
     }
@@ -244,11 +202,7 @@ mod tests {
         let ctx = ViewContext::new((80, 24));
         let frame = overlay.render(&ctx);
         assert_eq!(frame.lines().len(), 1);
-        assert!(
-            frame.lines()[0]
-                .plain_text()
-                .contains("no MCP servers configured")
-        );
+        assert!(frame.lines()[0].plain_text().contains("no MCP servers configured"));
     }
 
     #[test]

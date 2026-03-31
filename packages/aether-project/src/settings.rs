@@ -44,9 +44,7 @@ struct AgentEntry {
 ///
 /// If `.aether/settings.json` is absent, returns a valid empty catalog.
 /// If the settings file is malformed or contains invalid entries, returns an error.
-pub fn load_agent_catalog(
-    project_root: &Path,
-) -> Result<super::catalog::AgentCatalog, SettingsError> {
+pub fn load_agent_catalog(project_root: &Path) -> Result<super::catalog::AgentCatalog, SettingsError> {
     let settings_path = project_root.join(".aether/settings.json");
 
     let settings = match std::fs::read_to_string(&settings_path) {
@@ -54,21 +52,14 @@ pub fn load_agent_catalog(
             if content.trim().is_empty() {
                 Settings::default()
             } else {
-                serde_json::from_str(&content)
-                    .map_err(|e| SettingsError::ParseError(e.to_string()))?
+                serde_json::from_str(&content).map_err(|e| SettingsError::ParseError(e.to_string()))?
             }
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(super::catalog::AgentCatalog::empty(
-                project_root.to_path_buf(),
-            ));
+            return Ok(super::catalog::AgentCatalog::empty(project_root.to_path_buf()));
         }
         Err(e) => {
-            return Err(SettingsError::IoError(format!(
-                "Failed to read {}: {}",
-                settings_path.display(),
-                e
-            )));
+            return Err(SettingsError::IoError(format!("Failed to read {}: {}", settings_path.display(), e)));
         }
     };
 
@@ -76,15 +67,8 @@ pub fn load_agent_catalog(
 }
 
 /// Resolve settings into a catalog of agent specs.
-fn resolve_settings(
-    project_root: &Path,
-    settings: Settings,
-) -> Result<super::catalog::AgentCatalog, SettingsError> {
-    let Settings {
-        prompts: inherited_patterns,
-        mcp_servers,
-        agents,
-    } = settings;
+fn resolve_settings(project_root: &Path, settings: Settings) -> Result<super::catalog::AgentCatalog, SettingsError> {
+    let Settings { prompts: inherited_patterns, mcp_servers, agents } = settings;
 
     validate_prompt_entries(project_root, &inherited_patterns, None)?;
     let inherited_mcp_config_path = resolve_mcp_config_path(project_root, mcp_servers.as_deref())?;
@@ -94,13 +78,7 @@ fn resolve_settings(
     let mut specs = Vec::with_capacity(agents.len());
 
     for (index, entry) in agents.into_iter().enumerate() {
-        specs.push(resolve_agent_entry(
-            project_root,
-            &inherited_prompts,
-            entry,
-            index,
-            &mut seen_names,
-        )?);
+        specs.push(resolve_agent_entry(project_root, &inherited_prompts, entry, index, &mut seen_names)?);
     }
 
     Ok(super::catalog::AgentCatalog::new(
@@ -133,27 +111,20 @@ fn resolve_agent_entry(
 
     let description = entry.description.trim().to_string();
     if description.is_empty() {
-        return Err(SettingsError::MissingField {
-            agent: name.clone(),
-            field: "description".to_string(),
-        });
+        return Err(SettingsError::MissingField { agent: name.clone(), field: "description".to_string() });
     }
 
     let model = parse_model(&name, &entry.model)?;
     let reasoning_effort = parse_reasoning_effort(&name, entry.reasoning_effort)?;
 
     if !entry.user_invocable && !entry.agent_invocable {
-        return Err(SettingsError::NoInvocationSurface {
-            agent: name.clone(),
-        });
+        return Err(SettingsError::NoInvocationSurface { agent: name.clone() });
     }
 
     validate_prompt_entries(project_root, &entry.prompts, Some(&name))?;
 
     if inherited_prompts.is_empty() && entry.prompts.is_empty() {
-        return Err(SettingsError::NoPrompts {
-            agent: name.clone(),
-        });
+        return Err(SettingsError::NoPrompts { agent: name.clone() });
     }
 
     let mcp_config_path = resolve_mcp_config_path(project_root, entry.mcp_servers.as_deref())?;
@@ -161,10 +132,7 @@ fn resolve_agent_entry(
     let mut prompts = Vec::with_capacity(inherited_prompts.len() + entry.prompts.len());
     prompts.extend_from_slice(inherited_prompts);
     for pattern in &entry.prompts {
-        prompts.push(Prompt::from_globs(
-            vec![pattern.clone()],
-            project_root.to_path_buf(),
-        ));
+        prompts.push(Prompt::from_globs(vec![pattern.clone()], project_root.to_path_buf()));
     }
 
     Ok(AgentSpec {
@@ -174,10 +142,7 @@ fn resolve_agent_entry(
         reasoning_effort,
         prompts,
         mcp_config_path,
-        exposure: AgentSpecExposure {
-            user_invocable: entry.user_invocable,
-            agent_invocable: entry.agent_invocable,
-        },
+        exposure: AgentSpecExposure { user_invocable: entry.user_invocable, agent_invocable: entry.agent_invocable },
         tools: entry.tools,
     })
 }
@@ -252,20 +217,14 @@ fn resolve_mcp_config_path(
             if full_path.is_file() {
                 Ok(Some(full_path))
             } else {
-                Err(SettingsError::InvalidMcpConfigPath {
-                    path: path.to_string(),
-                })
+                Err(SettingsError::InvalidMcpConfigPath { path: path.to_string() })
             }
         }
     }
 }
 
 /// Validate that a prompt entry resolves to at least one file.
-fn validate_prompt_entry(
-    project_root: &Path,
-    pattern: &str,
-    agent_name: Option<&str>,
-) -> Result<(), SettingsError> {
+fn validate_prompt_entry(project_root: &Path, pattern: &str, agent_name: Option<&str>) -> Result<(), SettingsError> {
     let full_pattern = if Path::new(pattern).is_absolute() {
         pattern.to_string()
     } else {
@@ -281,10 +240,7 @@ fn validate_prompt_entry(
                     error: e.to_string(),
                 }
             } else {
-                SettingsError::InvalidInheritedGlobPattern {
-                    pattern: pattern.to_string(),
-                    error: e.to_string(),
-                }
+                SettingsError::InvalidInheritedGlobPattern { pattern: pattern.to_string(), error: e.to_string() }
             }
         })?
         .filter_map(Result::ok)
@@ -293,14 +249,9 @@ fn validate_prompt_entry(
     if has_file_match {
         Ok(())
     } else if let Some(agent) = agent_name {
-        Err(SettingsError::ZeroMatchPrompt {
-            agent: agent.to_string(),
-            pattern: pattern.to_string(),
-        })
+        Err(SettingsError::ZeroMatchPrompt { agent: agent.to_string(), pattern: pattern.to_string() })
     } else {
-        Err(SettingsError::ZeroMatchInheritedPrompt {
-            pattern: pattern.to_string(),
-        })
+        Err(SettingsError::ZeroMatchInheritedPrompt { pattern: pattern.to_string() })
     }
 }
 
@@ -308,10 +259,7 @@ fn validate_prompt_entry(
 ///
 /// Each pattern becomes one `Prompt::PromptGlobs` value.
 fn build_inherited_prompts(patterns: &[String], project_root: &Path) -> Vec<Prompt> {
-    patterns
-        .iter()
-        .map(|pattern| Prompt::from_globs(vec![pattern.clone()], project_root.to_path_buf()))
-        .collect()
+    patterns.iter().map(|pattern| Prompt::from_globs(vec![pattern.clone()], project_root.to_path_buf())).collect()
 }
 
 #[cfg(test)]
@@ -346,12 +294,7 @@ mod tests {
     }
 
     /// Setup a project with AGENTS.md, write settings JSON, and load the catalog.
-    fn setup_and_load(
-        json: &str,
-    ) -> (
-        tempfile::TempDir,
-        Result<super::super::catalog::AgentCatalog, SettingsError>,
-    ) {
+    fn setup_and_load(json: &str) -> (tempfile::TempDir, Result<super::super::catalog::AgentCatalog, SettingsError>) {
         let dir = create_temp_project();
         write_file(dir.path(), "AGENTS.md", "Be helpful");
         write_settings(dir.path(), json);
@@ -418,10 +361,7 @@ mod tests {
     #[test]
     fn invalid_reasoning_effort_rejected() {
         let (_, result) = setup_and_load(&agent_settings(r#""reasoningEffort": "invalid""#));
-        assert!(matches!(
-            result,
-            Err(SettingsError::InvalidReasoningEffort { .. })
-        ));
+        assert!(matches!(result, Err(SettingsError::InvalidReasoningEffort { .. })));
     }
 
     #[test]
@@ -432,10 +372,7 @@ mod tests {
                 {"name": "planner", "description": "Second", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}
             ]}"#,
         );
-        assert!(matches!(
-            result,
-            Err(SettingsError::DuplicateAgentName { .. })
-        ));
+        assert!(matches!(result, Err(SettingsError::DuplicateAgentName { .. })));
     }
 
     #[test]
@@ -476,10 +413,7 @@ mod tests {
             dir.path(),
             r#"{"agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["nonexistent.md"]}]}"#,
         );
-        assert!(matches!(
-            load_agent_catalog(dir.path()),
-            Err(SettingsError::ZeroMatchPrompt { .. })
-        ));
+        assert!(matches!(load_agent_catalog(dir.path()), Err(SettingsError::ZeroMatchPrompt { .. })));
     }
 
     #[test]
@@ -490,10 +424,7 @@ mod tests {
             dir.path(),
             r#"{"agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["prompts/*"]}]}"#,
         );
-        assert!(matches!(
-            load_agent_catalog(dir.path()),
-            Err(SettingsError::ZeroMatchPrompt { .. })
-        ));
+        assert!(matches!(load_agent_catalog(dir.path()), Err(SettingsError::ZeroMatchPrompt { .. })));
     }
 
     #[test]
@@ -501,10 +432,7 @@ mod tests {
         let (_, result) = setup_and_load(
             r#"{"agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": false, "agentInvocable": false, "prompts": ["AGENTS.md"]}]}"#,
         );
-        assert!(matches!(
-            result,
-            Err(SettingsError::NoInvocationSurface { .. })
-        ));
+        assert!(matches!(result, Err(SettingsError::NoInvocationSurface { .. })));
     }
 
     #[test]
@@ -543,10 +471,7 @@ mod tests {
                 {"name": " planner ", "description": "Second", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}
             ]}"#,
         );
-        assert!(matches!(
-            result,
-            Err(SettingsError::DuplicateAgentName { .. })
-        ));
+        assert!(matches!(result, Err(SettingsError::DuplicateAgentName { .. })));
     }
 
     #[test]
@@ -566,20 +491,14 @@ mod tests {
             dir.path(),
             r#"{"agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true}]}"#,
         );
-        assert!(matches!(
-            load_agent_catalog(dir.path()),
-            Err(SettingsError::NoPrompts { .. })
-        ));
+        assert!(matches!(load_agent_catalog(dir.path()), Err(SettingsError::NoPrompts { .. })));
     }
 
     #[test]
     fn malformed_json_rejected() {
         let dir = create_temp_project();
         write_settings(dir.path(), "not valid json");
-        assert!(matches!(
-            load_agent_catalog(dir.path()),
-            Err(SettingsError::ParseError(_))
-        ));
+        assert!(matches!(load_agent_catalog(dir.path()), Err(SettingsError::ParseError(_))));
     }
 
     #[test]
@@ -587,19 +506,13 @@ mod tests {
         let (_, result) = setup_and_load(
             r#"{"mcpServers": "nonexistent.json", "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
         );
-        assert!(matches!(
-            result,
-            Err(SettingsError::InvalidMcpConfigPath { .. })
-        ));
+        assert!(matches!(result, Err(SettingsError::InvalidMcpConfigPath { .. })));
     }
 
     #[test]
     fn invalid_agent_mcp_servers_path_rejected() {
         let (_, result) = setup_and_load(&agent_settings(r#""mcpServers": "nonexistent.json""#));
-        assert!(matches!(
-            result,
-            Err(SettingsError::InvalidMcpConfigPath { .. })
-        ));
+        assert!(matches!(result, Err(SettingsError::InvalidMcpConfigPath { .. })));
     }
 
     #[test]
@@ -613,13 +526,7 @@ mod tests {
         );
 
         let catalog = load_agent_catalog(dir.path()).unwrap();
-        assert!(
-            catalog
-                .resolve("planner", dir.path())
-                .unwrap()
-                .mcp_config_path
-                .is_some()
-        );
+        assert!(catalog.resolve("planner", dir.path()).unwrap().mcp_config_path.is_some());
     }
 
     #[test]
@@ -672,9 +579,6 @@ mod tests {
         let (_, result) = setup_and_load(
             r#"{"agents": [{"name": "__default__", "description": "Sneaky agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
         );
-        assert!(matches!(
-            result,
-            Err(SettingsError::ReservedAgentName { .. })
-        ));
+        assert!(matches!(result, Err(SettingsError::ReservedAgentName { .. })));
     }
 }

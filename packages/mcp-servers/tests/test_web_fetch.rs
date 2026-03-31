@@ -5,11 +5,7 @@ use mcp_servers::coding::tools::web_fetch::{WebFetchInput, WebFetcher};
 async fn test_fetch_real_page() {
     let fetcher = WebFetcher::new();
     let result = fetcher
-        .fetch(WebFetchInput {
-            url: "https://httpbin.org/html".to_string(),
-            prompt: None,
-            timeout: Some(10_000),
-        })
+        .fetch(WebFetchInput { url: "https://httpbin.org/html".to_string(), prompt: None, timeout: Some(10_000) })
         .await
         .unwrap();
 
@@ -42,11 +38,7 @@ async fn test_fetch_with_redirect() {
 async fn test_fetch_http_upgrades_to_https() {
     let fetcher = WebFetcher::new();
     let result = fetcher
-        .fetch(WebFetchInput {
-            url: "http://httpbin.org/html".to_string(),
-            prompt: None,
-            timeout: Some(10_000),
-        })
+        .fetch(WebFetchInput { url: "http://httpbin.org/html".to_string(), prompt: None, timeout: Some(10_000) })
         .await
         .unwrap();
 
@@ -73,13 +65,8 @@ async fn test_fetch_timeout() {
 async fn test_fetch_invalid_url() {
     let fetcher = WebFetcher::new();
     // Use a URL with invalid characters that can't be parsed
-    let result = fetcher
-        .fetch(WebFetchInput {
-            url: "https://[invalid".to_string(),
-            prompt: None,
-            timeout: None,
-        })
-        .await;
+    let result =
+        fetcher.fetch(WebFetchInput { url: "https://[invalid".to_string(), prompt: None, timeout: None }).await;
 
     assert!(result.is_err());
     assert!(matches!(result.unwrap_err(), WebFetchError::InvalidUrl(_)));
@@ -114,10 +101,7 @@ async fn test_fetch_non_existent_host() {
         .await;
 
     assert!(result.is_err());
-    assert!(matches!(
-        result.unwrap_err(),
-        WebFetchError::RequestFailed(_)
-    ));
+    assert!(matches!(result.unwrap_err(), WebFetchError::RequestFailed(_)));
 }
 
 #[tokio::test]
@@ -126,20 +110,12 @@ async fn test_fetcher_reusable() {
     let fetcher = WebFetcher::new();
 
     let result1 = fetcher
-        .fetch(WebFetchInput {
-            url: "https://httpbin.org/html".to_string(),
-            prompt: None,
-            timeout: Some(10_000),
-        })
+        .fetch(WebFetchInput { url: "https://httpbin.org/html".to_string(), prompt: None, timeout: Some(10_000) })
         .await
         .unwrap();
 
     let result2 = fetcher
-        .fetch(WebFetchInput {
-            url: "https://httpbin.org/robots.txt".to_string(),
-            prompt: None,
-            timeout: Some(10_000),
-        })
+        .fetch(WebFetchInput { url: "https://httpbin.org/robots.txt".to_string(), prompt: None, timeout: Some(10_000) })
         .await
         .unwrap();
 

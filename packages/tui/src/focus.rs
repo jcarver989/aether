@@ -23,11 +23,7 @@ impl FocusRing {
     ///
     /// Focus starts at index 0. If `len` is 0, all navigation is a no-op.
     pub fn new(len: usize) -> Self {
-        Self {
-            focused: 0,
-            len,
-            wrap: true,
-        }
+        Self { focused: 0, len, wrap: true }
     }
 
     /// Disable wrap-around: `focus_next` at the last item and `focus_prev` at
@@ -143,12 +139,7 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     fn key(code: KeyCode) -> KeyEvent {
-        KeyEvent {
-            code,
-            modifiers: KeyModifiers::empty(),
-            kind: KeyEventKind::Press,
-            state: KeyEventState::empty(),
-        }
+        KeyEvent { code, modifiers: KeyModifiers::empty(), kind: KeyEventKind::Press, state: KeyEventState::empty() }
     }
 
     #[test]
@@ -249,10 +240,7 @@ mod tests {
     #[test]
     fn handle_key_tab_cycles_forward() {
         let mut ring = FocusRing::new(3);
-        assert_eq!(
-            ring.handle_key(key(KeyCode::Tab)),
-            FocusOutcome::FocusChanged
-        );
+        assert_eq!(ring.handle_key(key(KeyCode::Tab)), FocusOutcome::FocusChanged);
         assert_eq!(ring.focused(), 1);
     }
 
@@ -260,10 +248,7 @@ mod tests {
     fn handle_key_backtab_cycles_backward() {
         let mut ring = FocusRing::new(3);
         ring.focus(1);
-        assert_eq!(
-            ring.handle_key(key(KeyCode::BackTab)),
-            FocusOutcome::FocusChanged
-        );
+        assert_eq!(ring.handle_key(key(KeyCode::BackTab)), FocusOutcome::FocusChanged);
         assert_eq!(ring.focused(), 0);
     }
 
@@ -271,10 +256,7 @@ mod tests {
     fn handle_key_other_keys_ignored() {
         let mut ring = FocusRing::new(3);
         assert_eq!(ring.handle_key(key(KeyCode::Enter)), FocusOutcome::Ignored);
-        assert_eq!(
-            ring.handle_key(key(KeyCode::Char('a'))),
-            FocusOutcome::Ignored
-        );
+        assert_eq!(ring.handle_key(key(KeyCode::Char('a'))), FocusOutcome::Ignored);
         assert_eq!(ring.focused(), 0); // unchanged
     }
 
@@ -282,10 +264,7 @@ mod tests {
     fn handle_key_no_wrap_returns_unchanged() {
         let mut ring = FocusRing::new(2).without_wrap();
         // At index 0, BackTab can't go further
-        assert_eq!(
-            ring.handle_key(key(KeyCode::BackTab)),
-            FocusOutcome::Unchanged
-        );
+        assert_eq!(ring.handle_key(key(KeyCode::BackTab)), FocusOutcome::Unchanged);
         assert_eq!(ring.focused(), 0);
 
         // Go to end

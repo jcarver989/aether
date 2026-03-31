@@ -41,10 +41,7 @@ pub struct Thinking {
 
 impl Thinking {
     pub fn new(budget_tokens: u32) -> Self {
-        Self {
-            thinking_type: "enabled".to_string(),
-            budget_tokens,
-        }
+        Self { thinking_type: "enabled".to_string(), budget_tokens }
     }
 }
 
@@ -148,11 +145,7 @@ pub enum ContentBlock {
     #[serde(rename = "image")]
     Image { source: ImageSource },
     #[serde(rename = "tool_use")]
-    ToolUse {
-        id: String,
-        name: String,
-        input: serde_json::Value,
-    },
+    ToolUse { id: String, name: String, input: serde_json::Value },
     #[serde(rename = "tool_result")]
     ToolResult {
         tool_use_id: String,
@@ -178,9 +171,7 @@ pub struct CacheControl {
 
 impl CacheControl {
     pub fn ephemeral() -> Self {
-        Self {
-            cache_type: CacheType::Ephemeral,
-        }
+        Self { cache_type: CacheType::Ephemeral }
     }
 }
 

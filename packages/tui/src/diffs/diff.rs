@@ -29,21 +29,9 @@ pub fn highlight_diff(preview: &DiffPreview, context: &ViewContext) -> Vec<Line>
 
     let mut lines = Vec::with_capacity(budget + usize::from(truncated));
 
-    let context_style = DiffStyle {
-        prefix: "    ",
-        fg: theme.code_fg(),
-        bg: None,
-    };
-    let removed_style = DiffStyle {
-        prefix: "  - ",
-        fg: theme.diff_removed_fg(),
-        bg: Some(theme.diff_removed_bg()),
-    };
-    let added_style = DiffStyle {
-        prefix: "  + ",
-        fg: theme.diff_added_fg(),
-        bg: Some(theme.diff_added_bg()),
-    };
+    let context_style = DiffStyle { prefix: "    ", fg: theme.code_fg(), bg: None };
+    let removed_style = DiffStyle { prefix: "  - ", fg: theme.diff_removed_fg(), bg: Some(theme.diff_removed_bg()) };
+    let added_style = DiffStyle { prefix: "  + ", fg: theme.diff_added_fg(), bg: Some(theme.diff_added_bg()) };
 
     let mut old_line = preview.start_line.unwrap_or(0);
 
@@ -74,9 +62,7 @@ pub fn highlight_diff(preview: &DiffPreview, context: &ViewContext) -> Vec<Line>
         }
         line.push_span(Span::with_style(style.prefix, prefix_style));
 
-        let spans = context
-            .highlighter()
-            .highlight(&diff_line.content, &preview.lang_hint, theme);
+        let spans = context.highlighter().highlight(&diff_line.content, &preview.lang_hint, theme);
         if let Some(content) = spans.first() {
             for span in content.spans() {
                 let mut span_style = span.style();
@@ -117,20 +103,12 @@ mod tests {
     }
 
     fn make_preview(lines: Vec<DiffLine>) -> DiffPreview {
-        DiffPreview {
-            lines,
-            rows: vec![],
-            lang_hint: String::new(),
-            start_line: None,
-        }
+        DiffPreview { lines, rows: vec![], lang_hint: String::new(), start_line: None }
     }
 
     #[test]
     fn removed_lines_have_minus_prefix() {
-        let preview = make_preview(vec![DiffLine {
-            tag: DiffTag::Removed,
-            content: "old line".to_string(),
-        }]);
+        let preview = make_preview(vec![DiffLine { tag: DiffTag::Removed, content: "old line".to_string() }]);
         let lines = highlight_diff(&preview, &test_context());
         assert_eq!(lines.len(), 1);
         assert!(lines[0].plain_text().contains("- old line"));
@@ -138,10 +116,7 @@ mod tests {
 
     #[test]
     fn added_lines_have_plus_prefix() {
-        let preview = make_preview(vec![DiffLine {
-            tag: DiffTag::Added,
-            content: "new line".to_string(),
-        }]);
+        let preview = make_preview(vec![DiffLine { tag: DiffTag::Added, content: "new line".to_string() }]);
         let lines = highlight_diff(&preview, &test_context());
         assert_eq!(lines.len(), 1);
         assert!(lines[0].plain_text().contains("+ new line"));
@@ -149,17 +124,11 @@ mod tests {
 
     #[test]
     fn context_lines_have_no_diff_prefix() {
-        let preview = make_preview(vec![DiffLine {
-            tag: DiffTag::Context,
-            content: "unchanged".to_string(),
-        }]);
+        let preview = make_preview(vec![DiffLine { tag: DiffTag::Context, content: "unchanged".to_string() }]);
         let lines = highlight_diff(&preview, &test_context());
         assert_eq!(lines.len(), 1);
         let text = lines[0].plain_text();
-        assert!(
-            text.starts_with("    "),
-            "context should have space prefix: {text}"
-        );
+        assert!(text.starts_with("    "), "context should have space prefix: {text}");
         assert!(!text.contains("+ "), "context should not have + prefix");
         assert!(!text.contains("- "), "context should not have - prefix");
     }
@@ -167,22 +136,10 @@ mod tests {
     #[test]
     fn mixed_diff_renders_correctly() {
         let preview = make_preview(vec![
-            DiffLine {
-                tag: DiffTag::Context,
-                content: "before".to_string(),
-            },
-            DiffLine {
-                tag: DiffTag::Removed,
-                content: "old".to_string(),
-            },
-            DiffLine {
-                tag: DiffTag::Added,
-                content: "new".to_string(),
-            },
-            DiffLine {
-                tag: DiffTag::Context,
-                content: "after".to_string(),
-            },
+            DiffLine { tag: DiffTag::Context, content: "before".to_string() },
+            DiffLine { tag: DiffTag::Removed, content: "old".to_string() },
+            DiffLine { tag: DiffTag::Added, content: "new".to_string() },
+            DiffLine { tag: DiffTag::Context, content: "after".to_string() },
         ]);
         let lines = highlight_diff(&preview, &test_context());
         assert_eq!(lines.len(), 4);
@@ -195,14 +152,8 @@ mod tests {
     #[test]
     fn both_removed_and_added() {
         let preview = make_preview(vec![
-            DiffLine {
-                tag: DiffTag::Removed,
-                content: "old".to_string(),
-            },
-            DiffLine {
-                tag: DiffTag::Added,
-                content: "new".to_string(),
-            },
+            DiffLine { tag: DiffTag::Removed, content: "old".to_string() },
+            DiffLine { tag: DiffTag::Added, content: "new".to_string() },
         ]);
         let lines = highlight_diff(&preview, &test_context());
         assert_eq!(lines.len(), 2);
@@ -214,11 +165,7 @@ mod tests {
     fn truncates_long_diffs() {
         let diff_lines: Vec<DiffLine> = (0..30)
             .map(|i| DiffLine {
-                tag: if i % 2 == 0 {
-                    DiffTag::Removed
-                } else {
-                    DiffTag::Added
-                },
+                tag: if i % 2 == 0 { DiffTag::Removed } else { DiffTag::Added },
                 content: format!("line {i}"),
             })
             .collect();
@@ -227,21 +174,14 @@ mod tests {
         // 20 content lines + 1 overflow line
         assert_eq!(lines.len(), MAX_DIFF_LINES + 1);
         let last = lines.last().unwrap().plain_text();
-        assert!(
-            last.contains("more lines"),
-            "Expected overflow text: {last}"
-        );
+        assert!(last.contains("more lines"), "Expected overflow text: {last}");
     }
 
     #[test]
     fn no_truncation_at_boundary() {
         let diff_lines: Vec<DiffLine> = (0..20)
             .map(|i| DiffLine {
-                tag: if i % 2 == 0 {
-                    DiffTag::Removed
-                } else {
-                    DiffTag::Added
-                },
+                tag: if i % 2 == 0 { DiffTag::Removed } else { DiffTag::Added },
                 content: format!("line {i}"),
             })
             .collect();
@@ -255,14 +195,8 @@ mod tests {
     fn syntax_highlighting_with_known_lang() {
         let preview = DiffPreview {
             lines: vec![
-                DiffLine {
-                    tag: DiffTag::Removed,
-                    content: "fn old() {}".to_string(),
-                },
-                DiffLine {
-                    tag: DiffTag::Added,
-                    content: "fn new() {}".to_string(),
-                },
+                DiffLine { tag: DiffTag::Removed, content: "fn old() {}".to_string() },
+                DiffLine { tag: DiffTag::Added, content: "fn new() {}".to_string() },
             ],
             rows: vec![],
             lang_hint: "rs".to_string(),
@@ -271,19 +205,12 @@ mod tests {
         let lines = highlight_diff(&preview, &test_context());
         assert_eq!(lines.len(), 2);
         // With syntax highlighting, there should be multiple spans (not just 2: prefix + text)
-        assert!(
-            lines[0].spans().len() > 2,
-            "Expected syntax-highlighted spans, got {} spans",
-            lines[0].spans().len()
-        );
+        assert!(lines[0].spans().len() > 2, "Expected syntax-highlighted spans, got {} spans", lines[0].spans().len());
     }
 
     #[test]
     fn removed_lines_have_red_bg() {
-        let preview = make_preview(vec![DiffLine {
-            tag: DiffTag::Removed,
-            content: "old".to_string(),
-        }]);
+        let preview = make_preview(vec![DiffLine { tag: DiffTag::Removed, content: "old".to_string() }]);
         let theme = test_theme();
         let ctx = test_context();
         let lines = highlight_diff(&preview, &ctx);
@@ -294,10 +221,7 @@ mod tests {
 
     #[test]
     fn added_lines_have_green_bg() {
-        let preview = make_preview(vec![DiffLine {
-            tag: DiffTag::Added,
-            content: "new".to_string(),
-        }]);
+        let preview = make_preview(vec![DiffLine { tag: DiffTag::Added, content: "new".to_string() }]);
         let theme = test_theme();
         let ctx = test_context();
         let lines = highlight_diff(&preview, &ctx);
@@ -308,10 +232,7 @@ mod tests {
 
     #[test]
     fn context_lines_have_code_bg() {
-        let preview = make_preview(vec![DiffLine {
-            tag: DiffTag::Context,
-            content: "same".to_string(),
-        }]);
+        let preview = make_preview(vec![DiffLine { tag: DiffTag::Context, content: "same".to_string() }]);
         let ctx = test_context();
         let lines = highlight_diff(&preview, &ctx);
         let prefix_span = &lines[0].spans()[0];
@@ -329,22 +250,10 @@ mod tests {
     fn line_numbers_rendered_when_start_line_set() {
         let preview = DiffPreview {
             lines: vec![
-                DiffLine {
-                    tag: DiffTag::Context,
-                    content: "ctx".to_string(),
-                },
-                DiffLine {
-                    tag: DiffTag::Removed,
-                    content: "old".to_string(),
-                },
-                DiffLine {
-                    tag: DiffTag::Added,
-                    content: "new".to_string(),
-                },
-                DiffLine {
-                    tag: DiffTag::Context,
-                    content: "ctx2".to_string(),
-                },
+                DiffLine { tag: DiffTag::Context, content: "ctx".to_string() },
+                DiffLine { tag: DiffTag::Removed, content: "old".to_string() },
+                DiffLine { tag: DiffTag::Added, content: "new".to_string() },
+                DiffLine { tag: DiffTag::Context, content: "ctx2".to_string() },
             ],
             rows: vec![],
             lang_hint: String::new(),
@@ -352,58 +261,28 @@ mod tests {
         };
         let lines = highlight_diff(&preview, &test_context());
         assert_eq!(lines.len(), 4);
-        assert!(
-            lines[0].plain_text().contains("10"),
-            "context line should show 10"
-        );
-        assert!(
-            lines[1].plain_text().contains("11"),
-            "removed line should show 11"
-        );
+        assert!(lines[0].plain_text().contains("10"), "context line should show 10");
+        assert!(lines[1].plain_text().contains("11"), "removed line should show 11");
         // Added lines don't show a source line number
         let added_text = lines[2].plain_text();
-        assert!(
-            !added_text.starts_with("  12"),
-            "added line should not show line number"
-        );
-        assert!(
-            lines[3].plain_text().contains("12"),
-            "next context should show 12"
-        );
+        assert!(!added_text.starts_with("  12"), "added line should not show line number");
+        assert!(lines[3].plain_text().contains("12"), "next context should show 12");
     }
 
     #[test]
     fn focused_preview_with_truncation_shows_changes() {
         // Simulates a DiffPreview produced by compute_diff_preview after trimming:
         // 3 context lines, then changes, then 22 more context lines (total 27 > MAX_DIFF_LINES).
-        let mut diff_lines: Vec<DiffLine> = (0..3)
-            .map(|_| DiffLine {
-                tag: DiffTag::Context,
-                content: "before".to_string(),
-            })
-            .collect();
+        let mut diff_lines: Vec<DiffLine> =
+            (0..3).map(|_| DiffLine { tag: DiffTag::Context, content: "before".to_string() }).collect();
 
-        diff_lines.push(DiffLine {
-            tag: DiffTag::Removed,
-            content: "old".to_string(),
-        });
+        diff_lines.push(DiffLine { tag: DiffTag::Removed, content: "old".to_string() });
 
-        diff_lines.push(DiffLine {
-            tag: DiffTag::Added,
-            content: "new".to_string(),
-        });
+        diff_lines.push(DiffLine { tag: DiffTag::Added, content: "new".to_string() });
 
-        diff_lines.extend((0..22).map(|_| DiffLine {
-            tag: DiffTag::Context,
-            content: "after".to_string(),
-        }));
+        diff_lines.extend((0..22).map(|_| DiffLine { tag: DiffTag::Context, content: "after".to_string() }));
 
-        let preview = DiffPreview {
-            lines: diff_lines,
-            rows: vec![],
-            lang_hint: String::new(),
-            start_line: Some(42),
-        };
+        let preview = DiffPreview { lines: diff_lines, rows: vec![], lang_hint: String::new(), start_line: Some(42) };
 
         let lines = highlight_diff(&preview, &test_context());
         let has_change = lines.iter().any(|l| {
@@ -411,24 +290,15 @@ mod tests {
             text.contains("- old") || text.contains("+ new")
         });
 
-        assert!(
-            has_change,
-            "focused preview should show changes within the truncation budget"
-        );
+        assert!(has_change, "focused preview should show changes within the truncation budget");
     }
 
     #[test]
     fn no_line_numbers_when_start_line_none() {
-        let preview = make_preview(vec![DiffLine {
-            tag: DiffTag::Removed,
-            content: "old".to_string(),
-        }]);
+        let preview = make_preview(vec![DiffLine { tag: DiffTag::Removed, content: "old".to_string() }]);
         let lines = highlight_diff(&preview, &test_context());
         let text = lines[0].plain_text();
         // Without line numbers, the line should start with the prefix directly
-        assert!(
-            text.starts_with("  - "),
-            "expected prefix without line number gutter: {text}"
-        );
+        assert!(text.starts_with("  - "), "expected prefix without line number gutter: {text}");
     }
 }

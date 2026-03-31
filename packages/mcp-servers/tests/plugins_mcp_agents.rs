@@ -11,8 +11,7 @@ fn create_test_files(files: &[(&str, &str)]) -> TempDir {
     for (path, content) in files {
         let full_path = temp_dir.path().join(path);
         if let Some(parent) = full_path.parent() {
-            fs::create_dir_all(parent)
-                .unwrap_or_else(|_| panic!("Failed to create directory for {path}"));
+            fs::create_dir_all(parent).unwrap_or_else(|_| panic!("Failed to create directory for {path}"));
         }
         fs::write(&full_path, content).unwrap_or_else(|_| panic!("Failed to write file {path}"));
     }
@@ -28,14 +27,10 @@ async fn create_test_client(
 ) {
     let server_service = SubAgentsMcp::from_project_root(test_dir.to_path_buf())
         .expect("Failed to create SubAgentsMcp from project root");
-    let client_info = ClientInfo::new(
-        Default::default(),
-        Implementation::new("test-client", "0.1.0"),
-    );
+    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
 
-    let (server_handle, client) = connect(server_service, client_info)
-        .await
-        .expect("Failed to connect MCP server and client");
+    let (server_handle, client) =
+        connect(server_service, client_info).await.expect("Failed to connect MCP server and client");
 
     (server_handle, client)
 }
@@ -59,10 +54,7 @@ async fn test_spawn_agent_with_coding_mcp_from_settings_catalog() {
 }"#,
         ),
         (".aether/prompts/coder.md", "You are a coding assistant."),
-        (
-            ".aether/mcp/coder.json",
-            r#"{"servers": {"coding": {"type": "in-memory"}}}"#,
-        ),
+        (".aether/mcp/coder.json", r#"{"servers": {"coding": {"type": "in-memory"}}}"#),
     ];
 
     let temp_dir = create_test_files(&test_files);
@@ -83,12 +75,9 @@ async fn test_spawn_subagents_empty_tasks() {
 
     if let Some(content) = result.content.first() {
         if let Some(text_content) = content.as_text() {
-            let parsed: serde_json::Value =
-                serde_json::from_str(&text_content.text).expect("Invalid JSON response");
+            let parsed: serde_json::Value = serde_json::from_str(&text_content.text).expect("Invalid JSON response");
 
-            let results = parsed["results"]
-                .as_array()
-                .expect("Expected results array");
+            let results = parsed["results"].as_array().expect("Expected results array");
             assert_eq!(results.len(), 0);
             assert_eq!(parsed["successCount"], 0);
             assert_eq!(parsed["errorCount"], 0);
@@ -120,23 +109,15 @@ async fn test_spawn_subagent_agent_not_found() {
 
     if let Some(content) = result.content.first() {
         if let Some(text_content) = content.as_text() {
-            let parsed: serde_json::Value =
-                serde_json::from_str(&text_content.text).expect("Invalid JSON response");
+            let parsed: serde_json::Value = serde_json::from_str(&text_content.text).expect("Invalid JSON response");
 
-            let results = parsed["results"]
-                .as_array()
-                .expect("Expected results array");
+            let results = parsed["results"].as_array().expect("Expected results array");
             assert_eq!(results.len(), 1);
 
             let first_result = &results[0];
             assert_eq!(first_result["status"], "error");
             assert_eq!(first_result["agentName"], "nonexistent-agent");
-            assert!(
-                first_result["error"]
-                    .as_str()
-                    .unwrap()
-                    .contains("not found")
-            );
+            assert!(first_result["error"].as_str().unwrap().contains("not found"));
 
             assert_eq!(parsed["successCount"], 0);
             assert_eq!(parsed["errorCount"], 1);
@@ -174,12 +155,9 @@ async fn test_spawn_subagents_task_id_assignment() {
 
     if let Some(content) = result.content.first() {
         if let Some(text_content) = content.as_text() {
-            let parsed: serde_json::Value =
-                serde_json::from_str(&text_content.text).expect("Invalid JSON response");
+            let parsed: serde_json::Value = serde_json::from_str(&text_content.text).expect("Invalid JSON response");
 
-            let results = parsed["results"]
-                .as_array()
-                .expect("Expected results array");
+            let results = parsed["results"].as_array().expect("Expected results array");
             assert_eq!(results.len(), 2);
 
             let first_result = &results[0];

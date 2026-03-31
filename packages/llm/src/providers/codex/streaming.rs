@@ -58,14 +58,12 @@ fn process_event(
         }
         ResponseStreamEvent::ResponseOutputItemAdded(e) => {
             if let OutputItem::FunctionCall(call) = e.item {
-                let tool_responses =
-                    tool_collector.handle_delta(e.output_index, call.id, Some(call.name), None);
+                let tool_responses = tool_collector.handle_delta(e.output_index, call.id, Some(call.name), None);
                 responses.extend(tool_responses.into_iter().map(Ok));
             }
         }
         ResponseStreamEvent::ResponseFunctionCallArgumentsDelta(e) => {
-            let tool_responses =
-                tool_collector.handle_delta(e.output_index, None, None, Some(e.delta));
+            let tool_responses = tool_collector.handle_delta(e.output_index, None, None, Some(e.delta));
             responses.extend(tool_responses.into_iter().map(Ok));
         }
         ResponseStreamEvent::ResponseFunctionCallArgumentsDone(e) => {
@@ -82,10 +80,7 @@ fn process_event(
             if let OutputItem::Reasoning(reasoning) = e.item
                 && let Some(encrypted) = reasoning.encrypted_content
             {
-                responses.push(Ok(LlmResponse::EncryptedReasoning {
-                    id: reasoning.id,
-                    content: encrypted,
-                }));
+                responses.push(Ok(LlmResponse::EncryptedReasoning { id: reasoning.id, content: encrypted }));
             }
         }
         ResponseStreamEvent::ResponseCompleted(e) => {
@@ -103,10 +98,7 @@ fn process_event(
             }
         }
         ResponseStreamEvent::ResponseError(e) => {
-            responses.push(Err(LlmError::ApiError(format!(
-                "Codex API error: {}",
-                e.message
-            ))));
+            responses.push(Err(LlmError::ApiError(format!("Codex API error: {}", e.message))));
         }
         // Events we don't need to act on
         _ => {}
@@ -120,9 +112,8 @@ mod tests {
     use super::*;
     use async_openai::types::responses::{
         FunctionToolCall, ReasoningItem, Response, ResponseCompletedEvent, ResponseErrorEvent,
-        ResponseFunctionCallArgumentsDeltaEvent, ResponseFunctionCallArgumentsDoneEvent,
-        ResponseOutputItemAddedEvent, ResponseOutputItemDoneEvent,
-        ResponseReasoningSummaryTextDeltaEvent, ResponseTextDeltaEvent, ResponseUsage,
+        ResponseFunctionCallArgumentsDeltaEvent, ResponseFunctionCallArgumentsDoneEvent, ResponseOutputItemAddedEvent,
+        ResponseOutputItemDoneEvent, ResponseReasoningSummaryTextDeltaEvent, ResponseTextDeltaEvent, ResponseUsage,
     };
     /// Build a minimal `Response` with given status and optional usage via JSON deserialization.
     fn make_response(status: &Status, usage: Option<ResponseUsage>) -> Response {
@@ -152,9 +143,7 @@ mod tests {
         .unwrap()
     }
 
-    fn make_stream(
-        events: Vec<ResponseStreamEvent>,
-    ) -> impl Stream<Item = Result<ResponseStreamEvent>> + Send + Unpin {
+    fn make_stream(events: Vec<ResponseStreamEvent>) -> impl Stream<Item = Result<ResponseStreamEvent>> + Send + Unpin {
         tokio_stream::iter(events.into_iter().map(Ok).collect::<Vec<_>>())
     }
 
@@ -194,20 +183,8 @@ mod tests {
         assert!(matches!(responses[0], LlmResponse::Start { .. }));
         assert!(matches!(responses[1], LlmResponse::Text { ref chunk } if chunk == "Hello"));
         assert!(matches!(responses[2], LlmResponse::Text { ref chunk } if chunk == " world"));
-        assert!(matches!(
-            responses[3],
-            LlmResponse::Usage {
-                input_tokens: 10,
-                output_tokens: 5,
-                ..
-            }
-        ));
-        assert!(matches!(
-            responses[4],
-            LlmResponse::Done {
-                stop_reason: Some(StopReason::EndTurn)
-            }
-        ));
+        assert!(matches!(responses[3], LlmResponse::Usage { input_tokens: 10, output_tokens: 5, .. }));
+        assert!(matches!(responses[4], LlmResponse::Done { stop_reason: Some(StopReason::EndTurn) }));
     }
 
     #[tokio::test]
@@ -224,31 +201,25 @@ mod tests {
                     status: None,
                 }),
             }),
-            ResponseStreamEvent::ResponseFunctionCallArgumentsDelta(
-                ResponseFunctionCallArgumentsDeltaEvent {
-                    sequence_number: 2,
-                    item_id: "fc_1".to_string(),
-                    output_index: 0,
-                    delta: r#"{"path":"#.to_string(),
-                },
-            ),
-            ResponseStreamEvent::ResponseFunctionCallArgumentsDelta(
-                ResponseFunctionCallArgumentsDeltaEvent {
-                    sequence_number: 3,
-                    item_id: "fc_1".to_string(),
-                    output_index: 0,
-                    delta: r#""foo.rs"}"#.to_string(),
-                },
-            ),
-            ResponseStreamEvent::ResponseFunctionCallArgumentsDone(
-                ResponseFunctionCallArgumentsDoneEvent {
-                    sequence_number: 4,
-                    item_id: "fc_1".to_string(),
-                    output_index: 0,
-                    arguments: r#"{"path":"foo.rs"}"#.to_string(),
-                    name: None,
-                },
-            ),
+            ResponseStreamEvent::ResponseFunctionCallArgumentsDelta(ResponseFunctionCallArgumentsDeltaEvent {
+                sequence_number: 2,
+                item_id: "fc_1".to_string(),
+                output_index: 0,
+                delta: r#"{"path":"#.to_string(),
+            }),
+            ResponseStreamEvent::ResponseFunctionCallArgumentsDelta(ResponseFunctionCallArgumentsDeltaEvent {
+                sequence_number: 3,
+                item_id: "fc_1".to_string(),
+                output_index: 0,
+                delta: r#""foo.rs"}"#.to_string(),
+            }),
+            ResponseStreamEvent::ResponseFunctionCallArgumentsDone(ResponseFunctionCallArgumentsDoneEvent {
+                sequence_number: 4,
+                item_id: "fc_1".to_string(),
+                output_index: 0,
+                arguments: r#"{"path":"foo.rs"}"#.to_string(),
+                name: None,
+            }),
             ResponseStreamEvent::ResponseCompleted(ResponseCompletedEvent {
                 sequence_number: 5,
                 response: make_response(&Status::Completed, Some(make_usage(20, 10))),
@@ -270,9 +241,7 @@ mod tests {
         assert!(matches!(responses[2], LlmResponse::ToolRequestArg { .. }));
         assert!(matches!(responses[3], LlmResponse::ToolRequestArg { .. }));
 
-        let tc = responses
-            .iter()
-            .find(|r| matches!(r, LlmResponse::ToolRequestComplete { .. }));
+        let tc = responses.iter().find(|r| matches!(r, LlmResponse::ToolRequestComplete { .. }));
         assert!(tc.is_some());
         if let LlmResponse::ToolRequestComplete { tool_call } = tc.unwrap() {
             assert_eq!(tool_call.id, "fc_1");
@@ -305,24 +274,20 @@ mod tests {
     #[tokio::test]
     async fn test_reasoning_delta() {
         let events = vec![
-            ResponseStreamEvent::ResponseReasoningSummaryTextDelta(
-                ResponseReasoningSummaryTextDeltaEvent {
-                    sequence_number: 1,
-                    item_id: "r_1".to_string(),
-                    output_index: 0,
-                    summary_index: 0,
-                    delta: "Thinking about".to_string(),
-                },
-            ),
-            ResponseStreamEvent::ResponseReasoningSummaryTextDelta(
-                ResponseReasoningSummaryTextDeltaEvent {
-                    sequence_number: 2,
-                    item_id: "r_1".to_string(),
-                    output_index: 0,
-                    summary_index: 0,
-                    delta: " the problem".to_string(),
-                },
-            ),
+            ResponseStreamEvent::ResponseReasoningSummaryTextDelta(ResponseReasoningSummaryTextDeltaEvent {
+                sequence_number: 1,
+                item_id: "r_1".to_string(),
+                output_index: 0,
+                summary_index: 0,
+                delta: "Thinking about".to_string(),
+            }),
+            ResponseStreamEvent::ResponseReasoningSummaryTextDelta(ResponseReasoningSummaryTextDeltaEvent {
+                sequence_number: 2,
+                item_id: "r_1".to_string(),
+                output_index: 0,
+                summary_index: 0,
+                delta: " the problem".to_string(),
+            }),
             ResponseStreamEvent::ResponseCompleted(ResponseCompletedEvent {
                 sequence_number: 3,
                 response: make_response(&Status::Completed, None),
@@ -337,22 +302,16 @@ mod tests {
             responses.push(result.unwrap());
         }
 
-        assert!(
-            matches!(responses[1], LlmResponse::Reasoning { ref chunk } if chunk == "Thinking about")
-        );
-        assert!(
-            matches!(responses[2], LlmResponse::Reasoning { ref chunk } if chunk == " the problem")
-        );
+        assert!(matches!(responses[1], LlmResponse::Reasoning { ref chunk } if chunk == "Thinking about"));
+        assert!(matches!(responses[2], LlmResponse::Reasoning { ref chunk } if chunk == " the problem"));
     }
 
     #[tokio::test]
     async fn test_incomplete_status_gives_length_stop_reason() {
-        let events = vec![ResponseStreamEvent::ResponseCompleted(
-            ResponseCompletedEvent {
-                sequence_number: 1,
-                response: make_response(&Status::Incomplete, None),
-            },
-        )];
+        let events = vec![ResponseStreamEvent::ResponseCompleted(ResponseCompletedEvent {
+            sequence_number: 1,
+            response: make_response(&Status::Incomplete, None),
+        })];
 
         let stream = make_stream(events);
         let mut response_stream = Box::pin(process_response_stream(stream));
@@ -362,18 +321,12 @@ mod tests {
             responses.push(result.unwrap());
         }
 
-        assert!(matches!(
-            responses.last().unwrap(),
-            LlmResponse::Done {
-                stop_reason: Some(StopReason::Length)
-            }
-        ));
+        assert!(matches!(responses.last().unwrap(), LlmResponse::Done { stop_reason: Some(StopReason::Length) }));
     }
 
     #[tokio::test]
     async fn test_stream_error_propagation() {
-        let events: Vec<Result<ResponseStreamEvent>> =
-            vec![Err(LlmError::ApiError("connection lost".to_string()))];
+        let events: Vec<Result<ResponseStreamEvent>> = vec![Err(LlmError::ApiError("connection lost".to_string()))];
 
         let stream = tokio_stream::iter(events);
         let mut response_stream = Box::pin(process_response_stream(stream));

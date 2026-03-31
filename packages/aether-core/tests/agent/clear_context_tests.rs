@@ -9,26 +9,14 @@ use llm::{ChatMessage, ContentBlock};
 #[tokio::test]
 async fn test_clear_context_resets_history_and_preserves_system_prompt() {
     let llm_responses = vec![
-        vec![
-            LlmResponse::start("msg_1"),
-            LlmResponse::text("First response"),
-            LlmResponse::done(),
-        ],
-        vec![
-            LlmResponse::start("msg_2"),
-            LlmResponse::text("Second response"),
-            LlmResponse::done(),
-        ],
+        vec![LlmResponse::start("msg_1"), LlmResponse::text("First response"), LlmResponse::done()],
+        vec![LlmResponse::start("msg_2"), LlmResponse::text("Second response"), LlmResponse::done()],
     ];
 
     let llm = FakeLlmProvider::new(llm_responses);
     let captured_contexts = llm.captured_contexts();
 
-    let (tx, mut rx, _handle) = agent(llm)
-        .system_prompt(Prompt::text("You are a test agent."))
-        .spawn()
-        .await
-        .unwrap();
+    let (tx, mut rx, _handle) = agent(llm).system_prompt(Prompt::text("You are a test agent.")).spawn().await.unwrap();
 
     tx.send(UserMessage::text("first question")).await.unwrap();
     drain_until_done(&mut rx).await;
@@ -38,10 +26,7 @@ async fn test_clear_context_resets_history_and_preserves_system_prompt() {
         .await
         .expect("Timed out waiting for ContextCleared")
         .expect("Channel closed before ContextCleared");
-    assert!(
-        matches!(cleared, AgentMessage::ContextCleared),
-        "Expected ContextCleared, got: {cleared:?}"
-    );
+    assert!(matches!(cleared, AgentMessage::ContextCleared), "Expected ContextCleared, got: {cleared:?}");
 
     tx.send(UserMessage::text("second question")).await.unwrap();
     drain_until_done(&mut rx).await;
@@ -63,10 +48,7 @@ async fn test_clear_context_resets_history_and_preserves_system_prompt() {
             ChatMessage::User { content, .. } if *content == vec![ContentBlock::text("first question")]
         )
     });
-    assert!(
-        !has_first_question,
-        "first turn user text should be removed from cleared context"
-    );
+    assert!(!has_first_question, "first turn user text should be removed from cleared context");
 
     let has_second_question = messages.iter().any(|m| {
         matches!(
@@ -74,10 +56,7 @@ async fn test_clear_context_resets_history_and_preserves_system_prompt() {
             ChatMessage::User { content, .. } if *content == vec![ContentBlock::text("second question")]
         )
     });
-    assert!(
-        has_second_question,
-        "new prompt should be present after clear"
-    );
+    assert!(has_second_question, "new prompt should be present after clear");
 }
 
 async fn drain_until_done(rx: &mut tokio::sync::mpsc::Receiver<AgentMessage>) {

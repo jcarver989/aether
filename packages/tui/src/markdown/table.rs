@@ -19,11 +19,7 @@ pub(crate) struct TableCell {
 
 impl Default for TableCell {
     fn default() -> Self {
-        Self {
-            lines: Vec::new(),
-            alignment: Alignment::None,
-            max_width: 0,
-        }
+        Self { lines: Vec::new(), alignment: Alignment::None, max_width: 0 }
     }
 }
 
@@ -171,14 +167,7 @@ impl TableState {
         lines
     }
 
-    fn render_border(
-        &self,
-        num_cols: usize,
-        left_char: char,
-        mid_char: char,
-        right_char: char,
-        style: Style,
-    ) -> Line {
+    fn render_border(&self, num_cols: usize, left_char: char, mid_char: char, right_char: char, style: Style) -> Line {
         let mut s = String::new();
         s.push(left_char);
         for col_idx in 0..num_cols {
@@ -193,12 +182,7 @@ impl TableState {
         Line::with_style(s, style)
     }
 
-    fn push_formatted_cell_line(
-        line: &mut Line,
-        content_line: Option<&Line>,
-        width: usize,
-        alignment: Alignment,
-    ) {
+    fn push_formatted_cell_line(line: &mut Line, content_line: Option<&Line>, width: usize, alignment: Alignment) {
         let cell_width = width.max(3);
         let content_width = content_line.map_or(0, line_display_width);
         let padding = cell_width.saturating_sub(content_width);
@@ -226,8 +210,5 @@ impl TableState {
 }
 
 pub(super) fn line_display_width(line: &Line) -> usize {
-    line.spans()
-        .iter()
-        .map(|span| UnicodeWidthStr::width(span.text()))
-        .sum()
+    line.spans().iter().map(|span| UnicodeWidthStr::width(span.text())).sum()
 }

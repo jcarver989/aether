@@ -37,32 +37,19 @@ pub async fn write_file_contents(args: WriteFileArgs) -> Result<WriteFileRespons
     if let Some(parent) = file_path.parent()
         && let Err(e) = create_dir_all(parent).await
     {
-        return Err(FileError::CreateDirFailed {
-            path: args.file_path,
-            reason: e.to_string(),
-        });
+        return Err(FileError::CreateDirFailed { path: args.file_path, reason: e.to_string() });
     }
 
     if let Err(e) = write(&args.file_path, &args.content).await {
-        return Err(FileError::WriteFailed {
-            path: args.file_path,
-            reason: e.to_string(),
-        });
+        return Err(FileError::WriteFailed { path: args.file_path, reason: e.to_string() });
     }
 
     let bytes_written = args.content.len();
     let display_meta = ToolDisplayMeta::new("Write file", basename(&args.file_path));
-    let file_diff = FileDiff {
-        path: args.file_path.clone(),
-        old_text: None,
-        new_text: args.content.clone(),
-    };
+    let file_diff = FileDiff { path: args.file_path.clone(), old_text: None, new_text: args.content.clone() };
 
     Ok(WriteFileResponse {
-        message: format!(
-            "Successfully wrote {} bytes to {}",
-            bytes_written, args.file_path
-        ),
+        message: format!("Successfully wrote {} bytes to {}", bytes_written, args.file_path),
         bytes_written,
         file_path: args.file_path,
         meta: Some(ToolResultMeta::with_file_diff(display_meta, file_diff)),

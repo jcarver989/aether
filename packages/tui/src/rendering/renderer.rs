@@ -88,8 +88,7 @@ impl<W: Write> Renderer<W> {
                 RendererCommand::ClearScreen => self.clear_screen()?,
                 RendererCommand::SetTheme(theme) => self.set_theme(theme),
                 RendererCommand::SetMouseCapture(enable) => {
-                    self.terminal
-                        .execute(&TerminalCommand::SetMouseCapture(enable))?;
+                    self.terminal.execute(&TerminalCommand::SetMouseCapture(enable))?;
                     self.terminal.writer.flush()?;
                 }
             }
@@ -113,10 +112,7 @@ impl<W: Write> Renderer<W> {
 
     fn render_frame_internal(&mut self, frame: &Frame) -> io::Result<()> {
         let next_frame = {
-            let flushed = self
-                .prev_frame
-                .as_ref()
-                .map_or(0, super::visual_frame::VisualFrame::overflow);
+            let flushed = self.prev_frame.as_ref().map_or(0, super::visual_frame::VisualFrame::overflow);
             VisualFrame::from_frame(frame, self.size, flushed)
         };
 
@@ -126,10 +122,7 @@ impl<W: Write> Renderer<W> {
         let (mut commands, mut prev_frame) = if self.resized {
             (vec![TerminalCommand::ClearAll], None)
         } else {
-            (
-                vec![TerminalCommand::RestoreCursorPosition],
-                self.prev_frame.as_ref(),
-            )
+            (vec![TerminalCommand::RestoreCursorPosition], self.prev_frame.as_ref())
         };
 
         if !next_frame.scrollback_lines().is_empty() {
@@ -162,20 +155,11 @@ impl<W: Write> Renderer<W> {
 
     fn cursor_commands(frame: &VisualFrame) -> [TerminalCommand<'_>; 2] {
         let cursor = frame.cursor();
-        let rows_up = to_u16(
-            frame
-                .visible_lines()
-                .len()
-                .saturating_sub(1)
-                .saturating_sub(cursor.row),
-        );
+        let rows_up = to_u16(frame.visible_lines().len().saturating_sub(1).saturating_sub(cursor.row));
 
         [
             TerminalCommand::SetCursorVisible(cursor.is_visible),
-            TerminalCommand::PlaceCursor {
-                rows_up,
-                col: to_u16(cursor.col),
-            },
+            TerminalCommand::PlaceCursor { rows_up, col: to_u16(cursor.col) },
         ]
     }
 
@@ -189,10 +173,7 @@ impl<W: Write> Renderer<W> {
             return Ok(());
         }
 
-        let flushed = self
-            .prev_frame
-            .as_ref()
-            .map_or(0, super::visual_frame::VisualFrame::overflow);
+        let flushed = self.prev_frame.as_ref().map_or(0, super::visual_frame::VisualFrame::overflow);
         let remaining = &visual[flushed.min(visual.len())..];
         let mut commands = vec![TerminalCommand::RestoreCursorPosition];
 
@@ -202,14 +183,8 @@ impl<W: Write> Renderer<W> {
             return Ok(());
         }
 
-        let previous_visible_rows = self
-            .prev_frame
-            .as_ref()
-            .map_or(0, |f| f.visible_lines().len());
-        commands.push(TerminalCommand::PushScrollbackLines {
-            previous_visible_rows,
-            lines: remaining,
-        });
+        let previous_visible_rows = self.prev_frame.as_ref().map_or(0, |f| f.visible_lines().len());
+        commands.push(TerminalCommand::PushScrollbackLines { previous_visible_rows, lines: remaining });
 
         self.terminal.execute_batch(&commands)?;
         self.prev_frame = None;
@@ -335,14 +310,7 @@ mod tests {
         let theme_path = temp_dir.path().join("custom.tmTheme");
         std::fs::write(&theme_path, custom_tmtheme).unwrap();
         r.set_theme(Theme::load_from_path(&theme_path));
-        assert_eq!(
-            r.context().theme.text_primary(),
-            crossterm::style::Color::Rgb {
-                r: 0x11,
-                g: 0x22,
-                b: 0x33
-            }
-        );
+        assert_eq!(r.context().theme.text_primary(), crossterm::style::Color::Rgb { r: 0x11, g: 0x22, b: 0x33 });
     }
 
     #[test]
@@ -372,11 +340,7 @@ mod tests {
     #[test]
     fn changing_middle_line_rewrites_from_diff() {
         let mut r = renderer((80, 24));
-        let out = diff_output(
-            &mut r,
-            &frame(&["aaa", "bbb", "ccc"]),
-            &frame(&["aaa", "BBB", "ccc"]),
-        );
+        let out = diff_output(&mut r, &frame(&["aaa", "bbb", "ccc"]), &frame(&["aaa", "BBB", "ccc"]));
         for word in ["BBB", "ccc"] {
             assert_has(&out, word, "changed/subsequent lines should be rewritten");
         }
@@ -385,16 +349,9 @@ mod tests {
     #[test]
     fn appending_line_moves_to_next_row_before_writing() {
         let mut r = renderer((80, 24));
-        let out = diff_output(
-            &mut r,
-            &frame(&["aaa", "bbb"]),
-            &frame(&["aaa", "bbb", "ccc"]),
-        );
+        let out = diff_output(&mut r, &frame(&["aaa", "bbb"]), &frame(&["aaa", "bbb", "ccc"]));
         let ccc_pos = out.find("ccc").expect("missing appended line");
-        assert!(
-            out[..ccc_pos].contains("\r\n"),
-            "should move to next row before appending: {out:?}"
-        );
+        assert!(out[..ccc_pos].contains("\r\n"), "should move to next row before appending: {out:?}");
     }
 
     #[test]
@@ -403,16 +360,8 @@ mod tests {
         let f = frame_with_cursor(&["L1", "L2", "L3", "L4"], 2, 0);
         r.render_frame_internal(&f).unwrap();
         r.terminal.writer.bytes.clear();
-        r.push_to_scrollback(&[
-            Line::new("already flushed 1"),
-            Line::new("already flushed 2"),
-        ])
-        .unwrap();
-        assert_has(
-            &output(&r),
-            "\x1b[1B",
-            "should restore cursor before early return",
-        );
+        r.push_to_scrollback(&[Line::new("already flushed 1"), Line::new("already flushed 2")]).unwrap();
+        assert_has(&output(&r), "\x1b[1B", "should restore cursor before early return");
     }
 
     #[test]
@@ -423,11 +372,7 @@ mod tests {
         r.push_to_scrollback(&[Line::new("scrolled")]).unwrap();
         r.terminal.writer.bytes.clear();
         r.render_frame_internal(&f).unwrap();
-        assert_has(
-            &output(&r),
-            "managed line",
-            "should re-render managed content after scrollback",
-        );
+        assert_has(&output(&r), "managed line", "should re-render managed content after scrollback");
     }
 
     #[test]
@@ -442,11 +387,7 @@ mod tests {
         let mut r = renderer((80, 24));
         r.clear_screen().unwrap();
         let out = output(&r);
-        for (seq, label) in [
-            ("\x1b[2J", "ClearAll"),
-            ("\x1b[3J", "Purge"),
-            ("\x1b[1;1H", "cursor home"),
-        ] {
+        for (seq, label) in [("\x1b[2J", "ClearAll"), ("\x1b[3J", "Purge"), ("\x1b[1;1H", "cursor home")] {
             assert_has(&out, seq, &format!("missing {label}"));
         }
     }
@@ -459,11 +400,7 @@ mod tests {
         r.render_frame_internal(&frame(&["hello"])).unwrap();
         let out = output(&r);
         assert_has(&out, "hello", "should render content");
-        assert_missing(
-            &out,
-            "\x1b[2J",
-            "render after clear_screen should not re-clear viewport",
-        );
+        assert_missing(&out, "\x1b[2J", "render after clear_screen should not re-clear viewport");
     }
 
     #[test]
@@ -474,12 +411,9 @@ mod tests {
         r.on_resize((5, 4));
         r.render_frame_internal(&frame(&["abcdefghij"])).unwrap();
         let out = output(&r);
-        for (seq, label) in [
-            ("\x1b[2J", "ClearAll"),
-            ("\x1b[3J", "Purge"),
-            ("abcde", "wrapped-1"),
-            ("fghij", "wrapped-2"),
-        ] {
+        for (seq, label) in
+            [("\x1b[2J", "ClearAll"), ("\x1b[3J", "Purge"), ("abcde", "wrapped-1"), ("fghij", "wrapped-2")]
+        {
             assert_has(&out, seq, &format!("resize should emit {label}"));
         }
     }
@@ -506,10 +440,6 @@ mod tests {
         let mut r = renderer((3, 24));
         let f = frame_with_cursor(&["abcdef"], 0, 5);
         r.render_frame_internal(&f).unwrap();
-        assert_has(
-            &output(&r),
-            "\x1b[2C",
-            "cursor should be at col 2 (MoveRight(2))",
-        );
+        assert_has(&output(&r), "\x1b[2C", "cursor should be at col 2 (MoveRight(2))");
     }
 }

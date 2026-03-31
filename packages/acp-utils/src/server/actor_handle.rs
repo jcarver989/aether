@@ -25,37 +25,19 @@ impl AcpActorHandle {
         .await
     }
 
-    pub async fn send_ext_notification(
-        &self,
-        notification: acp::ExtNotification,
-    ) -> Result<(), AcpServerError> {
-        self.send_request(|tx| AcpRequest::ExtNotification {
-            notification,
-            response_tx: tx,
-        })
-        .await
+    pub async fn send_ext_notification(&self, notification: acp::ExtNotification) -> Result<(), AcpServerError> {
+        self.send_request(|tx| AcpRequest::ExtNotification { notification, response_tx: tx }).await
     }
 
     pub async fn request_permission(
         &self,
         request: acp::RequestPermissionRequest,
     ) -> Result<acp::RequestPermissionResponse, AcpServerError> {
-        self.send_request(|tx| AcpRequest::RequestPermission {
-            request: Box::new(request),
-            response_tx: tx,
-        })
-        .await
+        self.send_request(|tx| AcpRequest::RequestPermission { request: Box::new(request), response_tx: tx }).await
     }
 
-    pub async fn ext_method(
-        &self,
-        request: acp::ExtRequest,
-    ) -> Result<acp::ExtResponse, AcpServerError> {
-        self.send_request(|tx| AcpRequest::ExtMethod {
-            request,
-            response_tx: tx,
-        })
-        .await
+    pub async fn ext_method(&self, request: acp::ExtRequest) -> Result<acp::ExtResponse, AcpServerError> {
+        self.send_request(|tx| AcpRequest::ExtMethod { request, response_tx: tx }).await
     }
 
     async fn send_request<R>(
@@ -63,9 +45,7 @@ impl AcpActorHandle {
         make_request: impl FnOnce(oneshot::Sender<Result<R, AcpServerError>>) -> AcpRequest,
     ) -> Result<R, AcpServerError> {
         let (tx, rx) = oneshot::channel();
-        self.request_tx
-            .send(make_request(tx))
-            .map_err(|_| AcpServerError::ActorStopped)?;
+        self.request_tx.send(make_request(tx)).map_err(|_| AcpServerError::ActorStopped)?;
         rx.await.map_err(|_| AcpServerError::ActorStopped)?
     }
 }
@@ -128,10 +108,7 @@ mod tests {
 
         let request = acp::RequestPermissionRequest::new(
             acp::SessionId::new("test"),
-            acp::ToolCallUpdate::new(
-                acp::ToolCallId::new("tool_1"),
-                acp::ToolCallUpdateFields::new(),
-            ),
+            acp::ToolCallUpdate::new(acp::ToolCallId::new("tool_1"), acp::ToolCallUpdateFields::new()),
             vec![acp::PermissionOption::new(
                 acp::PermissionOptionId::new("allow-once"),
                 "Allow once",

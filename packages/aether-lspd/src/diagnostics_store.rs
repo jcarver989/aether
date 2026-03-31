@@ -20,10 +20,7 @@ impl DiagnosticsStore {
     }
 
     pub(crate) async fn publish(&self, diagnostics: PublishDiagnosticsParams) {
-        self.state
-            .write()
-            .await
-            .insert(diagnostics.uri.clone(), diagnostics);
+        self.state.write().await.insert(diagnostics.uri.clone(), diagnostics);
         self.version.fetch_add(1, Ordering::Relaxed);
         self.notify.notify_waiters();
     }
@@ -108,10 +105,7 @@ mod tests {
         PublishDiagnosticsParams {
             uri: uri.parse().unwrap(),
             diagnostics: vec![Diagnostic {
-                range: Range {
-                    start: Position::new(0, 0),
-                    end: Position::new(0, 1),
-                },
+                range: Range { start: Position::new(0, 0), end: Position::new(0, 1) },
                 message: message.to_string(),
                 ..Default::default()
             }],
@@ -127,24 +121,15 @@ mod tests {
 
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(10)).await;
-            publish_store
-                .publish(diagnostics("file:///test.rs", "first"))
-                .await;
+            publish_store.publish(diagnostics("file:///test.rs", "first")).await;
             tokio::time::sleep(Duration::from_millis(50)).await;
-            publish_store
-                .publish(diagnostics("file:///test.rs", "second"))
-                .await;
+            publish_store.publish(diagnostics("file:///test.rs", "second")).await;
         });
 
         let start = tokio::time::Instant::now();
-        store
-            .wait_for_fresh(version_before, Duration::from_secs(2))
-            .await;
+        store.wait_for_fresh(version_before, Duration::from_secs(2)).await;
 
-        assert!(
-            start.elapsed() >= Duration::from_millis(600),
-            "store should wait through the settle window"
-        );
+        assert!(start.elapsed() >= Duration::from_millis(600), "store should wait through the settle window");
         let diags = store.get(None).await;
         assert_eq!(diags[0].diagnostics[0].message, "second");
     }

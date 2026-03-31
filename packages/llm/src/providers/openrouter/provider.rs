@@ -1,11 +1,7 @@
 use super::types::OpenRouterChatRequest;
 use crate::provider::get_context_window;
-use crate::providers::openai_compatible::{
-    build_chat_request, streaming::create_custom_stream_generic,
-};
-use crate::{
-    Context, LlmError, LlmResponseStream, ProviderFactory, Result, StreamingModelProvider,
-};
+use crate::providers::openai_compatible::{build_chat_request, streaming::create_custom_stream_generic};
+use crate::{Context, LlmError, LlmResponseStream, ProviderFactory, Result, StreamingModelProvider};
 use async_openai::{Client, config::OpenAIConfig};
 
 pub struct OpenRouterProvider {
@@ -15,9 +11,7 @@ pub struct OpenRouterProvider {
 
 impl OpenRouterProvider {
     pub fn new(api_key: String, model: String) -> Result<Self> {
-        let config = OpenAIConfig::new()
-            .with_api_key(api_key)
-            .with_api_base("https://openrouter.ai/api/v1");
+        let config = OpenAIConfig::new().with_api_key(api_key).with_api_base("https://openrouter.ai/api/v1");
 
         let client = Client::with_config(config);
         Ok(Self { client, model })
@@ -27,16 +21,11 @@ impl OpenRouterProvider {
         let api_key = std::env::var("OPENROUTER_API_KEY")
             .map_err(|_| LlmError::MissingApiKey("OPENROUTER_API_KEY".to_string()))?;
 
-        let config = OpenAIConfig::new()
-            .with_api_key(api_key)
-            .with_api_base("https://openrouter.ai/api/v1");
+        let config = OpenAIConfig::new().with_api_key(api_key).with_api_base("https://openrouter.ai/api/v1");
 
         let client = Client::with_config(config);
 
-        Ok(Self {
-            client,
-            model: model.to_string(),
-        })
+        Ok(Self { client, model: model.to_string() })
     }
 }
 
@@ -45,16 +34,11 @@ impl ProviderFactory for OpenRouterProvider {
         let api_key = std::env::var("OPENROUTER_API_KEY")
             .map_err(|_| LlmError::MissingApiKey("OPENROUTER_API_KEY".to_string()))?;
 
-        let config = OpenAIConfig::new()
-            .with_api_key(api_key)
-            .with_api_base("https://openrouter.ai/api/v1");
+        let config = OpenAIConfig::new().with_api_key(api_key).with_api_base("https://openrouter.ai/api/v1");
 
         let client = Client::with_config(config);
 
-        Ok(Self {
-            client,
-            model: String::new(),
-        })
+        Ok(Self { client, model: String::new() })
     }
 
     fn with_model(mut self, model: &str) -> Self {

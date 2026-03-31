@@ -13,9 +13,8 @@ use tempfile::TempDir;
 use tokio::sync::{Mutex, RwLock};
 
 use crate::tasks::{
-    TaskCreateInput, TaskCreateOutput, TaskGetInput, TaskGetOutput, TaskListInput, TaskListOutput,
-    TaskStore, TaskUpdateInput, TaskUpdateOutput, execute_task_create, execute_task_get,
-    execute_task_list, execute_task_update,
+    TaskCreateInput, TaskCreateOutput, TaskGetInput, TaskGetOutput, TaskListInput, TaskListOutput, TaskStore,
+    TaskUpdateInput, TaskUpdateOutput, execute_task_create, execute_task_get, execute_task_list, execute_task_update,
 };
 
 /// CLI arguments for `TasksMcp` server
@@ -34,8 +33,7 @@ impl TasksMcpArgs {
         let mut full_args = vec!["tasks-mcp".to_string()];
         full_args.extend(args);
 
-        Self::try_parse_from(full_args)
-            .map_err(|e| format!("Failed to parse TasksMcp arguments: {e}"))
+        Self::try_parse_from(full_args).map_err(|e| format!("Failed to parse TasksMcp arguments: {e}"))
     }
 }
 
@@ -64,8 +62,7 @@ impl TasksMcp {
     /// when this server is dropped. Use [`Self::new_persistent`] for
     /// cross-session storage.
     pub fn new() -> Self {
-        let temp_dir = TempDir::with_prefix("aether-tasks-")
-            .expect("failed to create temp dir for task storage");
+        let temp_dir = TempDir::with_prefix("aether-tasks-").expect("failed to create temp dir for task storage");
         let task_path = temp_dir.path().to_path_buf();
         Self {
             task_store: Mutex::new(TaskStore::new(task_path)),
@@ -122,38 +119,25 @@ impl ServerHandler for TasksMcp {
 impl TasksMcp {
     #[doc = include_str!("./tools/create/description.md")]
     #[tool]
-    pub async fn task_create(
-        &self,
-        request: Parameters<TaskCreateInput>,
-    ) -> Result<Json<TaskCreateOutput>, String> {
+    pub async fn task_create(&self, request: Parameters<TaskCreateInput>) -> Result<Json<TaskCreateOutput>, String> {
         let Parameters(input) = request;
         let mut store = self.task_store.lock().await;
         store.init().map_err(|e| e.to_string())?;
-        execute_task_create(&input, &mut store)
-            .map(Json)
-            .map_err(|e| e.to_string())
+        execute_task_create(&input, &mut store).map(Json).map_err(|e| e.to_string())
     }
 
     #[doc = include_str!("./tools/update/description.md")]
     #[tool]
-    pub async fn task_update(
-        &self,
-        request: Parameters<TaskUpdateInput>,
-    ) -> Result<Json<TaskUpdateOutput>, String> {
+    pub async fn task_update(&self, request: Parameters<TaskUpdateInput>) -> Result<Json<TaskUpdateOutput>, String> {
         let Parameters(input) = request;
         let mut store = self.task_store.lock().await;
         store.init().map_err(|e| e.to_string())?;
-        execute_task_update(input, &mut store)
-            .map(Json)
-            .map_err(|e| e.to_string())
+        execute_task_update(input, &mut store).map(Json).map_err(|e| e.to_string())
     }
 
     #[doc = include_str!("./tools/list/description.md")]
     #[tool]
-    pub async fn task_list(
-        &self,
-        request: Parameters<TaskListInput>,
-    ) -> Result<Json<TaskListOutput>, String> {
+    pub async fn task_list(&self, request: Parameters<TaskListInput>) -> Result<Json<TaskListOutput>, String> {
         let Parameters(input) = request;
         let mut store = self.task_store.lock().await;
         store.init().map_err(|e| e.to_string())?;
@@ -162,16 +146,11 @@ impl TasksMcp {
 
     #[doc = include_str!("./tools/get/description.md")]
     #[tool]
-    pub async fn task_get(
-        &self,
-        request: Parameters<TaskGetInput>,
-    ) -> Result<Json<TaskGetOutput>, String> {
+    pub async fn task_get(&self, request: Parameters<TaskGetInput>) -> Result<Json<TaskGetOutput>, String> {
         let Parameters(input) = request;
         let mut store = self.task_store.lock().await;
         store.init().map_err(|e| e.to_string())?;
-        execute_task_get(input, &store)
-            .map(Json)
-            .map_err(|e| e.to_string())
+        execute_task_get(input, &store).map(Json).map_err(|e| e.to_string())
     }
 }
 

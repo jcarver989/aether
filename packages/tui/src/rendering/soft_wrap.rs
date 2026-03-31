@@ -14,11 +14,7 @@ pub fn truncate_text(text: &str, max_width: usize) -> Cow<'_, str> {
     }
 
     let use_ellipsis = max_width >= ELLIPSIS_WIDTH;
-    let budget = if use_ellipsis {
-        max_width - ELLIPSIS_WIDTH
-    } else {
-        max_width
-    };
+    let budget = if use_ellipsis { max_width - ELLIPSIS_WIDTH } else { max_width };
 
     let mut width = 0;
     let mut fit_end = 0; // byte offset after last char fitting within budget
@@ -54,16 +50,11 @@ pub fn pad_text_to_width(text: &str, target_width: usize) -> Cow<'_, str> {
 }
 
 pub fn display_width_text(s: &str) -> usize {
-    s.chars()
-        .map(|ch| UnicodeWidthChar::width(ch).unwrap_or(0))
-        .sum()
+    s.chars().map(|ch| UnicodeWidthChar::width(ch).unwrap_or(0)).sum()
 }
 
 pub fn display_width_line(line: &Line) -> usize {
-    line.spans()
-        .iter()
-        .map(|span| display_width_text(span.text()))
-        .sum()
+    line.spans().iter().map(|span| display_width_text(span.text())).sum()
 }
 
 /// Truncates a styled line to fit within `max_width` display columns.

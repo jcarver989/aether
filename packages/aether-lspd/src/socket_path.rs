@@ -46,20 +46,14 @@ fn get_socket_dir() -> PathBuf {
 fn generate_socket_name(workspace_root: &Path, language: LanguageId) -> String {
     use sha2::{Digest, Sha256};
 
-    let canonical = workspace_root
-        .canonicalize()
-        .unwrap_or_else(|_| workspace_root.to_path_buf());
+    let canonical = workspace_root.canonicalize().unwrap_or_else(|_| workspace_root.to_path_buf());
 
     let path_bytes = canonical.as_os_str().as_encoded_bytes();
     let hash = Sha256::digest(path_bytes);
     // Use first 8 bytes of SHA256 for a 16-char hex string
     let short_hash = u64::from_be_bytes(hash[..8].try_into().unwrap());
 
-    format!(
-        "lsp-{}-{:016x}.sock",
-        socket_identity_for_language(language),
-        short_hash
-    )
+    format!("lsp-{}-{:016x}.sock", socket_identity_for_language(language), short_hash)
 }
 
 /// Get the current user's UID
@@ -108,33 +102,20 @@ mod tests {
         let path = socket_path(workspace, LanguageId::Rust);
         let filename = path.file_name().unwrap().to_str().unwrap();
         assert!(filename.contains("rust"));
-        assert!(
-            std::path::Path::new(filename)
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("sock"))
-        );
+        assert!(std::path::Path::new(filename).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("sock")));
     }
 
     #[test]
     fn test_lockfile_path() {
         let socket = PathBuf::from("/tmp/aether-lspd-1000/lsp-rust-abc123.sock");
         let lockfile = lockfile_path(&socket);
-        assert_eq!(
-            lockfile,
-            PathBuf::from("/tmp/aether-lspd-1000/lsp-rust-abc123.lock")
-        );
+        assert_eq!(lockfile, PathBuf::from("/tmp/aether-lspd-1000/lsp-rust-abc123.lock"));
     }
 
     #[test]
     fn socket_path_uses_shared_server_identity() {
         let workspace = Path::new("/tmp/test-workspace");
-        assert_eq!(
-            socket_path(workspace, LanguageId::TypeScript),
-            socket_path(workspace, LanguageId::TypeScriptReact)
-        );
-        assert_eq!(
-            socket_path(workspace, LanguageId::C),
-            socket_path(workspace, LanguageId::Cpp)
-        );
+        assert_eq!(socket_path(workspace, LanguageId::TypeScript), socket_path(workspace, LanguageId::TypeScriptReact));
+        assert_eq!(socket_path(workspace, LanguageId::C), socket_path(workspace, LanguageId::Cpp));
     }
 }

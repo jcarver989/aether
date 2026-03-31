@@ -11,14 +11,8 @@ use super::common::*;
 #[tokio::test]
 async fn test_settings_command_opens_menu() {
     let r = open_settings(&make_settings_options(), (80, 24)).await;
-    assert!(
-        has_settings_menu(r.writer()),
-        "Settings menu should be visible"
-    );
-    assert!(
-        !has_settings_picker(r.writer()),
-        "Settings picker should not be visible"
-    );
+    assert!(has_settings_menu(r.writer()), "Settings menu should be visible");
+    assert!(!has_settings_picker(r.writer()), "Settings picker should not be visible");
 }
 
 fn make_provider_auth_methods() -> Vec<acp::AuthMethod> {
@@ -48,18 +42,10 @@ async fn test_auth_methods_updated_notification_refreshes_provider_login_and_per
     assert_buffer_contains(r.writer(), "Anthropic  ⚡ needs login");
 
     let updated = vec![
-        acp::AuthMethod::Agent(
-            acp::AuthMethodAgent::new("anthropic", "Anthropic").description("authenticated"),
-        ),
+        acp::AuthMethod::Agent(acp::AuthMethodAgent::new("anthropic", "Anthropic").description("authenticated")),
         acp::AuthMethod::Agent(acp::AuthMethodAgent::new("openrouter", "OpenRouter")),
     ];
-    r.on_ext_notification(
-        acp_utils::notifications::AuthMethodsUpdatedParams {
-            auth_methods: updated,
-        }
-        .into(),
-    )
-    .unwrap();
+    r.on_ext_notification(acp_utils::notifications::AuthMethodsUpdatedParams { auth_methods: updated }.into()).unwrap();
     assert_buffer_contains(r.writer(), "Anthropic  ✓ logged in");
 
     press_esc(&mut r).await;
@@ -128,10 +114,7 @@ async fn test_settings_picker_focuses_cursor_on_overlay_query() {
 
     let lines = r.writer().get_lines();
     #[allow(clippy::cast_possible_truncation)]
-    let search_row = lines
-        .iter()
-        .position(|l| l.contains("Model search:"))
-        .expect("search row") as u16;
+    let search_row = lines.iter().position(|l| l.contains("Model search:")).expect("search row") as u16;
     let (cursor_col, cursor_row) = r.writer().cursor_position();
     assert_eq!(cursor_row, search_row);
     assert_eq!(cursor_col, 18);
@@ -148,12 +131,7 @@ async fn test_settings_picker_filters_model_options() {
 #[tokio::test]
 async fn test_settings_menu_swallows_other_keys() {
     let config = vec![
-        acp::SessionConfigOption::select(
-            "model",
-            "Model",
-            "m1",
-            vec![acp::SessionConfigSelectOption::new("m1", "M1")],
-        ),
+        acp::SessionConfigOption::select("model", "Model", "m1", vec![acp::SessionConfigSelectOption::new("m1", "M1")]),
         acp::SessionConfigOption::select(
             "theme",
             "Theme",
@@ -191,22 +169,13 @@ async fn test_settings_menu_updates_on_config_option_event() {
             "Model",
             "anthropic:claude-sonnet-4-5",
             vec![
-                acp::SessionConfigSelectOption::new(
-                    "openrouter:openai/gpt-4o",
-                    "OpenRouter / GPT-4o",
-                ),
-                acp::SessionConfigSelectOption::new(
-                    "anthropic:claude-sonnet-4-5",
-                    "Anthropic / Claude Sonnet 4.5",
-                ),
+                acp::SessionConfigSelectOption::new("openrouter:openai/gpt-4o", "OpenRouter / GPT-4o"),
+                acp::SessionConfigSelectOption::new("anthropic:claude-sonnet-4-5", "Anthropic / Claude Sonnet 4.5"),
             ],
         )
         .category(acp::SessionConfigOptionCategory::Model),
     ];
-    r.on_session_update(acp::SessionUpdate::ConfigOptionUpdate(
-        acp::ConfigOptionUpdate::new(new_config),
-    ))
-    .unwrap();
+    r.on_session_update(acp::SessionUpdate::ConfigOptionUpdate(acp::ConfigOptionUpdate::new(new_config))).unwrap();
     assert_buffer_contains(r.writer(), "Claude Sonnet");
 }
 
@@ -231,11 +200,9 @@ async fn test_settings_overlay_renders_after_large_overflow_scrollback() {
     r.initial_render().unwrap();
 
     for i in 0..50 {
-        r.on_session_update(acp::SessionUpdate::AgentMessageChunk(
-            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(&format!(
-                "Line {i:02} with enough content to wrap in 40 cols"
-            )))),
-        ))
+        r.on_session_update(acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
+            acp::TextContent::new(&format!("Line {i:02} with enough content to wrap in 40 cols")),
+        ))))
         .unwrap();
     }
 
@@ -254,11 +221,9 @@ async fn test_settings_overlay_open_close_after_overflow_keeps_prompt_and_layout
     r.initial_render().unwrap();
 
     for i in 0..50 {
-        r.on_session_update(acp::SessionUpdate::AgentMessageChunk(
-            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(&format!(
-                "Line {i:02} with enough content to wrap in 40 cols"
-            )))),
-        ))
+        r.on_session_update(acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
+            acp::TextContent::new(&format!("Line {i:02} with enough content to wrap in 40 cols")),
+        ))))
         .unwrap();
     }
 
@@ -271,14 +236,8 @@ async fn test_settings_overlay_open_close_after_overflow_keeps_prompt_and_layout
     assert!(!has_settings_menu(r.writer()));
 
     let lines = r.writer().get_lines();
-    assert!(
-        lines.iter().any(|l| l.contains('╭') || l.contains('╰')),
-        "Prompt border should be visible"
-    );
-    assert!(
-        lines.iter().any(|l| !l.trim().is_empty()),
-        "Frame should not be empty"
-    );
+    assert!(lines.iter().any(|l| l.contains('╭') || l.contains('╰')), "Prompt border should be visible");
+    assert!(lines.iter().any(|l| !l.trim().is_empty()), "Frame should not be empty");
 }
 
 #[tokio::test]
@@ -311,23 +270,19 @@ async fn test_settings_option_update_refreshes_mode_display() {
         )
         .category(acp::SessionConfigOptionCategory::Mode),
     ];
-    r.on_session_update(acp::SessionUpdate::ConfigOptionUpdate(
-        acp::ConfigOptionUpdate::new(updated),
-    ))
-    .unwrap();
+    r.on_session_update(acp::SessionUpdate::ConfigOptionUpdate(acp::ConfigOptionUpdate::new(updated))).unwrap();
     assert_buffer_contains(r.writer(), "Coder");
 }
 
 #[tokio::test]
 async fn test_server_status_notification_updates_overlay_state() {
     let mut r = open_settings(&[], (TEST_WIDTH, 40)).await;
-    let notification =
-        acp::ExtNotification::from(acp_utils::notifications::McpNotification::ServerStatus {
-            servers: vec![acp_utils::notifications::McpServerStatusEntry {
-                name: "docs".to_string(),
-                status: acp_utils::notifications::McpServerStatus::Connected { tool_count: 0 },
-            }],
-        });
+    let notification = acp::ExtNotification::from(acp_utils::notifications::McpNotification::ServerStatus {
+        servers: vec![acp_utils::notifications::McpServerStatusEntry {
+            name: "docs".to_string(),
+            status: acp_utils::notifications::McpServerStatus::Connected { tool_count: 0 },
+        }],
+    });
     r.on_ext_notification(notification).unwrap();
     assert!(has_settings_menu(r.writer()));
 }

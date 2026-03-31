@@ -7,8 +7,8 @@ use rmcp::{
         wrapper::{Json, Parameters},
     },
     model::{
-        CreateElicitationRequestParams, ElicitationSchema, EnumSchema, Implementation,
-        ProgressNotificationParam, ServerCapabilities, ServerInfo,
+        CreateElicitationRequestParams, ElicitationSchema, EnumSchema, Implementation, ProgressNotificationParam,
+        ServerCapabilities, ServerInfo,
     },
     service::RequestContext,
     tool, tool_handler, tool_router,
@@ -44,8 +44,8 @@ use crate::lsp::tools::symbol_lookup::{LspSymbolInput, LspSymbolOutput, execute_
 
 use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta, basename, truncate};
 use tools::bash::{
-    BackgroundProcessHandle, BashInput, BashOutput, BashResult, ReadBackgroundBashInput,
-    ReadBackgroundBashOutput, execute_command, read_background_bash,
+    BackgroundProcessHandle, BashInput, BashOutput, BashResult, ReadBackgroundBashInput, ReadBackgroundBashOutput,
+    execute_command, read_background_bash,
 };
 use tools::edit_file::{EditFileArgs, EditFileResponse, edit_file_contents};
 use tools::find::{FindInput, FindOutput, find_files_by_name};
@@ -98,8 +98,7 @@ impl CodingMcpArgs {
         let mut full_args = vec!["coding-mcp".to_string()];
         full_args.extend(args);
 
-        Self::try_parse_from(full_args)
-            .map_err(|e| format!("Failed to parse CodingMcp arguments: {e}"))
+        Self::try_parse_from(full_args).map_err(|e| format!("Failed to parse CodingMcp arguments: {e}"))
     }
 
     /// Parse the root directory from an mcp.json config file.
@@ -274,10 +273,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
 
     /// Get the current workspace root.
     fn get_workspace_root(&self) -> Option<PathBuf> {
-        self.roots
-            .try_read()
-            .ok()
-            .and_then(|roots| roots.first().cloned())
+        self.roots.try_read().ok().and_then(|roots| roots.first().cloned())
     }
 
     fn build_instructions(&self) -> String {
@@ -330,9 +326,7 @@ When using tools that take file paths, always use absolute paths from:
                 requested_schema: ElicitationSchema::builder()
                     .required_enum_schema(
                         "decision",
-                        EnumSchema::builder(vec!["allow".into(), "deny".into()])
-                            .untitled()
-                            .build(),
+                        EnumSchema::builder(vec!["allow".into(), "deny".into()]).untitled().build(),
                     )
                     .build()
                     .unwrap(),
@@ -340,27 +334,14 @@ When using tools that take file paths, always use absolute paths from:
             .await
             .map_err(|e| format!("Elicitation failed: {e}"))?;
 
-        let allowed = result
-            .content
-            .as_ref()
-            .and_then(|c| c.get("decision"))
-            .and_then(|v| v.as_str())
-            == Some("allow");
+        let allowed = result.content.as_ref().and_then(|c| c.get("decision")).and_then(|v| v.as_str()) == Some("allow");
 
-        if allowed {
-            Ok(())
-        } else {
-            Err(format!("Operation declined by user: {tool_name}"))
-        }
+        if allowed { Ok(()) } else { Err(format!("Operation declined by user: {tool_name}")) }
     }
 
     /// Ask the user for permission to run a bash command. In `Auto` mode only
     /// triggers for destructive commands; in `AlwaysAsk` mode triggers always.
-    async fn check_bash_permission(
-        &self,
-        context: &RequestContext<RoleServer>,
-        command: &str,
-    ) -> Result<(), String> {
+    async fn check_bash_permission(&self, context: &RequestContext<RoleServer>, command: &str) -> Result<(), String> {
         match self.permission_mode {
             PermissionMode::AlwaysAllow => Ok(()),
             PermissionMode::AlwaysAsk => self.elicit_permission(context, "bash", command).await,
@@ -397,11 +378,7 @@ When using tools that take file paths, always use absolute paths from:
         context: RequestContext<RoleServer>,
     ) -> Result<Json<GrepOutput>, String> {
         let Parameters(args) = request;
-        notify_preview(
-            &context,
-            ToolDisplayMeta::new("Grep", format!("'{}'", args.pattern)),
-        )
-        .await;
+        notify_preview(&context, ToolDisplayMeta::new("Grep", format!("'{}'", args.pattern))).await;
         self.tools.grep(args).await.into_mcp()
     }
 
@@ -413,11 +390,7 @@ When using tools that take file paths, always use absolute paths from:
         context: RequestContext<RoleServer>,
     ) -> Result<Json<FindOutput>, String> {
         let Parameters(args) = request;
-        notify_preview(
-            &context,
-            ToolDisplayMeta::new("Find", format!("'{}'", args.pattern)),
-        )
-        .await;
+        notify_preview(&context, ToolDisplayMeta::new("Find", format!("'{}'", args.pattern))).await;
         self.tools.find(args).await.into_mcp()
     }
 
@@ -429,29 +402,16 @@ When using tools that take file paths, always use absolute paths from:
         context: RequestContext<RoleServer>,
     ) -> Result<Json<ReadFileResult>, String> {
         let Parameters(args) = request;
-        notify_preview(
-            &context,
-            ToolDisplayMeta::new("Read file", basename(&args.file_path)),
-        )
-        .await;
+        notify_preview(&context, ToolDisplayMeta::new("Read file", basename(&args.file_path))).await;
         let file_path = args.file_path.clone();
-        let mut result = self
-            .tools
-            .read_file(args)
-            .await
-            .map_err(|e| e.to_string())?;
+        let mut result = self.tools.read_file(args).await.map_err(|e| e.to_string())?;
         self.files_read.write().await.insert(file_path.clone());
 
         let total_lines = result.total_lines;
         let roots = self.roots.read().await;
         let matched = self.read_rule_state.get_matched_rules(&roots, &file_path);
         for rule in &matched {
-            write!(
-                result.content,
-                "\n\n<system-reminder>\n{}\n</system-reminder>",
-                rule.body
-            )
-            .unwrap();
+            write!(result.content, "\n\n<system-reminder>\n{}\n</system-reminder>", rule.body).unwrap();
         }
 
         if !matched.is_empty() {
@@ -472,14 +432,9 @@ When using tools that take file paths, always use absolute paths from:
         context: RequestContext<RoleServer>,
     ) -> Result<Json<WriteFileResponse>, String> {
         let Parameters(args) = request;
-        notify_preview(
-            &context,
-            ToolDisplayMeta::new("Write file", basename(&args.file_path)),
-        )
-        .await;
+        notify_preview(&context, ToolDisplayMeta::new("Write file", basename(&args.file_path))).await;
 
-        self.check_write_permission(&context, "write_file", &args.file_path)
-            .await?;
+        self.check_write_permission(&context, "write_file", &args.file_path).await?;
 
         // Safety check: if file exists, ensure it has been read first
         if try_exists(&args.file_path)
@@ -495,11 +450,7 @@ When using tools that take file paths, always use absolute paths from:
             }
         }
 
-        let response = self
-            .tools
-            .write_file(args)
-            .await
-            .map_err(|e| e.to_string())?;
+        let response = self.tools.write_file(args).await.map_err(|e| e.to_string())?;
 
         if let Some(lsp) = &self.lsp {
             lsp.queue_diagnostic_refresh(&response.file_path).await;
@@ -516,14 +467,9 @@ When using tools that take file paths, always use absolute paths from:
         context: RequestContext<RoleServer>,
     ) -> Result<Json<EditFileResponse>, String> {
         let Parameters(args) = request;
-        notify_preview(
-            &context,
-            ToolDisplayMeta::new("Edit file", basename(&args.file_path)),
-        )
-        .await;
+        notify_preview(&context, ToolDisplayMeta::new("Edit file", basename(&args.file_path))).await;
 
-        self.check_write_permission(&context, "edit_file", &args.file_path)
-            .await?;
+        self.check_write_permission(&context, "edit_file", &args.file_path).await?;
 
         // Safety check: ensure file has been read first
         {
@@ -536,11 +482,7 @@ When using tools that take file paths, always use absolute paths from:
             }
         }
 
-        let response = self
-            .tools
-            .edit_file(args)
-            .await
-            .map_err(|e| e.to_string())?;
+        let response = self.tools.edit_file(args).await.map_err(|e| e.to_string())?;
 
         if let Some(lsp) = &self.lsp {
             lsp.queue_diagnostic_refresh(&response.file_path).await;
@@ -557,10 +499,7 @@ When using tools that take file paths, always use absolute paths from:
         context: RequestContext<RoleServer>,
     ) -> Result<Json<ListFilesResult>, String> {
         let Parameters(args) = request;
-        let preview_value = args
-            .path
-            .as_deref()
-            .map_or_else(|| ".".to_string(), basename);
+        let preview_value = args.path.as_deref().map_or_else(|| ".".to_string(), basename);
         notify_preview(&context, ToolDisplayMeta::new("List files", preview_value)).await;
         self.tools.list_files(args).await.into_mcp()
     }
@@ -573,11 +512,7 @@ When using tools that take file paths, always use absolute paths from:
         context: RequestContext<RoleServer>,
     ) -> Result<Json<BashOutput>, String> {
         let Parameters(args) = request;
-        notify_preview(
-            &context,
-            ToolDisplayMeta::new("Run command", truncate(&args.command, 40)),
-        )
-        .await;
+        notify_preview(&context, ToolDisplayMeta::new("Run command", truncate(&args.command, 40))).await;
 
         self.check_bash_permission(&context, &args.command).await?;
 
@@ -590,15 +525,10 @@ When using tools that take file paths, always use absolute paths from:
                 let shell_id = handle.shell_id.clone();
 
                 // Store the background process
-                self.background_processes
-                    .lock()
-                    .await
-                    .insert(shell_id.clone(), handle);
+                self.background_processes.lock().await.insert(shell_id.clone(), handle);
 
-                let display_meta = ToolDisplayMeta::new(
-                    "Run command",
-                    format!("{} (background)", truncate(&command, 40)),
-                );
+                let display_meta =
+                    ToolDisplayMeta::new("Run command", format!("{} (background)", truncate(&command, 40)));
 
                 // Return immediate response with shell_id
                 Ok(Json(BashOutput {
@@ -627,18 +557,12 @@ When using tools that take file paths, always use absolute paths from:
             .remove(&args.bash_id)
             .ok_or_else(|| format!("Shell ID not found: {}", args.bash_id))?;
 
-        let (result, handle_opt) = self
-            .tools
-            .read_background_bash(handle, args.filter)
-            .await
-            .map_err(|e| e.to_string())?;
+        let (result, handle_opt) =
+            self.tools.read_background_bash(handle, args.filter).await.map_err(|e| e.to_string())?;
 
         // Put handle back if still running
         if let Some(handle) = handle_opt {
-            self.background_processes
-                .lock()
-                .await
-                .insert(args.bash_id, handle);
+            self.background_processes.lock().await.insert(args.bash_id, handle);
         }
 
         Ok(Json(result))
@@ -652,11 +576,7 @@ When using tools that take file paths, always use absolute paths from:
         context: RequestContext<RoleServer>,
     ) -> Result<Json<WebFetchOutput>, String> {
         let Parameters(args) = request;
-        notify_preview(
-            &context,
-            ToolDisplayMeta::new("Fetch URL", truncate(&args.url, 60)),
-        )
-        .await;
+        notify_preview(&context, ToolDisplayMeta::new("Fetch URL", truncate(&args.url, 60))).await;
         self.web_fetcher.fetch(args).await.into_mcp()
     }
 
@@ -668,11 +588,7 @@ When using tools that take file paths, always use absolute paths from:
         context: RequestContext<RoleServer>,
     ) -> Result<Json<WebSearchOutput>, String> {
         let Parameters(args) = request;
-        notify_preview(
-            &context,
-            ToolDisplayMeta::new("Web search", format!("'{}'", args.query)),
-        )
-        .await;
+        notify_preview(&context, ToolDisplayMeta::new("Web search", format!("'{}'", args.query))).await;
 
         let searcher = self.web_searcher.as_ref().ok_or_else(|| {
             "Web search not available: BRAVE_SEARCH_API_KEY environment variable not set. \
@@ -680,11 +596,7 @@ When using tools that take file paths, always use absolute paths from:
                 .to_string()
         })?;
 
-        searcher
-            .search(args)
-            .await
-            .map_err(|e| e.to_string())
-            .map(Json)
+        searcher.search(args).await.map_err(|e| e.to_string()).map(Json)
     }
 
     #[doc = include_str!("../lsp/tools/symbol_lookup/description.md")]
@@ -708,11 +620,7 @@ When using tools that take file paths, always use absolute paths from:
         context: RequestContext<RoleServer>,
     ) -> Result<Json<LspDocumentOutput>, String> {
         let Parameters(input) = request;
-        notify_preview(
-            &context,
-            ToolDisplayMeta::new("LSP document", basename(&input.file_path)),
-        )
-        .await;
+        notify_preview(&context, ToolDisplayMeta::new("LSP document", basename(&input.file_path))).await;
         let lsp = self.lsp.as_ref().ok_or("LSP not configured")?;
         execute_lsp_document(input, lsp.as_ref()).await.map(Json)
     }
@@ -731,9 +639,7 @@ When using tools that take file paths, always use absolute paths from:
         };
         notify_preview(&context, ToolDisplayMeta::new("LSP errors", preview_value)).await;
         let lsp = self.lsp.as_ref().ok_or("LSP not configured")?;
-        execute_lsp_diagnostics(request, lsp.as_ref())
-            .await
-            .map(Json)
+        execute_lsp_diagnostics(request, lsp.as_ref()).await.map(Json)
     }
 
     #[doc = include_str!("../lsp/tools/rename/description.md")]
@@ -761,23 +667,14 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
     /// Read a file and track it in the read set (test helper, no MCP context needed).
     pub async fn test_read_file(&self, args: ReadFileArgs) -> Result<Json<ReadFileResult>, String> {
         let file_path = args.file_path.clone();
-        let mut result = self
-            .tools
-            .read_file(args)
-            .await
-            .map_err(|e| e.to_string())?;
+        let mut result = self.tools.read_file(args).await.map_err(|e| e.to_string())?;
         self.files_read.write().await.insert(file_path.clone());
 
         let total_lines = result.total_lines;
         let roots = self.roots.read().await;
         let matched = self.read_rule_state.get_matched_rules(&roots, &file_path);
         for rule in &matched {
-            write!(
-                result.content,
-                "\n\n<system-reminder>\n{}\n</system-reminder>",
-                rule.body
-            )
-            .unwrap();
+            write!(result.content, "\n\n<system-reminder>\n{}\n</system-reminder>", rule.body).unwrap();
         }
 
         if !matched.is_empty() {
@@ -791,10 +688,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
     }
 
     /// Write a file with read-before-write safety check (test helper, no MCP context needed).
-    pub async fn test_write_file(
-        &self,
-        args: WriteFileArgs,
-    ) -> Result<Json<WriteFileResponse>, String> {
+    pub async fn test_write_file(&self, args: WriteFileArgs) -> Result<Json<WriteFileResponse>, String> {
         if try_exists(&args.file_path)
             .await
             .map_err(|e| format!("Failed to check existence of {}: {e}", args.file_path))?
@@ -807,18 +701,11 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
                 ));
             }
         }
-        self.tools
-            .write_file(args)
-            .await
-            .map(Json)
-            .map_err(|e| e.to_string())
+        self.tools.write_file(args).await.map(Json).map_err(|e| e.to_string())
     }
 
     /// Edit a file with read-before-edit safety check (test helper, no MCP context needed).
-    pub async fn test_edit_file(
-        &self,
-        args: EditFileArgs,
-    ) -> Result<Json<EditFileResponse>, String> {
+    pub async fn test_edit_file(&self, args: EditFileArgs) -> Result<Json<EditFileResponse>, String> {
         {
             let files_read = self.files_read.read().await;
             if !files_read.contains(&args.file_path) {
@@ -828,11 +715,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
                 ));
             }
         }
-        self.tools
-            .edit_file(args)
-            .await
-            .map(Json)
-            .map_err(|e| e.to_string())
+        self.tools.edit_file(args).await.map(Json).map_err(|e| e.to_string())
     }
 }
 
@@ -848,23 +731,19 @@ mod tests {
 
     #[test]
     fn args_parses_always_allow() {
-        let args =
-            CodingMcpArgs::from_args(vec!["--permission-mode".into(), "always-allow".into()])
-                .unwrap();
+        let args = CodingMcpArgs::from_args(vec!["--permission-mode".into(), "always-allow".into()]).unwrap();
         assert_eq!(args.permission_mode, PermissionMode::AlwaysAllow);
     }
 
     #[test]
     fn args_parses_auto() {
-        let args =
-            CodingMcpArgs::from_args(vec!["--permission-mode".into(), "auto".into()]).unwrap();
+        let args = CodingMcpArgs::from_args(vec!["--permission-mode".into(), "auto".into()]).unwrap();
         assert_eq!(args.permission_mode, PermissionMode::Auto);
     }
 
     #[test]
     fn args_parses_always_ask() {
-        let args = CodingMcpArgs::from_args(vec!["--permission-mode".into(), "always-ask".into()])
-            .unwrap();
+        let args = CodingMcpArgs::from_args(vec!["--permission-mode".into(), "always-ask".into()]).unwrap();
         assert_eq!(args.permission_mode, PermissionMode::AlwaysAsk);
     }
 

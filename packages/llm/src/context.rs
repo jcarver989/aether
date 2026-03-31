@@ -20,12 +20,7 @@ pub struct Context {
 
 impl Context {
     pub fn new(messages: Vec<ChatMessage>, tools: Vec<ToolDefinition>) -> Self {
-        Self {
-            messages,
-            tools,
-            reasoning_effort: None,
-            prompt_cache_key: None,
-        }
+        Self { messages, tools, reasoning_effort: None, prompt_cache_key: None }
     }
 
     pub fn prompt_cache_key(&self) -> Option<&str> {
@@ -69,11 +64,8 @@ impl Context {
     /// Includes messages and tool definitions. Used for pre-flight overflow detection.
     pub fn estimated_token_count(&self) -> u32 {
         let message_bytes: usize = self.messages.iter().map(ChatMessage::estimated_bytes).sum();
-        let tool_bytes: usize = self
-            .tools
-            .iter()
-            .map(|t| t.name.len() + t.description.len() + t.parameters.len())
-            .sum();
+        let tool_bytes: usize =
+            self.tools.iter().map(|t| t.name.len() + t.description.len() + t.parameters.len()).sum();
         let total_bytes = message_bytes + tool_bytes;
         u32::try_from(total_bytes / 4).unwrap_or(u32::MAX)
     }
@@ -88,11 +80,9 @@ impl Context {
         let tool_requests: Vec<_> = completed_tools
             .iter()
             .map(|result| match result {
-                Ok(r) => super::ToolCallRequest {
-                    id: r.id.clone(),
-                    name: r.name.clone(),
-                    arguments: r.arguments.clone(),
-                },
+                Ok(r) => {
+                    super::ToolCallRequest { id: r.id.clone(), name: r.name.clone(), arguments: r.arguments.clone() }
+                }
                 Err(e) => super::ToolCallRequest {
                     id: e.id.clone(),
                     name: e.name.clone(),
@@ -120,12 +110,7 @@ impl Context {
             .messages
             .iter()
             .map(|msg| match msg {
-                ChatMessage::Assistant {
-                    content,
-                    reasoning,
-                    timestamp,
-                    tool_calls,
-                } => ChatMessage::Assistant {
+                ChatMessage::Assistant { content, reasoning, timestamp, tool_calls } => ChatMessage::Assistant {
                     content: content.clone(),
                     reasoning: AssistantReasoning {
                         summary_text: reasoning.summary_text.clone(),
@@ -151,27 +136,18 @@ impl Context {
 
     /// Clear all non-system messages, retaining only system prompts.
     pub fn clear_conversation(&mut self) {
-        self.messages
-            .retain(super::chat_message::ChatMessage::is_system);
+        self.messages.retain(super::chat_message::ChatMessage::is_system);
     }
 
     /// Get all non-system messages for summarization
     pub fn messages_for_summary(&self) -> Vec<&ChatMessage> {
-        self.messages
-            .iter()
-            .filter(|msg| !msg.is_system())
-            .collect()
+        self.messages.iter().filter(|msg| !msg.is_system()).collect()
     }
 
     /// Create a new context with all messages replaced by a summary.
     /// Preserves the system prompt and tools.
     pub fn with_compacted_summary(&self, summary: &str) -> Context {
-        let system_messages: Vec<_> = self
-            .messages
-            .iter()
-            .filter(|msg| msg.is_system())
-            .cloned()
-            .collect();
+        let system_messages: Vec<_> = self.messages.iter().filter(|msg| msg.is_system()).cloned().collect();
 
         let non_system_count = self.messages.len() - system_messages.len();
 
@@ -202,14 +178,8 @@ mod tests {
 
     fn create_test_context() -> Context {
         let messages = vec![
-            ChatMessage::System {
-                content: "You are a helpful assistant.".to_string(),
-                timestamp: IsoString::now(),
-            },
-            ChatMessage::User {
-                content: vec![ContentBlock::text("Hello")],
-                timestamp: IsoString::now(),
-            },
+            ChatMessage::System { content: "You are a helpful assistant.".to_string(), timestamp: IsoString::now() },
+            ChatMessage::User { content: vec![ContentBlock::text("Hello")], timestamp: IsoString::now() },
             ChatMessage::Assistant {
                 content: "Hi there!".to_string(),
                 reasoning: AssistantReasoning::default(),
@@ -257,10 +227,7 @@ mod tests {
     #[test]
     fn test_with_compacted_summary_empty_context() {
         let ctx = Context::new(
-            vec![ChatMessage::System {
-                content: "System".to_string(),
-                timestamp: IsoString::now(),
-            }],
+            vec![ChatMessage::System { content: "System".to_string(), timestamp: IsoString::now() }],
             vec![],
         );
         let compacted = ctx.with_compacted_summary("Summary");
@@ -305,10 +272,7 @@ mod tests {
     fn test_prompt_cache_key_preserved_through_projection() {
         let model: LlmModel = "anthropic:claude-opus-4-6".parse().unwrap();
         let mut ctx = Context::new(
-            vec![ChatMessage::User {
-                content: vec![ContentBlock::text("Hello")],
-                timestamp: IsoString::now(),
-            }],
+            vec![ChatMessage::User { content: vec![ContentBlock::text("Hello")], timestamp: IsoString::now() }],
             vec![],
         );
         ctx.set_prompt_cache_key(Some("session-xyz".to_string()));
@@ -337,10 +301,7 @@ mod tests {
         let mut ctx = create_test_context();
         ctx.set_reasoning_effort(Some(crate::ReasoningEffort::Medium));
         let compacted = ctx.with_compacted_summary("Summary");
-        assert_eq!(
-            compacted.reasoning_effort(),
-            Some(crate::ReasoningEffort::Medium)
-        );
+        assert_eq!(compacted.reasoning_effort(), Some(crate::ReasoningEffort::Medium));
     }
 
     #[test]
@@ -376,10 +337,7 @@ mod tests {
         let model: LlmModel = "anthropic:claude-opus-4-6".parse().unwrap();
         let ctx = Context::new(
             vec![
-                ChatMessage::User {
-                    content: vec![ContentBlock::text("Hello")],
-                    timestamp: IsoString::now(),
-                },
+                ChatMessage::User { content: vec![ContentBlock::text("Hello")], timestamp: IsoString::now() },
                 ChatMessage::Assistant {
                     content: "I see.".to_string(),
                     reasoning: AssistantReasoning {
@@ -400,10 +358,7 @@ mod tests {
 
         for msg in compacted.messages() {
             if let ChatMessage::Assistant { reasoning, .. } = msg {
-                assert!(
-                    reasoning.encrypted_content.is_none(),
-                    "compaction should drop encrypted reasoning"
-                );
+                assert!(reasoning.encrypted_content.is_none(), "compaction should drop encrypted reasoning");
             }
         }
     }

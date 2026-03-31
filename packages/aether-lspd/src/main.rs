@@ -40,19 +40,15 @@ fn main() {
     let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
 
     runtime.block_on(async {
-        let filter =
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&args.log_level));
+        let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&args.log_level));
 
         if let Some(ref log_file) = args.log_file {
             // Ensure parent directory exists
             if let Some(parent) = log_file.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
-            let file = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(log_file)
-                .expect("Failed to open log file");
+            let file =
+                std::fs::OpenOptions::new().create(true).append(true).open(log_file).expect("Failed to open log file");
 
             tracing_subscriber::fmt()
                 .with_env_filter(filter)
@@ -61,17 +57,10 @@ fn main() {
                 .with_writer(file.with_max_level(tracing::Level::TRACE))
                 .init();
         } else {
-            tracing_subscriber::fmt()
-                .with_env_filter(filter)
-                .with_target(true)
-                .init();
+            tracing_subscriber::fmt().with_env_filter(filter).with_target(true).init();
         }
 
-        let idle_timeout = if args.idle_timeout == 0 {
-            None
-        } else {
-            Some(Duration::from_secs(args.idle_timeout))
-        };
+        let idle_timeout = if args.idle_timeout == 0 { None } else { Some(Duration::from_secs(args.idle_timeout)) };
 
         tracing::info!("Starting LSP daemon on socket: {:?}", args.socket);
         if let Err(e) = run_daemon(args.socket, idle_timeout).await {
@@ -98,8 +87,7 @@ fn daemonize() -> Result<(), String> {
     setsid().map_err(|e| format!("setsid failed: {e}"))?;
 
     unsafe {
-        signal(Signal::SIGHUP, SigHandler::SigIgn)
-            .map_err(|e| format!("Failed to ignore SIGHUP: {e}"))?;
+        signal(Signal::SIGHUP, SigHandler::SigIgn).map_err(|e| format!("Failed to ignore SIGHUP: {e}"))?;
     }
 
     match unsafe { fork() } {
@@ -113,22 +101,13 @@ fn daemonize() -> Result<(), String> {
 
     unsafe {
         if libc::dup2(fd, 0) == -1 {
-            return Err(format!(
-                "dup2 stdin failed: {}",
-                std::io::Error::last_os_error()
-            ));
+            return Err(format!("dup2 stdin failed: {}", std::io::Error::last_os_error()));
         }
         if libc::dup2(fd, 1) == -1 {
-            return Err(format!(
-                "dup2 stdout failed: {}",
-                std::io::Error::last_os_error()
-            ));
+            return Err(format!("dup2 stdout failed: {}", std::io::Error::last_os_error()));
         }
         if libc::dup2(fd, 2) == -1 {
-            return Err(format!(
-                "dup2 stderr failed: {}",
-                std::io::Error::last_os_error()
-            ));
+            return Err(format!("dup2 stderr failed: {}", std::io::Error::last_os_error()));
         }
     }
 

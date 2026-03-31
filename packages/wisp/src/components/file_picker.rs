@@ -42,23 +42,14 @@ impl FilePicker {
                 continue;
             }
 
-            let display_name = path
-                .strip_prefix(&root)
-                .unwrap_or(path)
-                .to_string_lossy()
-                .replace('\\', "/");
+            let display_name = path.strip_prefix(&root).unwrap_or(path).to_string_lossy().replace('\\', "/");
 
-            entries.push(FileMatch {
-                path: path.to_path_buf(),
-                display_name,
-            });
+            entries.push(FileMatch { path: path.to_path_buf(), display_name });
         }
 
         entries.sort_by(|a, b| a.display_name.cmp(&b.display_name));
 
-        Self {
-            combobox: Combobox::new(entries),
-        }
+        Self { combobox: Combobox::new(entries) }
     }
 
     pub fn query(&self) -> &str {
@@ -67,9 +58,7 @@ impl FilePicker {
 
     #[cfg(test)]
     fn new_with_entries(entries: Vec<FileMatch>) -> Self {
-        Self {
-            combobox: Combobox::new(entries),
-        }
+        Self { combobox: Combobox::new(entries) }
     }
 }
 
@@ -101,18 +90,16 @@ impl Component for FilePicker {
             return Frame::new(lines);
         }
 
-        let item_lines = self
-            .combobox
-            .render_items(context, |file, is_selected, ctx| {
-                let line_text = file.display_name.clone();
-                if is_selected {
-                    let mut line = Line::with_style(line_text, ctx.theme.selected_row_style());
-                    line.extend_bg_to_width(ctx.size.width as usize);
-                    line
-                } else {
-                    Line::new(line_text)
-                }
-            });
+        let item_lines = self.combobox.render_items(context, |file, is_selected, ctx| {
+            let line_text = file.display_name.clone();
+            if is_selected {
+                let mut line = Line::with_style(line_text, ctx.theme.selected_row_style());
+                line.extend_bg_to_width(ctx.size.width as usize);
+                line
+            } else {
+                Line::new(line_text)
+            }
+        });
         lines.extend(item_lines);
 
         Frame::new(lines)
@@ -133,28 +120,19 @@ mod tests {
     }
 
     fn file_match(path: &str) -> FileMatch {
-        FileMatch {
-            path: PathBuf::from(path),
-            display_name: path.to_string(),
-        }
+        FileMatch { path: PathBuf::from(path), display_name: path.to_string() }
     }
 
     fn selected_text(picker: &mut FilePicker) -> Option<String> {
         let context = ViewContext::new(DEFAULT_SIZE);
         let frame = picker.render(&context);
-        frame
-            .lines()
-            .iter()
-            .find(|line| line.plain_text().starts_with("  "))
-            .map(|line| line.plain_text())
+        frame.lines().iter().find(|line| line.plain_text().starts_with("  ")).map(|line| line.plain_text())
     }
 
     #[test]
     fn excludes_hidden_and_build_paths() {
         assert!(should_exclude_path(Path::new(".git/config")));
-        assert!(should_exclude_path(Path::new(
-            "node_modules/react/index.js"
-        )));
+        assert!(should_exclude_path(Path::new("node_modules/react/index.js")));
         assert!(should_exclude_path(Path::new("target/debug/wisp")));
         assert!(should_exclude_path(Path::new("src/.cache/file.txt")));
         assert!(!should_exclude_path(Path::new("src/main.rs")));
@@ -177,11 +155,7 @@ mod tests {
 
     #[tokio::test]
     async fn selection_wraps() {
-        let mut picker = FilePicker::new_with_entries(vec![
-            file_match("a.rs"),
-            file_match("b.rs"),
-            file_match("c.rs"),
-        ]);
+        let mut picker = FilePicker::new_with_entries(vec![file_match("a.rs"), file_match("b.rs"), file_match("c.rs")]);
 
         let first = selected_text(&mut picker).unwrap();
 
@@ -196,11 +170,7 @@ mod tests {
 
     #[test]
     fn selected_entry_has_highlight_background() {
-        let mut picker = FilePicker::new_with_entries(vec![
-            file_match("a.rs"),
-            file_match("b.rs"),
-            file_match("c.rs"),
-        ]);
+        let mut picker = FilePicker::new_with_entries(vec![file_match("a.rs"), file_match("b.rs"), file_match("c.rs")]);
         let context = ViewContext::new((80, 24));
         let frame = picker.render(&context);
         let selected_line = frame
@@ -209,10 +179,7 @@ mod tests {
             .find(|line| line.plain_text().starts_with("  "))
             .expect("should render a selected line");
 
-        let has_bg = selected_line
-            .spans()
-            .iter()
-            .any(|span| span.style().bg == Some(context.theme.highlight_bg()));
+        let has_bg = selected_line.spans().iter().any(|span| span.style().bg == Some(context.theme.highlight_bg()));
         assert!(has_bg, "selected entry should have highlight background");
     }
 
@@ -221,15 +188,10 @@ mod tests {
         let mut picker = FilePicker::new_with_entries(vec![file_match("a.rs")]);
         let context = ViewContext::new((80, 24));
         let lines = rendered_raw_lines_with_context(|ctx| picker.render(ctx), (80, 24));
-        let selected_line = lines
-            .iter()
-            .find(|line| line.plain_text().starts_with("  "))
-            .expect("should render a selected line");
+        let selected_line =
+            lines.iter().find(|line| line.plain_text().starts_with("  ")).expect("should render a selected line");
 
-        let has_fg = selected_line
-            .spans()
-            .iter()
-            .any(|span| span.style().fg == Some(context.theme.text_primary()));
+        let has_fg = selected_line.spans().iter().any(|span| span.style().fg == Some(context.theme.text_primary()));
         assert!(has_fg, "selected entry should have text_primary foreground");
     }
 
@@ -238,10 +200,8 @@ mod tests {
         let mut picker = FilePicker::new_with_entries(vec![file_match("a.rs")]);
         let context = ViewContext::new((20, 24));
         let lines = rendered_raw_lines_with_context(|ctx| picker.render(ctx), (20, 24));
-        let selected_line = lines
-            .iter()
-            .find(|line| line.plain_text().starts_with("  "))
-            .expect("should render a selected line");
+        let selected_line =
+            lines.iter().find(|line| line.plain_text().starts_with("  ")).expect("should render a selected line");
 
         assert_eq!(
             selected_line.display_width(),
@@ -258,10 +218,7 @@ mod tests {
 
         assert!(outcome.is_some());
 
-        assert!(matches!(
-            outcome.unwrap().as_slice(),
-            [PickerMessage::CharTyped('r')]
-        ));
+        assert!(matches!(outcome.unwrap().as_slice(), [PickerMessage::CharTyped('r')]));
         assert_eq!(picker.query(), "r");
     }
 
@@ -273,10 +230,7 @@ mod tests {
 
         assert!(outcome.is_some());
 
-        assert!(matches!(
-            outcome.unwrap().as_slice(),
-            [PickerMessage::CloseWithChar(' ')]
-        ));
+        assert!(matches!(outcome.unwrap().as_slice(), [PickerMessage::CloseWithChar(' ')]));
     }
 
     #[tokio::test]
@@ -287,10 +241,7 @@ mod tests {
 
         assert!(outcome.is_some());
 
-        assert!(matches!(
-            outcome.unwrap().as_slice(),
-            [PickerMessage::Confirm(_)]
-        ));
+        assert!(matches!(outcome.unwrap().as_slice(), [PickerMessage::Confirm(_)]));
     }
 
     #[tokio::test]
@@ -301,10 +252,7 @@ mod tests {
 
         assert!(outcome.is_some());
 
-        assert!(matches!(
-            outcome.unwrap().as_slice(),
-            [PickerMessage::CloseAndPopChar]
-        ));
+        assert!(matches!(outcome.unwrap().as_slice(), [PickerMessage::CloseAndPopChar]));
     }
 
     #[tokio::test]
@@ -316,10 +264,7 @@ mod tests {
 
         assert!(outcome.is_some());
 
-        assert!(matches!(
-            outcome.unwrap().as_slice(),
-            [PickerMessage::PopChar]
-        ));
+        assert!(matches!(outcome.unwrap().as_slice(), [PickerMessage::PopChar]));
         assert_eq!(picker.query(), "m");
     }
 }

@@ -40,10 +40,9 @@ mod tests {
 
     #[test]
     fn test_format_embedded_resource_text() {
-        let resource =
-            acp::EmbeddedResource::new(acp::EmbeddedResourceResource::TextResourceContents(
-                acp::TextResourceContents::new("let x = 1;", "file://test.rs"),
-            ));
+        let resource = acp::EmbeddedResource::new(acp::EmbeddedResourceResource::TextResourceContents(
+            acp::TextResourceContents::new("let x = 1;", "file://test.rs"),
+        ));
 
         let result = format_embedded_resource(&resource);
 
@@ -52,10 +51,9 @@ mod tests {
 
     #[test]
     fn test_format_embedded_resource_blob() {
-        let resource =
-            acp::EmbeddedResource::new(acp::EmbeddedResourceResource::BlobResourceContents(
-                acp::BlobResourceContents::new("base64data", "file://image.png"),
-            ));
+        let resource = acp::EmbeddedResource::new(acp::EmbeddedResourceResource::BlobResourceContents(
+            acp::BlobResourceContents::new("base64data", "file://image.png"),
+        ));
 
         let result = format_embedded_resource(&resource);
 
@@ -68,8 +66,7 @@ mod tests {
             acp::ContentBlock::Text(acp::TextContent::new("Check this file:")),
             acp::ContentBlock::Resource(acp::EmbeddedResource::new(
                 acp::EmbeddedResourceResource::TextResourceContents(
-                    acp::TextResourceContents::new("pub fn hello() {}", "file://src/lib.rs")
-                        .mime_type("text/x-rust"),
+                    acp::TextResourceContents::new("pub fn hello() {}", "file://src/lib.rs").mime_type("text/x-rust"),
                 ),
             )),
         ];
@@ -99,10 +96,7 @@ mod tests {
 
     #[test]
     fn test_map_content_blocks_resource_link() {
-        let blocks = vec![acp::ContentBlock::ResourceLink(acp::ResourceLink::new(
-            "readme.md",
-            "file://readme.md",
-        ))];
+        let blocks = vec![acp::ContentBlock::ResourceLink(acp::ResourceLink::new("readme.md", "file://readme.md"))];
 
         let result = map_content_blocks_to_text(blocks);
         assert_eq!(result, "[Resource: file://readme.md]");

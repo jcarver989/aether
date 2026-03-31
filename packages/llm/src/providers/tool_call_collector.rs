@@ -13,9 +13,7 @@ pub(crate) struct ToolCallCollector<T> {
 
 impl<T: Eq + Ord + Copy + Display> ToolCallCollector<T> {
     pub fn new() -> Self {
-        Self {
-            active_tool_calls: BTreeMap::new(),
-        }
+        Self { active_tool_calls: BTreeMap::new() }
     }
 
     /// Process a tool call delta with extracted fields.
@@ -41,10 +39,7 @@ impl<T: Eq + Ord + Copy + Display> ToolCallCollector<T> {
             && !arguments.is_empty()
             && let Some(id) = self.add_arguments(index, &arguments)
         {
-            responses.push(LlmResponse::ToolRequestArg {
-                id,
-                chunk: arguments,
-            });
+            responses.push(LlmResponse::ToolRequestArg { id, chunk: arguments });
         }
 
         responses
@@ -67,8 +62,7 @@ impl<T: Eq + Ord + Copy + Display> ToolCallCollector<T> {
     }
 
     fn start_tool_call(&mut self, index: T, id: String, name: String) {
-        self.active_tool_calls
-            .insert(index, (id, name, String::new()));
+        self.active_tool_calls.insert(index, (id, name, String::new()));
     }
 
     fn add_arguments(&mut self, index: T, arguments: &str) -> Option<String> {
@@ -81,11 +75,7 @@ impl<T: Eq + Ord + Copy + Display> ToolCallCollector<T> {
 }
 
 fn to_request((id, name, arguments): (String, String, String)) -> ToolCallRequest {
-    ToolCallRequest {
-        id,
-        name,
-        arguments,
-    }
+    ToolCallRequest { id, name, arguments }
 }
 
 #[cfg(test)]
@@ -96,12 +86,7 @@ mod tests {
     fn test_single_tool_call() {
         let mut collector = ToolCallCollector::<u32>::new();
 
-        let responses = collector.handle_delta(
-            0,
-            Some("call_1".to_string()),
-            Some("my_tool".to_string()),
-            None,
-        );
+        let responses = collector.handle_delta(0, Some("call_1".to_string()), Some("my_tool".to_string()), None);
 
         assert_eq!(responses.len(), 1);
         assert!(
@@ -110,9 +95,7 @@ mod tests {
 
         let responses = collector.handle_delta(0, None, None, Some("{\"key\":".to_string()));
         assert_eq!(responses.len(), 1);
-        assert!(
-            matches!(&responses[0], LlmResponse::ToolRequestArg { chunk, .. } if chunk == "{\"key\":")
-        );
+        assert!(matches!(&responses[0], LlmResponse::ToolRequestArg { chunk, .. } if chunk == "{\"key\":"));
 
         let responses = collector.handle_delta(0, None, None, Some("\"val\"}".to_string()));
         assert_eq!(responses.len(), 1);
@@ -128,18 +111,8 @@ mod tests {
     fn test_multiple_tool_calls_deterministic_order() {
         let mut collector = ToolCallCollector::<i32>::new();
 
-        collector.handle_delta(
-            0,
-            Some("a".into()),
-            Some("tool_a".into()),
-            Some("{}".into()),
-        );
-        collector.handle_delta(
-            1,
-            Some("b".into()),
-            Some("tool_b".into()),
-            Some("{}".into()),
-        );
+        collector.handle_delta(0, Some("a".into()), Some("tool_a".into()), Some("{}".into()));
+        collector.handle_delta(1, Some("b".into()), Some("tool_b".into()), Some("{}".into()));
 
         let completed = collector.complete_all();
         assert_eq!(completed.len(), 2);
@@ -161,18 +134,8 @@ mod tests {
     fn test_complete_one_returns_specific_tool_call() {
         let mut collector = ToolCallCollector::<u32>::new();
 
-        collector.handle_delta(
-            0,
-            Some("a".into()),
-            Some("tool_a".into()),
-            Some("{}".into()),
-        );
-        collector.handle_delta(
-            1,
-            Some("b".into()),
-            Some("tool_b".into()),
-            Some("{}".into()),
-        );
+        collector.handle_delta(0, Some("a".into()), Some("tool_a".into()), Some("{}".into()));
+        collector.handle_delta(1, Some("b".into()), Some("tool_b".into()), Some("{}".into()));
 
         let completed = collector.complete_one(0);
         assert!(completed.is_some());

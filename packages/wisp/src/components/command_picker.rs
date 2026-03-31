@@ -1,6 +1,6 @@
 use tui::{
-    Combobox, Component, Event, Frame, Line, PickerMessage, Searchable, Style, ViewContext,
-    display_width_text, pad_text_to_width, truncate_text,
+    Combobox, Component, Event, Frame, Line, PickerMessage, Searchable, Style, ViewContext, display_width_text,
+    pad_text_to_width, truncate_text,
 };
 
 #[derive(Debug, Clone)]
@@ -26,9 +26,7 @@ pub type CommandPickerMessage = PickerMessage<CommandEntry>;
 
 impl CommandPicker {
     pub fn new(commands: Vec<CommandEntry>) -> Self {
-        Self {
-            combobox: Combobox::new(commands),
-        }
+        Self { combobox: Combobox::new(commands) }
     }
 
     #[cfg(test)]
@@ -52,37 +50,30 @@ impl Component for CommandPicker {
             return Frame::new(lines);
         }
 
-        let max_name_width = self
-            .combobox
-            .matches()
-            .iter()
-            .map(|cmd| display_width_text(&format!("/{}", cmd.name)))
-            .max()
-            .unwrap_or(0);
+        let max_name_width =
+            self.combobox.matches().iter().map(|cmd| display_width_text(&format!("/{}", cmd.name))).max().unwrap_or(0);
 
-        let item_lines = self
-            .combobox
-            .render_items(context, |command, is_selected, ctx| {
-                let hint_suffix = match &command.hint {
-                    Some(hint) => format!("  [{hint}]"),
-                    None => String::new(),
-                };
+        let item_lines = self.combobox.render_items(context, |command, is_selected, ctx| {
+            let hint_suffix = match &command.hint {
+                Some(hint) => format!("  [{hint}]"),
+                None => String::new(),
+            };
 
-                let name_part = format!("/{}", command.name);
-                let padded_name = pad_text_to_width(&name_part, max_name_width);
-                let line_text = format!("{padded_name}  {}{}", command.description, hint_suffix);
+            let name_part = format!("/{}", command.name);
+            let padded_name = pad_text_to_width(&name_part, max_name_width);
+            let line_text = format!("{padded_name}  {}{}", command.description, hint_suffix);
 
-                let max_width = ctx.size.width as usize;
-                let truncated = truncate_text(&line_text, max_width);
+            let max_width = ctx.size.width as usize;
+            let truncated = truncate_text(&line_text, max_width);
 
-                if is_selected {
-                    let mut line = Line::with_style(truncated, ctx.theme.selected_row_style());
-                    line.extend_bg_to_width(max_width);
-                    line
-                } else {
-                    build_styled_command_line(&truncated, padded_name.len(), ctx.theme.muted())
-                }
-            });
+            if is_selected {
+                let mut line = Line::with_style(truncated, ctx.theme.selected_row_style());
+                line.extend_bg_to_width(max_width);
+                line
+            } else {
+                build_styled_command_line(&truncated, padded_name.len(), ctx.theme.muted())
+            }
+        });
         lines.extend(item_lines);
 
         Frame::new(lines)
@@ -142,10 +133,7 @@ mod tests {
         let outcome = picker.on_event(&Event::Key(key(KeyCode::Enter))).await;
 
         assert!(outcome.is_some());
-        assert!(matches!(
-            outcome.unwrap().as_slice(),
-            [PickerMessage::Confirm(_)]
-        ));
+        assert!(matches!(outcome.unwrap().as_slice(), [PickerMessage::Confirm(_)]));
     }
 
     #[tokio::test]
@@ -156,10 +144,7 @@ mod tests {
 
         assert!(outcome.is_some());
 
-        assert!(matches!(
-            outcome.unwrap().as_slice(),
-            [PickerMessage::CloseAndPopChar]
-        ));
+        assert!(matches!(outcome.unwrap().as_slice(), [PickerMessage::CloseAndPopChar]));
     }
 
     #[tokio::test]
@@ -170,10 +155,7 @@ mod tests {
 
         assert!(outcome.is_some());
 
-        assert!(matches!(
-            outcome.unwrap().as_slice(),
-            [PickerMessage::CharTyped('r')]
-        ));
+        assert!(matches!(outcome.unwrap().as_slice(), [PickerMessage::CharTyped('r')]));
         assert_eq!(picker.query(), "r");
     }
 
@@ -185,10 +167,7 @@ mod tests {
 
         assert!(outcome.is_some());
 
-        assert!(matches!(
-            outcome.unwrap().as_slice(),
-            [PickerMessage::CloseWithChar(' ')]
-        ));
+        assert!(matches!(outcome.unwrap().as_slice(), [PickerMessage::CloseWithChar(' ')]));
     }
 
     #[tokio::test]
@@ -200,10 +179,7 @@ mod tests {
 
         assert!(outcome.is_some());
 
-        assert!(matches!(
-            outcome.unwrap().as_slice(),
-            [PickerMessage::PopChar]
-        ));
+        assert!(matches!(outcome.unwrap().as_slice(), [PickerMessage::PopChar]));
         assert_eq!(picker.query(), "c");
     }
 

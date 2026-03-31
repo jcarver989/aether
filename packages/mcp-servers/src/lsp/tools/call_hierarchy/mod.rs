@@ -57,36 +57,20 @@ pub struct CallSiteResult {
 }
 
 /// Convert LSP incoming calls to serializable `CallSiteResult`s.
-pub fn convert_incoming_calls(
-    incoming: Vec<lsp_types::CallHierarchyIncomingCall>,
-) -> Vec<CallSiteResult> {
-    incoming
-        .into_iter()
-        .map(|call| convert_call(call.from, &call.from_ranges))
-        .collect()
+pub fn convert_incoming_calls(incoming: Vec<lsp_types::CallHierarchyIncomingCall>) -> Vec<CallSiteResult> {
+    incoming.into_iter().map(|call| convert_call(call.from, &call.from_ranges)).collect()
 }
 
 /// Convert LSP outgoing calls to serializable `CallSiteResult`s.
-pub fn convert_outgoing_calls(
-    outgoing: Vec<lsp_types::CallHierarchyOutgoingCall>,
-) -> Vec<CallSiteResult> {
-    outgoing
-        .into_iter()
-        .map(|call| convert_call(call.to, &call.from_ranges))
-        .collect()
+pub fn convert_outgoing_calls(outgoing: Vec<lsp_types::CallHierarchyOutgoingCall>) -> Vec<CallSiteResult> {
+    outgoing.into_iter().map(|call| convert_call(call.to, &call.from_ranges)).collect()
 }
 
 /// Shared conversion for both incoming and outgoing calls.
 fn convert_call(item: CallHierarchyItem, from_ranges: &[lsp_types::Range]) -> CallSiteResult {
     let file_path = uri_to_path(&item.uri);
-    let call_sites = from_ranges
-        .iter()
-        .map(|range| LocationResult::from_range(file_path.clone(), range))
-        .collect();
-    CallSiteResult {
-        item: CallHierarchyItemResult::from(item),
-        call_sites,
-    }
+    let call_sites = from_ranges.iter().map(|range| LocationResult::from_range(file_path.clone(), range)).collect();
+    CallSiteResult { item: CallHierarchyItemResult::from(item), call_sites }
 }
 
 #[cfg(test)]
@@ -105,10 +89,7 @@ mod tests {
             uri: lsp_types::Uri::from_str("file:///src/lib.rs").unwrap(),
             range: lsp_types::Range {
                 start: lsp_types::Position { line, character: 0 },
-                end: lsp_types::Position {
-                    line: line + 5,
-                    character: 1,
-                },
+                end: lsp_types::Position { line: line + 5, character: 1 },
             },
             selection_range: lsp_types::Range {
                 start: lsp_types::Position { line, character: 3 },
@@ -123,14 +104,8 @@ mod tests {
 
     fn make_range(line: u32, col: u32) -> lsp_types::Range {
         lsp_types::Range {
-            start: lsp_types::Position {
-                line,
-                character: col,
-            },
-            end: lsp_types::Position {
-                line,
-                character: col + 5,
-            },
+            start: lsp_types::Position { line, character: col },
+            end: lsp_types::Position { line, character: col + 5 },
         }
     }
 
@@ -158,10 +133,8 @@ mod tests {
 
     #[test]
     fn test_convert_outgoing_calls() {
-        let outgoing = vec![CallHierarchyOutgoingCall {
-            to: make_item("callee_fn", 20),
-            from_ranges: vec![make_range(5, 10)],
-        }];
+        let outgoing =
+            vec![CallHierarchyOutgoingCall { to: make_item("callee_fn", 20), from_ranges: vec![make_range(5, 10)] }];
 
         let result = convert_outgoing_calls(outgoing);
         assert_eq!(result.len(), 1);

@@ -102,9 +102,7 @@ fn render_empty_state() {
 
 #[test]
 fn render_error_state() {
-    let mut state = GitDiffViewState::new(GitDiffLoadState::Error {
-        message: "not a repo".to_string(),
-    });
+    let mut state = GitDiffViewState::new(GitDiffLoadState::Error { message: "not a repo".to_string() });
     let mut view = GitDiffView { state: &mut state };
     let term = render_component(|ctx| view.render(ctx), 80, 24);
     let output = term.get_lines();
@@ -123,10 +121,7 @@ fn render_shows_file_list_and_patch() {
     assert!(!output.is_empty());
 
     let first_text = &output[0];
-    assert!(
-        first_text.contains("a.rs"),
-        "Should show file name: {first_text}"
-    );
+    assert!(first_text.contains("a.rs"), "Should show file name: {first_text}");
 }
 
 #[test]
@@ -140,20 +135,12 @@ fn patch_lines_have_syntax_highlighted_spans() {
     let output = term.get_lines();
 
     // Context line "fn main() {" should contain code
-    assert!(
-        output[1].contains("fn main()"),
-        "context line should contain code, got: {}",
-        output[1]
-    );
+    assert!(output[1].contains("fn main()"), "context line should contain code, got: {}", output[1]);
 
     // Added code spans should retain the diff background.
     let added_line = &patch_lines[3];
     assert!(
-        added_line
-            .spans()
-            .iter()
-            .skip(1)
-            .any(|span| span.style().bg == Some(context.theme.diff_added_bg())),
+        added_line.spans().iter().skip(1).any(|span| span.style().bg == Some(context.theme.diff_added_bg())),
         "added code spans should keep diff_added_bg"
     );
 }

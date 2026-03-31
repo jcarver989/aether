@@ -49,44 +49,29 @@ pub async fn edit_file_contents(args: EditFileArgs) -> Result<EditFileResponse, 
     // Perform string replacement
     let (updated_content, replacements_made) = if args.replace_all {
         let count = current_content.matches(&args.old_string).count();
-        (
-            current_content.replace(&args.old_string, &args.new_string),
-            count,
-        )
+        (current_content.replace(&args.old_string, &args.new_string), count)
     } else if current_content.contains(&args.old_string) {
-        (
-            current_content.replacen(&args.old_string, &args.new_string, 1),
-            1,
-        )
+        (current_content.replacen(&args.old_string, &args.new_string, 1), 1)
     } else {
         (current_content.clone(), 0)
     };
 
     // Check if any replacement actually occurred
     if replacements_made == 0 {
-        return Err(FileError::PatternNotFound {
-            path: args.file_path,
-            pattern: args.old_string,
-        });
+        return Err(FileError::PatternNotFound { path: args.file_path, pattern: args.old_string });
     }
 
     // Write back to file
     if let Err(e) = write(&args.file_path, &updated_content).await {
-        return Err(FileError::WriteFailed {
-            path: args.file_path,
-            reason: e.to_string(),
-        });
+        return Err(FileError::WriteFailed { path: args.file_path, reason: e.to_string() });
     }
 
     // Count lines for response
     let total_lines = updated_content.lines().count();
 
     let display_meta = ToolDisplayMeta::new("Edit file", basename(&args.file_path));
-    let file_diff = FileDiff {
-        path: args.file_path.clone(),
-        old_text: Some(current_content),
-        new_text: updated_content.clone(),
-    };
+    let file_diff =
+        FileDiff { path: args.file_path.clone(), old_text: Some(current_content), new_text: updated_content.clone() };
 
     Ok(EditFileResponse {
         status: "success".to_string(),

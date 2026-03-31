@@ -65,9 +65,7 @@ fn setup_logging(args: &AcpArgs) {
     tracing_subscriber::fmt()
         .with_writer(daily(&args.log_dir, "aether-acp.log"))
         .with_ansi(false) // No ANSI colors in log files
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .pretty()
         .init();
 }

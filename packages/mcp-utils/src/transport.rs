@@ -30,16 +30,12 @@ pub struct InMemoryTransport<R: ServiceRole> {
 
 impl<R: ServiceRole> InMemoryTransport<R> {
     fn new(tx: mpsc::Sender<TxJsonRpcMessage<R>>, rx: mpsc::Receiver<RxJsonRpcMessage<R>>) -> Self {
-        Self {
-            tx: Arc::new(Mutex::new(tx)),
-            rx: Arc::new(Mutex::new(rx)),
-        }
+        Self { tx: Arc::new(Mutex::new(tx)), rx: Arc::new(Mutex::new(rx)) }
     }
 }
 
 /// Create a pair of transports for client and server
-pub fn create_in_memory_transport() -> (InMemoryTransport<RoleClient>, InMemoryTransport<RoleServer>)
-{
+pub fn create_in_memory_transport() -> (InMemoryTransport<RoleClient>, InMemoryTransport<RoleServer>) {
     // Client sends ClientRequest/ClientResult, receives ServerRequest/ServerResult
     // Server sends ServerRequest/ServerResult, receives ClientRequest/ClientResult
     let (client_tx, server_rx) = mpsc::channel(1000); // Client -> Server
@@ -54,16 +50,11 @@ pub fn create_in_memory_transport() -> (InMemoryTransport<RoleClient>, InMemoryT
 impl<R: ServiceRole> Transport<R> for InMemoryTransport<R> {
     type Error = InMemoryTransportError;
 
-    fn send(
-        &mut self,
-        item: TxJsonRpcMessage<R>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'static {
+    fn send(&mut self, item: TxJsonRpcMessage<R>) -> impl Future<Output = Result<(), Self::Error>> + Send + 'static {
         let tx = self.tx.clone();
         async move {
             let tx = tx.lock().await;
-            tx.send(item)
-                .await
-                .map_err(|_| InMemoryTransportError::ChannelClosed)?;
+            tx.send(item).await.map_err(|_| InMemoryTransportError::ChannelClosed)?;
             Ok(())
         }
     }

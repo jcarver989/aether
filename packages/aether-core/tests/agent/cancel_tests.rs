@@ -24,11 +24,7 @@ async fn test_prompt_after_cancel_produces_response() {
             LlmResponse::done(),
         ],
         // Second prompt response (should be delivered normally)
-        vec![
-            LlmResponse::start("msg_2"),
-            LlmResponse::text("Second response"),
-            LlmResponse::done(),
-        ],
+        vec![LlmResponse::start("msg_2"), LlmResponse::text("Second response"), LlmResponse::done()],
     ];
 
     let llm = FakeLlmProvider::new(llm_responses);
@@ -59,9 +55,7 @@ async fn test_prompt_after_cancel_produces_response() {
 
     loop {
         match tokio::time::timeout_at(deadline, rx.recv()).await {
-            Ok(Some(AgentMessage::Text {
-                is_complete: false, ..
-            })) => {
+            Ok(Some(AgentMessage::Text { is_complete: false, .. })) => {
                 got_text = true;
             }
             Ok(Some(AgentMessage::Done)) => {

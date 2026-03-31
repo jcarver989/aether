@@ -32,12 +32,7 @@ impl TokenTracker {
     }
 
     /// Record usage from an LLM API response
-    pub fn record_usage(
-        &mut self,
-        input_tokens: u32,
-        output_tokens: u32,
-        cached_input_tokens: Option<u32>,
-    ) {
+    pub fn record_usage(&mut self, input_tokens: u32, output_tokens: u32, cached_input_tokens: Option<u32>) {
         self.total_input_tokens += u64::from(input_tokens);
         self.total_output_tokens += u64::from(output_tokens);
         if let Some(cached) = cached_input_tokens {
@@ -75,8 +70,7 @@ impl TokenTracker {
 
     /// Tokens remaining before hitting limit
     pub fn tokens_remaining(&self) -> Option<u32> {
-        self.context_limit
-            .map(|context_limit| context_limit.saturating_sub(self.last_input_tokens))
+        self.context_limit.map(|context_limit| context_limit.saturating_sub(self.last_input_tokens))
     }
 
     /// Update the context limit (e.g. when switching models)

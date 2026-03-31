@@ -4,20 +4,14 @@ use std::time::Duration;
 use aether_core::{
     events::{AgentMessage, UserMessage},
     testing::{
-        agent_message, test_agent,
-        {AddNumbersRequest, AddNumbersResult, DivideNumbersRequest, SlowToolRequest},
+        agent_message, test_agent, {AddNumbersRequest, AddNumbersResult, DivideNumbersRequest, SlowToolRequest},
     },
 };
 use llm::testing::llm_response;
 use llm::{ChatMessage, ContentBlock, LlmResponse, StopReason};
 
 fn split_json_in_half(input: &str) -> (&str, &str) {
-    let split = input
-        .char_indices()
-        .nth(input.len() / 2)
-        .map_or(1, |(idx, _)| idx)
-        .max(1)
-        .min(input.len() - 1);
+    let split = input.char_indices().nth(input.len() / 2).map_or(1, |(idx, _)| idx).max(1).min(input.len() - 1);
     input.split_at(split)
 }
 
@@ -29,11 +23,8 @@ async fn test_text_message() -> Result<(), Box<dyn Error>> {
     let mut expected_messages = agent_message(id).text(&chunks).build();
     expected_messages.push(AgentMessage::Done);
 
-    let messages = test_agent()
-        .llm_responses(&llm_responses)
-        .user_messages(vec![UserMessage::text("hi")])
-        .run()
-        .await?;
+    let messages =
+        test_agent().llm_responses(&llm_responses).user_messages(vec![UserMessage::text("hi")]).run().await?;
     assert_eq!(messages, expected_messages);
     Ok(())
 }
@@ -47,30 +38,21 @@ async fn test_single_tool_call() -> Result<(), Box<dyn Error>> {
     let chunks = ["The", " sum", " is", " 8"];
 
     let llm_responses = [
-        llm_response(m1_id)
-            .tool_call(t1_id, t1_name, &[&tool_request.json()?])
-            .build(),
+        llm_response(m1_id).tool_call(t1_id, t1_name, &[&tool_request.json()?]).build(),
         llm_response(m2_id).text(&chunks).build(),
     ];
 
     let expected_messages = {
         let mut messages = Vec::new();
-        messages.extend(
-            agent_message(m1_id)
-                .tool_call(t1_id, t1_name, &tool_request, &tool_result)
-                .build(),
-        );
+        messages.extend(agent_message(m1_id).tool_call(t1_id, t1_name, &tool_request, &tool_result).build());
 
         messages.extend(agent_message(m2_id).text(&chunks).build());
         messages.push(AgentMessage::Done);
         messages
     };
 
-    let messages = test_agent()
-        .llm_responses(&llm_responses)
-        .user_messages(vec![UserMessage::text("3+5 = ?")])
-        .run()
-        .await?;
+    let messages =
+        test_agent().llm_responses(&llm_responses).user_messages(vec![UserMessage::text("3+5 = ?")]).run().await?;
     assert_eq!(messages, expected_messages);
     Ok(())
 }
@@ -80,15 +62,11 @@ async fn test_tool_request_arg_emits_tool_call_update() -> Result<(), Box<dyn Er
     let tool_request = AddNumbersRequest::new(3, 5);
     let request_json = tool_request.json()?;
     let (arg_chunk_1, arg_chunk_2) = split_json_in_half(&request_json);
-    let llm_responses = [llm_response("message_1")
-        .tool_call("call_1", "test__add_numbers", &[arg_chunk_1, arg_chunk_2])
-        .build()];
+    let llm_responses =
+        [llm_response("message_1").tool_call("call_1", "test__add_numbers", &[arg_chunk_1, arg_chunk_2]).build()];
 
-    let messages = test_agent()
-        .llm_responses(&llm_responses)
-        .user_messages(vec![UserMessage::text("3+5 = ?")])
-        .run()
-        .await?;
+    let messages =
+        test_agent().llm_responses(&llm_responses).user_messages(vec![UserMessage::text("3+5 = ?")]).run().await?;
 
     let tool_call_count = messages
         .iter()
@@ -100,19 +78,12 @@ async fn test_tool_request_arg_emits_tool_call_update() -> Result<(), Box<dyn Er
             )
         })
         .count();
-    assert_eq!(
-        tool_call_count, 1,
-        "only one start ToolCall should be emitted"
-    );
+    assert_eq!(tool_call_count, 1, "only one start ToolCall should be emitted");
 
     let update_chunks: Vec<String> = messages
         .iter()
         .filter_map(|message| match message {
-            AgentMessage::ToolCallUpdate {
-                tool_call_id,
-                chunk,
-                ..
-            } if tool_call_id == "call_1" => Some(chunk.clone()),
+            AgentMessage::ToolCallUpdate { tool_call_id, chunk, .. } if tool_call_id == "call_1" => Some(chunk.clone()),
             _ => None,
         })
         .collect();
@@ -135,24 +106,10 @@ async fn test_tool_request_arg_emits_tool_call_update() -> Result<(), Box<dyn Er
 #[tokio::test]
 async fn test_tool_call_failure() -> Result<(), Box<dyn Error>> {
     let tool_request = DivideNumbersRequest::new(10, 0);
-    let chunks = [
-        "I",
-        " apologize",
-        ",",
-        " but",
-        " division",
-        " by",
-        " zero",
-        " is",
-        " not",
-        " allowed",
-        ".",
-    ];
+    let chunks = ["I", " apologize", ",", " but", " division", " by", " zero", " is", " not", " allowed", "."];
 
     let llm_responses = [
-        llm_response("message_1")
-            .tool_call("call_1", "test__divide_numbers", &[&tool_request.json()?])
-            .build(),
+        llm_response("message_1").tool_call("call_1", "test__divide_numbers", &[&tool_request.json()?]).build(),
         llm_response("message_2").text(&chunks).build(),
     ];
 
@@ -160,12 +117,7 @@ async fn test_tool_call_failure() -> Result<(), Box<dyn Error>> {
         let mut messages = Vec::new();
         messages.extend(
             agent_message("message_1")
-                .tool_call_with_error(
-                    "call_1",
-                    "test__divide_numbers",
-                    &tool_request,
-                    "Division by zero",
-                )
+                .tool_call_with_error("call_1", "test__divide_numbers", &tool_request, "Division by zero")
                 .build(),
         );
 
@@ -174,11 +126,8 @@ async fn test_tool_call_failure() -> Result<(), Box<dyn Error>> {
         messages
     };
 
-    let messages = test_agent()
-        .llm_responses(&llm_responses)
-        .user_messages(vec![UserMessage::text("10 / 0 = ?")])
-        .run()
-        .await?;
+    let messages =
+        test_agent().llm_responses(&llm_responses).user_messages(vec![UserMessage::text("10 / 0 = ?")]).run().await?;
     assert_eq!(messages, expected_messages);
     Ok(())
 }
@@ -206,15 +155,10 @@ async fn test_cancellation() -> Result<(), Box<dyn Error>> {
         .run()
         .await?;
 
-    let text_chunks_received = messages
-        .iter()
-        .filter(|m| matches!(m, AgentMessage::Text { .. }))
-        .count();
+    let text_chunks_received = messages.iter().filter(|m| matches!(m, AgentMessage::Text { .. })).count();
 
     assert!(
-        messages
-            .iter()
-            .any(|m| matches!(m, AgentMessage::Cancelled { .. })),
+        messages.iter().any(|m| matches!(m, AgentMessage::Cancelled { .. })),
         "Expected to receive a Cancelled message"
     );
 
@@ -238,9 +182,7 @@ async fn test_tool_timeout() -> Result<(), Box<dyn Error>> {
     let tool_request = SlowToolRequest::new(tool_duration);
     let (m1_id, t1_id, t1_name) = ("message_1", "call_1", "test__slow_tool");
 
-    let llm_responses = [llm_response(m1_id)
-        .tool_call(t1_id, t1_name, &[&tool_request.json()?])
-        .build()];
+    let llm_responses = [llm_response(m1_id).tool_call(t1_id, t1_name, &[&tool_request.json()?]).build()];
 
     let messages = test_agent()
         .llm_responses(&llm_responses)
@@ -256,10 +198,7 @@ async fn test_tool_timeout() -> Result<(), Box<dyn Error>> {
         )
     });
 
-    assert!(
-        has_tool_error,
-        "Expected a ToolError with timeout message, got: {messages:?}"
-    );
+    assert!(has_tool_error, "Expected a ToolError with timeout message, got: {messages:?}");
 
     Ok(())
 }
@@ -279,10 +218,8 @@ async fn test_simple_message_content() -> Result<(), Box<dyn Error>> {
     let first_context = &contexts[0];
     let messages = first_context.messages();
 
-    let user_message = messages
-        .iter()
-        .find(|m| matches!(m, ChatMessage::User { .. }))
-        .expect("Expected a user message");
+    let user_message =
+        messages.iter().find(|m| matches!(m, ChatMessage::User { .. })).expect("Expected a user message");
 
     let ChatMessage::User { content, .. } = user_message else {
         panic!("Expected User message");
@@ -306,19 +243,10 @@ async fn test_auto_continue_not_triggered_for_end_turn() -> Result<(), Box<dyn E
         .run()
         .await?;
 
-    let auto_continue_count = messages
-        .iter()
-        .filter(|m| matches!(m, AgentMessage::AutoContinue { .. }))
-        .count();
-    assert_eq!(
-        auto_continue_count, 0,
-        "Expected no AutoContinue messages for normal end-turn completion"
-    );
+    let auto_continue_count = messages.iter().filter(|m| matches!(m, AgentMessage::AutoContinue { .. })).count();
+    assert_eq!(auto_continue_count, 0, "Expected no AutoContinue messages for normal end-turn completion");
 
-    assert!(
-        matches!(messages.last(), Some(AgentMessage::Done)),
-        "Expected Done message"
-    );
+    assert!(matches!(messages.last(), Some(AgentMessage::Done)), "Expected Done message");
 
     Ok(())
 }
@@ -336,19 +264,10 @@ async fn test_auto_continue_not_triggered_for_opening_message() -> Result<(), Bo
         .run()
         .await?;
 
-    let auto_continue_count = messages
-        .iter()
-        .filter(|m| matches!(m, AgentMessage::AutoContinue { .. }))
-        .count();
-    assert_eq!(
-        auto_continue_count, 0,
-        "Expected no AutoContinue messages for opening message without tool calls"
-    );
+    let auto_continue_count = messages.iter().filter(|m| matches!(m, AgentMessage::AutoContinue { .. })).count();
+    assert_eq!(auto_continue_count, 0, "Expected no AutoContinue messages for opening message without tool calls");
 
-    assert!(
-        matches!(messages.last(), Some(AgentMessage::Done)),
-        "Expected Done message for opening message"
-    );
+    assert!(matches!(messages.last(), Some(AgentMessage::Done)), "Expected Done message for opening message");
 
     Ok(())
 }
@@ -357,9 +276,7 @@ async fn test_auto_continue_not_triggered_for_opening_message() -> Result<(), Bo
 async fn test_auto_continue_triggers_on_length_stop_reason() -> Result<(), Box<dyn Error>> {
     let tool_request = AddNumbersRequest::new(2, 3);
     let llm_responses = [
-        llm_response("msg_1")
-            .tool_call("call_1", "test__add_numbers", &[&tool_request.json()?])
-            .build(),
+        llm_response("msg_1").tool_call("call_1", "test__add_numbers", &[&tool_request.json()?]).build(),
         vec![
             LlmResponse::start("msg_2"),
             LlmResponse::text("I'm thinking about the problem..."),
@@ -384,10 +301,7 @@ async fn test_auto_continue_triggers_on_length_stop_reason() -> Result<(), Box<d
         .run()
         .await?;
 
-    let auto_continue_count = messages
-        .iter()
-        .filter(|m| matches!(m, AgentMessage::AutoContinue { .. }))
-        .count();
+    let auto_continue_count = messages.iter().filter(|m| matches!(m, AgentMessage::AutoContinue { .. })).count();
     assert_eq!(
         auto_continue_count, 2,
         "Expected 2 AutoContinue messages after length stop reasons, got {auto_continue_count}"
@@ -396,10 +310,7 @@ async fn test_auto_continue_triggers_on_length_stop_reason() -> Result<(), Box<d
     let auto_continues: Vec<_> = messages
         .iter()
         .filter_map(|m| match m {
-            AgentMessage::AutoContinue {
-                attempt,
-                max_attempts,
-            } => Some((*attempt, *max_attempts)),
+            AgentMessage::AutoContinue { attempt, max_attempts } => Some((*attempt, *max_attempts)),
             _ => None,
         })
         .collect();
@@ -411,10 +322,7 @@ async fn test_auto_continue_triggers_on_length_stop_reason() -> Result<(), Box<d
 #[tokio::test]
 async fn test_auto_continue_triggers_on_empty_length_stop_reason() -> Result<(), Box<dyn Error>> {
     let llm_responses = [
-        vec![
-            LlmResponse::start("msg_1"),
-            LlmResponse::done_with_stop_reason(StopReason::Length),
-        ],
+        vec![LlmResponse::start("msg_1"), LlmResponse::done_with_stop_reason(StopReason::Length)],
         vec![
             LlmResponse::start("msg_2"),
             LlmResponse::text("Recovered after compaction"),
@@ -429,14 +337,8 @@ async fn test_auto_continue_triggers_on_empty_length_stop_reason() -> Result<(),
         .run()
         .await?;
 
-    let auto_continue_count = messages
-        .iter()
-        .filter(|m| matches!(m, AgentMessage::AutoContinue { .. }))
-        .count();
-    assert_eq!(
-        auto_continue_count, 1,
-        "Expected AutoContinue after an empty length stop, got {messages:?}"
-    );
+    let auto_continue_count = messages.iter().filter(|m| matches!(m, AgentMessage::AutoContinue { .. })).count();
+    assert_eq!(auto_continue_count, 1, "Expected AutoContinue after an empty length stop, got {messages:?}");
 
     assert!(
         messages.iter().any(|m| matches!(
@@ -446,10 +348,7 @@ async fn test_auto_continue_triggers_on_empty_length_stop_reason() -> Result<(),
         "Expected follow-up response after empty length stop, got {messages:?}"
     );
 
-    assert!(
-        matches!(messages.last(), Some(AgentMessage::Done)),
-        "Expected Done message"
-    );
+    assert!(matches!(messages.last(), Some(AgentMessage::Done)), "Expected Done message");
 
     Ok(())
 }
@@ -459,9 +358,7 @@ async fn test_auto_continue_respects_max_limit() -> Result<(), Box<dyn Error>> {
     let tool_request = AddNumbersRequest::new(2, 3);
 
     let llm_responses = [
-        llm_response("msg_1")
-            .tool_call("call_1", "test__add_numbers", &[&tool_request.json()?])
-            .build(),
+        llm_response("msg_1").tool_call("call_1", "test__add_numbers", &[&tool_request.json()?]).build(),
         vec![
             LlmResponse::start("msg_2"),
             LlmResponse::text("Thinking..."),
@@ -486,14 +383,8 @@ async fn test_auto_continue_respects_max_limit() -> Result<(), Box<dyn Error>> {
         .run()
         .await?;
 
-    let auto_continue_count = messages
-        .iter()
-        .filter(|m| matches!(m, AgentMessage::AutoContinue { .. }))
-        .count();
-    assert_eq!(
-        auto_continue_count, 2,
-        "Expected 2 AutoContinue messages (max limit), got {auto_continue_count}"
-    );
+    let auto_continue_count = messages.iter().filter(|m| matches!(m, AgentMessage::AutoContinue { .. })).count();
+    assert_eq!(auto_continue_count, 2, "Expected 2 AutoContinue messages (max limit), got {auto_continue_count}");
 
     assert!(
         matches!(messages.last(), Some(AgentMessage::Done)),
@@ -508,9 +399,7 @@ async fn test_auto_continue_disabled_with_zero() -> Result<(), Box<dyn Error>> {
     let tool_request = AddNumbersRequest::new(2, 3);
 
     let llm_responses = [
-        llm_response("msg_1")
-            .tool_call("call_1", "test__add_numbers", &[&tool_request.json()?])
-            .build(),
+        llm_response("msg_1").tool_call("call_1", "test__add_numbers", &[&tool_request.json()?]).build(),
         vec![
             LlmResponse::start("msg_2"),
             LlmResponse::text("No completion signal here"),
@@ -525,26 +414,16 @@ async fn test_auto_continue_disabled_with_zero() -> Result<(), Box<dyn Error>> {
         .run()
         .await?;
 
-    let auto_continue_count = messages
-        .iter()
-        .filter(|m| matches!(m, AgentMessage::AutoContinue { .. }))
-        .count();
-    assert_eq!(
-        auto_continue_count, 0,
-        "Expected no AutoContinue messages when max_auto_continues=0"
-    );
+    let auto_continue_count = messages.iter().filter(|m| matches!(m, AgentMessage::AutoContinue { .. })).count();
+    assert_eq!(auto_continue_count, 0, "Expected no AutoContinue messages when max_auto_continues=0");
 
-    assert!(
-        matches!(messages.last(), Some(AgentMessage::Done)),
-        "Expected Done message"
-    );
+    assert!(matches!(messages.last(), Some(AgentMessage::Done)), "Expected Done message");
 
     Ok(())
 }
 
 #[tokio::test]
-async fn test_reasoning_content_is_saved_in_context_after_tool_call() -> Result<(), Box<dyn Error>>
-{
+async fn test_reasoning_content_is_saved_in_context_after_tool_call() -> Result<(), Box<dyn Error>> {
     let tool_request = AddNumbersRequest::new(2, 3);
 
     let llm_responses = [
@@ -553,11 +432,7 @@ async fn test_reasoning_content_is_saved_in_context_after_tool_call() -> Result<
             LlmResponse::reasoning("internal plan"),
             LlmResponse::tool_request_start("call_1", "test__add_numbers"),
             LlmResponse::tool_request_arg("call_1", &tool_request.json()?),
-            LlmResponse::tool_request_complete(
-                "call_1",
-                "test__add_numbers",
-                &tool_request.json()?,
-            ),
+            LlmResponse::tool_request_complete("call_1", "test__add_numbers", &tool_request.json()?),
             LlmResponse::done(),
         ],
         llm_response("msg_2").text(&["Done"]).build(),
@@ -570,9 +445,7 @@ async fn test_reasoning_content_is_saved_in_context_after_tool_call() -> Result<
         .await?;
 
     let contexts = result.captured_contexts.lock().unwrap();
-    let second_context = contexts
-        .get(1)
-        .expect("expected second LLM request context");
+    let second_context = contexts.get(1).expect("expected second LLM request context");
 
     let assistant_with_tool_call = second_context.messages().iter().find(|message| {
         matches!(
@@ -599,11 +472,8 @@ async fn test_reasoning_chunks_emit_thought_messages() -> Result<(), Box<dyn Err
         LlmResponse::done(),
     ]];
 
-    let messages = test_agent()
-        .llm_responses(&llm_responses)
-        .user_messages(vec![UserMessage::text("do something")])
-        .run()
-        .await?;
+    let messages =
+        test_agent().llm_responses(&llm_responses).user_messages(vec![UserMessage::text("do something")]).run().await?;
 
     assert!(
         messages.iter().any(|m| matches!(
@@ -612,10 +482,7 @@ async fn test_reasoning_chunks_emit_thought_messages() -> Result<(), Box<dyn Err
         )),
         "Expected at least one Thought message from reasoning chunks, got: {messages:?}"
     );
-    assert!(
-        messages.iter().any(|m| matches!(m, AgentMessage::Done)),
-        "Expected Done message"
-    );
+    assert!(messages.iter().any(|m| matches!(m, AgentMessage::Done)), "Expected Done message");
 
     Ok(())
 }

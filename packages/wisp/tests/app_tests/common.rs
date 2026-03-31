@@ -52,10 +52,7 @@ impl Renderer {
             AcpPromptHandle::noop(),
         );
         let frame_renderer = FrameRenderer::new(terminal, Theme::default(), size);
-        Self {
-            app,
-            frame_renderer,
-        }
+        Self { app, frame_renderer }
     }
 
     pub(super) fn writer(&self) -> &TestTerminal {
@@ -81,10 +78,7 @@ impl Renderer {
         self.handle_terminal_event(Event::Key(key_event)).await
     }
 
-    pub(super) fn on_session_update(
-        &mut self,
-        update: acp::SessionUpdate,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub(super) fn on_session_update(&mut self, update: acp::SessionUpdate) -> Result<(), Box<dyn std::error::Error>> {
         self.handle_acp_event(AcpEvent::SessionUpdate(Box::new(update)))?;
         Ok(())
     }
@@ -100,19 +94,13 @@ impl Renderer {
     }
 
     pub(super) async fn on_paste(&mut self, text: &str) -> Result<(), Box<dyn std::error::Error>> {
-        self.handle_terminal_event(Event::Paste(text.to_string()))
-            .await?;
+        self.handle_terminal_event(Event::Paste(text.to_string())).await?;
         Ok(())
     }
 
-    pub(super) async fn on_resize_event(
-        &mut self,
-        cols: u16,
-        rows: u16,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub(super) async fn on_resize_event(&mut self, cols: u16, rows: u16) -> Result<(), Box<dyn std::error::Error>> {
         self.frame_renderer.on_resize((cols, rows));
-        self.handle_terminal_event(Event::Resize((cols, rows).into()))
-            .await?;
+        self.handle_terminal_event(Event::Resize((cols, rows).into())).await?;
         Ok(())
     }
 
@@ -124,32 +112,21 @@ impl Renderer {
         Ok(())
     }
 
-    pub(super) fn on_connection_closed(
-        &mut self,
-    ) -> Result<LoopAction, Box<dyn std::error::Error>> {
+    pub(super) fn on_connection_closed(&mut self) -> Result<LoopAction, Box<dyn std::error::Error>> {
         self.handle_acp_event(AcpEvent::ConnectionClosed)
     }
 
-    async fn handle_terminal_event(
-        &mut self,
-        event: Event,
-    ) -> Result<LoopAction, Box<dyn std::error::Error>> {
+    async fn handle_terminal_event(&mut self, event: Event) -> Result<LoopAction, Box<dyn std::error::Error>> {
         let commands = self.app.on_event(&event).await.unwrap_or_default();
         self.drain_and_render(commands)
     }
 
-    fn handle_acp_event(
-        &mut self,
-        event: AcpEvent,
-    ) -> Result<LoopAction, Box<dyn std::error::Error>> {
+    fn handle_acp_event(&mut self, event: AcpEvent) -> Result<LoopAction, Box<dyn std::error::Error>> {
         self.app.on_acp_event(event);
         self.drain_and_render(vec![])
     }
 
-    fn drain_and_render(
-        &mut self,
-        commands: Vec<RendererCommand>,
-    ) -> Result<LoopAction, Box<dyn std::error::Error>> {
+    fn drain_and_render(&mut self, commands: Vec<RendererCommand>) -> Result<LoopAction, Box<dyn std::error::Error>> {
         self.frame_renderer.apply_commands(commands)?;
 
         if self.app.exit_requested() {
@@ -183,12 +160,7 @@ pub(super) fn expected_prompt(width: u16, input: &str, agent_name: &str) -> Vec<
 }
 
 /// Build expected lines: scrollback lines + bordered prompt.
-pub(super) fn expected_with_prompt(
-    scrollback: &[&str],
-    width: u16,
-    input: &str,
-    agent_name: &str,
-) -> Vec<String> {
+pub(super) fn expected_with_prompt(scrollback: &[&str], width: u16, input: &str, agent_name: &str) -> Vec<String> {
     let mut lines: Vec<String> = scrollback.iter().map(ToString::to_string).collect();
     lines.extend(expected_prompt(width, input, agent_name));
     lines
@@ -198,9 +170,7 @@ pub(super) fn has_file_picker(terminal: &TestTerminal) -> bool {
     let lines = terminal.get_lines();
     lines.iter().any(|l| {
         l.contains("(no matches found)")
-            || (l.starts_with("  ")
-                && (l.contains('/') || l.contains('.'))
-                && !l.contains(TEST_AGENT))
+            || (l.starts_with("  ") && (l.contains('/') || l.contains('.')) && !l.contains(TEST_AGENT))
     })
 }
 
@@ -277,15 +247,15 @@ pub(super) fn render(events: Vec<TestEvent>) -> Renderer {
 }
 
 pub(super) fn text_chunk(text: &str) -> TestEvent {
-    TestEvent::Update(Box::new(acp::SessionUpdate::AgentMessageChunk(
-        acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(text))),
-    )))
+    TestEvent::Update(Box::new(acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
+        acp::TextContent::new(text),
+    )))))
 }
 
 pub(super) fn thought_chunk(text: &str) -> TestEvent {
-    TestEvent::Update(Box::new(acp::SessionUpdate::AgentThoughtChunk(
-        acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(text))),
-    )))
+    TestEvent::Update(Box::new(acp::SessionUpdate::AgentThoughtChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
+        acp::TextContent::new(text),
+    )))))
 }
 
 pub(super) fn prompt_done() -> TestEvent {
@@ -299,26 +269,21 @@ pub(super) fn tool_call(name: &str, args: &str) -> TestEvent {
 pub(super) fn tool_call_with_id(name: &str, id: &str, args: &str) -> TestEvent {
     let mut tc = acp::ToolCall::new(id.to_string(), name);
     if !args.is_empty() {
-        let value: serde_json::Value = serde_json::from_str(args)
-            .unwrap_or_else(|_| serde_json::Value::String(args.to_string()));
+        let value: serde_json::Value =
+            serde_json::from_str(args).unwrap_or_else(|_| serde_json::Value::String(args.to_string()));
         tc = tc.raw_input(value);
     }
     TestEvent::Update(Box::new(acp::SessionUpdate::ToolCall(tc)))
 }
 
 pub(super) fn tool_complete(id: &str) -> TestEvent {
-    TestEvent::Update(Box::new(acp::SessionUpdate::ToolCallUpdate(
-        acp::ToolCallUpdate::new(
-            id.to_string(),
-            acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::Completed),
-        ),
-    )))
+    TestEvent::Update(Box::new(acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
+        id.to_string(),
+        acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::Completed),
+    ))))
 }
 
-pub(super) fn tool_complete_with_display_meta(
-    id: &str,
-    display_meta: &serde_json::Value,
-) -> TestEvent {
+pub(super) fn tool_complete_with_display_meta(id: &str, display_meta: &serde_json::Value) -> TestEvent {
     let title = display_meta["title"].as_str().unwrap_or("");
     let value = display_meta["value"].as_str().unwrap_or("");
 
@@ -329,9 +294,7 @@ pub(super) fn tool_complete_with_display_meta(
 
     let mut update = acp::ToolCallUpdate::new(
         id.to_string(),
-        acp::ToolCallUpdateFields::new()
-            .title(title)
-            .status(acp::ToolCallStatus::Completed),
+        acp::ToolCallUpdateFields::new().title(title).status(acp::ToolCallStatus::Completed),
     );
     if !meta_map.is_empty() {
         update = update.meta(meta_map);
@@ -341,12 +304,10 @@ pub(super) fn tool_complete_with_display_meta(
 
 pub(super) fn tool_update_with_args(id: &str, args: &str) -> TestEvent {
     let value: serde_json::Value = serde_json::from_str(args).unwrap();
-    TestEvent::Update(Box::new(acp::SessionUpdate::ToolCallUpdate(
-        acp::ToolCallUpdate::new(
-            id.to_string(),
-            acp::ToolCallUpdateFields::new().raw_input(value),
-        ),
-    )))
+    TestEvent::Update(Box::new(acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate::new(
+        id.to_string(),
+        acp::ToolCallUpdateFields::new().raw_input(value),
+    ))))
 }
 
 pub(super) async fn type_string(renderer: &mut Renderer, text: &str) {
@@ -383,12 +344,7 @@ pub(super) async fn press_backspace(renderer: &mut Renderer) {
 
 pub(super) async fn send_key(renderer: &mut Renderer, code: KeyCode, modifiers: KeyModifiers) {
     renderer
-        .on_key_event(KeyEvent {
-            code,
-            modifiers,
-            kind: KeyEventKind::Press,
-            state: KeyEventState::empty(),
-        })
+        .on_key_event(KeyEvent { code, modifiers, kind: KeyEventKind::Press, state: KeyEventState::empty() })
         .await
         .unwrap();
 }
@@ -415,10 +371,7 @@ pub(super) fn make_settings_options() -> Vec<acp::SessionConfigOption> {
 }
 
 /// Create a renderer with settings options and open the settings menu.
-pub(super) async fn open_settings(
-    config_options: &[acp::SessionConfigOption],
-    size: (u16, u16),
-) -> Renderer {
+pub(super) async fn open_settings(config_options: &[acp::SessionConfigOption], size: (u16, u16)) -> Renderer {
     let terminal = TestTerminal::new(size.0, size.1);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), config_options, size);
     renderer.initial_render().unwrap();

@@ -83,11 +83,7 @@ pub async fn read_background_bash(
     handle: BackgroundProcessHandle,
     filter: Option<String>,
 ) -> Result<(ReadBackgroundBashOutput, Option<BackgroundProcessHandle>), BashError> {
-    let BackgroundProcessHandle {
-        shell_id,
-        mut output_rx,
-        task_handle,
-    } = handle;
+    let BackgroundProcessHandle { shell_id, mut output_rx, task_handle } = handle;
 
     // Collect all available output
     let mut output = String::new();
@@ -108,26 +104,14 @@ pub async fn read_background_bash(
     }
 
     if task_handle.is_finished() {
-        let (exit_code, killed) = task_handle
-            .await
-            .map_err(|e| BashError::JoinFailed(e.to_string()))?;
+        let (exit_code, killed) = task_handle.await.map_err(|e| BashError::JoinFailed(e.to_string()))?;
 
-        let status = if killed {
-            "failed".to_string()
-        } else {
-            "completed".to_string()
-        };
+        let status = if killed { "failed".to_string() } else { "completed".to_string() };
 
-        let display_meta =
-            ToolDisplayMeta::new("Run command", format!("<background> (exit {exit_code})"));
+        let display_meta = ToolDisplayMeta::new("Run command", format!("<background> (exit {exit_code})"));
 
         Ok((
-            ReadBackgroundBashOutput {
-                output,
-                status,
-                exit_code: Some(exit_code),
-                meta: Some(display_meta.into()),
-            },
+            ReadBackgroundBashOutput { output, status, exit_code: Some(exit_code), meta: Some(display_meta.into()) },
             None,
         ))
     } else {
@@ -140,11 +124,7 @@ pub async fn read_background_bash(
                 exit_code: None,
                 meta: Some(display_meta.into()),
             },
-            Some(BackgroundProcessHandle {
-                shell_id,
-                output_rx,
-                task_handle,
-            }),
+            Some(BackgroundProcessHandle { shell_id, output_rx, task_handle }),
         ))
     }
 }
@@ -186,10 +166,7 @@ async fn run_command_with_timeout(
             });
         }
 
-        let status = child
-            .wait()
-            .await
-            .map_err(|e| format!("Wait failed: {e}"))?;
+        let status = child.wait().await.map_err(|e| format!("Wait failed: {e}"))?;
         Ok::<_, String>((status.code().unwrap_or(-1), false))
     };
 
@@ -209,9 +186,7 @@ async fn run_command_with_timeout(
 
 pub async fn execute_command(args: BashInput) -> Result<BashResult, BashError> {
     if args.command.trim() == "rm" {
-        return Err(BashError::Forbidden(
-            "No you can't fucking delete files".to_string(),
-        ));
+        return Err(BashError::Forbidden("No you can't fucking delete files".to_string()));
     }
 
     // Validate timeout is within bounds
@@ -230,15 +205,10 @@ pub async fn execute_command(args: BashInput) -> Result<BashResult, BashError> {
 
         let (output_tx, output_rx) = mpsc::unbounded_channel();
 
-        let task_handle = tokio::spawn(async move {
-            run_command_with_timeout(command, timeout_duration, output_tx).await
-        });
+        let task_handle =
+            tokio::spawn(async move { run_command_with_timeout(command, timeout_duration, output_tx).await });
 
-        Ok(BashResult::Background(BackgroundProcessHandle {
-            shell_id,
-            output_rx,
-            task_handle,
-        }))
+        Ok(BashResult::Background(BackgroundProcessHandle { shell_id, output_rx, task_handle }))
     } else {
         // Run synchronously with default timeout of 120000ms (2 minutes)
         let timeout = timeout_duration.or(Some(Duration::from_millis(120_000)));
@@ -268,10 +238,8 @@ pub async fn execute_command(args: BashInput) -> Result<BashResult, BashError> {
                     format!("{stdout}{stderr}")
                 };
 
-                let display_meta = ToolDisplayMeta::new(
-                    "Run command",
-                    format!("{} (exit {exit_code})", truncate(&args.command, 40)),
-                );
+                let display_meta =
+                    ToolDisplayMeta::new("Run command", format!("{} (exit {exit_code})", truncate(&args.command, 40)));
 
                 Ok(BashResult::Completed(BashOutput {
                     output: combined_output,
@@ -281,10 +249,7 @@ pub async fn execute_command(args: BashInput) -> Result<BashResult, BashError> {
                     meta: Some(display_meta.into()),
                 }))
             }
-            Ok(Err(e)) => Err(BashError::SpawnFailed {
-                command: args.command,
-                reason: e.to_string(),
-            }),
+            Ok(Err(e)) => Err(BashError::SpawnFailed { command: args.command, reason: e.to_string() }),
             Err(_) => {
                 // Timeout occurred
                 let timeout_ms = timeout.map_or(120_000, |d| d.as_millis());

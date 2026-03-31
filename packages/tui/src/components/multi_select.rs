@@ -15,11 +15,7 @@ pub struct MultiSelect {
 
 impl MultiSelect {
     pub fn new(options: Vec<SelectOption>, selected: Vec<bool>) -> Self {
-        Self {
-            cursor: 0,
-            options,
-            selected,
-        }
+        Self { cursor: 0, options, selected }
     }
 
     pub fn to_json(&self) -> serde_json::Value {
@@ -34,13 +30,8 @@ impl MultiSelect {
     }
 
     fn render_inline(&self, context: &ViewContext) -> Line {
-        let chosen: Vec<&str> = self
-            .options
-            .iter()
-            .zip(self.selected.iter())
-            .filter(|&(_, &s)| s)
-            .map(|(o, _)| o.title.as_str())
-            .collect();
+        let chosen: Vec<&str> =
+            self.options.iter().zip(self.selected.iter()).filter(|&(_, &s)| s).map(|(o, _)| o.title.as_str()).collect();
 
         if chosen.is_empty() {
             Line::styled("(none)", context.theme.muted())
@@ -63,11 +54,7 @@ impl MultiSelect {
                 } else {
                     Style::default()
                 };
-                let desc = opt
-                    .description
-                    .as_deref()
-                    .map(|d| format!(" - {d}"))
-                    .unwrap_or_default();
+                let desc = opt.description.as_deref().map(|d| format!(" - {d}")).unwrap_or_default();
                 Line::with_style(format!("{marker}{}{desc}", opt.title), style)
             })
             .collect()
@@ -109,11 +96,7 @@ impl Component for MultiSelect {
 
 impl MultiSelect {
     pub fn render_field(&self, context: &ViewContext, focused: bool) -> Vec<Line> {
-        if focused {
-            self.render_options(context)
-        } else {
-            vec![self.render_inline(context)]
-        }
+        if focused { self.render_options(context) } else { vec![self.render_inline(context)] }
     }
 }
 
@@ -129,21 +112,9 @@ mod tests {
     fn sample() -> MultiSelect {
         MultiSelect::new(
             vec![
-                SelectOption {
-                    value: "a".into(),
-                    title: "Alpha".into(),
-                    description: None,
-                },
-                SelectOption {
-                    value: "b".into(),
-                    title: "Beta".into(),
-                    description: None,
-                },
-                SelectOption {
-                    value: "c".into(),
-                    title: "Gamma".into(),
-                    description: None,
-                },
+                SelectOption { value: "a".into(), title: "Alpha".into(), description: None },
+                SelectOption { value: "b".into(), title: "Beta".into(), description: None },
+                SelectOption { value: "c".into(), title: "Gamma".into(), description: None },
             ],
             vec![false, false, false],
         )

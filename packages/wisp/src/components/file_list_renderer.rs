@@ -11,10 +11,7 @@ pub(crate) fn render_file_list_cell(
     theme: &tui::Theme,
 ) {
     if row >= files.len() {
-        line.push_with_style(
-            " ".repeat(left_width),
-            Style::default().bg_color(theme.sidebar_bg()),
-        );
+        line.push_with_style(" ".repeat(left_width), Style::default().bg_color(theme.sidebar_bg()));
         return;
     }
 
@@ -71,13 +68,7 @@ pub(crate) fn render_file_tree_cell(
                 line.push_with_style(" ".repeat(remaining), style);
             }
         }
-        FileTreeEntryKind::File {
-            name,
-            status,
-            additions,
-            deletions,
-            ..
-        } => {
+        FileTreeEntryKind::File { name, status, additions, deletions, .. } => {
             let stats_str = format!("+{additions}/-{deletions}");
             let name_budget = left_width.saturating_sub(prefix_width + 2 + stats_str.len() + 1);
             let truncated = truncate_text(name, name_budget);
@@ -100,11 +91,7 @@ pub(crate) fn render_file_tree_cell(
 }
 
 fn row_style(is_selected: bool, theme: &tui::Theme) -> Style {
-    if is_selected {
-        theme.selected_row_style()
-    } else {
-        Style::default().bg_color(theme.sidebar_bg())
-    }
+    if is_selected { theme.selected_row_style() } else { Style::default().bg_color(theme.sidebar_bg()) }
 }
 
 fn push_status_marker(line: &mut Line, status: FileStatus, is_selected: bool, theme: &tui::Theme) {
@@ -142,11 +129,7 @@ fn push_name_padding_stats(
     if padding > 0 {
         line.push_with_style(
             " ".repeat(padding),
-            if is_selected {
-                theme.selected_row_style()
-            } else {
-                Style::default().bg_color(theme.sidebar_bg())
-            },
+            if is_selected { theme.selected_row_style() } else { Style::default().bg_color(theme.sidebar_bg()) },
         );
     }
 

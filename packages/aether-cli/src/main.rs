@@ -42,25 +42,15 @@ fn main() -> ExitCode {
     let result: Result<ExitCode, String> = match cli.command {
         Some(Command::Headless(args)) => rt.block_on(run_headless(args)).map_err(|e| e.to_string()),
 
-        Some(Command::Acp(args)) => rt
-            .block_on(run_acp(args))
-            .map(|()| ExitCode::SUCCESS)
-            .map_err(|e| e.to_string()),
+        Some(Command::Acp(args)) => rt.block_on(run_acp(args)).map(|()| ExitCode::SUCCESS).map_err(|e| e.to_string()),
 
-        Some(Command::ShowPrompt(args)) => rt
-            .block_on(run_prompt(args))
-            .map(|()| ExitCode::SUCCESS)
-            .map_err(|e| e.to_string()),
+        Some(Command::ShowPrompt(args)) => {
+            rt.block_on(run_prompt(args)).map(|()| ExitCode::SUCCESS).map_err(|e| e.to_string())
+        }
 
-        Some(Command::Init(args)) => rt
-            .block_on(run_init(args))
-            .map(|()| ExitCode::SUCCESS)
-            .map_err(|e| e.to_string()),
+        Some(Command::Init(args)) => rt.block_on(run_init(args)).map(|()| ExitCode::SUCCESS).map_err(|e| e.to_string()),
 
-        None => rt
-            .block_on(wisp::run_tui("aether acp"))
-            .map(|()| ExitCode::SUCCESS)
-            .map_err(|e| e.to_string()),
+        None => rt.block_on(wisp::run_tui("aether acp")).map(|()| ExitCode::SUCCESS).map_err(|e| e.to_string()),
     };
 
     match result {

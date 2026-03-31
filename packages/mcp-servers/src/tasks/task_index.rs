@@ -43,16 +43,10 @@ impl TaskIndex {
         }
 
         if let Some(assignee) = &task.assignee {
-            self.by_assignee
-                .entry(assignee.clone())
-                .or_default()
-                .insert(id.clone());
+            self.by_assignee.entry(assignee.clone()).or_default().insert(id.clone());
         }
 
-        self.by_status
-            .entry(task.status)
-            .or_default()
-            .insert(id.clone());
+        self.by_status.entry(task.status).or_default().insert(id.clone());
 
         self.tasks.insert(id, task);
     }
@@ -80,16 +74,10 @@ impl TaskIndex {
         }
 
         if let Some(assignee) = &task.assignee {
-            self.by_assignee
-                .entry(assignee.clone())
-                .or_default()
-                .insert(id.clone());
+            self.by_assignee.entry(assignee.clone()).or_default().insert(id.clone());
         }
 
-        self.by_status
-            .entry(task.status)
-            .or_default()
-            .insert(id.clone());
+        self.by_status.entry(task.status).or_default().insert(id.clone());
 
         self.tasks.insert(id, task);
     }
@@ -123,12 +111,7 @@ impl TaskIndex {
     pub fn remove_tree(&mut self, root_id: &TaskId) -> Vec<Task> {
         let mut removed = Vec::new();
 
-        let ids_to_remove: Vec<TaskId> = self
-            .tasks
-            .keys()
-            .filter(|id| id.root() == *root_id)
-            .cloned()
-            .collect();
+        let ids_to_remove: Vec<TaskId> = self.tasks.keys().filter(|id| id.root() == *root_id).cloned().collect();
 
         for id in ids_to_remove {
             if let Some(task) = self.remove(&id) {
@@ -149,10 +132,7 @@ impl TaskIndex {
 
     /// Get all tasks in a tree
     pub fn get_tree(&self, root_id: &TaskId) -> Vec<&Task> {
-        self.tasks
-            .values()
-            .filter(|task| task.id.root() == *root_id)
-            .collect()
+        self.tasks.values().filter(|task| task.id.root() == *root_id).collect()
     }
 
     /// Get the file path for a task tree
@@ -178,19 +158,13 @@ impl TaskIndex {
 
     /// Get all tasks that are ready to start (pending with all deps completed)
     pub fn get_ready(&self) -> Vec<&Task> {
-        let completed_ids: Vec<&TaskId> = self
-            .by_status
-            .get(&TaskStatus::Completed)
-            .map(|ids| ids.iter().collect())
-            .unwrap_or_default();
+        let completed_ids: Vec<&TaskId> =
+            self.by_status.get(&TaskStatus::Completed).map(|ids| ids.iter().collect()).unwrap_or_default();
 
         self.by_status
             .get(&TaskStatus::Pending)
             .map(|ids| {
-                ids.iter()
-                    .filter_map(|id| self.tasks.get(id))
-                    .filter(|task| task.is_ready(&completed_ids))
-                    .collect()
+                ids.iter().filter_map(|id| self.tasks.get(id)).filter(|task| task.is_ready(&completed_ids)).collect()
             })
             .unwrap_or_default()
     }
@@ -284,18 +258,9 @@ mod tests {
         let mut index = TaskIndex::new();
         let path = PathBuf::from(".aether-tasks/active/at-abc123.jsonl");
 
-        index.insert(
-            make_task("at-abc123", TaskStatus::Pending, Some("worker-1")),
-            path.clone(),
-        );
-        index.insert(
-            make_task("at-abc123.1", TaskStatus::InProgress, Some("worker-1")),
-            path.clone(),
-        );
-        index.insert(
-            make_task("at-abc123.2", TaskStatus::Pending, Some("worker-2")),
-            path,
-        );
+        index.insert(make_task("at-abc123", TaskStatus::Pending, Some("worker-1")), path.clone());
+        index.insert(make_task("at-abc123.1", TaskStatus::InProgress, Some("worker-1")), path.clone());
+        index.insert(make_task("at-abc123.2", TaskStatus::Pending, Some("worker-2")), path);
 
         let worker1_tasks = index.get_by_assignee("worker-1");
         assert_eq!(worker1_tasks.len(), 2);
@@ -309,14 +274,8 @@ mod tests {
         let mut index = TaskIndex::new();
         let path = PathBuf::from(".aether-tasks/active/at-abc123.jsonl");
 
-        index.insert(
-            make_task("at-abc123", TaskStatus::Pending, None),
-            path.clone(),
-        );
-        index.insert(
-            make_task("at-abc123.1", TaskStatus::InProgress, None),
-            path.clone(),
-        );
+        index.insert(make_task("at-abc123", TaskStatus::Pending, None), path.clone());
+        index.insert(make_task("at-abc123.1", TaskStatus::InProgress, None), path.clone());
         index.insert(make_task("at-abc123.2", TaskStatus::Completed, None), path);
 
         assert_eq!(index.get_by_status(TaskStatus::Pending).len(), 1);
@@ -349,14 +308,8 @@ mod tests {
         let mut index = TaskIndex::new();
         let path = PathBuf::from(".aether-tasks/active/at-abc123.jsonl");
 
-        index.insert(
-            make_task("at-abc123", TaskStatus::Pending, None),
-            path.clone(),
-        );
-        index.insert(
-            make_task("at-abc123.1", TaskStatus::Pending, None),
-            path.clone(),
-        );
+        index.insert(make_task("at-abc123", TaskStatus::Pending, None), path.clone());
+        index.insert(make_task("at-abc123.1", TaskStatus::Pending, None), path.clone());
         index.insert(make_task("at-abc123.2", TaskStatus::Pending, None), path);
 
         let tree = index.get_tree(&TaskId::from("at-abc123"));
@@ -368,14 +321,8 @@ mod tests {
         let mut index = TaskIndex::new();
         let path = PathBuf::from(".aether-tasks/active/at-abc123.jsonl");
 
-        index.insert(
-            make_task("at-abc123", TaskStatus::Pending, None),
-            path.clone(),
-        );
-        index.insert(
-            make_task("at-abc123.1", TaskStatus::Pending, None),
-            path.clone(),
-        );
+        index.insert(make_task("at-abc123", TaskStatus::Pending, None), path.clone());
+        index.insert(make_task("at-abc123.1", TaskStatus::Pending, None), path.clone());
         index.insert(make_task("at-abc123.2", TaskStatus::Pending, None), path);
 
         let removed = index.remove_tree(&TaskId::from("at-abc123"));
@@ -388,10 +335,7 @@ mod tests {
         let mut index = TaskIndex::new();
         let path = PathBuf::from(".aether-tasks/active/at-abc123.jsonl");
 
-        index.insert(
-            make_task("at-abc123", TaskStatus::Pending, None),
-            path.clone(),
-        );
+        index.insert(make_task("at-abc123", TaskStatus::Pending, None), path.clone());
 
         let mut task2 = make_task("at-abc123.2", TaskStatus::Pending, None);
         task2.deps = vec![TaskId::from("at-abc123.1")];
@@ -426,14 +370,8 @@ mod tests {
         let path = PathBuf::from(".aether-tasks/active/at-abc123.jsonl");
         let root_id = TaskId::from("at-abc123");
 
-        index.insert(
-            make_task("at-abc123", TaskStatus::Pending, None),
-            path.clone(),
-        );
-        index.insert(
-            make_task("at-abc123.5", TaskStatus::Pending, None),
-            path.clone(),
-        );
+        index.insert(make_task("at-abc123", TaskStatus::Pending, None), path.clone());
+        index.insert(make_task("at-abc123.5", TaskStatus::Pending, None), path.clone());
 
         assert_eq!(index.next_subtask_index(&root_id), 6);
     }

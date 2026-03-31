@@ -22,26 +22,10 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SseEvent {
-    EvalStarted {
-        run_id: Uuid,
-        eval_id: Uuid,
-        name: String,
-    },
-    EvalCompleted {
-        run_id: Uuid,
-        eval_id: Uuid,
-        name: String,
-        report: EvalResult,
-    },
-    TraceEvent {
-        run_id: Uuid,
-        eval_id: Uuid,
-        eval_name: String,
-        trace: TraceEvent,
-    },
-    RunCompleted {
-        run_id: Uuid,
-    },
+    EvalStarted { run_id: Uuid, eval_id: Uuid, name: String },
+    EvalCompleted { run_id: Uuid, eval_id: Uuid, name: String, report: EvalResult },
+    TraceEvent { run_id: Uuid, eval_id: Uuid, eval_name: String, trace: TraceEvent },
+    RunCompleted { run_id: Uuid },
 }
 
 impl SseEvent {
@@ -86,11 +70,7 @@ impl<T: ResultsStore> Clone for AppState<T> {
 impl<T: ResultsStore> AppState<T> {
     pub fn new(results_store: Arc<T>, run_id: Uuid) -> Self {
         let (sse_tx, _rx) = broadcast::channel(100);
-        Self {
-            sse_tx,
-            results_store,
-            current_run_id: Arc::new(RwLock::new(Some(run_id))),
-        }
+        Self { sse_tx, results_store, current_run_id: Arc::new(RwLock::new(Some(run_id))) }
     }
 
     /// Send an SSE event to all connected clients
@@ -99,17 +79,12 @@ impl<T: ResultsStore> AppState<T> {
     }
 }
 
-pub async fn serve<T: ResultsStore + Clone + 'static>(
-    state: AppState<T>,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn serve<T: ResultsStore + Clone + 'static>(state: AppState<T>) -> Result<(), Box<dyn std::error::Error>> {
     let app = create_router(state);
     let listener = TcpListener::bind("127.0.0.1:3000").await?;
 
     println!("\n{}", "=== Eval Report Server ===".bold().green());
-    println!(
-        "Report available at: {}",
-        "http://localhost:3000".bold().cyan()
-    );
+    println!("Report available at: {}", "http://localhost:3000".bold().cyan());
     println!("Press {} to stop the server\n", "Ctrl+C".bold());
 
     axum::serve(listener, app).await?;
@@ -124,22 +99,10 @@ pub fn create_router<T: ResultsStore + Clone + 'static>(state: AppState<T>) -> R
         .route("/script.js", get(serve_script))
         .route("/api/events", get(sse_handler::<T>))
         .route("/api/runs", get(list_runs::<T>))
-        .route(
-            "/api/runs/{run_id}",
-            get(|state, path| get_run::<T>(state, path)),
-        )
-        .route(
-            "/api/runs/{run_id}/events",
-            get(async |state, path| run_sse_handler::<T>(state, path)),
-        )
-        .route(
-            "/api/runs/{run_id}/evals/{eval_id}",
-            get(|state, path| get_run_eval::<T>(state, path)),
-        )
-        .route(
-            "/api/runs/{run_id}/evals/{eval_id}/events",
-            get(async |state, path| eval_sse_handler::<T>(state, path)),
-        )
+        .route("/api/runs/{run_id}", get(|state, path| get_run::<T>(state, path)))
+        .route("/api/runs/{run_id}/events", get(async |state, path| run_sse_handler::<T>(state, path)))
+        .route("/api/runs/{run_id}/evals/{eval_id}", get(|state, path| get_run_eval::<T>(state, path)))
+        .route("/api/runs/{run_id}/evals/{eval_id}/events", get(async |state, path| eval_sse_handler::<T>(state, path)))
         .route(
             "/api/runs/{run_id}/evals/{eval_id}/traces",
             get(|state, path| get_eval_traces_handler::<T>(state, path)),
@@ -162,10 +125,7 @@ async fn serve_styles() -> impl IntoResponse {
 async fn serve_script() -> impl IntoResponse {
     Response::builder()
         .status(StatusCode::OK)
-        .header(
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        )
+        .header(header::CONTENT_TYPE, "application/javascript; charset=utf-8")
         .body(include_str!("./templates/script.js").to_string())
         .unwrap()
 }
@@ -241,26 +201,15 @@ fn eval_sse_handler<T: ResultsStore>(
 async fn list_runs<T: ResultsStore>(State(state): State<AppState<T>>) -> impl IntoResponse {
     match state.results_store.get_run_ids().await {
         Ok(runs) => axum::Json(runs).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to list runs: {e}"),
-        )
-            .into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to list runs: {e}")).into_response(),
     }
 }
 
 /// Get a specific run's eval results
-async fn get_run<T: ResultsStore>(
-    State(state): State<AppState<T>>,
-    Path(run_id): Path<Uuid>,
-) -> impl IntoResponse {
+async fn get_run<T: ResultsStore>(State(state): State<AppState<T>>, Path(run_id): Path<Uuid>) -> impl IntoResponse {
     match state.results_store.get_eval_results(run_id).await {
         Ok(results) => axum::Json(results).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to read run: {e}"),
-        )
-            .into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read run: {e}")).into_response(),
     }
 }
 
@@ -271,16 +220,8 @@ async fn get_run_eval<T: ResultsStore>(
 ) -> impl IntoResponse {
     match state.results_store.get_eval_result(run_id, eval_id).await {
         Ok(Some(result)) => axum::Json(result).into_response(),
-        Ok(None) => (
-            StatusCode::NOT_FOUND,
-            format!("Eval {eval_id} not found in run {run_id}"),
-        )
-            .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to read eval result: {e}"),
-        )
-            .into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, format!("Eval {eval_id} not found in run {run_id}")).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read eval result: {e}")).into_response(),
     }
 }
 
@@ -291,10 +232,6 @@ async fn get_eval_traces_handler<T: ResultsStore>(
 ) -> impl IntoResponse {
     match state.results_store.get_eval_traces(run_id, eval_id).await {
         Ok(traces) => axum::Json(traces).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to read traces: {e}"),
-        )
-            .into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read traces: {e}")).into_response(),
     }
 }

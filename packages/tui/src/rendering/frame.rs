@@ -16,11 +16,7 @@ impl Cursor {
 
     /// Create a visible cursor at the given position.
     pub fn visible(row: usize, col: usize) -> Self {
-        Self {
-            row,
-            col,
-            is_visible: true,
-        }
+        Self { row, col, is_visible: true }
     }
 }
 
@@ -33,10 +29,7 @@ pub struct Frame {
 
 impl Frame {
     pub fn new(lines: Vec<Line>) -> Self {
-        Self {
-            lines,
-            cursor: Cursor::hidden(),
-        }
+        Self { lines, cursor: Cursor::hidden() }
     }
 
     pub fn lines(&self) -> &[Line] {

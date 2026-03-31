@@ -1,8 +1,6 @@
 use super::mappers::{map_messages, map_tools};
 use super::streaming::process_bedrock_stream;
-use crate::provider::{
-    LlmResponseStream, ProviderFactory, StreamingModelProvider, get_context_window,
-};
+use crate::provider::{LlmResponseStream, ProviderFactory, StreamingModelProvider, get_context_window};
 use crate::{Context, LlmError, Result};
 use aws_config::Region;
 use aws_sdk_bedrockruntime::config::{BehaviorVersion, Credentials};
@@ -40,24 +38,14 @@ impl BedrockProvider {
         let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
         let client = Client::new(&config);
 
-        Self {
-            client,
-            model: DEFAULT_MODEL.to_string(),
-            max_tokens: DEFAULT_MAX_TOKENS,
-            temperature: None,
-        }
+        Self { client, model: DEFAULT_MODEL.to_string(), max_tokens: DEFAULT_MAX_TOKENS, temperature: None }
     }
 
     /// Create a provider from explicit configuration without async credential discovery.
     pub fn from_config(credentials: Option<AwsCredentials>, region: Option<&str>) -> Self {
         let client = build_client(credentials, region);
 
-        Self {
-            client,
-            model: DEFAULT_MODEL.to_string(),
-            max_tokens: DEFAULT_MAX_TOKENS,
-            temperature: None,
-        }
+        Self { client, model: DEFAULT_MODEL.to_string(), max_tokens: DEFAULT_MAX_TOKENS, temperature: None }
     }
 
     pub fn with_model(mut self, model: &str) -> Self {
@@ -189,19 +177,13 @@ mod tests {
 
     #[test]
     fn test_display_name() {
-        assert_eq!(
-            test_provider().display_name(),
-            "Bedrock (anthropic.claude-sonnet-4-5-20250929-v1:0)"
-        );
+        assert_eq!(test_provider().display_name(), "Bedrock (anthropic.claude-sonnet-4-5-20250929-v1:0)");
     }
 
     #[test]
     fn test_with_model() {
         let provider = test_provider().with_model("anthropic.claude-opus-4-20250514-v1:0");
-        assert_eq!(
-            provider.display_name(),
-            "Bedrock (anthropic.claude-opus-4-20250514-v1:0)"
-        );
+        assert_eq!(provider.display_name(), "Bedrock (anthropic.claude-opus-4-20250514-v1:0)");
     }
 
     #[test]

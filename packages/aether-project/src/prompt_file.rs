@@ -16,11 +16,7 @@ pub(crate) struct PromptFrontmatter {
     pub user_invocable: bool,
     #[serde(default, rename = "agent-invocable", skip_serializing_if = "not")]
     pub agent_invocable: bool,
-    #[serde(
-        default,
-        rename = "argument-hint",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, rename = "argument-hint", skip_serializing_if = "Option::is_none")]
     pub argument_hint: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
@@ -66,11 +62,8 @@ impl PromptFile {
 
         let (frontmatter, body) = Self::parse_frontmatter(raw.trim())?;
 
-        let dir_name = path
-            .parent()
-            .and_then(|p| p.file_name())
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
+        let dir_name =
+            path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
 
         let name = frontmatter.name.unwrap_or(dir_name);
         let description = frontmatter.description.trim().to_string();
@@ -79,10 +72,7 @@ impl PromptFile {
             return Err(PromptFileError::MissingDescription { name });
         }
 
-        let has_read_triggers = frontmatter
-            .triggers
-            .as_ref()
-            .is_some_and(|t| !t.read.is_empty());
+        let has_read_triggers = frontmatter.triggers.as_ref().is_some_and(|t| !t.read.is_empty());
 
         if !frontmatter.user_invocable && !frontmatter.agent_invocable && !has_read_triggers {
             return Err(PromptFileError::NoActivationSurface { name });
@@ -110,16 +100,12 @@ impl PromptFile {
     /// Validate this prompt file has a non-empty description and at least one activation surface.
     pub fn validate(&self) -> Result<(), PromptFileError> {
         if self.description.trim().is_empty() {
-            return Err(PromptFileError::MissingDescription {
-                name: self.name.clone(),
-            });
+            return Err(PromptFileError::MissingDescription { name: self.name.clone() });
         }
 
         let has_read_triggers = !self.triggers.is_empty();
         if !self.user_invocable && !self.agent_invocable && !has_read_triggers {
-            return Err(PromptFileError::NoActivationSurface {
-                name: self.name.clone(),
-            });
+            return Err(PromptFileError::NoActivationSurface { name: self.name.clone() });
         }
 
         Ok(())
@@ -133,13 +119,8 @@ impl PromptFile {
             fs::create_dir_all(parent)?;
         }
 
-        let triggers = if self.triggers.is_empty() {
-            None
-        } else {
-            Some(Triggers {
-                read: self.triggers.patterns().to_vec(),
-            })
-        };
+        let triggers =
+            if self.triggers.is_empty() { None } else { Some(Triggers { read: self.triggers.patterns().to_vec() }) };
 
         let frontmatter = PromptFrontmatter {
             description: self.description.clone(),
@@ -154,14 +135,10 @@ impl PromptFile {
             harmful: self.harmful,
         };
 
-        let yaml =
-            serde_yml::to_string(&frontmatter).map_err(|e| PromptFileError::Yaml(e.to_string()))?;
+        let yaml = serde_yml::to_string(&frontmatter).map_err(|e| PromptFileError::Yaml(e.to_string()))?;
 
-        let file_content = if self.body.is_empty() {
-            format!("---\n{yaml}---\n")
-        } else {
-            format!("---\n{yaml}---\n{}\n", self.body)
-        };
+        let file_content =
+            if self.body.is_empty() { format!("---\n{yaml}---\n") } else { format!("---\n{yaml}---\n{}\n", self.body) };
         fs::write(path, file_content)?;
         Ok(())
     }
@@ -173,8 +150,8 @@ impl PromptFile {
 
     /// Parse YAML frontmatter and body from a SKILL.md content string (no I/O).
     fn parse_frontmatter(content: &str) -> Result<(PromptFrontmatter, String), PromptFileError> {
-        let (yaml_str, body) = utils::markdown_file::split_frontmatter(content)
-            .ok_or(PromptFileError::MissingFrontmatter)?;
+        let (yaml_str, body) =
+            utils::markdown_file::split_frontmatter(content).ok_or(PromptFileError::MissingFrontmatter)?;
 
         let frontmatter: PromptFrontmatter =
             serde_yml::from_str(yaml_str).map_err(|e| PromptFileError::Yaml(e.to_string()))?;
@@ -193,32 +170,22 @@ pub struct PromptTriggers {
 impl PromptTriggers {
     fn new(glob_patterns: Vec<String>) -> Result<Self, PromptFileError> {
         if glob_patterns.is_empty() {
-            return Ok(Self {
-                patterns: Vec::new(),
-                globs: None,
-            });
+            return Ok(Self { patterns: Vec::new(), globs: None });
         }
 
         let mut builder = GlobSetBuilder::new();
         for pattern in &glob_patterns {
-            let glob = Glob::new(pattern).map_err(|e| PromptFileError::InvalidTriggerGlob {
-                pattern: pattern.clone(),
-                error: e.to_string(),
-            })?;
+            let glob = Glob::new(pattern)
+                .map_err(|e| PromptFileError::InvalidTriggerGlob { pattern: pattern.clone(), error: e.to_string() })?;
             builder.add(glob);
         }
 
-        let globs = builder
-            .build()
-            .map_err(|e| PromptFileError::InvalidTriggerGlob {
-                pattern: glob_patterns.join(", "),
-                error: e.to_string(),
-            })?;
+        let globs = builder.build().map_err(|e| PromptFileError::InvalidTriggerGlob {
+            pattern: glob_patterns.join(", "),
+            error: e.to_string(),
+        })?;
 
-        Ok(Self {
-            patterns: glob_patterns,
-            globs: Some(globs),
-        })
+        Ok(Self { patterns: glob_patterns, globs: Some(globs) })
     }
 
     pub fn patterns(&self) -> &[String] {
@@ -231,9 +198,7 @@ impl PromptTriggers {
 
     /// Check if a project-relative path matches any read trigger glob.
     pub fn matches_read(&self, relative_path: &str) -> bool {
-        self.globs
-            .as_ref()
-            .is_some_and(|gs| gs.is_match(relative_path))
+        self.globs.as_ref().is_some_and(|gs| gs.is_match(relative_path))
     }
 }
 
@@ -259,20 +224,14 @@ impl Display for PromptFileError {
                 write!(f, "skill '{name}' has an empty description")
             }
             PromptFileError::NoActivationSurface { name } => {
-                write!(
-                    f,
-                    "skill '{name}' must have at least one of: user-invocable, agent-invocable, or triggers.read"
-                )
+                write!(f, "skill '{name}' must have at least one of: user-invocable, agent-invocable, or triggers.read")
             }
             PromptFileError::InvalidTriggerGlob { pattern, error } => {
                 write!(f, "invalid trigger glob '{pattern}': {error}")
             }
             PromptFileError::NotFound(name) => write!(f, "skill not found: {name}"),
             PromptFileError::NotAgentAuthored(name) => {
-                write!(
-                    f,
-                    "skill '{name}' is not agent-authored and cannot be modified"
-                )
+                write!(f, "skill '{name}' is not agent-authored and cannot be modified")
             }
         }
     }
@@ -460,9 +419,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let skill_path = temp_dir.path().join("rust-rules").join(SKILL_FILENAME);
 
-        let triggers =
-            PromptTriggers::new(vec!["src/**/*.rs".to_string(), "tests/**/*.rs".to_string()])
-                .unwrap();
+        let triggers = PromptTriggers::new(vec!["src/**/*.rs".to_string(), "tests/**/*.rs".to_string()]).unwrap();
 
         let prompt = PromptFile {
             name: "rust-rules".to_string(),
@@ -486,10 +443,7 @@ mod tests {
         assert!(parsed.triggers.matches_read("src/main.rs"));
         assert!(parsed.triggers.matches_read("tests/integration.rs"));
         assert!(!parsed.triggers.matches_read("README.md"));
-        assert_eq!(
-            parsed.triggers.patterns(),
-            &["src/**/*.rs", "tests/**/*.rs"]
-        );
+        assert_eq!(parsed.triggers.patterns(), &["src/**/*.rs", "tests/**/*.rs"]);
     }
 
     #[test]
@@ -512,10 +466,7 @@ mod tests {
             harmful: 0,
         };
         let result = prompt.write(&skill_path);
-        assert!(matches!(
-            result,
-            Err(PromptFileError::MissingDescription { .. })
-        ));
+        assert!(matches!(result, Err(PromptFileError::MissingDescription { .. })));
     }
 
     #[test]
@@ -538,10 +489,7 @@ mod tests {
             harmful: 0,
         };
         let result = prompt.write(&skill_path);
-        assert!(matches!(
-            result,
-            Err(PromptFileError::NoActivationSurface { .. })
-        ));
+        assert!(matches!(result, Err(PromptFileError::NoActivationSurface { .. })));
     }
 
     #[test]

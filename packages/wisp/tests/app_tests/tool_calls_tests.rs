@@ -4,18 +4,10 @@ use super::common::*;
 
 #[tokio::test]
 async fn test_tool_calls_interleave_with_thought_and_text_in_arrival_order() {
-    let renderer = render(vec![
-        thought_chunk("Thinking"),
-        tool_call("search", r#"{"q":"rust"}"#),
-        text_chunk("Done"),
-    ]);
+    let renderer = render(vec![thought_chunk("Thinking"), tool_call("search", r#"{"q":"rust"}"#), text_chunk("Done")]);
 
-    let expected = expected_with_prompt(
-        &["│ Thinking", "", "⠒ search", "", "Done", PROGRESS_LINE],
-        TEST_WIDTH,
-        "",
-        TEST_AGENT,
-    );
+    let expected =
+        expected_with_prompt(&["│ Thinking", "", "⠒ search", "", "Done", PROGRESS_LINE], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -23,25 +15,16 @@ async fn test_tool_calls_interleave_with_thought_and_text_in_arrival_order() {
 async fn test_agent_message_tool_call() {
     let renderer = render(vec![tool_call("test_tool", r#"{"arg1": "value1"}"#)]);
 
-    let expected =
-        expected_with_prompt(&["⠒ test_tool", PROGRESS_LINE], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&["⠒ test_tool", PROGRESS_LINE], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
 #[tokio::test]
 async fn test_agent_message_tool_result() {
     let args = r#"{"arg1": "value1"}"#;
-    let renderer = render(vec![
-        tool_call("test_tool", args),
-        tool_complete("call_test_tool"),
-    ]);
+    let renderer = render(vec![tool_call("test_tool", args), tool_complete("call_test_tool")]);
 
-    let expected = expected_with_prompt(
-        &[r#"✓ test_tool {"arg1":"value1"}"#],
-        TEST_WIDTH,
-        "",
-        TEST_AGENT,
-    );
+    let expected = expected_with_prompt(&[r#"✓ test_tool {"arg1":"value1"}"#], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -58,13 +41,7 @@ async fn test_multiple_messages_sequence() {
     ]);
 
     let expected = expected_with_prompt(
-        &[
-            "Processing your request",
-            "",
-            r#"✓ search {"query":"test"}"#,
-            "",
-            "Found results",
-        ],
+        &["Processing your request", "", r#"✓ search {"query":"test"}"#, "", "Found results"],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -80,21 +57,14 @@ async fn test_streaming_tool_call_arguments() {
         tool_complete("call_1"),
     ]);
 
-    let expected = expected_with_prompt(
-        &[r#"✓ Read {"file":"test.rs"}"#],
-        TEST_WIDTH,
-        "",
-        TEST_AGENT,
-    );
+    let expected = expected_with_prompt(&[r#"✓ Read {"file":"test.rs"}"#], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
 #[tokio::test]
 async fn test_in_progress_tool_call_updates_from_duplicate_requests() {
-    let renderer = render(vec![
-        tool_call_with_id("Read", "call_1", ""),
-        tool_call_with_id("", "call_1", r#"{"file":"test.rs"}"#),
-    ]);
+    let renderer =
+        render(vec![tool_call_with_id("Read", "call_1", ""), tool_call_with_id("", "call_1", r#"{"file":"test.rs"}"#)]);
 
     let expected = expected_with_prompt(&["⠒ Read", PROGRESS_LINE], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
@@ -102,11 +72,7 @@ async fn test_in_progress_tool_call_updates_from_duplicate_requests() {
 
 #[tokio::test]
 async fn test_tool_progress_renders_running_tool() {
-    let renderer = render(vec![tool_call_with_id(
-        "Read",
-        "call_1",
-        r#"{"file":"test.rs"}"#,
-    )]);
+    let renderer = render(vec![tool_call_with_id("Read", "call_1", r#"{"file":"test.rs"}"#)]);
 
     let expected = expected_with_prompt(&["⠒ Read", PROGRESS_LINE], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
@@ -128,11 +94,7 @@ async fn test_multiple_parallel_tool_calls() {
     ]);
 
     let expected = expected_with_prompt(
-        &[
-            r#"✓ Read {"file":"test.rs"}"#,
-            r#"✓ Grep {"pattern":"foo"}"#,
-            r#"✓ Glob {"path":"src/"}"#,
-        ],
+        &[r#"✓ Read {"file":"test.rs"}"#, r#"✓ Grep {"pattern":"foo"}"#, r#"✓ Glob {"path":"src/"}"#],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -151,12 +113,7 @@ async fn test_prompt_done_finalizes_running_tool_calls() {
     ]);
 
     let expected = expected_with_prompt(
-        &[
-            r#"✓ Read {"file":"a.rs"}"#,
-            r#"✓ Write {"file":"b.rs"}"#,
-            "",
-            "Done reading",
-        ],
+        &[r#"✓ Read {"file":"a.rs"}"#, r#"✓ Write {"file":"b.rs"}"#, "", "Done reading"],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -176,12 +133,7 @@ async fn test_late_result_after_prompt_done() {
     ]);
 
     let expected = expected_with_prompt(
-        &[
-            r#"✓ Read {"file":"a.rs"}"#,
-            r#"✓ Write {"file":"b.rs"}"#,
-            "",
-            "Done reading",
-        ],
+        &[r#"✓ Read {"file":"a.rs"}"#, r#"✓ Write {"file":"b.rs"}"#, "", "Done reading"],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -192,11 +144,7 @@ async fn test_late_result_after_prompt_done() {
 #[tokio::test]
 async fn test_tool_complete_with_display_meta_shows_display_value() {
     let renderer = render(vec![
-        tool_call_with_id(
-            "read_file",
-            "call_1",
-            r#"{"filePath":"/Users/josh/code/aether/Cargo.toml"}"#,
-        ),
+        tool_call_with_id("read_file", "call_1", r#"{"filePath":"/Users/josh/code/aether/Cargo.toml"}"#),
         tool_complete_with_display_meta(
             "call_1",
             &serde_json::json!({
@@ -206,22 +154,14 @@ async fn test_tool_complete_with_display_meta_shows_display_value() {
         ),
     ]);
 
-    let expected = expected_with_prompt(
-        &["✓ Read file (Cargo.toml, 156 lines)"],
-        TEST_WIDTH,
-        "",
-        TEST_AGENT,
-    );
+    let expected = expected_with_prompt(&["✓ Read file (Cargo.toml, 156 lines)"], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
 #[tokio::test]
 async fn test_tool_complete_without_display_meta_shows_raw_args() {
     let args = r#"{"filePath":"/Users/josh/code/aether/Cargo.toml"}"#;
-    let renderer = render(vec![
-        tool_call_with_id("read_file", "call_1", args),
-        tool_complete("call_1"),
-    ]);
+    let renderer = render(vec![tool_call_with_id("read_file", "call_1", args), tool_complete("call_1")]);
 
     let expected = expected_with_prompt(
         &[r#"✓ read_file {"filePath":"/Users/josh/code/aether/Cargo.toml"}"#],
@@ -234,23 +174,12 @@ async fn test_tool_complete_without_display_meta_shows_raw_args() {
 
 #[tokio::test]
 async fn test_running_tool_hides_raw_args() {
-    let renderer = render(vec![tool_call_with_id(
-        "read_file",
-        "call_1",
-        r#"{"filePath":"Cargo.toml"}"#,
-    )]);
+    let renderer = render(vec![tool_call_with_id("read_file", "call_1", r#"{"filePath":"Cargo.toml"}"#)]);
 
     let lines = renderer.writer().get_lines();
     let tool_line = lines.iter().find(|l| l.contains("read_file")).unwrap();
-    assert!(
-        !tool_line.contains("filePath"),
-        "Running tool should hide raw args: {tool_line}"
-    );
-    assert_eq!(
-        tool_line.trim(),
-        "⠒ read_file",
-        "Running tool should show only name: {tool_line}"
-    );
+    assert!(!tool_line.contains("filePath"), "Running tool should hide raw args: {tool_line}");
+    assert_eq!(tool_line.trim(), "⠒ read_file", "Running tool should show only name: {tool_line}");
 }
 
 #[tokio::test]
@@ -268,14 +197,8 @@ async fn test_display_meta_title_overrides_tool_name() {
 
     let lines = renderer.writer().get_lines();
     let tool_line = lines.iter().find(|l| l.contains("✓")).unwrap();
-    assert!(
-        tool_line.contains("Read file"),
-        "Display title should override raw tool name: {tool_line}"
-    );
-    assert!(
-        tool_line.contains("(main.rs, 42 lines)"),
-        "Display value should appear in parens: {tool_line}"
-    );
+    assert!(tool_line.contains("Read file"), "Display title should override raw tool name: {tool_line}");
+    assert!(tool_line.contains("(main.rs, 42 lines)"), "Display value should appear in parens: {tool_line}");
 }
 
 #[tokio::test]
@@ -294,10 +217,7 @@ async fn test_multiple_tools_with_mixed_display_meta() {
     ]);
 
     let expected = expected_with_prompt(
-        &[
-            "✓ Read file (Cargo.toml, 156 lines)",
-            r#"✓ external_tool {"key":"value"}"#,
-        ],
+        &["✓ Read file (Cargo.toml, 156 lines)", r#"✓ external_tool {"key":"value"}"#],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -318,11 +238,6 @@ async fn test_command_display_meta_shows_exit_code() {
         ),
     ]);
 
-    let expected = expected_with_prompt(
-        &["✓ Run command (cargo test (exit 0))"],
-        TEST_WIDTH,
-        "",
-        TEST_AGENT,
-    );
+    let expected = expected_with_prompt(&["✓ Run command (cargo test (exit 0))"], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }

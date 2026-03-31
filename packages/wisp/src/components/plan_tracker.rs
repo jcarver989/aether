@@ -52,11 +52,7 @@ impl PlanTracker {
     }
 
     pub fn visible_entries(&self, now: Instant, grace_period: Duration) -> Vec<acp::PlanEntry> {
-        self.entries
-            .iter()
-            .filter(|entry| self.is_visible(entry, now, grace_period))
-            .cloned()
-            .collect()
+        self.entries.iter().filter(|entry| self.is_visible(entry, now, grace_period)).cloned().collect()
     }
 
     pub fn clear(&mut self) {
@@ -70,9 +66,7 @@ impl PlanTracker {
             acp::PlanEntryStatus::Completed => self
                 .completed_at
                 .get(&Self::entry_key(entry))
-                .is_some_and(|completed_at| {
-                    now.saturating_duration_since(*completed_at) <= grace_period
-                }),
+                .is_some_and(|completed_at| now.saturating_duration_since(*completed_at) <= grace_period),
             _ => true,
         }
     }
@@ -151,8 +145,7 @@ mod tests {
 
         tracker.replace(vec![plan_entry("Task A", PlanEntryStatus::Completed)], now);
 
-        let visible =
-            tracker.visible_entries(now + GRACE_PERIOD + Duration::from_millis(1), GRACE_PERIOD);
+        let visible = tracker.visible_entries(now + GRACE_PERIOD + Duration::from_millis(1), GRACE_PERIOD);
         assert!(visible.is_empty());
     }
 
@@ -162,15 +155,11 @@ mod tests {
         let now = Instant::now();
 
         tracker.replace(
-            vec![
-                plan_entry("Pending", PlanEntryStatus::Pending),
-                plan_entry("Working", PlanEntryStatus::InProgress),
-            ],
+            vec![plan_entry("Pending", PlanEntryStatus::Pending), plan_entry("Working", PlanEntryStatus::InProgress)],
             now,
         );
 
-        let visible =
-            tracker.visible_entries(now + GRACE_PERIOD + Duration::from_secs(10), GRACE_PERIOD);
+        let visible = tracker.visible_entries(now + GRACE_PERIOD + Duration::from_secs(10), GRACE_PERIOD);
         let contents: Vec<_> = visible.iter().map(|entry| entry.content.as_str()).collect();
         assert_eq!(contents, vec!["Pending", "Working"]);
     }
@@ -182,14 +171,10 @@ mod tests {
         let entry = plan_entry("Task A", PlanEntryStatus::Completed);
 
         tracker.replace(vec![entry.clone()], now);
-        let initial_ts = tracker
-            .completed_at_for(&entry)
-            .expect("timestamp should exist");
+        let initial_ts = tracker.completed_at_for(&entry).expect("timestamp should exist");
 
         tracker.replace(vec![entry.clone()], now + Duration::from_secs(1));
-        let ts_after = tracker
-            .completed_at_for(&entry)
-            .expect("timestamp should exist");
+        let ts_after = tracker.completed_at_for(&entry).expect("timestamp should exist");
 
         assert_eq!(initial_ts, ts_after);
     }
@@ -246,8 +231,7 @@ mod tests {
             now + GRACE_PERIOD + Duration::from_millis(1),
         );
 
-        let visible =
-            tracker.visible_entries(now + GRACE_PERIOD + Duration::from_millis(1), GRACE_PERIOD);
+        let visible = tracker.visible_entries(now + GRACE_PERIOD + Duration::from_millis(1), GRACE_PERIOD);
         let visible_contents: Vec<_> = visible.iter().map(|e| e.content.as_str()).collect();
         assert_eq!(visible_contents, vec!["In Progress", "Pending"]);
     }
@@ -258,10 +242,7 @@ mod tests {
         let completed_at = Instant::now();
 
         // Add a completed entry at time T
-        tracker.replace(
-            vec![plan_entry("Task A", PlanEntryStatus::Completed)],
-            completed_at,
-        );
+        tracker.replace(vec![plan_entry("Task A", PlanEntryStatus::Completed)], completed_at);
 
         // Query visibility at a time BEFORE completed_at
         // This should not panic and should treat the entry as still within grace period

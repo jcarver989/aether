@@ -17,11 +17,7 @@ fn tool_names(tools: &[rmcp::model::Tool]) -> Vec<&str> {
 }
 
 fn extract_text(content: &rmcp::model::Content) -> &str {
-    content
-        .as_text()
-        .expect("expected text content")
-        .text
-        .as_str()
+    content.as_text().expect("expected text content").text.as_str()
 }
 
 async fn connect_and_list_tools(server: &str, extra_args: &[&str]) -> Vec<rmcp::model::Tool> {
@@ -39,26 +35,13 @@ async fn connect_and_list_tools(server: &str, extra_args: &[&str]) -> Vec<rmcp::
 async fn tasks_server_lists_tools_over_stdio() {
     let tmp = tempfile::tempdir().expect("create temp dir");
 
-    let tools =
-        connect_and_list_tools("tasks", &["--", "--dir", tmp.path().to_str().unwrap()]).await;
+    let tools = connect_and_list_tools("tasks", &["--", "--dir", tmp.path().to_str().unwrap()]).await;
     let names = tool_names(&tools);
 
-    assert!(
-        names.contains(&"task_create"),
-        "expected task_create, got: {names:?}"
-    );
-    assert!(
-        names.contains(&"task_list"),
-        "expected task_list, got: {names:?}"
-    );
-    assert!(
-        names.contains(&"task_update"),
-        "expected task_update, got: {names:?}"
-    );
-    assert!(
-        names.contains(&"task_get"),
-        "expected task_get, got: {names:?}"
-    );
+    assert!(names.contains(&"task_create"), "expected task_create, got: {names:?}");
+    assert!(names.contains(&"task_list"), "expected task_list, got: {names:?}");
+    assert!(names.contains(&"task_update"), "expected task_update, got: {names:?}");
+    assert!(names.contains(&"task_get"), "expected task_get, got: {names:?}");
 }
 
 #[tokio::test]
@@ -98,12 +81,8 @@ async fn tasks_server_create_and_get_task_over_stdio() {
     let get_result = client
         .peer()
         .call_tool(
-            CallToolRequestParams::new("task_get").with_arguments(
-                serde_json::json!({ "id": task_id })
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-            ),
+            CallToolRequestParams::new("task_get")
+                .with_arguments(serde_json::json!({ "id": task_id }).as_object().unwrap().clone()),
         )
         .await
         .expect("call task_get");
@@ -118,58 +97,27 @@ async fn coding_server_lists_tools_over_stdio() {
     let tools = connect_and_list_tools("coding", &[]).await;
     let names = tool_names(&tools);
 
-    assert!(
-        names.contains(&"grep"),
-        "expected grep tool, got: {names:?}"
-    );
-    assert!(
-        names.contains(&"read_file"),
-        "expected read_file tool, got: {names:?}"
-    );
+    assert!(names.contains(&"grep"), "expected grep tool, got: {names:?}");
+    assert!(names.contains(&"read_file"), "expected read_file tool, got: {names:?}");
 
     // LSP tools should be in the coding server too
-    assert!(
-        names.contains(&"lsp_symbol"),
-        "expected lsp_symbol in coding server, got: {names:?}"
-    );
-    assert!(
-        names.contains(&"lsp_document"),
-        "expected lsp_document in coding server, got: {names:?}"
-    );
-    assert!(
-        names.contains(&"lsp_check_errors"),
-        "expected lsp_check_errors in coding server, got: {names:?}"
-    );
+    assert!(names.contains(&"lsp_symbol"), "expected lsp_symbol in coding server, got: {names:?}");
+    assert!(names.contains(&"lsp_document"), "expected lsp_document in coding server, got: {names:?}");
+    assert!(names.contains(&"lsp_check_errors"), "expected lsp_check_errors in coding server, got: {names:?}");
 }
 
 #[tokio::test]
 async fn lsp_server_lists_tools_over_stdio() {
     let tmp = tempfile::tempdir().expect("create temp dir");
 
-    let tools =
-        connect_and_list_tools("lsp", &["--", "--root-dir", tmp.path().to_str().unwrap()]).await;
+    let tools = connect_and_list_tools("lsp", &["--", "--root-dir", tmp.path().to_str().unwrap()]).await;
     let names = tool_names(&tools);
 
-    assert!(
-        names.contains(&"lsp_symbol"),
-        "expected lsp_symbol, got: {names:?}"
-    );
-    assert!(
-        names.contains(&"lsp_document"),
-        "expected lsp_document, got: {names:?}"
-    );
-    assert!(
-        names.contains(&"lsp_check_errors"),
-        "expected lsp_check_errors, got: {names:?}"
-    );
-    assert!(
-        names.contains(&"lsp_workspace_search"),
-        "expected lsp_workspace_search, got: {names:?}"
-    );
-    assert!(
-        names.contains(&"lsp_rename"),
-        "expected lsp_rename, got: {names:?}"
-    );
+    assert!(names.contains(&"lsp_symbol"), "expected lsp_symbol, got: {names:?}");
+    assert!(names.contains(&"lsp_document"), "expected lsp_document, got: {names:?}");
+    assert!(names.contains(&"lsp_check_errors"), "expected lsp_check_errors, got: {names:?}");
+    assert!(names.contains(&"lsp_workspace_search"), "expected lsp_workspace_search, got: {names:?}");
+    assert!(names.contains(&"lsp_rename"), "expected lsp_rename, got: {names:?}");
     assert_eq!(names.len(), 5, "expected exactly 5 tools, got: {names:?}");
 }
 
@@ -177,36 +125,22 @@ async fn lsp_server_lists_tools_over_stdio() {
 async fn skills_server_lists_tools_over_stdio() {
     let tmp = tempfile::tempdir().expect("create temp dir");
 
-    let tools =
-        connect_and_list_tools("skills", &["--", "--dir", tmp.path().to_str().unwrap()]).await;
+    let tools = connect_and_list_tools("skills", &["--", "--dir", tmp.path().to_str().unwrap()]).await;
     let names = tool_names(&tools);
 
-    assert!(
-        names.contains(&"get_skills"),
-        "expected get_skills, got: {names:?}"
-    );
-    assert!(
-        names.contains(&"save_note"),
-        "expected save_note, got: {names:?}"
-    );
-    assert!(
-        names.contains(&"search_notes"),
-        "expected search_notes, got: {names:?}"
-    );
+    assert!(names.contains(&"get_skills"), "expected get_skills, got: {names:?}");
+    assert!(names.contains(&"save_note"), "expected save_note, got: {names:?}");
+    assert!(names.contains(&"search_notes"), "expected search_notes, got: {names:?}");
 }
 
 #[tokio::test]
 async fn subagents_server_lists_tools_over_stdio() {
     let tmp = tempfile::tempdir().expect("create temp dir");
 
-    let tools =
-        connect_and_list_tools("subagents", &["--", "--dir", tmp.path().to_str().unwrap()]).await;
+    let tools = connect_and_list_tools("subagents", &["--", "--dir", tmp.path().to_str().unwrap()]).await;
     let names = tool_names(&tools);
 
-    assert!(
-        names.contains(&"spawn_subagent"),
-        "expected spawn_subagent, got: {names:?}"
-    );
+    assert!(names.contains(&"spawn_subagent"), "expected spawn_subagent, got: {names:?}");
     assert_eq!(names.len(), 1, "expected exactly 1 tool, got: {names:?}");
 }
 
@@ -215,10 +149,7 @@ async fn survey_server_lists_tools_over_stdio() {
     let tools = connect_and_list_tools("survey", &[]).await;
     let names = tool_names(&tools);
 
-    assert!(
-        names.contains(&"ask_user"),
-        "expected ask_user, got: {names:?}"
-    );
+    assert!(names.contains(&"ask_user"), "expected ask_user, got: {names:?}");
     assert_eq!(names.len(), 1, "expected exactly 1 tool, got: {names:?}");
 }
 

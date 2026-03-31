@@ -16,10 +16,7 @@ struct FakeOAuthHandler {
 impl FakeOAuthHandler {
     fn new(code: &str, state: &str) -> Self {
         Self {
-            callback: OAuthCallback {
-                code: code.to_string(),
-                state: state.to_string(),
-            },
+            callback: OAuthCallback { code: code.to_string(), state: state.to_string() },
             redirect_uri: "http://127.0.0.1:0/oauth2callback".to_string(),
         }
     }
@@ -68,17 +65,8 @@ async fn cancelling_handler_returns_user_cancelled() {
 async fn builder_with_oauth_handler_spawns_successfully() {
     let handler = FakeOAuthHandler::new("code", "state");
 
-    let McpSpawnResult {
-        tool_definitions,
-        instructions,
-        elicitation_rx: _,
-        ..
-    } = mcp()
-        .with_oauth_handler(handler)
-        .with_servers(vec![])
-        .spawn()
-        .await
-        .unwrap();
+    let McpSpawnResult { tool_definitions, instructions, elicitation_rx: _, .. } =
+        mcp().with_oauth_handler(handler).with_servers(vec![]).spawn().await.unwrap();
 
     assert!(tool_definitions.is_empty());
     assert!(instructions.is_empty());
@@ -90,15 +78,7 @@ async fn http_server_without_handler_returns_error() {
     let mut manager = mcp_utils::client::McpManager::new(elicitation_tx, None);
 
     let config = StreamableHttpClientTransportConfig::with_uri("http://localhost:19999/mcp");
-    let result = manager
-        .add_mcp(
-            ServerConfig::Http {
-                name: "test_server".to_string(),
-                config,
-            }
-            .into(),
-        )
-        .await;
+    let result = manager.add_mcp(ServerConfig::Http { name: "test_server".to_string(), config }.into()).await;
 
     assert!(result.is_err());
 }
@@ -110,15 +90,7 @@ async fn http_server_with_handler_stashes_needs_oauth_on_failure() {
     let mut manager = mcp_utils::client::McpManager::new(elicitation_tx, Some(Arc::new(handler)));
 
     let config = StreamableHttpClientTransportConfig::with_uri("http://localhost:19999/mcp");
-    let result = manager
-        .add_mcp(
-            ServerConfig::Http {
-                name: "test_oauth_server".to_string(),
-                config,
-            }
-            .into(),
-        )
-        .await;
+    let result = manager.add_mcp(ServerConfig::Http { name: "test_oauth_server".to_string(), config }.into()).await;
 
     // Connection fails, server should be stashed as NeedsOAuth (not auto-trigger OAuth)
     assert!(result.is_err());
@@ -127,10 +99,7 @@ async fn http_server_with_handler_stashes_needs_oauth_on_failure() {
     assert_eq!(statuses.len(), 1);
     assert_eq!(statuses[0].name, "test_oauth_server");
     assert!(
-        matches!(
-            statuses[0].status,
-            mcp_utils::status::McpServerStatus::NeedsOAuth
-        ),
+        matches!(statuses[0].status, mcp_utils::status::McpServerStatus::NeedsOAuth),
         "Expected NeedsOAuth, got: {:?}",
         statuses[0].status
     );
@@ -164,8 +133,7 @@ async fn add_mcps_continues_on_oauth_failure() {
 async fn accept_oauth_callback_parses_code_and_state() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
-    let callback_url =
-        format!("http://127.0.0.1:{port}/oauth2callback?code=abc123&state=csrf_token");
+    let callback_url = format!("http://127.0.0.1:{port}/oauth2callback?code=abc123&state=csrf_token");
 
     let handle = tokio::spawn(async move { accept_oauth_callback(&listener).await });
 
@@ -173,11 +141,7 @@ async fn accept_oauth_callback_parses_code_and_state() {
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let client = reqwest::Client::new();
-    let _response = client
-        .get(&callback_url)
-        .send()
-        .await
-        .expect("Failed to send callback request");
+    let _response = client.get(&callback_url).send().await.expect("Failed to send callback request");
 
     let result = handle.await.unwrap();
     let callback = result.unwrap();
@@ -215,10 +179,7 @@ async fn tool_proxy_with_failing_http_surfaces_needs_oauth() {
     let statuses = manager.server_statuses();
 
     // The failing HTTP server should be stashed as NeedsOAuth
-    let remote_status = statuses
-        .iter()
-        .find(|s| s.name == "remote")
-        .expect("Expected status entry for 'remote'");
+    let remote_status = statuses.iter().find(|s| s.name == "remote").expect("Expected status entry for 'remote'");
     assert!(
         matches!(remote_status.status, McpServerStatus::NeedsOAuth),
         "Expected NeedsOAuth for failing HTTP server, got: {:?}",
@@ -226,10 +187,7 @@ async fn tool_proxy_with_failing_http_surfaces_needs_oauth() {
     );
 
     // The proxy itself should still be connected
-    let proxy_status = statuses
-        .iter()
-        .find(|s| s.name == "proxy-oauth")
-        .expect("Expected status entry for proxy");
+    let proxy_status = statuses.iter().find(|s| s.name == "proxy-oauth").expect("Expected status entry for proxy");
 
     assert!(
         matches!(proxy_status.status, McpServerStatus::Connected { .. }),
@@ -269,12 +227,6 @@ async fn tool_proxy_partial_connection_works() {
 
     // Instructions should mention the working server
     let instructions = manager.server_instructions();
-    let proxy_instr = instructions
-        .iter()
-        .find(|i| i.server_name == "partial")
-        .expect("Expected proxy instructions");
-    assert!(
-        proxy_instr.instructions.contains("working"),
-        "Instructions should mention the connected server"
-    );
+    let proxy_instr = instructions.iter().find(|i| i.server_name == "partial").expect("Expected proxy instructions");
+    assert!(proxy_instr.instructions.contains("working"), "Instructions should mention the connected server");
 }

@@ -33,19 +33,11 @@ impl Prompt {
     }
 
     pub fn file(path: &str) -> Self {
-        Self::File {
-            path: path.to_string(),
-            args: None,
-            cwd: None,
-        }
+        Self::File { path: path.to_string(), args: None, cwd: None }
     }
 
     pub fn file_with_args(path: &str, args: HashMap<String, String>) -> Self {
-        Self::File {
-            path: path.to_string(),
-            args: Some(args),
-            cwd: None,
-        }
+        Self::File { path: path.to_string(), args: Some(args), cwd: None }
     }
 
     pub fn from_globs(patterns: Vec<String>, cwd: PathBuf) -> Self {
@@ -58,11 +50,7 @@ impl Prompt {
 
     pub fn with_cwd(self, cwd: PathBuf) -> Self {
         match self {
-            Self::File { path, args, .. } => Self::File {
-                path,
-                args,
-                cwd: Some(cwd),
-            },
+            Self::File { path, args, .. } => Self::File { path, args, cwd: Some(cwd) },
             Self::SystemEnv(_) => Self::SystemEnv(Some(cwd)),
             Self::PromptGlobs { patterns, .. } => Self::PromptGlobs { patterns, cwd },
             Self::Text(_) | Self::McpInstructions(_) => self,
@@ -82,9 +70,7 @@ impl Prompt {
                 let substituted = substitute_parameters(&content, args);
                 Self::expand_builtins(&substituted, cwd.as_deref()).await
             }
-            Prompt::PromptGlobs { patterns, cwd } => {
-                Self::resolve_prompt_globs(patterns, cwd).await
-            }
+            Prompt::PromptGlobs { patterns, cwd } => Self::resolve_prompt_globs(patterns, cwd).await,
             Prompt::SystemEnv(cwd) => Self::resolve_system_env(cwd.as_deref()).await,
             Prompt::McpInstructions(instructions) => Ok(format_mcp_instructions(instructions)),
         }
@@ -103,9 +89,9 @@ impl Prompt {
     }
 
     async fn resolve_file(path: &Path) -> Result<String> {
-        fs::read_to_string(path).await.map_err(|e| {
-            AgentError::IoError(format!("Failed to read file '{}': {e}", path.display()))
-        })
+        fs::read_to_string(path)
+            .await
+            .map_err(|e| AgentError::IoError(format!("Failed to read file '{}': {e}", path.display())))
     }
 
     async fn resolve_prompt_globs(patterns: &[String], cwd: &Path) -> Result<String> {
@@ -118,9 +104,8 @@ impl Prompt {
                 cwd.join(pattern).to_string_lossy().to_string()
             };
 
-            let paths = glob(&full_pattern).map_err(|e| {
-                AgentError::IoError(format!("Invalid glob pattern '{pattern}': {e}"))
-            })?;
+            let paths = glob(&full_pattern)
+                .map_err(|e| AgentError::IoError(format!("Invalid glob pattern '{pattern}': {e}")))?;
 
             let mut matched: Vec<PathBuf> = paths.filter_map(std::result::Result::ok).collect();
             matched.sort();
@@ -155,9 +140,9 @@ impl Prompt {
     async fn resolve_system_env(cwd: Option<&Path>) -> Result<String> {
         let cwd = match cwd {
             Some(dir) => dir.to_path_buf(),
-            None => env::current_dir().map_err(|e| {
-                AgentError::IoError(format!("Failed to get current directory: {e}"))
-            })?,
+            None => {
+                env::current_dir().map_err(|e| AgentError::IoError(format!("Failed to get current directory: {e}")))?
+            }
         };
 
         let os_version = Command::new("uname")
@@ -168,17 +153,10 @@ impl Prompt {
             .and_then(|output| String::from_utf8(output.stdout).ok())
             .and_then(|version| {
                 let version = version.trim();
-                if version.is_empty() {
-                    None
-                } else {
-                    Some(format!("OS Version: {version}"))
-                }
+                if version.is_empty() { None } else { Some(format!("OS Version: {version}")) }
             });
 
-        let is_git_repo = fs::metadata(cwd.join(".git"))
-            .await
-            .map(|m| m.is_dir())
-            .unwrap_or(false);
+        let is_git_repo = fs::metadata(cwd.join(".git")).await.map(|m| m.is_dir()).unwrap_or(false);
 
         let working_dir = if is_git_repo {
             format!("Working directory: {} (git repo)", cwd.display())
@@ -210,10 +188,7 @@ fn format_mcp_instructions(instructions: &[ServerInstructions]) -> String {
     parts.push("You are connected to the following MCP servers:\n".to_string());
 
     for instr in instructions {
-        parts.push(format!(
-            "<mcp-server name=\"{}\">\n{}\n</mcp-server>\n",
-            instr.server_name, instr.instructions
-        ));
+        parts.push(format!("<mcp-server name=\"{}\">\n{}\n</mcp-server>\n", instr.server_name, instr.instructions));
     }
 
     parts.join("\n")
@@ -250,9 +225,7 @@ mod tests {
     #[tokio::test]
     async fn resolve_system_env_uses_provided_cwd() {
         let cwd = std::env::temp_dir();
-        let result = Prompt::resolve_system_env(Some(cwd.as_path()))
-            .await
-            .unwrap();
+        let result = Prompt::resolve_system_env(Some(cwd.as_path())).await.unwrap();
         assert!(result.contains(&cwd.display().to_string()));
     }
 
@@ -274,10 +247,7 @@ mod tests {
         std::fs::write(rules_dir.join("a-coding.md"), "Use Rust").unwrap();
         std::fs::write(rules_dir.join("b-testing.md"), "Write tests").unwrap();
 
-        let prompt = Prompt::from_globs(
-            vec![".aether/rules/*.md".to_string()],
-            dir.path().to_path_buf(),
-        );
+        let prompt = Prompt::from_globs(vec![".aether/rules/*.md".to_string()], dir.path().to_path_buf());
         let result = prompt.build().await.unwrap();
         assert!(result.contains("Use Rust"));
         assert!(result.contains("Write tests"));
@@ -287,10 +257,7 @@ mod tests {
     async fn prompt_globs_returns_empty_for_no_matches() {
         let dir = tempfile::tempdir().unwrap();
 
-        let prompt = Prompt::from_globs(
-            vec!["nonexistent*.md".to_string()],
-            dir.path().to_path_buf(),
-        );
+        let prompt = Prompt::from_globs(vec!["nonexistent*.md".to_string()], dir.path().to_path_buf());
         let result = prompt.build().await.unwrap();
         assert!(result.is_empty());
     }
@@ -301,10 +268,7 @@ mod tests {
         let file_path = dir.path().join("rules.md");
         std::fs::write(&file_path, "Absolute rule").unwrap();
 
-        let prompt = Prompt::from_globs(
-            vec![file_path.to_string_lossy().to_string()],
-            PathBuf::from("/tmp"),
-        );
+        let prompt = Prompt::from_globs(vec![file_path.to_string_lossy().to_string()], PathBuf::from("/tmp"));
         let result = prompt.build().await.unwrap();
         assert_eq!(result, "Absolute rule");
     }
@@ -315,10 +279,8 @@ mod tests {
         std::fs::write(dir.path().join("AGENTS.md"), "Agent instructions").unwrap();
         std::fs::write(dir.path().join("SYSTEM.md"), "System prompt").unwrap();
 
-        let prompt = Prompt::from_globs(
-            vec!["AGENTS.md".to_string(), "SYSTEM.md".to_string()],
-            dir.path().to_path_buf(),
-        );
+        let prompt =
+            Prompt::from_globs(vec!["AGENTS.md".to_string(), "SYSTEM.md".to_string()], dir.path().to_path_buf());
         let result = prompt.build().await.unwrap();
         assert!(result.contains("Agent instructions"));
         assert!(result.contains("System prompt"));
@@ -327,20 +289,14 @@ mod tests {
 
     #[tokio::test]
     async fn build_all_skips_empty_parts() {
-        let prompts = vec![
-            Prompt::text("Part one"),
-            Prompt::text(""),
-            Prompt::text("Part two"),
-        ];
+        let prompts = vec![Prompt::text("Part one"), Prompt::text(""), Prompt::text("Part two")];
         let result = Prompt::build_all(&prompts).await.unwrap();
         assert_eq!(result, "Part one\n\nPart two");
     }
 
     #[tokio::test]
     async fn expand_builtins_replaces_system_env() {
-        let result = Prompt::expand_builtins("Before\n$SYSTEM_ENV\nAfter", None)
-            .await
-            .unwrap();
+        let result = Prompt::expand_builtins("Before\n$SYSTEM_ENV\nAfter", None).await.unwrap();
         assert!(result.starts_with("Before\n<env>"));
         assert!(result.contains("</env>"));
         assert!(result.ends_with("</env>\nAfter"));
@@ -356,20 +312,14 @@ mod tests {
     #[tokio::test]
     async fn expand_builtins_with_cwd() {
         let cwd = std::env::temp_dir();
-        let result = Prompt::expand_builtins("$SYSTEM_ENV", Some(cwd.as_path()))
-            .await
-            .unwrap();
+        let result = Prompt::expand_builtins("$SYSTEM_ENV", Some(cwd.as_path())).await.unwrap();
         assert!(result.contains(&cwd.display().to_string()));
     }
 
     #[tokio::test]
     async fn prompt_globs_expands_system_env_in_file() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("AGENTS.md"),
-            "Instructions\n\n$SYSTEM_ENV\n\nRules",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("AGENTS.md"), "Instructions\n\n$SYSTEM_ENV\n\nRules").unwrap();
 
         let prompt = Prompt::from_globs(vec!["AGENTS.md".to_string()], dir.path().to_path_buf());
         let result = prompt.build().await.unwrap();

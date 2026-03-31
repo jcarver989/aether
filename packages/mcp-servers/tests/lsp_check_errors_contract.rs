@@ -17,10 +17,7 @@ async fn call_tool_error(
 ) -> String {
     match client.call_tool(call_tool_params(name, args)).await {
         Ok(result) => {
-            assert!(
-                result.is_error.unwrap_or(false),
-                "tool call should fail: {result:?}"
-            );
+            assert!(result.is_error.unwrap_or(false), "tool call should fail: {result:?}");
             let content = result.content.first().expect("Expected error content");
             let text = content.as_text().expect("Expected text error content");
             text.text.clone()
@@ -31,11 +28,8 @@ async fn call_tool_error(
 
 #[tokio::test]
 async fn lsp_check_errors_rejects_unwrapped_arguments() {
-    let project =
-        CargoProject::new("diag_contract_rejects_unwrapped").expect("Failed to create project");
-    project
-        .add_file("src/main.rs", "fn main() {}\n")
-        .expect("Failed to add file");
+    let project = CargoProject::new("diag_contract_rejects_unwrapped").expect("Failed to create project");
+    project.add_file("src/main.rs", "fn main() {}\n").expect("Failed to add file");
 
     let (_server_handle, client) = connect_lsp(&project).await;
     let error = call_tool_error(
@@ -53,30 +47,19 @@ async fn lsp_check_errors_rejects_unwrapped_arguments() {
 
 #[tokio::test]
 async fn lsp_check_errors_schema_wraps_discriminated_union_in_object() {
-    let project =
-        CargoProject::new("diag_contract_schema_wrapper").expect("Failed to create project");
-    project
-        .add_file("src/main.rs", "fn main() {}\n")
-        .expect("Failed to add file");
+    let project = CargoProject::new("diag_contract_schema_wrapper").expect("Failed to create project");
+    project.add_file("src/main.rs", "fn main() {}\n").expect("Failed to add file");
 
     let (_server_handle, client) = connect_lsp(&project).await;
     let tools = client.peer().list_all_tools().await.expect("list tools");
-    let tool = tools
-        .into_iter()
-        .find(|tool| tool.name.as_ref() == "lsp_check_errors")
-        .expect("lsp_check_errors tool present");
+    let tool =
+        tools.into_iter().find(|tool| tool.name.as_ref() == "lsp_check_errors").expect("lsp_check_errors tool present");
 
     let schema = serde_json::Value::Object((*tool.input_schema).clone());
     assert_eq!(schema.get("type").and_then(|v| v.as_str()), Some("object"));
 
-    let input = schema
-        .get("properties")
-        .and_then(|v| v.get("input"))
-        .expect("top-level input property");
-    assert_eq!(
-        input.get("$ref").and_then(|v| v.as_str()),
-        Some("#/$defs/LspDiagnosticsInput")
-    );
+    let input = schema.get("properties").and_then(|v| v.get("input")).expect("top-level input property");
+    assert_eq!(input.get("$ref").and_then(|v| v.as_str()), Some("#/$defs/LspDiagnosticsInput"));
     let variants = schema
         .get("$defs")
         .and_then(|v| v.get("LspDiagnosticsInput"))
@@ -86,30 +69,19 @@ async fn lsp_check_errors_schema_wraps_discriminated_union_in_object() {
 
     assert_eq!(variants.len(), 2);
     assert!(variants.iter().any(|variant| {
-        variant
-            .get("properties")
-            .and_then(|v| v.get("scope"))
-            .and_then(|v| v.get("const"))
-            .and_then(|v| v.as_str())
+        variant.get("properties").and_then(|v| v.get("scope")).and_then(|v| v.get("const")).and_then(|v| v.as_str())
             == Some("workspace")
     }));
     assert!(variants.iter().any(|variant| {
-        variant
-            .get("properties")
-            .and_then(|v| v.get("scope"))
-            .and_then(|v| v.get("const"))
-            .and_then(|v| v.as_str())
+        variant.get("properties").and_then(|v| v.get("scope")).and_then(|v| v.get("const")).and_then(|v| v.as_str())
             == Some("file")
     }));
 }
 
 #[tokio::test]
 async fn lsp_check_errors_accepts_stringified_workspace_input() {
-    let project =
-        CargoProject::new("diag_contract_stringified_workspace").expect("Failed to create project");
-    project
-        .add_file("src/main.rs", "fn main() {}\n")
-        .expect("Failed to add file");
+    let project = CargoProject::new("diag_contract_stringified_workspace").expect("Failed to create project");
+    project.add_file("src/main.rs", "fn main() {}\n").expect("Failed to add file");
 
     let (_server_handle, client) = connect_lsp(&project).await;
     let result = client
@@ -127,11 +99,8 @@ async fn lsp_check_errors_accepts_stringified_workspace_input() {
 
 #[tokio::test]
 async fn lsp_check_errors_rejects_workspace_scope_with_file_path() {
-    let project = CargoProject::new("diag_contract_workspace_rejects_file_path")
-        .expect("Failed to create project");
-    project
-        .add_file("src/main.rs", "fn main() {}\n")
-        .expect("Failed to add file");
+    let project = CargoProject::new("diag_contract_workspace_rejects_file_path").expect("Failed to create project");
+    project.add_file("src/main.rs", "fn main() {}\n").expect("Failed to add file");
 
     let (_server_handle, client) = connect_lsp(&project).await;
     let error = call_tool_error(
@@ -151,11 +120,8 @@ async fn lsp_check_errors_rejects_workspace_scope_with_file_path() {
 
 #[tokio::test]
 async fn lsp_check_errors_rejects_file_scope_directory_path() {
-    let project = CargoProject::new("diag_contract_file_rejects_directory")
-        .expect("Failed to create project");
-    project
-        .add_file("src/main.rs", "fn main() {}\n")
-        .expect("Failed to add file");
+    let project = CargoProject::new("diag_contract_file_rejects_directory").expect("Failed to create project");
+    project.add_file("src/main.rs", "fn main() {}\n").expect("Failed to add file");
 
     let (_server_handle, client) = connect_lsp(&project).await;
     let error = call_tool_error(
@@ -170,8 +136,5 @@ async fn lsp_check_errors_rejects_file_scope_directory_path() {
     )
     .await;
 
-    assert!(
-        error.contains("filePath must point to an existing file"),
-        "{error}"
-    );
+    assert!(error.contains("filePath must point to an existing file"), "{error}");
 }

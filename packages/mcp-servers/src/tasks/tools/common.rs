@@ -3,9 +3,7 @@ use serde::Serialize;
 
 use crate::tasks::task_store::TaskStore;
 use crate::tasks::types::{Task, TaskStatus};
-use mcp_utils::display_meta::{
-    PlanMeta, PlanMetaEntry, PlanMetaStatus, ToolDisplayMeta, ToolResultMeta,
-};
+use mcp_utils::display_meta::{PlanMeta, PlanMetaEntry, PlanMetaStatus, ToolDisplayMeta, ToolResultMeta};
 
 impl From<TaskStatus> for PlanMetaStatus {
     fn from(status: TaskStatus) -> Self {
@@ -41,11 +39,7 @@ impl From<&Task> for TaskSummary {
             status: task.status.as_wire_str().to_string(),
             parent: task.parent.as_ref().map(std::string::ToString::to_string),
             assignee: task.assignee.clone(),
-            deps: task
-                .deps
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect(),
+            deps: task.deps.iter().map(std::string::ToString::to_string).collect(),
         }
     }
 }
@@ -61,10 +55,7 @@ fn build_plan_meta(store: &TaskStore) -> PlanMeta {
         .list_trees()
         .iter()
         .flat_map(|root_id| store.get_tree(root_id).unwrap_or_default())
-        .map(|task| PlanMetaEntry {
-            content: task.title.clone(),
-            status: task.status.into(),
-        })
+        .map(|task| PlanMetaEntry { content: task.title.clone(), status: task.status.into() })
         .collect();
     PlanMeta { entries }
 }

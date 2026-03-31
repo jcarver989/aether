@@ -41,14 +41,8 @@ impl FakeAgentRunner {
     pub fn with_tool_call(tool_name: impl Into<String>, result: impl Into<String>) -> Self {
         let tool_name = tool_name.into();
         Self::new(vec![
-            AgentRunnerMessage::ToolCall {
-                name: tool_name.clone(),
-                arguments: "{}".to_string(),
-            },
-            AgentRunnerMessage::ToolResult {
-                name: tool_name,
-                result: result.into(),
-            },
+            AgentRunnerMessage::ToolCall { name: tool_name.clone(), arguments: "{}".to_string() },
+            AgentRunnerMessage::ToolResult { name: tool_name, result: result.into() },
             AgentRunnerMessage::AgentText("Task completed using tools".to_string()),
             AgentRunnerMessage::Done,
         ])
@@ -56,16 +50,10 @@ impl FakeAgentRunner {
 }
 
 impl AgentRunner for FakeAgentRunner {
-    async fn run(
-        &self,
-        _config: AgentConfig<'_>,
-        tx: Sender<AgentRunnerMessage>,
-    ) -> Result<(), RunError> {
+    async fn run(&self, _config: AgentConfig<'_>, tx: Sender<AgentRunnerMessage>) -> Result<(), RunError> {
         // Send all predefined messages
         for message in &self.messages {
-            tx.send(message.clone())
-                .await
-                .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
+            tx.send(message.clone()).await.map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
         }
 
         Ok(())

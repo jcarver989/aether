@@ -12,23 +12,14 @@ pub struct NumberField {
 
 impl NumberField {
     pub fn new(value: String, integer_only: bool) -> Self {
-        Self {
-            value,
-            integer_only,
-        }
+        Self { value, integer_only }
     }
 
     pub fn to_json(&self) -> serde_json::Value {
         if self.integer_only {
-            self.value
-                .parse::<i64>()
-                .map(serde_json::Value::from)
-                .unwrap_or(serde_json::Value::Null)
+            self.value.parse::<i64>().map(serde_json::Value::from).unwrap_or(serde_json::Value::Null)
         } else {
-            self.value
-                .parse::<f64>()
-                .map(serde_json::Value::from)
-                .unwrap_or(serde_json::Value::Null)
+            self.value.parse::<f64>().map(serde_json::Value::from).unwrap_or(serde_json::Value::Null)
         }
     }
 }

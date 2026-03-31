@@ -11,22 +11,14 @@ use rmcp::{
 pub async fn connect<S>(
     server: S,
     client_info: ClientInfo,
-) -> Result<
-    (
-        RunningService<RoleServer, S>,
-        RunningService<RoleClient, ClientInfo>,
-    ),
-    ConnectError,
->
+) -> Result<(RunningService<RoleServer, S>, RunningService<RoleClient, ClientInfo>), ConnectError>
 where
     S: Service<RoleServer>,
 {
     let (client_transport, server_transport) = create_in_memory_transport();
 
-    let (server_result, client_result) = tokio::join!(
-        serve_server(server, server_transport),
-        serve_client(client_info, client_transport)
-    );
+    let (server_result, client_result) =
+        tokio::join!(serve_server(server, server_transport), serve_client(client_info, client_transport));
 
     let server = server_result.map_err(ConnectError::ServerInit)?;
     let client = client_result.map_err(ConnectError::ClientInit)?;

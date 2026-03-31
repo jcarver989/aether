@@ -8,12 +8,12 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 
 use lsp_types::{
-    CallHierarchyIncomingCall, CallHierarchyIncomingCallsParams, CallHierarchyItem,
-    CallHierarchyOutgoingCall, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
-    DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse,
-    Hover, HoverParams, Location, PartialResultParams, Position, PublishDiagnosticsParams,
-    ReferenceContext, ReferenceParams, RenameParams, SymbolInformation, TextDocumentIdentifier,
-    TextDocumentPositionParams, Uri, WorkDoneProgressParams, WorkspaceEdit, WorkspaceSymbolParams,
+    CallHierarchyIncomingCall, CallHierarchyIncomingCallsParams, CallHierarchyItem, CallHierarchyOutgoingCall,
+    CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams, DocumentSymbolParams, DocumentSymbolResponse,
+    GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams, Location, PartialResultParams, Position,
+    PublishDiagnosticsParams, ReferenceContext, ReferenceParams, RenameParams, SymbolInformation,
+    TextDocumentIdentifier, TextDocumentPositionParams, Uri, WorkDoneProgressParams, WorkspaceEdit,
+    WorkspaceSymbolParams,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -77,25 +77,16 @@ impl LspClient {
             Ok(stream) => {
                 return Self::from_stream(stream, workspace_root, language).await;
             }
-            Err(err)
-                if err.kind() == ErrorKind::ConnectionRefused
-                    || err.kind() == ErrorKind::NotFound => {}
+            Err(err) if err.kind() == ErrorKind::ConnectionRefused || err.kind() == ErrorKind::NotFound => {}
             Err(err) => return Err(ClientError::ConnectionFailed(err)),
         }
 
         spawn_daemon(&socket_path).await?;
-        let stream = UnixStream::connect(&socket_path)
-            .await
-            .map_err(ClientError::ConnectionFailed)?;
+        let stream = UnixStream::connect(&socket_path).await.map_err(ClientError::ConnectionFailed)?;
         Self::from_stream(stream, workspace_root, language).await
     }
 
-    pub async fn goto_definition(
-        &self,
-        uri: Uri,
-        line: u32,
-        character: u32,
-    ) -> ClientResult<GotoDefinitionResponse> {
+    pub async fn goto_definition(&self, uri: Uri, line: u32, character: u32) -> ClientResult<GotoDefinitionResponse> {
         let params = GotoDefinitionParams {
             text_document_position_params: TextDocumentPositionParams {
                 text_document: TextDocumentIdentifier { uri },
@@ -104,10 +95,7 @@ impl LspClient {
             work_done_progress_params: WorkDoneProgressParams::default(),
             partial_result_params: PartialResultParams::default(),
         };
-        self.call("textDocument/definition", &params, || {
-            GotoDefinitionResponse::Array(vec![])
-        })
-        .await
+        self.call("textDocument/definition", &params, || GotoDefinitionResponse::Array(vec![])).await
     }
 
     pub async fn goto_implementation(
@@ -124,10 +112,7 @@ impl LspClient {
             work_done_progress_params: WorkDoneProgressParams::default(),
             partial_result_params: PartialResultParams::default(),
         };
-        self.call("textDocument/implementation", &params, || {
-            GotoDefinitionResponse::Array(vec![])
-        })
-        .await
+        self.call("textDocument/implementation", &params, || GotoDefinitionResponse::Array(vec![])).await
     }
 
     pub async fn find_references(
@@ -144,12 +129,9 @@ impl LspClient {
             },
             work_done_progress_params: WorkDoneProgressParams::default(),
             partial_result_params: PartialResultParams::default(),
-            context: ReferenceContext {
-                include_declaration,
-            },
+            context: ReferenceContext { include_declaration },
         };
-        self.call("textDocument/references", &params, Vec::new)
-            .await
+        self.call("textDocument/references", &params, Vec::new).await
     }
 
     pub async fn hover(&self, uri: Uri, line: u32, character: u32) -> ClientResult<Option<Hover>> {
@@ -178,10 +160,7 @@ impl LspClient {
             work_done_progress_params: WorkDoneProgressParams::default(),
             partial_result_params: PartialResultParams::default(),
         };
-        self.call("textDocument/documentSymbol", &params, || {
-            DocumentSymbolResponse::Flat(vec![])
-        })
-        .await
+        self.call("textDocument/documentSymbol", &params, || DocumentSymbolResponse::Flat(vec![])).await
     }
 
     pub async fn prepare_call_hierarchy(
@@ -197,34 +176,25 @@ impl LspClient {
             },
             work_done_progress_params: WorkDoneProgressParams::default(),
         };
-        self.call("textDocument/prepareCallHierarchy", &params, Vec::new)
-            .await
+        self.call("textDocument/prepareCallHierarchy", &params, Vec::new).await
     }
 
-    pub async fn incoming_calls(
-        &self,
-        item: CallHierarchyItem,
-    ) -> ClientResult<Vec<CallHierarchyIncomingCall>> {
+    pub async fn incoming_calls(&self, item: CallHierarchyItem) -> ClientResult<Vec<CallHierarchyIncomingCall>> {
         let params = CallHierarchyIncomingCallsParams {
             item,
             work_done_progress_params: WorkDoneProgressParams::default(),
             partial_result_params: PartialResultParams::default(),
         };
-        self.call("callHierarchy/incomingCalls", &params, Vec::new)
-            .await
+        self.call("callHierarchy/incomingCalls", &params, Vec::new).await
     }
 
-    pub async fn outgoing_calls(
-        &self,
-        item: CallHierarchyItem,
-    ) -> ClientResult<Vec<CallHierarchyOutgoingCall>> {
+    pub async fn outgoing_calls(&self, item: CallHierarchyItem) -> ClientResult<Vec<CallHierarchyOutgoingCall>> {
         let params = CallHierarchyOutgoingCallsParams {
             item,
             work_done_progress_params: WorkDoneProgressParams::default(),
             partial_result_params: PartialResultParams::default(),
         };
-        self.call("callHierarchy/outgoingCalls", &params, Vec::new)
-            .await
+        self.call("callHierarchy/outgoingCalls", &params, Vec::new).await
     }
 
     pub async fn rename(
@@ -245,19 +215,13 @@ impl LspClient {
         self.call("textDocument/rename", &params, || None).await
     }
 
-    pub async fn get_diagnostics(
-        &self,
-        uri: Option<Uri>,
-    ) -> ClientResult<Vec<PublishDiagnosticsParams>> {
+    pub async fn get_diagnostics(&self, uri: Option<Uri>) -> ClientResult<Vec<PublishDiagnosticsParams>> {
         let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let request = DaemonRequest::GetDiagnostics { client_id, uri };
 
         self.send_and_await(request, client_id)
             .await
-            .and_then(|value| {
-                serde_json::from_value(value)
-                    .map_err(|err| ClientError::ProtocolError(err.to_string()))
-            })
+            .and_then(|value| serde_json::from_value(value).map_err(|err| ClientError::ProtocolError(err.to_string())))
     }
 
     pub async fn queue_diagnostic_refresh(&self, uri: Uri) -> ClientResult<()> {
@@ -269,9 +233,7 @@ impl LspClient {
     pub async fn disconnect(self) -> ClientResult<()> {
         let request = DaemonRequest::Disconnect;
         let mut writer = self.writer.lock().await;
-        write_frame(&mut *writer, &request)
-            .await
-            .map_err(ClientError::Io)
+        write_frame(&mut *writer, &request).await.map_err(ClientError::Io)
     }
 
     pub async fn call<P: Serialize, R: DeserializeOwned>(
@@ -280,46 +242,31 @@ impl LspClient {
         params: &P,
         default: impl FnOnce() -> R,
     ) -> ClientResult<R> {
-        let params_value = serde_json::to_value(params)
-            .map_err(|err| ClientError::ProtocolError(err.to_string()))?;
+        let params_value = serde_json::to_value(params).map_err(|err| ClientError::ProtocolError(err.to_string()))?;
 
         let client_id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        let request = DaemonRequest::LspCall {
-            client_id,
-            method: method.to_string(),
-            params: params_value,
-        };
+        let request = DaemonRequest::LspCall { client_id, method: method.to_string(), params: params_value };
 
         let value = self.send_and_await(request, client_id).await?;
 
         if value.is_null() {
             Ok(default())
         } else {
-            serde_json::from_value(value)
-                .map_err(|err| ClientError::ProtocolError(format!("Parse error: {err}")))
+            serde_json::from_value(value).map_err(|err| ClientError::ProtocolError(format!("Parse error: {err}")))
         }
     }
 }
 
 impl LspClient {
-    async fn from_stream(
-        stream: UnixStream,
-        workspace_root: &Path,
-        language: LanguageId,
-    ) -> ClientResult<Self> {
+    async fn from_stream(stream: UnixStream, workspace_root: &Path, language: LanguageId) -> ClientResult<Self> {
         let (mut reader, mut writer) = tokio::io::split(stream);
 
-        let initialize = DaemonRequest::Initialize(InitializeRequest {
-            workspace_root: workspace_root.to_path_buf(),
-            language,
-        });
+        let initialize =
+            DaemonRequest::Initialize(InitializeRequest { workspace_root: workspace_root.to_path_buf(), language });
 
-        write_frame(&mut writer, &initialize)
-            .await
-            .map_err(ClientError::Io)?;
+        write_frame(&mut writer, &initialize).await.map_err(ClientError::Io)?;
 
-        let response: Option<DaemonResponse> =
-            read_frame(&mut reader).await.map_err(ClientError::Io)?;
+        let response: Option<DaemonResponse> = read_frame(&mut reader).await.map_err(ClientError::Io)?;
 
         match response {
             Some(DaemonResponse::Initialized) => {}
@@ -327,31 +274,21 @@ impl LspClient {
                 return Err(ClientError::InitializationFailed(err.message));
             }
             Some(_) => {
-                return Err(ClientError::ProtocolError(
-                    "Unexpected response to Initialize".into(),
-                ));
+                return Err(ClientError::ProtocolError("Unexpected response to Initialize".into()));
             }
             None => {
-                return Err(ClientError::ProtocolError(
-                    "Connection closed during initialization".into(),
-                ));
+                return Err(ClientError::ProtocolError("Connection closed during initialization".into()));
             }
         }
 
-        let pending: Arc<Mutex<HashMap<i64, oneshot::Sender<PendingResult>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
+        let pending: Arc<Mutex<HashMap<i64, oneshot::Sender<PendingResult>>>> = Arc::new(Mutex::new(HashMap::new()));
 
         let pending_clone = Arc::clone(&pending);
         let reader_task = tokio::spawn(async move {
             run_reader(reader, pending_clone).await;
         });
 
-        Ok(Self {
-            writer: Mutex::new(writer),
-            pending,
-            next_id: AtomicI64::new(1),
-            reader_task,
-        })
+        Ok(Self { writer: Mutex::new(writer), pending, next_id: AtomicI64::new(1), reader_task })
     }
 
     async fn send_and_await(&self, request: DaemonRequest, client_id: i64) -> ClientResult<Value> {
@@ -372,9 +309,7 @@ impl LspClient {
             return Err(ClientError::Io(err));
         }
 
-        response_rx
-            .await
-            .map_err(|_| ClientError::ProtocolError("Response channel closed".into()))?
+        response_rx.await.map_err(|_| ClientError::ProtocolError("Response channel closed".into()))?
     }
 }
 
@@ -404,10 +339,8 @@ async fn run_reader(
             Some(DaemonResponse::LspResult { client_id, result }) => {
                 let mut pending = pending.lock().await;
                 if let Some(tx) = pending.remove(&client_id) {
-                    let value_result = result.map_err(|err| ClientError::LspError {
-                        code: err.code,
-                        message: err.message,
-                    });
+                    let value_result =
+                        result.map_err(|err| ClientError::LspError { code: err.code, message: err.message });
                     let _ = tx.send(value_result);
                 }
             }
@@ -463,14 +396,10 @@ async fn spawn_daemon(socket_path: &Path) -> ClientResult<()> {
 
 fn find_daemon_binary() -> ClientResult<PathBuf> {
     let candidates = [
+        std::env::current_exe().ok().and_then(|path| path.parent().map(|dir| dir.join("aether-lspd"))),
         std::env::current_exe()
             .ok()
-            .and_then(|path| path.parent().map(|dir| dir.join("aether-lspd"))),
-        std::env::current_exe().ok().and_then(|path| {
-            path.parent()
-                .and_then(|dir| dir.parent())
-                .map(|dir| dir.join("aether-lspd"))
-        }),
+            .and_then(|path| path.parent().and_then(|dir| dir.parent()).map(|dir| dir.join("aether-lspd"))),
         which_aether_lspd(),
         Some(PathBuf::from("target/debug/aether-lspd")),
         Some(PathBuf::from("target/release/aether-lspd")),
@@ -484,15 +413,10 @@ fn find_daemon_binary() -> ClientResult<PathBuf> {
         }
     }
 
-    Err(ClientError::DaemonBinaryNotFound(
-        "aether-lspd not found".into(),
-    ))
+    Err(ClientError::DaemonBinaryNotFound("aether-lspd not found".into()))
 }
 
 fn which_aether_lspd() -> Option<PathBuf> {
-    std::env::var_os("PATH").and_then(|paths| {
-        std::env::split_paths(&paths)
-            .map(|path| path.join("aether-lspd"))
-            .find(|path| path.exists())
-    })
+    std::env::var_os("PATH")
+        .and_then(|paths| std::env::split_paths(&paths).map(|path| path.join("aether-lspd")).find(|path| path.exists()))
 }

@@ -14,10 +14,7 @@ pub struct FakeLlmProvider {
 
 impl FakeLlmProvider {
     pub fn new(responses: Vec<Vec<LlmResponse>>) -> Self {
-        let wrapped = responses
-            .into_iter()
-            .map(|turn| turn.into_iter().map(Ok).collect())
-            .collect();
+        let wrapped = responses.into_iter().map(|turn| turn.into_iter().map(Ok).collect()).collect();
         Self::from_results(wrapped)
     }
 

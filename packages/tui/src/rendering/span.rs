@@ -9,17 +9,11 @@ pub struct Span {
 
 impl Span {
     pub fn new(text: impl Into<String>) -> Self {
-        Self {
-            text: text.into(),
-            style: Style::default(),
-        }
+        Self { text: text.into(), style: Style::default() }
     }
 
     pub fn with_style(text: impl Into<String>, style: Style) -> Self {
-        Self {
-            text: text.into(),
-            style,
-        }
+        Self { text: text.into(), style }
     }
 
     pub fn text(&self) -> &str {

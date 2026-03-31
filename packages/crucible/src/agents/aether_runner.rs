@@ -35,11 +35,7 @@ pub struct AetherRunner<T> {
 impl<T: StreamingModelProvider + 'static> AetherRunner<T> {
     /// Create a new `AetherRunner` with the given LLM provider
     pub fn new(llm: T) -> Self {
-        Self {
-            llm,
-            factories: HashMap::new(),
-            mcp_json_path: None,
-        }
+        Self { llm, factories: HashMap::new(), mcp_json_path: None }
     }
 
     /// Register an in-memory MCP server factory
@@ -47,11 +43,7 @@ impl<T: StreamingModelProvider + 'static> AetherRunner<T> {
     /// # Arguments
     /// * `name` - The name of the server (referenced in mcp.json)
     /// * `factory` - Factory function that creates server instances
-    pub fn with_mcp_server_factory(
-        mut self,
-        name: impl Into<String>,
-        factory: ServerFactory,
-    ) -> Self {
+    pub fn with_mcp_server_factory(mut self, name: impl Into<String>, factory: ServerFactory) -> Self {
         self.factories.insert(name.into(), Arc::new(factory));
         self
     }
@@ -83,13 +75,13 @@ impl<T: StreamingModelProvider + 'static> AetherRunner<T> {
 
         if let Some(mcp_json_path) = &self.mcp_json_path {
             mcp_builder = mcp_builder
-                .from_json_file(mcp_json_path.to_str().ok_or_else(|| {
-                    RunError::ConfigurationError("Invalid mcp.json path".to_string())
-                })?)
+                .from_json_file(
+                    mcp_json_path
+                        .to_str()
+                        .ok_or_else(|| RunError::ConfigurationError("Invalid mcp.json path".to_string()))?,
+                )
                 .await
-                .map_err(|e| {
-                    RunError::ConfigurationError(format!("Failed to load mcp.json: {e}"))
-                })?;
+                .map_err(|e| RunError::ConfigurationError(format!("Failed to load mcp.json: {e}")))?;
         }
 
         Ok(mcp_builder)
@@ -98,49 +90,34 @@ impl<T: StreamingModelProvider + 'static> AetherRunner<T> {
 
 /// Convert `AgentMessages` to `AgentRunnerMessages` in real-time, streaming them as they arrive
 #[allow(clippy::too_many_lines)]
-async fn stream_agent_messages(
-    mut rx: Receiver<AgentMessage>,
-    tx: Sender<AgentRunnerMessage>,
-) -> Result<(), RunError> {
+async fn stream_agent_messages(mut rx: Receiver<AgentMessage>, tx: Sender<AgentRunnerMessage>) -> Result<(), RunError> {
     let mut accumulated_text = String::new();
     let mut accumulated_tool_calls: HashMap<String, ToolCallRequest> = HashMap::new();
 
     while let Some(message) = rx.recv().await {
         match &message {
-            AgentMessage::Text {
-                chunk, is_complete, ..
-            } => handle_text(chunk, *is_complete, &mut accumulated_text, &tx).await?,
+            AgentMessage::Text { chunk, is_complete, .. } => {
+                handle_text(chunk, *is_complete, &mut accumulated_text, &tx).await?
+            }
 
             AgentMessage::ToolCall { request, .. } => {
                 handle_tool_call(request, &mut accumulated_tool_calls);
             }
 
-            AgentMessage::ToolCallUpdate {
-                tool_call_id,
-                chunk,
-                ..
-            } => {
+            AgentMessage::ToolCallUpdate { tool_call_id, chunk, .. } => {
                 handle_tool_call_update(tool_call_id, chunk, &mut accumulated_tool_calls);
             }
 
             AgentMessage::ToolResult { result, .. } => {
-                if let Some(tool_call) = take_tool_call(
-                    &mut accumulated_tool_calls,
-                    &result.id,
-                    &result.name,
-                    &result.arguments,
-                ) {
-                    tx.send(tool_call)
-                        .await
-                        .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
+                if let Some(tool_call) =
+                    take_tool_call(&mut accumulated_tool_calls, &result.id, &result.name, &result.arguments)
+                {
+                    tx.send(tool_call).await.map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
                 }
                 tracing::debug!("Tool result for {}: {}", result.name, result.result);
-                tx.send(AgentRunnerMessage::ToolResult {
-                    name: result.name.clone(),
-                    result: result.result.clone(),
-                })
-                .await
-                .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
+                tx.send(AgentRunnerMessage::ToolResult { name: result.name.clone(), result: result.result.clone() })
+                    .await
+                    .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
             }
 
             AgentMessage::ToolError { error, .. } => {
@@ -150,9 +127,7 @@ async fn stream_agent_messages(
                     &error.name,
                     error.arguments.as_deref().unwrap_or_default(),
                 ) {
-                    tx.send(tool_call)
-                        .await
-                        .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
+                    tx.send(tool_call).await.map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
                 }
                 tracing::debug!("Tool error: {:?}", error);
                 tx.send(AgentRunnerMessage::ToolError(format!("{error:?}")))
@@ -160,12 +135,9 @@ async fn stream_agent_messages(
                     .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
             }
 
-            AgentMessage::ToolProgress {
-                request,
-                progress,
-                total,
-                message,
-            } => handle_tool_progress(request, *progress, *total, message.as_ref()),
+            AgentMessage::ToolProgress { request, progress, total, message } => {
+                handle_tool_progress(request, *progress, *total, message.as_ref())
+            }
 
             AgentMessage::Error { message: msg } => {
                 tracing::debug!("Agent error: {}", msg);
@@ -193,32 +165,25 @@ async fn stream_agent_messages(
             AgentMessage::ContextCompactionStarted { message_count } => {
                 tracing::debug!("Context compaction started: {} messages", message_count);
             }
-            AgentMessage::ContextCompactionResult {
-                messages_removed, ..
-            } => {
+            AgentMessage::ContextCompactionResult { messages_removed, .. } => {
                 tracing::debug!("Context compacted: {} messages removed", messages_removed);
             }
-            AgentMessage::ContextUsageUpdate {
-                usage_ratio,
-                tokens_used,
-                context_limit,
-            } => match (usage_ratio, context_limit) {
-                (Some(usage_ratio), Some(context_limit)) => {
-                    tracing::debug!(
-                        "Context usage: {:.1}% ({}/{} tokens)",
-                        usage_ratio * 100.0,
-                        tokens_used,
-                        context_limit
-                    );
+            AgentMessage::ContextUsageUpdate { usage_ratio, tokens_used, context_limit } => {
+                match (usage_ratio, context_limit) {
+                    (Some(usage_ratio), Some(context_limit)) => {
+                        tracing::debug!(
+                            "Context usage: {:.1}% ({}/{} tokens)",
+                            usage_ratio * 100.0,
+                            tokens_used,
+                            context_limit
+                        );
+                    }
+                    _ => {
+                        tracing::debug!("Context usage: unknown limit ({} tokens used)", tokens_used);
+                    }
                 }
-                _ => {
-                    tracing::debug!("Context usage: unknown limit ({} tokens used)", tokens_used);
-                }
-            },
-            AgentMessage::AutoContinue {
-                attempt,
-                max_attempts,
-            } => {
+            }
+            AgentMessage::AutoContinue { attempt, max_attempts } => {
                 tracing::debug!(
                     "Auto-continuing: attempt {}/{} - LLM stopped with resumable stop reason",
                     attempt,
@@ -231,16 +196,10 @@ async fn stream_agent_messages(
             AgentMessage::ContextCleared => {
                 tracing::debug!("Agent context cleared");
             }
-            AgentMessage::Thought {
-                chunk,
-                is_complete: false,
-                ..
-            } => {
+            AgentMessage::Thought { chunk, is_complete: false, .. } => {
                 tracing::debug!("Agent thought: {}", chunk);
             }
-            AgentMessage::Thought {
-                is_complete: true, ..
-            } => {}
+            AgentMessage::Thought { is_complete: true, .. } => {}
         }
     }
 
@@ -248,11 +207,7 @@ async fn stream_agent_messages(
 }
 
 impl<T: StreamingModelProvider + Clone + 'static> AgentRunner for AetherRunner<T> {
-    async fn run(
-        &self,
-        config: AgentConfig<'_>,
-        tx: Sender<AgentRunnerMessage>,
-    ) -> Result<(), RunError> {
+    async fn run(&self, config: AgentConfig<'_>, tx: Sender<AgentRunnerMessage>) -> Result<(), RunError> {
         let mcp_builder = self.create_mcp_builder().await?;
         let McpSpawnResult {
             tool_definitions,
@@ -261,15 +216,11 @@ impl<T: StreamingModelProvider + Clone + 'static> AgentRunner for AetherRunner<T
             elicitation_rx: _,
             handle: _mcp_handle,
             server_statuses: _,
-        } = mcp_builder
-            .spawn()
-            .await
-            .map_err(|e| RunError::ExecutionFailed(format!("Failed to spawn MCP: {e}")))?;
+        } = mcp_builder.spawn().await.map_err(|e| RunError::ExecutionFailed(format!("Failed to spawn MCP: {e}")))?;
 
         let llm = self.llm.clone();
-        let mut agent_builder = agent(llm)
-            .system_prompt(Prompt::mcp_instructions(instructions))
-            .tools(command_tx, tool_definitions);
+        let mut agent_builder =
+            agent(llm).system_prompt(Prompt::mcp_instructions(instructions)).tools(command_tx, tool_definitions);
 
         if let Some(prompt) = config.system_prompt {
             agent_builder = agent_builder.system_prompt(Prompt::text(prompt));
@@ -314,13 +265,11 @@ fn upsert_tool_call<'a>(
     name: Option<&str>,
     arguments: Option<&str>,
 ) -> &'a mut ToolCallRequest {
-    let entry = accumulated
-        .entry(id.to_string())
-        .or_insert_with(|| ToolCallRequest {
-            id: id.to_string(),
-            name: String::new(),
-            arguments: String::new(),
-        });
+    let entry = accumulated.entry(id.to_string()).or_insert_with(|| ToolCallRequest {
+        id: id.to_string(),
+        name: String::new(),
+        arguments: String::new(),
+    });
 
     if let Some(name) = name.filter(|n| !n.is_empty()) {
         entry.name = name.to_string();
@@ -331,10 +280,7 @@ fn upsert_tool_call<'a>(
     entry
 }
 
-fn handle_tool_call(
-    request: &ToolCallRequest,
-    accumulated_tool_calls: &mut HashMap<String, ToolCallRequest>,
-) {
+fn handle_tool_call(request: &ToolCallRequest, accumulated_tool_calls: &mut HashMap<String, ToolCallRequest>) {
     let name = (!request.name.is_empty()).then_some(request.name.as_str());
     let args = (!request.arguments.is_empty()).then_some(request.arguments.as_str());
     upsert_tool_call(accumulated_tool_calls, &request.id, name, args);
@@ -355,41 +301,19 @@ fn take_tool_call(
     fallback_arguments: &str,
 ) -> Option<AgentRunnerMessage> {
     let request = accumulated_tool_calls.remove(tool_call_id)?;
-    let name = if request.name.is_empty() {
-        fallback_name.to_string()
-    } else {
-        request.name
-    };
-    let arguments = if request.arguments.is_empty() {
-        fallback_arguments.to_string()
-    } else {
-        request.arguments
-    };
+    let name = if request.name.is_empty() { fallback_name.to_string() } else { request.name };
+    let arguments = if request.arguments.is_empty() { fallback_arguments.to_string() } else { request.arguments };
 
     Some(AgentRunnerMessage::ToolCall { name, arguments })
 }
 
-fn handle_tool_progress(
-    request: &ToolCallRequest,
-    progress: f64,
-    total: Option<f64>,
-    message: Option<&String>,
-) {
+fn handle_tool_progress(request: &ToolCallRequest, progress: f64, total: Option<f64>, message: Option<&String>) {
     let msg = message.map(|m| format!("{m} ")).unwrap_or_default();
     let total_str = total.map(|t| format!("/{t}")).unwrap_or_default();
-    tracing::debug!(
-        "Tool progress for {}: {}{}{}",
-        request.name,
-        msg,
-        progress,
-        total_str
-    );
+    tracing::debug!("Tool progress for {}: {}{}{}", request.name, msg, progress, total_str);
 }
 
-async fn handle_done(
-    accumulated_text: &mut String,
-    tx: &Sender<AgentRunnerMessage>,
-) -> Result<(), RunError> {
+async fn handle_done(accumulated_text: &mut String, tx: &Sender<AgentRunnerMessage>) -> Result<(), RunError> {
     if !accumulated_text.is_empty() {
         for line in accumulated_text.lines() {
             tracing::debug!("Agent response: {}", line);
@@ -400,9 +324,7 @@ async fn handle_done(
         accumulated_text.clear();
     }
     tracing::debug!("Agent done");
-    tx.send(AgentRunnerMessage::Done)
-        .await
-        .map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
+    tx.send(AgentRunnerMessage::Done).await.map_err(|e| RunError::ChannelSendFailed(e.to_string()))?;
     Ok(())
 }
 
@@ -535,9 +457,7 @@ mod tests {
             AgentRunnerMessage::ToolCall { name, arguments }
                 if name == "coding__read_file" && arguments == r#"["Cargo.toml"]"#
         ));
-        assert!(
-            matches!(&messages[1], AgentRunnerMessage::ToolError(error) if error.contains("boom"))
-        );
+        assert!(matches!(&messages[1], AgentRunnerMessage::ToolError(error) if error.contains("boom")));
         assert!(matches!(messages.last(), Some(AgentRunnerMessage::Done)));
     }
 }

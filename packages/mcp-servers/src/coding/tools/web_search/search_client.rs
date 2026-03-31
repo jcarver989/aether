@@ -25,10 +25,8 @@ pub struct SearchParams {
 
 /// Trait for search clients that can perform web searches
 pub trait SearchClient: Send + Sync {
-    fn search(
-        &self,
-        params: SearchParams,
-    ) -> impl Future<Output = Result<Vec<RawSearchResult>, WebSearchError>> + Send;
+    fn search(&self, params: SearchParams)
+    -> impl Future<Output = Result<Vec<RawSearchResult>, WebSearchError>> + Send;
 }
 
 /// Production search client using Brave Search API
@@ -54,9 +52,7 @@ impl BraveSearchClient {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_millis(DEFAULT_TIMEOUT_MS))
             .build()
-            .map_err(|e| {
-                WebSearchError::ConfigError(format!("Failed to build HTTP client: {e}"))
-            })?;
+            .map_err(|e| WebSearchError::ConfigError(format!("Failed to build HTTP client: {e}")))?;
 
         Ok(Self { client, api_key })
     }
@@ -75,9 +71,7 @@ impl BraveSearchClient {
 impl SearchClient for BraveSearchClient {
     async fn search(&self, params: SearchParams) -> Result<Vec<RawSearchResult>, WebSearchError> {
         if params.query.trim().is_empty() {
-            return Err(WebSearchError::InvalidQuery(
-                "Search query cannot be empty".to_string(),
-            ));
+            return Err(WebSearchError::InvalidQuery("Search query cannot be empty".to_string()));
         }
 
         let count = params.count.min(20); // Max 20 results per request
@@ -103,35 +97,26 @@ impl SearchClient for BraveSearchClient {
         let status = response.status();
 
         if status.is_client_error() || status.is_server_error() {
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unable to read error response".to_string());
+            let error_text = response.text().await.unwrap_or_else(|_| "Unable to read error response".to_string());
 
             if status.as_u16() == 429 {
                 return Err(WebSearchError::RateLimited(error_text));
             }
 
-            return Err(WebSearchError::ApiError(format!(
-                "API returned {}: {error_text}",
-                status.as_u16()
-            )));
+            return Err(WebSearchError::ApiError(format!("API returned {}: {error_text}", status.as_u16())));
         }
 
-        let response_body: BraveWebResponse = response.json().await.map_err(|e| {
-            WebSearchError::ParseError(format!("Failed to parse JSON response: {e}"))
-        })?;
+        let response_body: BraveWebResponse = response
+            .json()
+            .await
+            .map_err(|e| WebSearchError::ParseError(format!("Failed to parse JSON response: {e}")))?;
 
         let results = response_body
             .web
             .map(|w| {
                 w.results
                     .into_iter()
-                    .map(|r| RawSearchResult {
-                        title: r.title,
-                        url: r.url,
-                        description: r.description,
-                    })
+                    .map(|r| RawSearchResult { title: r.title, url: r.url, description: r.description })
                     .collect()
             })
             .unwrap_or_default();
@@ -162,8 +147,7 @@ struct BraveResult {
 #[cfg(test)]
 #[derive(Debug, Clone)]
 pub struct FakeSearchClient {
-    responses:
-        std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<RawSearchResult>>>>,
+    responses: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<RawSearchResult>>>>,
     search_history: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
     default_response: Option<Vec<RawSearchResult>>,
 }
@@ -186,10 +170,7 @@ impl FakeSearchClient {
     }
 
     pub fn with_results(self, query: &str, results: Vec<RawSearchResult>) -> Self {
-        self.responses
-            .lock()
-            .unwrap()
-            .insert(query.to_string(), results);
+        self.responses.lock().unwrap().insert(query.to_string(), results);
         self
     }
 
@@ -210,10 +191,7 @@ impl FakeSearchClient {
 #[cfg(test)]
 impl SearchClient for FakeSearchClient {
     async fn search(&self, params: SearchParams) -> Result<Vec<RawSearchResult>, WebSearchError> {
-        self.search_history
-            .lock()
-            .unwrap()
-            .push(params.query.clone());
+        self.search_history.lock().unwrap().push(params.query.clone());
 
         let responses = self.responses.lock().unwrap();
         if let Some(results) = responses.get(&params.query) {
@@ -221,10 +199,7 @@ impl SearchClient for FakeSearchClient {
         } else if let Some(ref default) = self.default_response {
             Ok(default.clone())
         } else {
-            Err(WebSearchError::ApiError(format!(
-                "No fake response configured for query: {}",
-                params.query
-            )))
+            Err(WebSearchError::ApiError(format!("No fake response configured for query: {}", params.query)))
         }
     }
 }
@@ -235,10 +210,7 @@ mod tests {
 
     #[test]
     fn test_search_params_limits_count() {
-        let params = SearchParams {
-            query: "test".to_string(),
-            count: 100,
-        };
+        let params = SearchParams { query: "test".to_string(), count: 100 };
         let _ = params; // Just ensure it compiles
     }
 
@@ -253,13 +225,7 @@ mod tests {
             }],
         );
 
-        let results = fake
-            .search(SearchParams {
-                query: "rust programming".to_string(),
-                count: 10,
-            })
-            .await
-            .unwrap();
+        let results = fake.search(SearchParams { query: "rust programming".to_string(), count: 10 }).await.unwrap();
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].title, "Rust Programming Language");
@@ -267,29 +233,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_fake_client_tracks_search_history() {
-        let fake = FakeSearchClient::new()
-            .with_results("query1", vec![])
-            .with_results("query2", vec![]);
+        let fake = FakeSearchClient::new().with_results("query1", vec![]).with_results("query2", vec![]);
 
-        fake.search(SearchParams {
-            query: "query1".to_string(),
-            count: 10,
-        })
-        .await
-        .unwrap();
+        fake.search(SearchParams { query: "query1".to_string(), count: 10 }).await.unwrap();
 
-        fake.search(SearchParams {
-            query: "query2".to_string(),
-            count: 10,
-        })
-        .await
-        .unwrap();
+        fake.search(SearchParams { query: "query2".to_string(), count: 10 }).await.unwrap();
 
         assert_eq!(fake.search_count(), 2);
-        assert_eq!(
-            fake.searched_queries(),
-            vec!["query1".to_string(), "query2".to_string()]
-        );
+        assert_eq!(fake.searched_queries(), vec!["query1".to_string(), "query2".to_string()]);
     }
 
     #[tokio::test]
@@ -300,13 +251,7 @@ mod tests {
             description: "Default description".to_string(),
         }]);
 
-        let results = fake
-            .search(SearchParams {
-                query: "any query".to_string(),
-                count: 10,
-            })
-            .await
-            .unwrap();
+        let results = fake.search(SearchParams { query: "any query".to_string(), count: 10 }).await.unwrap();
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].title, "Default Result");
@@ -315,12 +260,7 @@ mod tests {
     #[tokio::test]
     async fn test_fake_client_missing_query_returns_error() {
         let fake = FakeSearchClient::new();
-        let result = fake
-            .search(SearchParams {
-                query: "not configured".to_string(),
-                count: 10,
-            })
-            .await;
+        let result = fake.search(SearchParams { query: "not configured".to_string(), count: 10 }).await;
 
         assert!(result.is_err());
     }

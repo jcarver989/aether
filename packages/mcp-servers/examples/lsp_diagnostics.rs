@@ -30,10 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| env::current_dir().expect("Failed to get current directory"));
 
     if !project_path.join("Cargo.toml").exists() {
-        eprintln!(
-            "Error: {} is not a Rust project (no Cargo.toml found)",
-            project_path.display()
-        );
+        eprintln!("Error: {} is not a Rust project (no Cargo.toml found)", project_path.display());
         std::process::exit(1);
     }
 
@@ -58,10 +55,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
             let uri: lsp_types::Uri = format!("file://{file_path}").parse().unwrap();
-            let formatted: Vec<FormattedDiagnostic> = diagnostics
-                .iter()
-                .map(|d| FormattedDiagnostic::from_diagnostic(&uri, d))
-                .collect();
+            let formatted: Vec<FormattedDiagnostic> =
+                diagnostics.iter().map(|d| FormattedDiagnostic::from_diagnostic(&uri, d)).collect();
 
             let counts = count_by_severity(&formatted);
             println!("\n{}: {}", file_path, counts);

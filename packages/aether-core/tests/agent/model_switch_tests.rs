@@ -6,19 +6,12 @@ use llm::testing::FakeLlmProvider;
 #[tokio::test]
 async fn test_switch_model_emits_model_switched() {
     // The switched-to provider will produce this response
-    let switch_responses = vec![vec![
-        LlmResponse::start("after-switch"),
-        LlmResponse::text("Switched!"),
-        LlmResponse::done(),
-    ]];
+    let switch_responses =
+        vec![vec![LlmResponse::start("after-switch"), LlmResponse::text("Switched!"), LlmResponse::done()]];
     let new_provider = FakeLlmProvider::new(switch_responses);
 
     // Initial LLM produces a response, then we switch
-    let initial_responses = vec![vec![
-        LlmResponse::start("msg-1"),
-        LlmResponse::text("Hello"),
-        LlmResponse::done(),
-    ]];
+    let initial_responses = vec![vec![LlmResponse::start("msg-1"), LlmResponse::text("Hello"), LlmResponse::done()]];
     let llm = FakeLlmProvider::new(initial_responses);
 
     let (tx, mut rx, _handle) = agent(llm).spawn().await.unwrap();
@@ -37,9 +30,7 @@ async fn test_switch_model_emits_model_switched() {
     assert!(got_initial_done, "Expected Done after initial message");
 
     // Switch models by sending a ready-to-use provider
-    tx.send(UserMessage::SwitchModel(Box::new(new_provider)))
-        .await
-        .unwrap();
+    tx.send(UserMessage::SwitchModel(Box::new(new_provider))).await.unwrap();
 
     // Send a follow-up message to exercise the new provider
     tx.send(UserMessage::text("after switch")).await.unwrap();
@@ -52,13 +43,8 @@ async fn test_switch_model_emits_model_switched() {
     }
 
     // Should have ModelSwitched with display name strings
-    let switched = messages
-        .iter()
-        .find(|m| matches!(m, AgentMessage::ModelSwitched { .. }));
-    assert!(
-        switched.is_some(),
-        "Expected ModelSwitched message, got: {messages:?}"
-    );
+    let switched = messages.iter().find(|m| matches!(m, AgentMessage::ModelSwitched { .. }));
+    assert!(switched.is_some(), "Expected ModelSwitched message, got: {messages:?}");
     if let Some(AgentMessage::ModelSwitched { previous, new }) = switched {
         // FakeLlmProvider::display_name() returns "Fake LLM"
         assert_eq!(previous, "Fake LLM");
@@ -92,9 +78,7 @@ async fn test_switch_model_unknown_context_limit_resets_context_meter() {
         }
     }
 
-    tx.send(UserMessage::SwitchModel(Box::new(unknown_limit_provider)))
-        .await
-        .unwrap();
+    tx.send(UserMessage::SwitchModel(Box::new(unknown_limit_provider))).await.unwrap();
     drop(tx);
 
     let mut messages = Vec::new();
@@ -103,21 +87,12 @@ async fn test_switch_model_unknown_context_limit_resets_context_meter() {
     }
 
     assert!(
-        messages
-            .iter()
-            .any(|m| matches!(m, AgentMessage::ModelSwitched { .. })),
+        messages.iter().any(|m| matches!(m, AgentMessage::ModelSwitched { .. })),
         "Expected ModelSwitched message, got: {messages:?}"
     );
     assert!(
         messages.iter().any(|m| {
-            matches!(
-                m,
-                AgentMessage::ContextUsageUpdate {
-                    usage_ratio: None,
-                    context_limit: None,
-                    tokens_used: 0,
-                }
-            )
+            matches!(m, AgentMessage::ContextUsageUpdate { usage_ratio: None, context_limit: None, tokens_used: 0 })
         }),
         "Expected context usage reset for unknown context limit, got: {messages:?}"
     );

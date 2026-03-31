@@ -75,10 +75,7 @@ mod tests {
     #[test]
     fn matches_ignores_extra_modifiers() {
         let binding = KeyBinding::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
-        let event = KeyEvent::new(
-            KeyCode::Char('c'),
-            KeyModifiers::CONTROL | KeyModifiers::SHIFT,
-        );
+        let event = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL | KeyModifiers::SHIFT);
         assert!(binding.matches(event));
     }
 

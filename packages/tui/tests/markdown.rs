@@ -42,10 +42,7 @@ fn all_text(term: &TestTerminal) -> String {
 fn assert_contains_all(term: &TestTerminal, needles: &[&str]) {
     let text = all_text(term);
     for needle in needles {
-        assert!(
-            text.contains(needle),
-            "Expected to find {needle:?} in:\n{text}"
-        );
+        assert!(text.contains(needle), "Expected to find {needle:?} in:\n{text}");
     }
 }
 
@@ -54,10 +51,7 @@ fn row_inner_display_widths(row: &str) -> Vec<usize> {
     if segments.len() < 3 {
         return Vec::new();
     }
-    segments[1..segments.len() - 1]
-        .iter()
-        .map(|s| UnicodeWidthStr::width(*s))
-        .collect()
+    segments[1..segments.len() - 1].iter().map(|s| UnicodeWidthStr::width(*s)).collect()
 }
 
 #[test]
@@ -77,18 +71,9 @@ fn heading_renders_with_prefix_and_style() {
 fn inline_formatting_styles() {
     let cases: &[(&str, &str, &str, fn(&tui::Style) -> bool)] = &[
         ("some **bold** text", "some bold text", "bold", |s| s.bold),
-        ("some *italic* text", "some italic text", "italic", |s| {
-            s.italic
-        }),
-        ("some ~~struck~~ text", "some struck text", "struck", |s| {
-            s.strikethrough
-        }),
-        (
-            "***bold and italic***",
-            "bold and italic",
-            "bold and italic",
-            |s| s.bold && s.italic,
-        ),
+        ("some *italic* text", "some italic text", "italic", |s| s.italic),
+        ("some ~~struck~~ text", "some struck text", "struck", |s| s.strikethrough),
+        ("***bold and italic***", "bold and italic", "bold and italic", |s| s.bold && s.italic),
     ];
     for (md, expected_text, styled_span, check) in cases {
         let term = render(md);
@@ -103,10 +88,7 @@ fn inline_code_has_code_style() {
     let theme = Theme::default();
     let term = render_themed("use `foo()` here", &theme);
     assert_eq!(term.get_lines()[0].trim(), "use foo() here");
-    assert_eq!(
-        term.style_of_text(0, "foo()").unwrap().fg,
-        Some(theme.code_fg())
-    );
+    assert_eq!(term.style_of_text(0, "foo()").unwrap().fg, Some(theme.code_fg()));
 }
 
 #[test]
@@ -117,23 +99,14 @@ fn fenced_code_block_produces_lines() {
 #[test]
 fn list_items_render() {
     let cases: &[(&str, &[&str])] = &[
-        (
-            "- alpha\n- beta\n- gamma",
-            &["- alpha", "- beta", "- gamma"],
-        ),
-        (
-            "1. first\n2. second\n3. third",
-            &["1. first", "2. second", "3. third"],
-        ),
+        ("- alpha\n- beta\n- gamma", &["- alpha", "- beta", "- gamma"]),
+        ("1. first\n2. second\n3. third", &["1. first", "2. second", "3. third"]),
     ];
     for (md, expected) in cases {
         let term = render(md);
         let output = term.get_lines();
         for item in *expected {
-            assert!(
-                output.iter().any(|t| t.contains(item)),
-                "Missing {item:?} in {md}"
-            );
+            assert!(output.iter().any(|t| t.contains(item)), "Missing {item:?} in {md}");
         }
     }
 }
@@ -185,10 +158,7 @@ fn unknown_language_falls_back_to_plain() {
     let term = render_themed("```nosuchlang\nsome code\n```", &theme);
     assert!(all_text(&term).contains("some code"));
     let row = find_row(&term, "some code").expect("code row not found");
-    assert_eq!(
-        term.style_of_text(row, "some code").unwrap().fg,
-        Some(theme.code_fg())
-    );
+    assert_eq!(term.style_of_text(row, "some code").unwrap().fg, Some(theme.code_fg()));
 }
 
 #[test]
@@ -217,8 +187,7 @@ fn highlight_cache_returns_consistent_results() {
 
 #[test]
 fn simple_table_renders_correctly() {
-    let md =
-        "| Name | Age | City |\n|------|-----|------|\n| Alice | 30 | NYC |\n| Bob | 25 | LA |";
+    let md = "| Name | Age | City |\n|------|-----|------|\n| Alice | 30 | NYC |\n| Bob | 25 | LA |";
     let term = render_tall(md);
     let output = term.get_lines();
     let text = all_text(&term);
@@ -230,10 +199,7 @@ fn simple_table_renders_correctly() {
     assert_eq!(output.iter().filter(|t| t.contains('┼')).count(), 1);
     assert_eq!(non_empty.len(), 6);
     assert_contains_all(&term, &["Alice", "30", "NYC", "Bob", "25", "LA"]);
-    assert!(
-        !output.iter().any(|t| t.trim() == "Alice"),
-        "Table content leaked to standalone line"
-    );
+    assert!(!output.iter().any(|t| t.trim() == "Alice"), "Table content leaked to standalone line");
 }
 
 #[test]
@@ -258,14 +224,9 @@ fn table_cell_inline_code_does_not_leak_line() {
     let non_empty: Vec<&String> = output.iter().filter(|t| !t.is_empty()).collect();
 
     assert_eq!(non_empty.len(), 5);
-    assert!(
-        !output.iter().any(|t| t.trim() == "x"),
-        "Inline code leaked outside table"
-    );
-    let body_row = output
-        .iter()
-        .find(|t| t.starts_with('│') && t.contains("and y"))
-        .expect("Expected a rendered table body row");
+    assert!(!output.iter().any(|t| t.trim() == "x"), "Inline code leaked outside table");
+    let body_row =
+        output.iter().find(|t| t.starts_with('│') && t.contains("and y")).expect("Expected a rendered table body row");
     assert!(body_row.contains('x'));
 }
 
@@ -284,10 +245,7 @@ fn table_cell_preserves_inline_styles() {
     assert_eq!(link_style.fg, Some(theme.link()));
 
     let code_row = find_row(&term, "code").expect("code row not found");
-    assert_eq!(
-        term.style_of_text(code_row, "code").unwrap().fg,
-        Some(theme.code_fg())
-    );
+    assert_eq!(term.style_of_text(code_row, "code").unwrap().fg, Some(theme.code_fg()));
 }
 
 #[test]
@@ -319,10 +277,7 @@ fn table_row_cell_count_normalization() {
 #[test]
 fn table_in_paragraph_context() {
     let md = "Here is a table:\n\n| Item | Price |\n|------|-------|\n| Apple | $1.00 |\n| Orange | $1.50 |\n\nThat's the table.";
-    assert_contains_all(
-        &render_tall(md),
-        &["Here is a table:", "That's the table.", "Apple", "$1.00"],
-    );
+    assert_contains_all(&render_tall(md), &["Here is a table:", "That's the table.", "Apple", "$1.00"]);
 }
 
 #[test]

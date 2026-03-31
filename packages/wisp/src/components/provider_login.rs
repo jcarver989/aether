@@ -32,22 +32,12 @@ impl SelectItem for ProviderLoginEntry {
         let text = format!("{}  {indicator} {detail}", self.name);
         if self.status == ProviderLoginStatus::LoggedIn {
             if selected {
-                Line::with_style(
-                    text,
-                    context
-                        .theme
-                        .selected_row_style_with_fg(context.theme.success()),
-                )
+                Line::with_style(text, context.theme.selected_row_style_with_fg(context.theme.success()))
             } else {
                 Line::styled(text, context.theme.success())
             }
         } else if selected {
-            Line::with_style(
-                text,
-                context
-                    .theme
-                    .selected_row_style_with_fg(context.theme.warning()),
-            )
+            Line::with_style(text, context.theme.selected_row_style_with_fg(context.theme.warning()))
         } else {
             Line::styled(text, context.theme.warning())
         }
@@ -65,9 +55,7 @@ impl Component for ProviderLoginOverlay {
                 if let Some(entry) = self.list.selected_item()
                     && entry.status != ProviderLoginStatus::Authenticating
                 {
-                    return Some(vec![ProviderLoginMessage::Authenticate(
-                        entry.method_id.clone(),
-                    )]);
+                    return Some(vec![ProviderLoginMessage::Authenticate(entry.method_id.clone())]);
                 }
                 Some(vec![])
             }
@@ -84,55 +72,30 @@ pub fn provider_login_summary(entries: &[ProviderLoginEntry]) -> String {
     if entries.is_empty() {
         return "all logged in".to_string();
     }
-    let needs_login = entries
-        .iter()
-        .filter(|e| e.status == ProviderLoginStatus::NeedsLogin)
-        .count();
-    let authenticating = entries
-        .iter()
-        .filter(|e| e.status == ProviderLoginStatus::Authenticating)
-        .count();
-    let logged_in = entries
-        .iter()
-        .filter(|e| e.status == ProviderLoginStatus::LoggedIn)
-        .count();
-    let parts: Vec<String> = [
-        (needs_login, "needs login"),
-        (authenticating, "authenticating"),
-        (logged_in, "logged in"),
-    ]
-    .iter()
-    .filter(|(count, _)| *count > 0)
-    .map(|(count, label)| format!("{count} {label}"))
-    .collect();
-    if parts.is_empty() {
-        "all logged in".to_string()
-    } else {
-        parts.join(", ")
-    }
+    let needs_login = entries.iter().filter(|e| e.status == ProviderLoginStatus::NeedsLogin).count();
+    let authenticating = entries.iter().filter(|e| e.status == ProviderLoginStatus::Authenticating).count();
+    let logged_in = entries.iter().filter(|e| e.status == ProviderLoginStatus::LoggedIn).count();
+    let parts: Vec<String> =
+        [(needs_login, "needs login"), (authenticating, "authenticating"), (logged_in, "logged in")]
+            .iter()
+            .filter(|(count, _)| *count > 0)
+            .map(|(count, label)| format!("{count} {label}"))
+            .collect();
+    if parts.is_empty() { "all logged in".to_string() } else { parts.join(", ") }
 }
 
 impl ProviderLoginOverlay {
     pub fn new(entries: Vec<ProviderLoginEntry>) -> Self {
-        Self {
-            list: SelectList::new(entries, "no providers need login"),
-        }
+        Self { list: SelectList::new(entries, "no providers need login") }
     }
 
     pub fn replace_entries(&mut self, entries: Vec<ProviderLoginEntry>) {
-        let selected_method_id = self
-            .list
-            .selected_item()
-            .map(|entry| entry.method_id.clone());
+        let selected_method_id = self.list.selected_item().map(|entry| entry.method_id.clone());
 
         self.list.set_items(entries);
 
         if let Some(selected_method_id) = selected_method_id
-            && let Some(index) = self
-                .list
-                .items()
-                .iter()
-                .position(|entry| entry.method_id == selected_method_id)
+            && let Some(index) = self.list.items().iter().position(|entry| entry.method_id == selected_method_id)
         {
             self.list.set_selected(index);
         }
@@ -144,34 +107,19 @@ impl ProviderLoginOverlay {
     }
 
     pub fn reset_to_needs_login(&mut self, method_id: &str) {
-        if let Some(entry) = self
-            .list
-            .items_mut()
-            .iter_mut()
-            .find(|e| e.method_id == method_id)
-        {
+        if let Some(entry) = self.list.items_mut().iter_mut().find(|e| e.method_id == method_id) {
             entry.status = ProviderLoginStatus::NeedsLogin;
         }
     }
 
     pub fn set_logged_in(&mut self, method_id: &str) {
-        if let Some(entry) = self
-            .list
-            .items_mut()
-            .iter_mut()
-            .find(|e| e.method_id == method_id)
-        {
+        if let Some(entry) = self.list.items_mut().iter_mut().find(|e| e.method_id == method_id) {
             entry.status = ProviderLoginStatus::LoggedIn;
         }
     }
 
     pub fn set_authenticating(&mut self, method_id: &str) {
-        if let Some(entry) = self
-            .list
-            .items_mut()
-            .iter_mut()
-            .find(|e| e.method_id == method_id)
-        {
+        if let Some(entry) = self.list.items_mut().iter_mut().find(|e| e.method_id == method_id) {
             entry.status = ProviderLoginStatus::Authenticating;
         }
     }
@@ -210,12 +158,7 @@ mod tests {
     #[tokio::test]
     async fn enter_on_needs_login_emits_authenticate() {
         let mut overlay = ProviderLoginOverlay::new(sample_entries());
-        let outcome = overlay
-            .on_event(&Event::Key(KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE,
-            )))
-            .await;
+        let outcome = overlay.on_event(&Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))).await;
         let messages = outcome.unwrap();
         match messages.as_slice() {
             [ProviderLoginMessage::Authenticate(id)] => assert_eq!(id, "codex"),
@@ -228,21 +171,14 @@ mod tests {
         let mut entries = sample_entries();
         entries[0].status = ProviderLoginStatus::Authenticating;
         let mut overlay = ProviderLoginOverlay::new(entries);
-        let outcome = overlay
-            .on_event(&Event::Key(KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE,
-            )))
-            .await;
+        let outcome = overlay.on_event(&Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))).await;
         assert!(outcome.unwrap().is_empty());
     }
 
     #[tokio::test]
     async fn esc_closes_overlay() {
         let mut overlay = ProviderLoginOverlay::new(sample_entries());
-        let outcome = overlay
-            .on_event(&Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)))
-            .await;
+        let outcome = overlay.on_event(&Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))).await;
         let messages = outcome.unwrap();
         assert!(matches!(messages.as_slice(), [ProviderLoginMessage::Close]));
     }
@@ -252,21 +188,14 @@ mod tests {
         let mut overlay = ProviderLoginOverlay::new(vec![]);
         let ctx = ViewContext::new((80, 24));
         let frame = overlay.render(&ctx);
-        assert!(
-            frame.lines()[0]
-                .plain_text()
-                .contains("no providers need login")
-        );
+        assert!(frame.lines()[0].plain_text().contains("no providers need login"));
     }
 
     #[test]
     fn set_authenticating_updates_status() {
         let mut overlay = ProviderLoginOverlay::new(sample_entries());
         overlay.set_authenticating("codex");
-        assert_eq!(
-            overlay.entries()[0].status,
-            ProviderLoginStatus::Authenticating
-        );
+        assert_eq!(overlay.entries()[0].status, ProviderLoginStatus::Authenticating);
     }
 
     #[test]
@@ -320,10 +249,7 @@ mod tests {
                 status: ProviderLoginStatus::LoggedIn,
             },
         ];
-        assert_eq!(
-            provider_login_summary(&entries),
-            "1 needs login, 1 logged in"
-        );
+        assert_eq!(provider_login_summary(&entries), "1 needs login, 1 logged in");
     }
 
     #[test]
@@ -356,12 +282,7 @@ mod tests {
             status: ProviderLoginStatus::LoggedIn,
         }];
         let mut overlay = ProviderLoginOverlay::new(entries);
-        let outcome = overlay
-            .on_event(&Event::Key(KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE,
-            )))
-            .await;
+        let outcome = overlay.on_event(&Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))).await;
         let messages = outcome.unwrap();
         match messages.as_slice() {
             [ProviderLoginMessage::Authenticate(id)] => assert_eq!(id, "codex"),

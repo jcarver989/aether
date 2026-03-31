@@ -16,26 +16,16 @@ pub use types::{ChatCompletionStreamResponse, CompatibleChatRequest};
 ///
 /// This is shared logic for OpenAI-compatible providers like `OpenRouter` and Z.ai.
 /// Uses `CompatibleChatRequest` which preserves `reasoning_content` on assistant messages.
-pub fn build_chat_request(
-    model: &str,
-    context: &Context,
-) -> Result<CompatibleChatRequest, LlmError> {
+pub fn build_chat_request(model: &str, context: &Context) -> Result<CompatibleChatRequest, LlmError> {
     let messages = types::map_messages(context.messages())?;
-    let tools = if context.tools().is_empty() {
-        None
-    } else {
-        Some(map_tools(context.tools())?)
-    };
+    let tools = if context.tools().is_empty() { None } else { Some(map_tools(context.tools())?) };
 
     Ok(CompatibleChatRequest {
         model: model.to_string(),
         messages,
         stream: Some(true),
         tools,
-        stream_options: Some(ChatCompletionStreamOptions {
-            include_usage: Some(true),
-            include_obfuscation: None,
-        }),
+        stream_options: Some(ChatCompletionStreamOptions { include_usage: Some(true), include_obfuscation: None }),
         reasoning_effort: context.reasoning_effort(),
     })
 }

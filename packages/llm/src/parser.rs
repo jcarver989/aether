@@ -56,39 +56,22 @@ impl ModelProviderParser {
         mut self,
         name: impl Into<String>,
     ) -> Self {
-        self.factories.insert(
-            name.into(),
-            Box::new(|model| Ok(Box::new(P::from_env()?.with_model(model)))),
-        );
+        self.factories.insert(name.into(), Box::new(|model| Ok(Box::new(P::from_env()?.with_model(model)))));
         self
     }
 
-    pub fn with_openai_provider(
-        mut self,
-        name: impl Into<String>,
-        config: &'static generic::ProviderConfig,
-    ) -> Self {
+    pub fn with_openai_provider(mut self, name: impl Into<String>, config: &'static generic::ProviderConfig) -> Self {
         self.factories.insert(
             name.into(),
-            Box::new(move |model| {
-                Ok(Box::new(
-                    GenericOpenAiProvider::from_env(config)?.with_model(model),
-                ))
-            }),
+            Box::new(move |model| Ok(Box::new(GenericOpenAiProvider::from_env(config)?.with_model(model)))),
         );
         self
     }
 
     /// Create a provider from a typed `LlmModel`
-    pub fn create_provider(
-        &self,
-        model: &LlmModel,
-    ) -> crate::Result<Box<dyn StreamingModelProvider>> {
+    pub fn create_provider(&self, model: &LlmModel) -> crate::Result<Box<dyn StreamingModelProvider>> {
         let key = model.provider();
-        let factory = self
-            .factories
-            .get(key)
-            .ok_or_else(|| LlmError::Other(format!("Unknown provider: {key}")))?;
+        let factory = self.factories.get(key).ok_or_else(|| LlmError::Other(format!("Unknown provider: {key}")))?;
         factory(&model.model_id())
     }
 
@@ -102,10 +85,7 @@ impl ModelProviderParser {
     /// - `"provider:model"` - Single provider (e.g., "anthropic:claude-3.5-sonnet")
     /// - `"provider1:model1,provider2:model2"` - Multiple providers create an `AlloyedModelProvider`
     ///
-    pub fn parse(
-        &self,
-        models_str: &str,
-    ) -> crate::Result<(Box<dyn StreamingModelProvider>, LlmModel)> {
+    pub fn parse(&self, models_str: &str) -> crate::Result<(Box<dyn StreamingModelProvider>, LlmModel)> {
         let provider_model_pairs: Vec<&str> = models_str.split(',').map(str::trim).collect();
         if provider_model_pairs.is_empty() {
             return Err(LlmError::Other("No models provided".to_string()));
@@ -129,14 +109,10 @@ impl ModelProviderParser {
             }
         }
 
-        let identity =
-            first_identity.ok_or_else(|| LlmError::Other("No providers parsed".to_string()))?;
+        let identity = first_identity.ok_or_else(|| LlmError::Other("No providers parsed".to_string()))?;
 
         let provider: Box<dyn StreamingModelProvider> = if providers.len() == 1 {
-            providers
-                .into_iter()
-                .next()
-                .ok_or_else(|| LlmError::Other("No providers available".to_string()))?
+            providers.into_iter().next().ok_or_else(|| LlmError::Other("No providers available".to_string()))?
         } else {
             Box::new(AlloyedModelProvider::new(providers))
         };
@@ -148,8 +124,7 @@ impl ModelProviderParser {
 /// Factory function type for creating model providers
 ///
 /// Takes a model name and returns a boxed `StreamingModelProvider`
-pub type CreateProviderFn =
-    Box<dyn Fn(&str) -> crate::Result<Box<dyn StreamingModelProvider>> + Send + Sync>;
+pub type CreateProviderFn = Box<dyn Fn(&str) -> crate::Result<Box<dyn StreamingModelProvider>> + Send + Sync>;
 
 #[cfg(test)]
 mod tests {
@@ -171,10 +146,7 @@ mod tests {
         // Will fail without API key or credentials, but should parse successfully
         match result {
             Ok((_, model)) => {
-                assert_eq!(
-                    model,
-                    LlmModel::Anthropic(crate::catalog::AnthropicModel::Claude35Sonnet20241022)
-                );
+                assert_eq!(model, LlmModel::Anthropic(crate::catalog::AnthropicModel::Claude35Sonnet20241022));
             }
             Err(e) => {
                 let err = e.to_string();
@@ -204,10 +176,7 @@ mod tests {
         let result = parser.parse("openai:gpt-4.1");
         if let Err(e) = result {
             let err = e.to_string();
-            assert!(
-                err.contains("API") || err.contains("OPENAI"),
-                "Should fail on API key, not parsing. Got: {err}"
-            );
+            assert!(err.contains("API") || err.contains("OPENAI"), "Should fail on API key, not parsing. Got: {err}");
         }
     }
 
@@ -218,10 +187,7 @@ mod tests {
         // Will fail without API key, but should parse successfully
         if let Err(e) = result {
             let err = e.to_string();
-            assert!(
-                err.contains("API") || err.contains("OPENROUTER"),
-                "Should fail on API key, not parsing"
-            );
+            assert!(err.contains("API") || err.contains("OPENROUTER"), "Should fail on API key, not parsing");
         }
     }
 
@@ -232,10 +198,7 @@ mod tests {
         // Will fail without API key, but should parse successfully
         if let Err(e) = result {
             let err = e.to_string();
-            assert!(
-                err.contains("API") || err.contains("GEMINI"),
-                "Should fail on API key, not parsing"
-            );
+            assert!(err.contains("API") || err.contains("GEMINI"), "Should fail on API key, not parsing");
         }
     }
 

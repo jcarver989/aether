@@ -73,40 +73,19 @@ pub struct TaskListOutput {
 
 pub fn execute_task_list(input: &TaskListInput, store: &TaskStore) -> TaskListOutput {
     let tasks: Vec<TaskSummary> = if input.ready_only.unwrap_or(false) {
-        store
-            .get_ready()
-            .into_iter()
-            .map(TaskSummary::from)
-            .collect()
+        store.get_ready().into_iter().map(TaskSummary::from).collect()
     } else if let Some(tree_id) = &input.tree_id {
         let tree_id = TaskId::from(tree_id.as_str());
-        store
-            .get_tree(&tree_id)
-            .map(|tasks| tasks.into_iter().map(TaskSummary::from).collect())
-            .unwrap_or_default()
+        store.get_tree(&tree_id).map(|tasks| tasks.into_iter().map(TaskSummary::from).collect()).unwrap_or_default()
     } else if let Some(assignee) = &input.assignee {
-        store
-            .list_by_assignee(assignee)
-            .into_iter()
-            .map(TaskSummary::from)
-            .collect()
+        store.list_by_assignee(assignee).into_iter().map(TaskSummary::from).collect()
     } else if let Some(status) = input.status {
-        store
-            .list_by_status(status.into())
-            .into_iter()
-            .map(TaskSummary::from)
-            .collect()
+        store.list_by_status(status.into()).into_iter().map(TaskSummary::from).collect()
     } else {
         store
             .list_trees()
             .iter()
-            .flat_map(|root_id| {
-                store
-                    .get_tree(root_id)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(TaskSummary::from)
-            })
+            .flat_map(|root_id| store.get_tree(root_id).unwrap_or_default().into_iter().map(TaskSummary::from))
             .collect()
     };
 
@@ -124,13 +103,7 @@ pub fn execute_task_list(input: &TaskListInput, store: &TaskStore) -> TaskListOu
     let done = tasks.iter().filter(|t| t.status == "completed").count();
     let display_meta = ToolDisplayMeta::new("Todo", format!("{done}/{count} tasks"));
 
-    TaskListOutput {
-        status: "success".to_string(),
-        tasks,
-        count,
-        message,
-        meta: Some(display_meta.into()),
-    }
+    TaskListOutput { status: "success".to_string(), tasks, count, message, meta: Some(display_meta.into()) }
 }
 
 fn build_filter_description(input: &TaskListInput) -> String {
@@ -155,11 +128,7 @@ fn build_filter_description(input: &TaskListInput) -> String {
         parts.push(format!("with status {status_str}"));
     }
 
-    if parts.is_empty() {
-        String::new()
-    } else {
-        format!(" ({})", parts.join(", "))
-    }
+    if parts.is_empty() { String::new() } else { format!(" ({})", parts.join(", ")) }
 }
 
 #[cfg(test)]
@@ -184,15 +153,8 @@ mod tests {
         store.add_subtask(&root.id, "Subtask 1").unwrap();
         store.add_subtask(&root.id, "Subtask 2").unwrap();
 
-        let output = execute_task_list(
-            &TaskListInput {
-                assignee: None,
-                status: None,
-                tree_id: None,
-                ready_only: None,
-            },
-            &store,
-        );
+        let output =
+            execute_task_list(&TaskListInput { assignee: None, status: None, tree_id: None, ready_only: None }, &store);
 
         assert_eq!(output.count, 3);
         assert!(output.message.contains("Found 3 tasks"));
@@ -210,12 +172,7 @@ mod tests {
         store.add_subtask(&root2.id, "Subtask 2.2").unwrap();
 
         let output = execute_task_list(
-            &TaskListInput {
-                assignee: None,
-                status: None,
-                tree_id: Some(root2.id.to_string()),
-                ready_only: None,
-            },
+            &TaskListInput { assignee: None, status: None, tree_id: Some(root2.id.to_string()), ready_only: None },
             &store,
         );
 
@@ -231,32 +188,11 @@ mod tests {
         let sub1 = store.add_subtask(&root.id, "Task 1").unwrap();
         let sub2 = store.add_subtask(&root.id, "Task 2").unwrap();
 
-        store
-            .update(
-                &sub1.id,
-                TaskUpdate {
-                    assignee: Some("worker-1".to_string()),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-        store
-            .update(
-                &sub2.id,
-                TaskUpdate {
-                    assignee: Some("worker-2".to_string()),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
+        store.update(&sub1.id, TaskUpdate { assignee: Some("worker-1".to_string()), ..Default::default() }).unwrap();
+        store.update(&sub2.id, TaskUpdate { assignee: Some("worker-2".to_string()), ..Default::default() }).unwrap();
 
         let output = execute_task_list(
-            &TaskListInput {
-                assignee: Some("worker-1".to_string()),
-                status: None,
-                tree_id: None,
-                ready_only: None,
-            },
+            &TaskListInput { assignee: Some("worker-1".to_string()), status: None, tree_id: None, ready_only: None },
             &store,
         );
 
@@ -271,15 +207,7 @@ mod tests {
         let root = store.create_tree("Root", None).unwrap();
         let sub = store.add_subtask(&root.id, "Subtask").unwrap();
 
-        store
-            .update(
-                &sub.id,
-                TaskUpdate {
-                    status: Some(TaskStatus::InProgress),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
+        store.update(&sub.id, TaskUpdate { status: Some(TaskStatus::InProgress), ..Default::default() }).unwrap();
 
         let output = execute_task_list(
             &TaskListInput {
@@ -303,23 +231,10 @@ mod tests {
         let sub1 = store.add_subtask(&root.id, "Subtask 1").unwrap();
         let sub2 = store.add_subtask(&root.id, "Subtask 2").unwrap();
 
-        store
-            .update(
-                &sub2.id,
-                TaskUpdate {
-                    deps: Some(vec![sub1.id.clone()]),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
+        store.update(&sub2.id, TaskUpdate { deps: Some(vec![sub1.id.clone()]), ..Default::default() }).unwrap();
 
         let output = execute_task_list(
-            &TaskListInput {
-                assignee: None,
-                status: None,
-                tree_id: None,
-                ready_only: Some(true),
-            },
+            &TaskListInput { assignee: None, status: None, tree_id: None, ready_only: Some(true) },
             &store,
         );
 
@@ -337,12 +252,7 @@ mod tests {
             .unwrap();
 
         let output = execute_task_list(
-            &TaskListInput {
-                assignee: None,
-                status: None,
-                tree_id: None,
-                ready_only: Some(true),
-            },
+            &TaskListInput { assignee: None, status: None, tree_id: None, ready_only: Some(true) },
             &store,
         );
 
@@ -355,15 +265,8 @@ mod tests {
     fn test_list_empty() {
         let (_temp, store) = setup();
 
-        let output = execute_task_list(
-            &TaskListInput {
-                assignee: None,
-                status: None,
-                tree_id: None,
-                ready_only: None,
-            },
-            &store,
-        );
+        let output =
+            execute_task_list(&TaskListInput { assignee: None, status: None, tree_id: None, ready_only: None }, &store);
 
         assert_eq!(output.count, 0);
         assert!(output.message.contains("No tasks found"));

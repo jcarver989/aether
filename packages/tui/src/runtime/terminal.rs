@@ -1,6 +1,4 @@
-use crossterm::event::{
-    DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-};
+use crossterm::event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture};
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use std::io;
@@ -33,10 +31,7 @@ impl TerminalSession {
             execute!(stdout, EnableMouseCapture)?;
         }
 
-        Ok(Self {
-            enable_bracketed_paste,
-            mouse_capture,
-        })
+        Ok(Self { enable_bracketed_paste, mouse_capture })
     }
 }
 

@@ -70,26 +70,19 @@ fn try_parse_file_uri(input: &str) -> Option<PathBuf> {
     if !input.starts_with("file://") {
         return None;
     }
-    url::Url::parse(input)
-        .ok()
-        .and_then(|u| u.to_file_path().ok())
+    url::Url::parse(input).ok().and_then(|u| u.to_file_path().ok())
 }
 
 fn try_parse_quoted_path(input: &str) -> Option<PathBuf> {
     let input = input.trim();
-    let inner = if (input.starts_with('\'') && input.ends_with('\''))
-        || (input.starts_with('"') && input.ends_with('"'))
-    {
-        &input[1..input.len() - 1]
-    } else {
-        return None;
-    };
+    let inner =
+        if (input.starts_with('\'') && input.ends_with('\'')) || (input.starts_with('"') && input.ends_with('"')) {
+            &input[1..input.len() - 1]
+        } else {
+            return None;
+        };
 
-    if looks_like_absolute_path(inner) {
-        Some(PathBuf::from(inner))
-    } else {
-        None
-    }
+    if looks_like_absolute_path(inner) { Some(PathBuf::from(inner)) } else { None }
 }
 
 fn looks_like_absolute_path(s: &str) -> bool {
@@ -173,11 +166,7 @@ mod tests {
     fn multiple_file_uris_parse_correctly() {
         let tmp = TempDir::new().unwrap();
         let paths = setup_files(&tmp, &["a.png", "b.wav"]);
-        let input = format!(
-            "file://{}\nfile://{}",
-            paths[0].display(),
-            paths[1].display()
-        );
+        let input = format!("file://{}\nfile://{}", paths[0].display(), paths[1].display());
 
         let result = parse_dropped_file_paths(&input).unwrap();
         assert_eq!(result, paths);

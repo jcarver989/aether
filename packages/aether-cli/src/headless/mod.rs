@@ -98,9 +98,7 @@ fn resolve_prompt(args: &HeadlessArgs) -> Result<String, CliError> {
 
         _ if !stdin().is_terminal() => {
             let mut buf = String::new();
-            stdin()
-                .read_to_string(&mut buf)
-                .map_err(CliError::IoError)?;
+            stdin().read_to_string(&mut buf).map_err(CliError::IoError)?;
 
             match buf.trim() {
                 "" => Err(CliError::NoPrompt),
@@ -111,15 +109,9 @@ fn resolve_prompt(args: &HeadlessArgs) -> Result<String, CliError> {
     }
 }
 
-fn resolve_spec(
-    agent: Option<&str>,
-    model: Option<&str>,
-    cwd: &std::path::Path,
-) -> Result<AgentSpec, CliError> {
+fn resolve_spec(agent: Option<&str>, model: Option<&str>, cwd: &std::path::Path) -> Result<AgentSpec, CliError> {
     if agent.is_some() && model.is_some() {
-        return Err(CliError::ConflictingArgs(
-            "Cannot specify both --agent and --model".to_string(),
-        ));
+        return Err(CliError::ConflictingArgs("Cannot specify both --agent and --model".to_string()));
     }
 
     let catalog = load_agent_catalog(cwd).map_err(|e| CliError::AgentError(e.to_string()))?;
@@ -190,16 +182,8 @@ mod tests {
     #[test]
     fn resolve_spec_rejects_both_agent_and_model() {
         let dir = setup_dir_with_agents();
-        let err = resolve_spec(
-            Some("alpha"),
-            Some("anthropic:claude-sonnet-4-5"),
-            dir.path(),
-        )
-        .unwrap_err();
-        assert!(
-            err.to_string().contains("Cannot specify both"),
-            "unexpected error: {err}"
-        );
+        let err = resolve_spec(Some("alpha"), Some("anthropic:claude-sonnet-4-5"), dir.path()).unwrap_err();
+        assert!(err.to_string().contains("Cannot specify both"), "unexpected error: {err}");
     }
 
     #[test]

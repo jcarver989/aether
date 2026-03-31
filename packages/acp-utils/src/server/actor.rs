@@ -33,10 +33,7 @@ pub struct AcpActor {
 }
 
 impl AcpActor {
-    pub fn new(
-        conn: acp::AgentSideConnection,
-        request_rx: mpsc::UnboundedReceiver<AcpRequest>,
-    ) -> Self {
+    pub fn new(conn: acp::AgentSideConnection, request_rx: mpsc::UnboundedReceiver<AcpRequest>) -> Self {
         Self { conn, request_rx }
     }
 
@@ -53,10 +50,7 @@ impl AcpActor {
 
     async fn handle_request(&self, request: AcpRequest) {
         match request {
-            AcpRequest::SessionNotification {
-                notification,
-                response_tx,
-            } => {
+            AcpRequest::SessionNotification { notification, response_tx } => {
                 debug!("ACP actor: session_notification");
                 let result = self
                     .conn
@@ -66,10 +60,7 @@ impl AcpActor {
                 let _ = response_tx.send(result);
             }
 
-            AcpRequest::ExtNotification {
-                notification,
-                response_tx,
-            } => {
+            AcpRequest::ExtNotification { notification, response_tx } => {
                 debug!("ACP actor: ext_notification {}", notification.method);
                 let result = self
                     .conn
@@ -79,10 +70,7 @@ impl AcpActor {
                 let _ = response_tx.send(result);
             }
 
-            AcpRequest::RequestPermission {
-                request,
-                response_tx,
-            } => {
+            AcpRequest::RequestPermission { request, response_tx } => {
                 debug!("ACP actor: request_permission");
                 let result = self
                     .conn
@@ -92,10 +80,7 @@ impl AcpActor {
                 let _ = response_tx.send(result);
             }
 
-            AcpRequest::ExtMethod {
-                request,
-                response_tx,
-            } => {
+            AcpRequest::ExtMethod { request, response_tx } => {
                 debug!("ACP actor: ext_method {}", request.method);
                 let result = self
                     .conn

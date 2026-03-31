@@ -9,12 +9,7 @@ pub struct EvalsConfig<J> {
 
 impl<J> EvalsConfig<J> {
     pub fn new(judge_llm: J) -> Self {
-        Self {
-            judge_llm,
-            batch_size: None,
-            batch_delay: None,
-            serve: false,
-        }
+        Self { judge_llm, batch_size: None, batch_delay: None, serve: false }
     }
 
     /// Set the batch size for concurrent evaluation execution

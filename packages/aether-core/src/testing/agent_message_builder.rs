@@ -25,12 +25,7 @@ impl AgentMessageBuilder {
 
     pub fn text(mut self, chunks: &[&str]) -> Self {
         for chunk in chunks {
-            self.chunks.push(AgentMessage::text(
-                &self.message_id,
-                chunk,
-                false,
-                &self.model_name,
-            ));
+            self.chunks.push(AgentMessage::text(&self.message_id, chunk, false, &self.model_name));
             self.full_text.push_str(chunk);
         }
         self
@@ -45,8 +40,7 @@ impl AgentMessageBuilder {
     ) -> Self {
         let request_json = serde_json::to_string(request).expect("Failed to serialize request");
         let result_value = serde_json::to_value(result).expect("Failed to serialize result");
-        let result_yaml =
-            serde_yml::to_string(&result_value).unwrap_or_else(|_| result_value.to_string());
+        let result_yaml = serde_yml::to_string(&result_value).unwrap_or_else(|_| result_value.to_string());
 
         self.push_tool_call_start(tool_call_id, name);
         self.push_tool_call_chunk(tool_call_id, &request_json);
@@ -95,23 +89,14 @@ impl AgentMessageBuilder {
     }
 
     pub fn build(mut self) -> Vec<AgentMessage> {
-        self.chunks.push(AgentMessage::text(
-            &self.message_id,
-            &self.full_text,
-            true,
-            &self.model_name,
-        ));
+        self.chunks.push(AgentMessage::text(&self.message_id, &self.full_text, true, &self.model_name));
 
         self.chunks
     }
 
     fn push_tool_call_start(&mut self, tool_call_id: &str, name: &str) {
         self.chunks.push(AgentMessage::ToolCall {
-            request: ToolCallRequest {
-                id: tool_call_id.to_string(),
-                name: name.to_string(),
-                arguments: String::new(),
-            },
+            request: ToolCallRequest { id: tool_call_id.to_string(), name: name.to_string(), arguments: String::new() },
             model_name: self.model_name.clone(),
         });
     }

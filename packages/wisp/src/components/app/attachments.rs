@@ -21,9 +21,7 @@ pub enum AttachmentKind {
 }
 
 pub fn classify_attachment(path: &Path) -> AttachmentKind {
-    let mime = mime_guess::from_path(path)
-        .first_or_octet_stream()
-        .to_string();
+    let mime = mime_guess::from_path(path).first_or_octet_stream().to_string();
 
     if IMAGE_MIME_TYPES.contains(&mime.as_str()) {
         AttachmentKind::Image
@@ -70,14 +68,9 @@ struct AttachmentBlockResult {
     warning: Option<String>,
 }
 
-async fn try_build_attachment_block(
-    path: &Path,
-    display_name: &str,
-) -> Result<AttachmentBlockResult, String> {
+async fn try_build_attachment_block(path: &Path, display_name: &str) -> Result<AttachmentBlockResult, String> {
     let kind = classify_attachment(path);
-    let mime_type = mime_guess::from_path(path)
-        .first_or_octet_stream()
-        .to_string();
+    let mime_type = mime_guess::from_path(path).first_or_octet_stream().to_string();
 
     match kind {
         AttachmentKind::Image | AttachmentKind::Audio => {
@@ -93,20 +86,14 @@ async fn try_build_attachment_block(
                     format!("[audio attachment: {display_name}]"),
                 ),
             };
-            Ok(AttachmentBlockResult {
-                block,
-                transcript_placeholder: Some(placeholder),
-                warning: None,
-            })
+            Ok(AttachmentBlockResult { block, transcript_placeholder: Some(placeholder), warning: None })
         }
         _ => build_text_resource_block(path, display_name, &mime_type).await,
     }
 }
 
 async fn read_media_bytes(path: &Path, display_name: &str) -> Result<Vec<u8>, String> {
-    let metadata = tokio::fs::metadata(path)
-        .await
-        .map_err(|e| format!("Failed to read {display_name}: {e}"))?;
+    let metadata = tokio::fs::metadata(path).await.map_err(|e| format!("Failed to read {display_name}: {e}"))?;
 
     if metadata.len() > MAX_MEDIA_BYTES as u64 {
         return Err(format!(
@@ -116,9 +103,7 @@ async fn read_media_bytes(path: &Path, display_name: &str) -> Result<Vec<u8>, St
         ));
     }
 
-    tokio::fs::read(path)
-        .await
-        .map_err(|e| format!("Failed to read {display_name}: {e}"))
+    tokio::fs::read(path).await.map_err(|e| format!("Failed to read {display_name}: {e}"))
 }
 
 async fn build_text_resource_block(
@@ -126,9 +111,7 @@ async fn build_text_resource_block(
     display_name: &str,
     mime_type: &str,
 ) -> Result<AttachmentBlockResult, String> {
-    let file = tokio::fs::File::open(path)
-        .await
-        .map_err(|error| format!("Failed to read {display_name}: {error}"))?;
+    let file = tokio::fs::File::open(path).await.map_err(|error| format!("Failed to read {display_name}: {error}"))?;
 
     let mut bytes = Vec::new();
     file.take((MAX_EMBED_TEXT_BYTES + 1) as u64)
@@ -146,28 +129,20 @@ async fn build_text_resource_block(
         Ok(text) => text.to_string(),
         Err(error) if truncated && error.valid_up_to() > 0 => {
             let valid_bytes = &text_bytes[..error.valid_up_to()];
-            std::str::from_utf8(valid_bytes)
-                .expect("valid_up_to must point at a utf8 boundary")
-                .to_string()
+            std::str::from_utf8(valid_bytes).expect("valid_up_to must point at a utf8 boundary").to_string()
         }
         Err(_) => return Err(format!("Skipped binary or non-UTF8 file: {display_name}")),
     };
 
     let file_uri = build_attachment_file_uri(path, display_name).await?;
-    let warning =
-        truncated.then(|| format!("Truncated {display_name} to {MAX_EMBED_TEXT_BYTES} bytes"));
+    let warning = truncated.then(|| format!("Truncated {display_name} to {MAX_EMBED_TEXT_BYTES} bytes"));
 
-    let block = acp::ContentBlock::Resource(acp::EmbeddedResource::new(
-        acp::EmbeddedResourceResource::TextResourceContents(
+    let block =
+        acp::ContentBlock::Resource(acp::EmbeddedResource::new(acp::EmbeddedResourceResource::TextResourceContents(
             acp::TextResourceContents::new(text, file_uri).mime_type(mime_type),
-        ),
-    ));
+        )));
 
-    Ok(AttachmentBlockResult {
-        block,
-        transcript_placeholder: None,
-        warning,
-    })
+    Ok(AttachmentBlockResult { block, transcript_placeholder: None, warning })
 }
 
 async fn build_attachment_file_uri(path: &Path, display_name: &str) -> Result<String, String> {
@@ -190,17 +165,12 @@ mod tests {
         let display_name = "large.txt".to_string();
         std::fs::write(&path, "x".repeat(MAX_EMBED_TEXT_BYTES + 64)).unwrap();
 
-        let attachments = vec![PromptAttachment {
-            path,
-            display_name: display_name.clone(),
-        }];
+        let attachments = vec![PromptAttachment { path, display_name: display_name.clone() }];
         let outcome = build_attachment_blocks(&attachments).await;
 
         assert_eq!(outcome.blocks.len(), 1);
         assert_eq!(outcome.warnings.len(), 1);
-        assert!(outcome.warnings[0].contains(&format!(
-            "Truncated {display_name} to {MAX_EMBED_TEXT_BYTES} bytes"
-        )));
+        assert!(outcome.warnings[0].contains(&format!("Truncated {display_name} to {MAX_EMBED_TEXT_BYTES} bytes")));
     }
 
     #[tokio::test]
@@ -210,18 +180,12 @@ mod tests {
         let display_name = "binary.bin".to_string();
         std::fs::write(&path, [0xff, 0xfe, 0xfd]).unwrap();
 
-        let attachments = vec![PromptAttachment {
-            path,
-            display_name: display_name.clone(),
-        }];
+        let attachments = vec![PromptAttachment { path, display_name: display_name.clone() }];
         let outcome = build_attachment_blocks(&attachments).await;
 
         assert!(outcome.blocks.is_empty());
         assert_eq!(outcome.warnings.len(), 1);
-        assert!(
-            outcome.warnings[0]
-                .contains(&format!("Skipped binary or non-UTF8 file: {display_name}"))
-        );
+        assert!(outcome.warnings[0].contains(&format!("Skipped binary or non-UTF8 file: {display_name}")));
     }
 
     #[tokio::test]
@@ -243,18 +207,12 @@ mod tests {
         let path = tmp.path().join("test.png");
         std::fs::write(&path, b"fake png data").unwrap();
 
-        let attachments = vec![PromptAttachment {
-            path,
-            display_name: "test.png".to_string(),
-        }];
+        let attachments = vec![PromptAttachment { path, display_name: "test.png".to_string() }];
         let outcome = build_attachment_blocks(&attachments).await;
 
         assert_eq!(outcome.blocks.len(), 1);
         assert!(outcome.warnings.is_empty());
-        assert_eq!(
-            outcome.transcript_placeholders,
-            vec!["[image attachment: test.png]"]
-        );
+        assert_eq!(outcome.transcript_placeholders, vec!["[image attachment: test.png]"]);
         assert!(matches!(outcome.blocks[0], acp::ContentBlock::Image(_)));
     }
 
@@ -264,70 +222,37 @@ mod tests {
         let path = tmp.path().join("test.wav");
         std::fs::write(&path, b"fake wav data").unwrap();
 
-        let attachments = vec![PromptAttachment {
-            path,
-            display_name: "test.wav".to_string(),
-        }];
+        let attachments = vec![PromptAttachment { path, display_name: "test.wav".to_string() }];
         let outcome = build_attachment_blocks(&attachments).await;
 
         assert_eq!(outcome.blocks.len(), 1);
         assert!(outcome.warnings.is_empty());
-        assert_eq!(
-            outcome.transcript_placeholders,
-            vec!["[audio attachment: test.wav]"]
-        );
+        assert_eq!(outcome.transcript_placeholders, vec!["[audio attachment: test.wav]"]);
         assert!(matches!(outcome.blocks[0], acp::ContentBlock::Audio(_)));
     }
 
     #[test]
     fn classify_attachment_detects_images() {
-        assert_eq!(
-            classify_attachment(Path::new("photo.png")),
-            AttachmentKind::Image
-        );
-        assert_eq!(
-            classify_attachment(Path::new("photo.jpg")),
-            AttachmentKind::Image
-        );
-        assert_eq!(
-            classify_attachment(Path::new("photo.gif")),
-            AttachmentKind::Image
-        );
-        assert_eq!(
-            classify_attachment(Path::new("photo.webp")),
-            AttachmentKind::Image
-        );
+        assert_eq!(classify_attachment(Path::new("photo.png")), AttachmentKind::Image);
+        assert_eq!(classify_attachment(Path::new("photo.jpg")), AttachmentKind::Image);
+        assert_eq!(classify_attachment(Path::new("photo.gif")), AttachmentKind::Image);
+        assert_eq!(classify_attachment(Path::new("photo.webp")), AttachmentKind::Image);
     }
 
     #[test]
     fn classify_attachment_detects_audio() {
-        assert_eq!(
-            classify_attachment(Path::new("note.wav")),
-            AttachmentKind::Audio
-        );
-        assert_eq!(
-            classify_attachment(Path::new("note.mp3")),
-            AttachmentKind::Audio
-        );
-        assert_eq!(
-            classify_attachment(Path::new("note.ogg")),
-            AttachmentKind::Audio
-        );
+        assert_eq!(classify_attachment(Path::new("note.wav")), AttachmentKind::Audio);
+        assert_eq!(classify_attachment(Path::new("note.mp3")), AttachmentKind::Audio);
+        assert_eq!(classify_attachment(Path::new("note.ogg")), AttachmentKind::Audio);
     }
 
     #[test]
     fn classify_attachment_detects_text() {
-        assert_eq!(
-            classify_attachment(Path::new("readme.txt")),
-            AttachmentKind::Text
-        );
+        assert_eq!(classify_attachment(Path::new("readme.txt")), AttachmentKind::Text);
     }
 
     #[test]
     fn classify_attachment_unknown_extension_is_unsupported() {
-        assert_eq!(
-            classify_attachment(Path::new("data.xyz")),
-            AttachmentKind::Unsupported
-        );
+        assert_eq!(classify_attachment(Path::new("data.xyz")), AttachmentKind::Unsupported);
     }
 }

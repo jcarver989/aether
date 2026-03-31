@@ -64,11 +64,7 @@ pub struct HttpResponse {
 
 /// Trait for HTTP clients that can fetch web content
 pub trait HttpClient: Send + Sync {
-    fn fetch(
-        &self,
-        url: &str,
-        timeout: Duration,
-    ) -> impl Future<Output = Result<HttpResponse, WebFetchError>> + Send;
+    fn fetch(&self, url: &str, timeout: Duration) -> impl Future<Output = Result<HttpResponse, WebFetchError>> + Send;
 }
 
 /// Production HTTP client using reqwest
@@ -85,10 +81,7 @@ impl Default for ReqwestClient {
 
 impl ReqwestClient {
     pub fn new() -> Self {
-        let client = reqwest::Client::builder()
-            .user_agent(USER_AGENT)
-            .build()
-            .expect("Failed to build HTTP client");
+        let client = reqwest::Client::builder().user_agent(USER_AGENT).build().expect("Failed to build HTTP client");
 
         Self { client }
     }
@@ -96,33 +89,20 @@ impl ReqwestClient {
 
 impl HttpClient for ReqwestClient {
     async fn fetch(&self, url: &str, timeout: Duration) -> Result<HttpResponse, WebFetchError> {
-        let response = self
-            .client
-            .get(url)
-            .timeout(timeout)
-            .send()
-            .await
-            .map_err(|e| {
-                if e.is_timeout() {
-                    WebFetchError::Timeout(u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX))
-                } else {
-                    WebFetchError::RequestFailed(e.to_string())
-                }
-            })?;
+        let response = self.client.get(url).timeout(timeout).send().await.map_err(|e| {
+            if e.is_timeout() {
+                WebFetchError::Timeout(u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX))
+            } else {
+                WebFetchError::RequestFailed(e.to_string())
+            }
+        })?;
 
         let final_url = response.url().to_string();
         let status_code = response.status().as_u16();
 
-        let body = response
-            .text()
-            .await
-            .map_err(|e| WebFetchError::RequestFailed(e.to_string()))?;
+        let body = response.text().await.map_err(|e| WebFetchError::RequestFailed(e.to_string()))?;
 
-        Ok(HttpResponse {
-            final_url,
-            status_code,
-            body,
-        })
+        Ok(HttpResponse { final_url, status_code, body })
     }
 }
 
@@ -153,22 +133,12 @@ impl FakeHttpClient {
     }
 
     pub fn with_response(self, url: &str, response: HttpResponse) -> Self {
-        self.responses
-            .lock()
-            .unwrap()
-            .insert(url.to_string(), response);
+        self.responses.lock().unwrap().insert(url.to_string(), response);
         self
     }
 
     pub fn with_html(self, url: &str, html: &str) -> Self {
-        self.with_response(
-            url,
-            HttpResponse {
-                final_url: url.to_string(),
-                status_code: 200,
-                body: html.to_string(),
-            },
-        )
+        self.with_response(url, HttpResponse { final_url: url.to_string(), status_code: 200, body: html.to_string() })
     }
 
     pub fn with_default(mut self, response: HttpResponse) -> Self {
@@ -196,9 +166,7 @@ impl HttpClient for FakeHttpClient {
         } else if let Some(ref default) = self.default_response {
             Ok(default.clone())
         } else {
-            Err(WebFetchError::RequestFailed(format!(
-                "No fake response configured for URL: {url}"
-            )))
+            Err(WebFetchError::RequestFailed(format!("No fake response configured for URL: {url}")))
         }
     }
 }

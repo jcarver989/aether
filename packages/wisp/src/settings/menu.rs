@@ -1,6 +1,4 @@
-pub use super::types::{
-    SettingsChange, SettingsMenuEntry, SettingsMenuEntryKind, SettingsMenuValue,
-};
+pub use super::types::{SettingsChange, SettingsMenuEntry, SettingsMenuEntryKind, SettingsMenuValue};
 use acp_utils::config_meta::{ConfigOptionMeta, SelectOptionMeta};
 use acp_utils::config_option_id::{ConfigOptionId, THEME_CONFIG_ID};
 use agent_client_protocol::{SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions};
@@ -23,17 +21,10 @@ impl SelectItem for SettingsMenuEntry {
         let current_name = self
             .display_name
             .as_deref()
-            .or_else(|| {
-                self.values
-                    .get(self.current_value_index)
-                    .map(|v| v.name.as_str())
-            })
+            .or_else(|| self.values.get(self.current_value_index).map(|v| v.name.as_str()))
             .unwrap_or("?");
-        let current_disabled = self.display_name.is_none()
-            && self
-                .values
-                .get(self.current_value_index)
-                .is_some_and(|v| v.is_disabled);
+        let current_disabled =
+            self.display_name.is_none() && self.values.get(self.current_value_index).is_some_and(|v| v.is_disabled);
         let text = format!("{}: {}", self.title, current_name);
         if current_disabled {
             Line::styled(text, ctx.theme.muted())
@@ -54,9 +45,7 @@ impl Component for SettingsMenu {
             Some([SelectListMessage::Close]) => Some(vec![SettingMenuMessage::CloseAll]),
             Some([SelectListMessage::Select(_)]) => {
                 let msg = match self.list.selected_item() {
-                    Some(e) if e.entry_kind == SettingsMenuEntryKind::McpServers => {
-                        SettingMenuMessage::OpenMcpServers
-                    }
+                    Some(e) if e.entry_kind == SettingsMenuEntryKind::McpServers => SettingMenuMessage::OpenMcpServers,
                     Some(e) if e.entry_kind == SettingsMenuEntryKind::ProviderLogins => {
                         SettingMenuMessage::OpenProviderLogins
                     }
@@ -96,20 +85,15 @@ impl SettingsMenu {
                     return None;
                 }
 
-                let current_value_index = flat_options
-                    .iter()
-                    .position(|o| o.value == select.current_value)
-                    .unwrap_or(0);
+                let current_value_index =
+                    flat_options.iter().position(|o| o.value == select.current_value).unwrap_or(0);
 
                 let values: Vec<SettingsMenuValue> = flat_options
                     .into_iter()
                     .map(|o| SettingsMenuValue {
                         value: o.value.0.to_string(),
                         name: o.name,
-                        is_disabled: o
-                            .description
-                            .as_deref()
-                            .is_some_and(|d| d.starts_with("Unavailable:")),
+                        is_disabled: o.description.as_deref().is_some_and(|d| d.starts_with("Unavailable:")),
                         description: o.description,
                         meta: SelectOptionMeta::from_meta(o.meta.as_ref()),
                     })
@@ -118,24 +102,14 @@ impl SettingsMenu {
                 let multi_select = ConfigOptionMeta::from_meta(opt.meta.as_ref()).multi_select;
 
                 let display_name = if multi_select && select.current_value.0.contains(',') {
-                    let parts: Vec<&str> =
-                        select.current_value.0.split(',').map(str::trim).collect();
+                    let parts: Vec<&str> = select.current_value.0.split(',').map(str::trim).collect();
 
                     let names: Vec<&str> = parts
                         .iter()
-                        .filter_map(|val| {
-                            values
-                                .iter()
-                                .find(|v| v.value == *val)
-                                .map(|v| v.name.as_str())
-                        })
+                        .filter_map(|val| values.iter().find(|v| v.value == *val).map(|v| v.name.as_str()))
                         .collect();
 
-                    if names.is_empty() {
-                        Some(format!("{} models", parts.len()))
-                    } else {
-                        Some(names.join(", "))
-                    }
+                    if names.is_empty() { Some(format!("{} models", parts.len())) } else { Some(names.join(", ")) }
                 } else {
                     None
                 };
@@ -153,16 +127,12 @@ impl SettingsMenu {
             })
             .collect();
 
-        Self {
-            list: SelectList::new(entries, "no settings options"),
-        }
+        Self { list: SelectList::new(entries, "no settings options") }
     }
 
     #[allow(dead_code)] // Used by integration tests
     pub fn from_entries(entries: Vec<SettingsMenuEntry>) -> Self {
-        Self {
-            list: SelectList::new(entries, "no settings options"),
-        }
+        Self { list: SelectList::new(entries, "no settings options") }
     }
 
     #[cfg(test)]
@@ -193,13 +163,9 @@ impl SettingsMenu {
             meta: SelectOptionMeta::default(),
         }));
 
-        let current_value_index = current_theme_file
-            .and_then(|file| values.iter().position(|v| v.value == file))
-            .unwrap_or(0);
-        let current_raw_value = values
-            .get(current_value_index)
-            .map(|v| v.value.clone())
-            .unwrap_or_default();
+        let current_value_index =
+            current_theme_file.and_then(|file| values.iter().position(|v| v.value == file)).unwrap_or(0);
+        let current_raw_value = values.get(current_value_index).map(|v| v.value.clone()).unwrap_or_default();
 
         self.list.push(SettingsMenuEntry {
             config_id: THEME_CONFIG_ID.to_string(),
@@ -263,21 +229,12 @@ impl SettingsMenu {
     }
 
     pub fn apply_change(&mut self, change: &SettingsChange) {
-        let Some(entry) = self
-            .list
-            .items_mut()
-            .iter_mut()
-            .find(|entry| entry.config_id == change.config_id)
-        else {
+        let Some(entry) = self.list.items_mut().iter_mut().find(|entry| entry.config_id == change.config_id) else {
             return;
         };
 
         entry.current_raw_value.clone_from(&change.new_value);
-        if let Some(index) = entry
-            .values
-            .iter()
-            .position(|value| value.value == change.new_value)
-        {
+        if let Some(index) = entry.values.iter().position(|value| value.value == change.new_value) {
             entry.current_value_index = index;
         }
     }
@@ -286,22 +243,13 @@ impl SettingsMenu {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_client_protocol::{
-        SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
-    };
+    use agent_client_protocol::{SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption};
     use tui::{KeyCode, KeyEvent, KeyModifiers};
 
     fn sel(id: &str, name: &str, current: &str, values: &[(&str, &str)]) -> SessionConfigOption {
-        let options: Vec<SessionConfigSelectOption> = values
-            .iter()
-            .map(|(v, n)| SessionConfigSelectOption::new(v.to_string(), n.to_string()))
-            .collect();
-        SessionConfigOption::select(
-            id.to_string(),
-            name.to_string(),
-            current.to_string(),
-            options,
-        )
+        let options: Vec<SessionConfigSelectOption> =
+            values.iter().map(|(v, n)| SessionConfigSelectOption::new(v.to_string(), n.to_string())).collect();
+        SessionConfigOption::select(id.to_string(), name.to_string(), current.to_string(), options)
     }
 
     fn menu(opts: &[SessionConfigOption]) -> SettingsMenu {
@@ -329,18 +277,8 @@ mod tests {
     #[test]
     fn from_config_options_builds_entries() {
         let m = menu(&[
-            sel(
-                "model",
-                "Model",
-                "gpt-4o",
-                &[("gpt-4o", "GPT-4o"), ("claude", "Claude")],
-            ),
-            sel(
-                "mode",
-                "Mode",
-                "code",
-                &[("code", "Code"), ("chat", "Chat")],
-            ),
+            sel("model", "Model", "gpt-4o", &[("gpt-4o", "GPT-4o"), ("claude", "Claude")]),
+            sel("mode", "Mode", "code", &[("code", "Code"), ("chat", "Chat")]),
         ]);
         assert_eq!(m.options().len(), 2);
         assert_eq!(m.options()[0].config_id, "model");
@@ -351,16 +289,8 @@ mod tests {
 
     #[test]
     fn from_config_options_finds_current_value() {
-        let m = menu(&[sel(
-            "model",
-            "Model",
-            "claude",
-            &[
-                ("gpt-4o", "GPT-4o"),
-                ("claude", "Claude"),
-                ("llama", "Llama"),
-            ],
-        )]);
+        let m =
+            menu(&[sel("model", "Model", "claude", &[("gpt-4o", "GPT-4o"), ("claude", "Claude"), ("llama", "Llama")])]);
         assert_eq!(m.options()[0].current_value_index, 1);
     }
 
@@ -413,8 +343,7 @@ mod tests {
 
     #[test]
     fn from_config_options_skips_empty_values() {
-        let empty =
-            SessionConfigOption::select("x", "X", "v", Vec::<SessionConfigSelectOption>::new());
+        let empty = SessionConfigOption::select("x", "X", "v", Vec::<SessionConfigSelectOption>::new());
         let m = menu(&[empty, sel("model", "Model", "a", &[("a", "A")])]);
         assert_eq!(m.options().len(), 1);
         assert_eq!(m.options()[0].config_id, "model");
@@ -422,8 +351,7 @@ mod tests {
 
     #[test]
     fn from_config_options_with_category() {
-        let opt = sel("model", "Model", "gpt-4o", &[("gpt-4o", "GPT-4o")])
-            .category(SessionConfigOptionCategory::Model);
+        let opt = sel("model", "Model", "gpt-4o", &[("gpt-4o", "GPT-4o")]).category(SessionConfigOptionCategory::Model);
         let m = menu(&[opt]);
         assert_eq!(m.options().len(), 1);
         assert_eq!(m.options()[0].title, "Model");
@@ -431,10 +359,7 @@ mod tests {
 
     #[tokio::test]
     async fn key_enter_opens_picker_and_escape_closes() {
-        for (code, expected) in [
-            (KeyCode::Enter, "OpenSelectedPicker"),
-            (KeyCode::Esc, "CloseAll"),
-        ] {
+        for (code, expected) in [(KeyCode::Enter, "OpenSelectedPicker"), (KeyCode::Esc, "CloseAll")] {
             let mut m = menu(&[sel("model", "Model", "a", &[("a", "A")])]);
             let msgs = press(&mut m, code).await.unwrap();
             let tag = match &msgs[..] {
@@ -464,21 +389,14 @@ mod tests {
             .meta(ConfigOptionMeta { multi_select: true }.into_meta());
         let mut m = menu(&[opt]);
         let msgs = press(&mut m, KeyCode::Enter).await.unwrap();
-        assert!(matches!(
-            msgs.as_slice(),
-            [SettingMenuMessage::OpenModelSelector]
-        ));
+        assert!(matches!(msgs.as_slice(), [SettingMenuMessage::OpenModelSelector]));
     }
 
     #[test]
     fn multi_select_with_comma_value_shows_model_names() {
         let opt = sel("model", "Model", "a,b", &[("a", "Alpha"), ("b", "Beta")])
             .meta(ConfigOptionMeta { multi_select: true }.into_meta());
-        let display = menu(&[opt]).options()[0]
-            .display_name
-            .as_deref()
-            .unwrap()
-            .to_string();
+        let display = menu(&[opt]).options()[0].display_name.as_deref().unwrap().to_string();
         assert!(display.contains("Alpha"), "display: {display}");
         assert!(display.contains("Beta"), "display: {display}");
     }
@@ -512,11 +430,8 @@ mod tests {
 
     #[test]
     fn add_theme_entry_selects_correct_index() {
-        let cases: &[(Option<&str>, usize, &str)] = &[
-            (None, 0, ""),
-            (Some("nord.tmTheme"), 2, "nord.tmTheme"),
-            (Some("missing.tmTheme"), 0, ""),
-        ];
+        let cases: &[(Option<&str>, usize, &str)] =
+            &[(None, 0, ""), (Some("nord.tmTheme"), 2, "nord.tmTheme"), (Some("missing.tmTheme"), 0, "")];
         for &(current, expected_idx, expected_raw) in cases {
             let m = theme_menu(current);
             let t = &m.options()[0];
@@ -528,29 +443,15 @@ mod tests {
     #[test]
     fn from_config_options_excludes_reasoning_effort_entry() {
         let m = menu(&[
-            sel(
-                "model",
-                "Model",
-                "gpt-4o",
-                &[("gpt-4o", "GPT-4o"), ("claude", "Claude")],
-            ),
+            sel("model", "Model", "gpt-4o", &[("gpt-4o", "GPT-4o"), ("claude", "Claude")]),
             sel(
                 "reasoning_effort",
                 "Reasoning Effort",
                 "high",
-                &[
-                    ("none", "None"),
-                    ("low", "Low"),
-                    ("medium", "Medium"),
-                    ("high", "High"),
-                ],
+                &[("none", "None"), ("low", "Low"), ("medium", "Medium"), ("high", "High")],
             ),
         ]);
         assert!(m.options().iter().any(|e| e.config_id == "model"));
-        assert!(
-            !m.options()
-                .iter()
-                .any(|e| e.config_id == "reasoning_effort")
-        );
+        assert!(!m.options().iter().any(|e| e.config_id == "reasoning_effort"));
     }
 }

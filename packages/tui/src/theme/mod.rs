@@ -221,45 +221,25 @@ impl Theme {
             fg: b.fg.ok_or(ThemeBuildError::MissingField("fg"))?,
             bg: b.bg.ok_or(ThemeBuildError::MissingField("bg"))?,
             accent: b.accent.ok_or(ThemeBuildError::MissingField("accent"))?,
-            highlight_bg: b
-                .highlight_bg
-                .ok_or(ThemeBuildError::MissingField("highlight_bg"))?,
-            highlight_fg: b
-                .highlight_fg
-                .ok_or(ThemeBuildError::MissingField("highlight_fg"))?,
-            text_secondary: b
-                .text_secondary
-                .ok_or(ThemeBuildError::MissingField("text_secondary"))?,
+            highlight_bg: b.highlight_bg.ok_or(ThemeBuildError::MissingField("highlight_bg"))?,
+            highlight_fg: b.highlight_fg.ok_or(ThemeBuildError::MissingField("highlight_fg"))?,
+            text_secondary: b.text_secondary.ok_or(ThemeBuildError::MissingField("text_secondary"))?,
             code_fg: b.code_fg.ok_or(ThemeBuildError::MissingField("code_fg"))?,
             code_bg: b.code_bg.ok_or(ThemeBuildError::MissingField("code_bg"))?,
             heading: b.heading.ok_or(ThemeBuildError::MissingField("heading"))?,
             link: b.link.ok_or(ThemeBuildError::MissingField("link"))?,
-            blockquote: b
-                .blockquote
-                .ok_or(ThemeBuildError::MissingField("blockquote"))?,
+            blockquote: b.blockquote.ok_or(ThemeBuildError::MissingField("blockquote"))?,
             muted: b.muted.ok_or(ThemeBuildError::MissingField("muted"))?,
             success: b.success.ok_or(ThemeBuildError::MissingField("success"))?,
             warning: b.warning.ok_or(ThemeBuildError::MissingField("warning"))?,
             error: b.error.ok_or(ThemeBuildError::MissingField("error"))?,
             info: b.info.ok_or(ThemeBuildError::MissingField("info"))?,
-            secondary: b
-                .secondary
-                .ok_or(ThemeBuildError::MissingField("secondary"))?,
-            sidebar_bg: b
-                .sidebar_bg
-                .ok_or(ThemeBuildError::MissingField("sidebar_bg"))?,
-            diff_added_fg: b
-                .diff_added_fg
-                .ok_or(ThemeBuildError::MissingField("diff_added_fg"))?,
-            diff_removed_fg: b
-                .diff_removed_fg
-                .ok_or(ThemeBuildError::MissingField("diff_removed_fg"))?,
-            diff_added_bg: b
-                .diff_added_bg
-                .ok_or(ThemeBuildError::MissingField("diff_added_bg"))?,
-            diff_removed_bg: b
-                .diff_removed_bg
-                .ok_or(ThemeBuildError::MissingField("diff_removed_bg"))?,
+            secondary: b.secondary.ok_or(ThemeBuildError::MissingField("secondary"))?,
+            sidebar_bg: b.sidebar_bg.ok_or(ThemeBuildError::MissingField("sidebar_bg"))?,
+            diff_added_fg: b.diff_added_fg.ok_or(ThemeBuildError::MissingField("diff_added_fg"))?,
+            diff_removed_fg: b.diff_removed_fg.ok_or(ThemeBuildError::MissingField("diff_removed_fg"))?,
+            diff_added_bg: b.diff_added_bg.ok_or(ThemeBuildError::MissingField("diff_added_bg"))?,
+            diff_removed_bg: b.diff_removed_bg.ok_or(ThemeBuildError::MissingField("diff_removed_bg"))?,
             #[cfg(feature = "syntax")]
             syntect_theme: Arc::new(syntax::parse_default_syntect_theme()),
         })
@@ -416,29 +396,14 @@ mod tests {
     #[test]
     fn code_fg_differs_from_text_primary() {
         let theme = Theme::default();
-        assert_ne!(
-            theme.code_fg(),
-            theme.text_primary(),
-            "code_fg should be visually distinct from body text"
-        );
+        assert_ne!(theme.code_fg(), theme.text_primary(), "code_fg should be visually distinct from body text");
     }
 
     #[test]
     fn darken_color_reduces_brightness() {
-        let bright = Color::Rgb {
-            r: 200,
-            g: 100,
-            b: 50,
-        };
+        let bright = Color::Rgb { r: 200, g: 100, b: 50 };
         let dark = darken_color(bright);
-        assert_eq!(
-            dark,
-            Color::Rgb {
-                r: 60,
-                g: 30,
-                b: 15
-            }
-        );
+        assert_eq!(dark, Color::Rgb { r: 60, g: 30, b: 15 });
     }
 
     #[test]
@@ -460,16 +425,8 @@ mod tests {
             .warning(Color::DarkCyan)
             .error(Color::DarkMagenta)
             .info(Color::Grey)
-            .secondary(Color::Rgb {
-                r: 128,
-                g: 0,
-                b: 128,
-            })
-            .sidebar_bg(Color::Rgb {
-                r: 30,
-                g: 30,
-                b: 30,
-            })
+            .secondary(Color::Rgb { r: 128, g: 0, b: 128 })
+            .sidebar_bg(Color::Rgb { r: 30, g: 30, b: 30 })
             .diff_added_fg(Color::Rgb { r: 0, g: 255, b: 0 })
             .diff_removed_fg(Color::Rgb { r: 255, g: 0, b: 0 })
             .diff_added_bg(Color::Rgb { r: 0, g: 20, b: 0 })
@@ -486,9 +443,6 @@ mod tests {
         let result = Theme::builder().fg(Color::Black).build();
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(
-            matches!(err, ThemeBuildError::MissingField(_)),
-            "expected MissingField, got: {err}"
-        );
+        assert!(matches!(err, ThemeBuildError::MissingField(_)), "expected MissingField, got: {err}");
     }
 }

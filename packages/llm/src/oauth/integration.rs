@@ -15,16 +15,10 @@ pub async fn create_auth_manager_from_store(
 ) -> Result<Option<AuthorizationManager>, OAuthError> {
     let credential_store = create_credential_store(server_id);
 
-    let mut auth_manager = AuthorizationManager::new(base_url)
-        .await
-        .map_err(|e| OAuthError::Rmcp(e.to_string()))?;
+    let mut auth_manager = AuthorizationManager::new(base_url).await.map_err(|e| OAuthError::Rmcp(e.to_string()))?;
     auth_manager.set_credential_store(credential_store);
 
-    if auth_manager
-        .initialize_from_store()
-        .await
-        .map_err(|e| OAuthError::Rmcp(e.to_string()))?
-    {
+    if auth_manager.initialize_from_store().await.map_err(|e| OAuthError::Rmcp(e.to_string()))? {
         Ok(Some(auth_manager))
     } else {
         Ok(None)
@@ -41,9 +35,8 @@ pub async fn perform_oauth_flow(
     base_url: &str,
     handler: &dyn OAuthHandler,
 ) -> Result<AuthClient<reqwest::Client>, OAuthError> {
-    let mut oauth_state = OAuthState::new(base_url, None)
-        .await
-        .map_err(|e| OAuthError::Rmcp(format!("OAuth init failed: {e}")))?;
+    let mut oauth_state =
+        OAuthState::new(base_url, None).await.map_err(|e| OAuthError::Rmcp(format!("OAuth init failed: {e}")))?;
 
     let credential_store = create_credential_store(server_id);
     if let OAuthState::Unauthorized(ref mut manager) = oauth_state {
@@ -67,9 +60,9 @@ pub async fn perform_oauth_flow(
         .await
         .map_err(|e| OAuthError::Rmcp(format!("handle_callback failed: {e}")))?;
 
-    let auth_manager = oauth_state.into_authorization_manager().ok_or_else(|| {
-        OAuthError::Rmcp("OAuth flow did not produce an AuthorizationManager".into())
-    })?;
+    let auth_manager = oauth_state
+        .into_authorization_manager()
+        .ok_or_else(|| OAuthError::Rmcp("OAuth flow did not produce an AuthorizationManager".into()))?;
 
     Ok(AuthClient::new(reqwest::Client::default(), auth_manager))
 }

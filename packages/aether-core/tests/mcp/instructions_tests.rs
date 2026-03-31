@@ -15,20 +15,12 @@ async fn test_fake_mcp_server_has_instructions() {
         command_tx: _,
         elicitation_rx: _,
         handle: _,
-    } = mcp()
-        .with_servers(vec![fake_mcp("test", FakeMcpServer::new()).into()])
-        .spawn()
-        .await
-        .unwrap();
+    } = mcp().with_servers(vec![fake_mcp("test", FakeMcpServer::new()).into()]).spawn().await.unwrap();
 
     // FakeMcpServer does provide instructions, so we should get them
     assert_eq!(instructions.len(), 1);
     assert_eq!(instructions[0].server_name, "test");
-    assert!(
-        instructions[0]
-            .instructions
-            .contains("A fake MCP server for testing")
-    );
+    assert!(instructions[0].instructions.contains("A fake MCP server for testing"));
 }
 
 #[tokio::test]
@@ -53,38 +45,19 @@ async fn test_multiple_servers_with_instructions() {
     assert_eq!(instructions.len(), 2);
 
     // Find server1 and server2 instructions
-    let server1_instr = instructions
-        .iter()
-        .find(|i| i.server_name == "server1")
-        .unwrap();
-    let server2_instr = instructions
-        .iter()
-        .find(|i| i.server_name == "server2")
-        .unwrap();
+    let server1_instr = instructions.iter().find(|i| i.server_name == "server1").unwrap();
+    let server2_instr = instructions.iter().find(|i| i.server_name == "server2").unwrap();
 
-    assert!(
-        server1_instr
-            .instructions
-            .contains("A fake MCP server for testing")
-    );
-    assert!(
-        server2_instr
-            .instructions
-            .contains("A fake MCP server for testing")
-    );
+    assert!(server1_instr.instructions.contains("A fake MCP server for testing"));
+    assert!(server2_instr.instructions.contains("A fake MCP server for testing"));
 }
 
 #[tokio::test]
 async fn test_format_mcp_instructions_xml_structure() {
-    let instructions = vec![ServerInstructions {
-        server_name: "coding".to_string(),
-        instructions: "Use absolute paths.".to_string(),
-    }];
+    let instructions =
+        vec![ServerInstructions { server_name: "coding".to_string(), instructions: "Use absolute paths.".to_string() }];
 
-    let formatted = Prompt::mcp_instructions(instructions)
-        .build()
-        .await
-        .unwrap();
+    let formatted = Prompt::mcp_instructions(instructions).build().await.unwrap();
 
     // Check for XML tags with server names
     assert!(formatted.contains("<mcp-server name=\"coding\">"));
@@ -96,20 +69,14 @@ async fn test_format_mcp_instructions_xml_structure() {
 #[tokio::test]
 async fn test_format_mcp_instructions_multiple_servers() {
     let instructions = vec![
-        ServerInstructions {
-            server_name: "coding".to_string(),
-            instructions: "Use absolute paths.".to_string(),
-        },
+        ServerInstructions { server_name: "coding".to_string(), instructions: "Use absolute paths.".to_string() },
         ServerInstructions {
             server_name: "plugins".to_string(),
             instructions: "Always confirm before spawning.".to_string(),
         },
     ];
 
-    let formatted = Prompt::mcp_instructions(instructions)
-        .build()
-        .await
-        .unwrap();
+    let formatted = Prompt::mcp_instructions(instructions).build().await.unwrap();
 
     // Check for XML tags with both server names
     assert!(formatted.contains("<mcp-server name=\"coding\">"));
@@ -137,11 +104,7 @@ async fn test_agent_builder_includes_mcp_instructions_in_system_prompt() {
         command_tx: mcp_tx,
         elicitation_rx: _,
         handle: _,
-    } = mcp()
-        .with_servers(vec![fake_mcp("test", FakeMcpServer::new()).into()])
-        .spawn()
-        .await
-        .unwrap();
+    } = mcp().with_servers(vec![fake_mcp("test", FakeMcpServer::new()).into()]).spawn().await.unwrap();
 
     let (tx, mut rx, _handle) = agent(llm)
         .system_prompt(Prompt::text("You are a test agent"))
@@ -193,11 +156,7 @@ async fn test_agent_builder_works_without_mcp_instructions() {
         command_tx: mcp_tx,
         elicitation_rx: _,
         handle: _,
-    } = mcp()
-        .with_servers(vec![fake_mcp("test", FakeMcpServer::new()).into()])
-        .spawn()
-        .await
-        .unwrap();
+    } = mcp().with_servers(vec![fake_mcp("test", FakeMcpServer::new()).into()]).spawn().await.unwrap();
 
     // No mcp_instructions provided - should still work
     let (tx, mut rx, _handle) = agent(llm)

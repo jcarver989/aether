@@ -56,9 +56,7 @@ impl TrackedToolCall {
 }
 
 pub(crate) fn raw_input_fragment(raw_input: &serde_json::Value) -> String {
-    raw_input
-        .as_str()
-        .map_or_else(|| raw_input.to_string(), str::to_string)
+    raw_input.as_str().map_or_else(|| raw_input.to_string(), str::to_string)
 }
 
 pub(crate) fn upsert_tracked_tool_call<'a>(
@@ -72,7 +70,5 @@ pub(crate) fn upsert_tracked_tool_call<'a>(
         tool_order.push(id.to_string());
     }
 
-    tool_calls
-        .entry(id.to_string())
-        .or_insert_with(|| TrackedToolCall::new_running(default_name, default_arguments))
+    tool_calls.entry(id.to_string()).or_insert_with(|| TrackedToolCall::new_running(default_name, default_arguments))
 }

@@ -2,8 +2,7 @@ use crate::agents::AgentConfig;
 use crate::agents::AgentRunner;
 use crate::agents::AgentRunnerMessage;
 use crate::assertions::{
-    assert_command_exit_code, assert_file_exists, assert_file_matches, assert_llm_judge,
-    assert_tool_call,
+    assert_command_exit_code, assert_file_exists, assert_file_matches, assert_llm_judge, assert_tool_call,
 };
 use crate::git_repo::GitRepo;
 use crate::hooks::HookInput;
@@ -30,12 +29,7 @@ pub enum WorkingDirectory {
     /// Files copied from src/ directory
     Local { path: PathBuf },
     /// Git repository cloned and checked out
-    GitRepo {
-        path: PathBuf,
-        url: String,
-        start_commit: String,
-        gold_commit: String,
-    },
+    GitRepo { path: PathBuf, url: String, start_commit: String, gold_commit: String },
 }
 
 impl WorkingDirectory {
@@ -95,11 +89,7 @@ impl WorkingDirectory {
             let working_dir = tmpdir.path().join(&subdir);
 
             if !working_dir.exists() {
-                return Err(format!(
-                    "Subdirectory '{}' does not exist in cloned repo",
-                    subdir.display()
-                )
-                .into());
+                return Err(format!("Subdirectory '{}' does not exist in cloned repo", subdir.display()).into());
             }
 
             working_dir
@@ -109,12 +99,7 @@ impl WorkingDirectory {
 
         let _ = tmpdir.keep(); // Keep the directory alive
 
-        Ok(Self::GitRepo {
-            path,
-            url,
-            start_commit,
-            gold_commit,
-        })
+        Ok(Self::GitRepo { path, url, start_commit, gold_commit })
     }
 }
 
@@ -153,8 +138,7 @@ impl Eval {
         runner: &R,
         judge_llm: U,
         system_prompt: Option<&str>,
-    ) -> Result<Vec<(EvalAssertion, EvalAssertionResult)>, Box<dyn std::error::Error + Send + Sync>>
-    {
+    ) -> Result<Vec<(EvalAssertion, EvalAssertionResult)>, Box<dyn std::error::Error + Send + Sync>> {
         tracing::info!("Running eval: {}", self.name);
 
         for (i, hook) in self.setup_hooks.iter().enumerate() {
@@ -175,8 +159,12 @@ impl Eval {
             let task_prompt = [
                 "Complete the following task:".to_string(),
                 format!("<task>{}</task>", self.prompt),
-                format!("CRITICAL INSTRUCTIONS: when working on this task, you MUST only operate within this directory: {}", self.working_directory.path().display())
-            ].join("\n");
+                format!(
+                    "CRITICAL INSTRUCTIONS: when working on this task, you MUST only operate within this directory: {}",
+                    self.working_directory.path().display()
+                ),
+            ]
+            .join("\n");
 
             let config = AgentConfig {
                 working_directory: self.working_directory.path(),
@@ -220,18 +208,12 @@ impl Eval {
             let span = tracing::debug_span!("assertion", assertion_index = i);
             let _enter = span.enter();
             let result = match assertion {
-                EvalAssertion::FileExists { path } => {
-                    assert_file_exists(self.working_directory.path(), path)
-                }
+                EvalAssertion::FileExists { path } => assert_file_exists(self.working_directory.path(), path),
                 EvalAssertion::FileMatches { path, content } => {
                     assert_file_matches(self.working_directory.path(), path, content)
                 }
-                EvalAssertion::CommandExitCode {
-                    command,
-                    expected_code,
-                } => {
-                    assert_command_exit_code(self.working_directory.path(), command, *expected_code)
-                        .await
+                EvalAssertion::CommandExitCode { command, expected_code } => {
+                    assert_command_exit_code(self.working_directory.path(), command, *expected_code).await
                 }
                 EvalAssertion::LLMJudge { prompt_builder } => {
                     assert_llm_judge(
@@ -243,11 +225,9 @@ impl Eval {
                     )
                     .await
                 }
-                EvalAssertion::ToolCall {
-                    name,
-                    arguments,
-                    count,
-                } => assert_tool_call(name, arguments.as_ref(), count.as_ref(), &messages).await,
+                EvalAssertion::ToolCall { name, arguments, count } => {
+                    assert_tool_call(name, arguments.as_ref(), count.as_ref(), &messages).await
+                }
             };
 
             results.push((assertion.clone(), result));
@@ -259,19 +239,11 @@ impl Eval {
 
 fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
     // Keep the directory structure (e.g., src/ -> dst/src/)
-    let status = std::process::Command::new("cp")
-        .arg("-r")
-        .arg(src)
-        .arg(dst)
-        .status()?;
+    let status = std::process::Command::new("cp").arg("-r").arg(src).arg(dst).status()?;
 
     if status.success() {
         Ok(())
     } else {
-        Err(std::io::Error::other(format!(
-            "Failed to copy directory from {} to {}",
-            src.display(),
-            dst.display()
-        )))
+        Err(std::io::Error::other(format!("Failed to copy directory from {} to {}", src.display(), dst.display())))
     }
 }

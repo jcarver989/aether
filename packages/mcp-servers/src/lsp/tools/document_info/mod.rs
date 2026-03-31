@@ -64,35 +64,20 @@ pub async fn execute_lsp_document(
     registry: &LspRegistry,
 ) -> Result<LspDocumentOutput, String> {
     let uri = path_to_uri(Path::new(&input.file_path)).map_err(|e| e.clone())?;
-    let client = registry
-        .require_client(&input.file_path)
-        .await
-        .map_err(|e| e.to_string())?;
-    let response = client
-        .document_symbol(uri)
-        .await
-        .map_err(|e| e.to_string())?;
+    let client = registry.require_client(&input.file_path).await.map_err(|e| e.to_string())?;
+    let response = client.document_symbol(uri).await.map_err(|e| e.to_string())?;
 
     let symbols = convert_document_symbols(&input.file_path, response);
     let total_count = symbols.len();
 
-    let display_meta = ToolDisplayMeta::new(
-        "LSP document",
-        format!("{}, {total_count} symbols", basename(&input.file_path)),
-    );
+    let display_meta =
+        ToolDisplayMeta::new("LSP document", format!("{}, {total_count} symbols", basename(&input.file_path)));
 
-    Ok(LspDocumentOutput {
-        symbols: Some(symbols),
-        total_count,
-        meta: Some(display_meta.into()),
-    })
+    Ok(LspDocumentOutput { symbols: Some(symbols), total_count, meta: Some(display_meta.into()) })
 }
 
 /// Convert `DocumentSymbolResponse` to our result format
-fn convert_document_symbols(
-    file_path: &str,
-    response: DocumentSymbolResponse,
-) -> Vec<DocumentSymbolResult> {
+fn convert_document_symbols(file_path: &str, response: DocumentSymbolResponse) -> Vec<DocumentSymbolResult> {
     match response {
         DocumentSymbolResponse::Flat(symbols) => symbols
             .into_iter()
@@ -108,27 +93,20 @@ fn convert_document_symbols(
                 }
             })
             .collect(),
-        DocumentSymbolResponse::Nested(symbols) => symbols
-            .into_iter()
-            .map(|sym| convert_document_symbol(file_path, sym))
-            .collect(),
+        DocumentSymbolResponse::Nested(symbols) => {
+            symbols.into_iter().map(|sym| convert_document_symbol(file_path, sym)).collect()
+        }
     }
 }
 
 /// Convert a single `DocumentSymbol` to our result format (recursive for children)
-fn convert_document_symbol(
-    file_path: &str,
-    sym: lsp_types::DocumentSymbol,
-) -> DocumentSymbolResult {
+fn convert_document_symbol(file_path: &str, sym: lsp_types::DocumentSymbol) -> DocumentSymbolResult {
     let range = LocationResult::from_range(file_path.to_string(), &sym.range);
     let selection_range = LocationResult::from_range(file_path.to_string(), &sym.selection_range);
 
-    let children = sym.children.map(|children| {
-        children
-            .into_iter()
-            .map(|child| convert_document_symbol(file_path, child))
-            .collect()
-    });
+    let children = sym
+        .children
+        .map(|children| children.into_iter().map(|child| convert_document_symbol(file_path, child)).collect());
 
     DocumentSymbolResult {
         name: sym.name,

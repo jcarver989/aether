@@ -33,8 +33,7 @@ impl SubAgentsMcpArgs {
         let mut full_args = vec!["subagents-mcp".to_string()];
         full_args.extend(args);
 
-        Self::try_parse_from(full_args)
-            .map_err(|e| format!("Failed to parse SubAgentsMcp arguments: {e}"))
+        Self::try_parse_from(full_args).map_err(|e| format!("Failed to parse SubAgentsMcp arguments: {e}"))
     }
 }
 
@@ -48,24 +47,17 @@ pub struct SubAgentsMcp {
 
 impl SubAgentsMcp {
     pub fn from_project_root(project_root: PathBuf) -> Result<Self, String> {
-        let catalog =
-            load_agent_catalog(&project_root).map_err(|e| format!("Failed to load agents: {e}"))?;
+        let catalog = load_agent_catalog(&project_root).map_err(|e| format!("Failed to load agents: {e}"))?;
         Ok(Self::new(catalog, project_root))
     }
 
     pub fn new(catalog: AgentCatalog, project_root: PathBuf) -> Self {
-        Self {
-            catalog,
-            tool_router: Self::tool_router(),
-            roots: Arc::new(RwLock::new(vec![project_root])),
-        }
+        Self { catalog, tool_router: Self::tool_router(), roots: Arc::new(RwLock::new(vec![project_root])) }
     }
 
     pub fn from_args(args: Vec<String>) -> Result<Self, String> {
         let parsed_args = SubAgentsMcpArgs::from_args(args)?;
-        let project_root = parsed_args
-            .project_root
-            .unwrap_or_else(|| PathBuf::from("."));
+        let project_root = parsed_args.project_root.unwrap_or_else(|| PathBuf::from("."));
         Self::from_project_root(project_root)
     }
 
@@ -121,40 +113,36 @@ impl SubAgentsMcp {
             let peer = Arc::clone(&peer);
             let message_counter = Arc::clone(&message_counter);
 
-            Box::new(
-                move |task_id: &str, agent_name: &str, message: &AgentMessage| {
-                    if let Some(ref token) = progress_token {
-                        let counter = message_counter.fetch_add(1, Ordering::Relaxed);
-                        let progress_payload = SubAgentProgressPayload {
-                            task_id: task_id.to_string(),
-                            agent_name: agent_name.to_string(),
-                            event: message.clone(),
-                        };
+            Box::new(move |task_id: &str, agent_name: &str, message: &AgentMessage| {
+                if let Some(ref token) = progress_token {
+                    let counter = message_counter.fetch_add(1, Ordering::Relaxed);
+                    let progress_payload = SubAgentProgressPayload {
+                        task_id: task_id.to_string(),
+                        agent_name: agent_name.to_string(),
+                        event: message.clone(),
+                    };
 
-                        let peer = Arc::clone(&peer);
-                        let token = token.clone();
-                        let progress_data_str =
-                            serde_json::to_string(&progress_payload).unwrap_or_default();
+                    let peer = Arc::clone(&peer);
+                    let token = token.clone();
+                    let progress_data_str = serde_json::to_string(&progress_payload).unwrap_or_default();
 
-                        tokio::spawn(async move {
-                            let _ = peer
-                                .notify_progress(ProgressNotificationParam {
-                                    progress_token: token,
-                                    #[allow(clippy::cast_precision_loss)]
-                                    progress: counter as f64,
-                                    total: None,
-                                    message: Some(progress_data_str),
-                                })
-                                .await;
-                        });
-                    }
-                },
-            )
+                    tokio::spawn(async move {
+                        let _ = peer
+                            .notify_progress(ProgressNotificationParam {
+                                progress_token: token,
+                                #[allow(clippy::cast_precision_loss)]
+                                progress: counter as f64,
+                                total: None,
+                                message: Some(progress_data_str),
+                            })
+                            .await;
+                    });
+                }
+            })
         };
 
         let roots = self.roots.read().await.clone();
-        let executor = AgentExecutor::new(self.catalog.clone(), roots)
-            .with_progress_callback(progress_callback);
+        let executor = AgentExecutor::new(self.catalog.clone(), roots).with_progress_callback(progress_callback);
 
         let output = executor.execute_tasks(args.tasks).await;
         Ok(Json(output))

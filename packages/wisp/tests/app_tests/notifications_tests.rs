@@ -10,11 +10,8 @@ async fn test_sub_agent_progress_notification_triggers_render() {
     renderer.initial_render().unwrap();
 
     let json = r#"{"parent_tool_id":"p1","task_id":"t1","agent_name":"explorer","event":{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}}"#;
-    let raw =
-        serde_json::value::to_raw_value(&serde_json::from_str::<serde_json::Value>(json).unwrap())
-            .unwrap();
-    let notification =
-        acp::ExtNotification::new("_aether/sub_agent_progress", std::sync::Arc::from(raw));
+    let raw = serde_json::value::to_raw_value(&serde_json::from_str::<serde_json::Value>(json).unwrap()).unwrap();
+    let notification = acp::ExtNotification::new("_aether/sub_agent_progress", std::sync::Arc::from(raw));
 
     renderer.on_ext_notification(notification).unwrap();
 
@@ -30,8 +27,7 @@ async fn test_invalid_sub_agent_progress_json_silently_ignored() {
     renderer.initial_render().unwrap();
 
     let raw = serde_json::value::to_raw_value(&serde_json::json!({"bad": "data"})).unwrap();
-    let notification =
-        acp::ExtNotification::new("_aether/sub_agent_progress", std::sync::Arc::from(raw));
+    let notification = acp::ExtNotification::new("_aether/sub_agent_progress", std::sync::Arc::from(raw));
 
     renderer.on_ext_notification(notification).unwrap();
 
@@ -52,10 +48,8 @@ async fn test_context_usage_notification_updates_percent_left() {
         "context_limit": 200_000
     }))
     .unwrap();
-    let notification = acp::ExtNotification::new(
-        acp_utils::notifications::CONTEXT_USAGE_METHOD,
-        std::sync::Arc::from(raw),
-    );
+    let notification =
+        acp::ExtNotification::new(acp_utils::notifications::CONTEXT_USAGE_METHOD, std::sync::Arc::from(raw));
 
     renderer.on_ext_notification(notification).unwrap();
 
@@ -80,10 +74,8 @@ async fn test_context_usage_notification_with_unknown_limit_clears_meter() {
         "context_limit": 150_000
     }))
     .unwrap();
-    let notification = acp::ExtNotification::new(
-        acp_utils::notifications::CONTEXT_USAGE_METHOD,
-        std::sync::Arc::from(raw),
-    );
+    let notification =
+        acp::ExtNotification::new(acp_utils::notifications::CONTEXT_USAGE_METHOD, std::sync::Arc::from(raw));
     renderer.on_ext_notification(notification).unwrap();
 
     // Then clear it with null ratio
@@ -93,10 +85,8 @@ async fn test_context_usage_notification_with_unknown_limit_clears_meter() {
         "context_limit": null
     }))
     .unwrap();
-    let notification = acp::ExtNotification::new(
-        acp_utils::notifications::CONTEXT_USAGE_METHOD,
-        std::sync::Arc::from(raw),
-    );
+    let notification =
+        acp::ExtNotification::new(acp_utils::notifications::CONTEXT_USAGE_METHOD, std::sync::Arc::from(raw));
     renderer.on_ext_notification(notification).unwrap();
 
     let lines = renderer.writer().get_lines();
@@ -115,25 +105,18 @@ async fn test_context_cleared_notification_resets_conversation() {
 
     // Add some conversation content
     renderer
-        .on_session_update(acp::SessionUpdate::AgentMessageChunk(
-            acp::ContentChunk::new(acp::ContentBlock::Text(acp::TextContent::new(
-                "hello world",
-            ))),
-        ))
+        .on_session_update(acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
+            acp::TextContent::new("hello world"),
+        ))))
         .unwrap();
 
     let lines = renderer.writer().get_lines();
-    assert!(
-        lines.iter().any(|l| l.contains("hello world")),
-        "Content should be visible before clear"
-    );
+    assert!(lines.iter().any(|l| l.contains("hello world")), "Content should be visible before clear");
 
     // Send context_cleared notification
     let raw = serde_json::value::to_raw_value(&serde_json::json!({})).unwrap();
-    let notification = acp::ExtNotification::new(
-        acp_utils::notifications::CONTEXT_CLEARED_METHOD,
-        std::sync::Arc::from(raw),
-    );
+    let notification =
+        acp::ExtNotification::new(acp_utils::notifications::CONTEXT_CLEARED_METHOD, std::sync::Arc::from(raw));
     renderer.on_ext_notification(notification).unwrap();
 
     let lines = renderer.writer().get_lines();
@@ -152,13 +135,11 @@ async fn test_on_tick_requests_render_while_completed_entries() {
 
     // Send a plan with completed entries
     renderer
-        .on_session_update(acp::SessionUpdate::Plan(acp::Plan::new(vec![
-            acp::PlanEntry::new(
-                "1",
-                acp::PlanEntryPriority::Medium,
-                acp::PlanEntryStatus::Completed,
-            ),
-        ])))
+        .on_session_update(acp::SessionUpdate::Plan(acp::Plan::new(vec![acp::PlanEntry::new(
+            "1",
+            acp::PlanEntryPriority::Medium,
+            acp::PlanEntryStatus::Completed,
+        )])))
         .unwrap();
 
     // Tick should produce a render (entries within grace period)

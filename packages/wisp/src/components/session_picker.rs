@@ -2,8 +2,8 @@ use agent_client_protocol as acp;
 use chrono::{DateTime, Utc};
 use std::path::PathBuf;
 use tui::{
-    Combobox, Component, Cursor, Event, Frame, Line, MouseEventKind, PickerMessage, Searchable,
-    Style, ViewContext, display_width_text, pad_text_to_width, truncate_text,
+    Combobox, Component, Cursor, Event, Frame, Line, MouseEventKind, PickerMessage, Searchable, Style, ViewContext,
+    display_width_text, pad_text_to_width, truncate_text,
 };
 
 #[derive(Clone)]
@@ -24,17 +24,12 @@ pub struct SessionPicker {
 
 pub enum SessionPickerMessage {
     Close,
-    LoadSession {
-        session_id: acp::SessionId,
-        cwd: PathBuf,
-    },
+    LoadSession { session_id: acp::SessionId, cwd: PathBuf },
 }
 
 impl SessionPicker {
     pub fn new(sessions: Vec<SessionEntry>) -> Self {
-        Self {
-            combobox: Combobox::new(sessions),
-        }
+        Self { combobox: Combobox::new(sessions) }
     }
 }
 
@@ -59,9 +54,7 @@ impl Component for SessionPicker {
         let mapped = msgs
             .into_iter()
             .filter_map(|m| match m {
-                PickerMessage::Close | PickerMessage::CloseAndPopChar => {
-                    Some(SessionPickerMessage::Close)
-                }
+                PickerMessage::Close | PickerMessage::CloseAndPopChar => Some(SessionPickerMessage::Close),
                 PickerMessage::Confirm(entry) => Some(SessionPickerMessage::LoadSession {
                     session_id: acp::SessionId::new(entry.0.session_id.0.to_string()),
                     cwd: entry.0.cwd,
@@ -74,10 +67,7 @@ impl Component for SessionPicker {
 
     fn render(&mut self, context: &ViewContext) -> Frame {
         if self.combobox.is_empty() {
-            return Frame::new(vec![
-                Line::new(String::new()),
-                Line::new("  No previous sessions found."),
-            ]);
+            return Frame::new(vec![Line::new(String::new()), Line::new("  No previous sessions found.")]);
         }
 
         let now = Utc::now();
@@ -98,38 +88,29 @@ impl Component for SessionPicker {
             .max()
             .unwrap_or(0);
 
-        let item_lines =
-            self.combobox
-                .render_items(context, |SessionEntry(info), is_selected, ctx| {
-                    let title = display_title(info);
-                    let relative = info
-                        .updated_at
-                        .as_deref()
-                        .map(|ts| format_relative_time(ts, now))
-                        .unwrap_or_default();
+        let item_lines = self.combobox.render_items(context, |SessionEntry(info), is_selected, ctx| {
+            let title = display_title(info);
+            let relative = info.updated_at.as_deref().map(|ts| format_relative_time(ts, now)).unwrap_or_default();
 
-                    let padded_title = pad_text_to_width(&title, max_title_width);
-                    let line_text = format!("{padded_title}  {relative}");
+            let padded_title = pad_text_to_width(&title, max_title_width);
+            let line_text = format!("{padded_title}  {relative}");
 
-                    let max_width = ctx.size.width as usize;
-                    let truncated = truncate_text(&line_text, max_width);
+            let max_width = ctx.size.width as usize;
+            let truncated = truncate_text(&line_text, max_width);
 
-                    if is_selected {
-                        let mut line = Line::with_style(truncated, ctx.theme.selected_row_style());
-                        line.extend_bg_to_width(max_width);
-                        line
-                    } else {
-                        let boundary = padded_title.len().min(truncated.len());
-                        let mut line = Line::new(&truncated[..boundary]);
-                        if truncated.len() > boundary {
-                            line.push_with_style(
-                                &truncated[boundary..],
-                                Style::fg(ctx.theme.muted()),
-                            );
-                        }
-                        line
-                    }
-                });
+            if is_selected {
+                let mut line = Line::with_style(truncated, ctx.theme.selected_row_style());
+                line.extend_bg_to_width(max_width);
+                line
+            } else {
+                let boundary = padded_title.len().min(truncated.len());
+                let mut line = Line::new(&truncated[..boundary]);
+                if truncated.len() > boundary {
+                    line.push_with_style(&truncated[boundary..], Style::fg(ctx.theme.muted()));
+                }
+                line
+            }
+        });
         lines.extend(item_lines);
         let cursor = Cursor::visible(1, display_width_text(&header));
         Frame::new(lines).with_cursor(cursor)
@@ -138,10 +119,7 @@ impl Component for SessionPicker {
 
 fn display_title(info: &acp::SessionInfo) -> String {
     info.title.clone().unwrap_or_else(|| {
-        info.cwd.file_name().map_or_else(
-            || info.cwd.display().to_string(),
-            |n| n.to_string_lossy().into_owned(),
-        )
+        info.cwd.file_name().map_or_else(|| info.cwd.display().to_string(), |n| n.to_string_lossy().into_owned())
     })
 }
 
@@ -268,10 +246,7 @@ mod tests {
         let term = render_component(|ctx| picker.render(ctx), W, H);
         let lines = term.get_lines();
         let header = &lines[1];
-        assert!(
-            header.contains("fix"),
-            "header should contain query text, got: {header}"
-        );
+        assert!(header.contains("fix"), "header should contain query text, got: {header}");
     }
 
     #[test]
@@ -283,14 +258,6 @@ mod tests {
         let mut picker = SessionPicker::new(sessions);
         let d = expected_date("2026-03-10T10:00:00Z");
         let term = render_component(|ctx| picker.render(ctx), W, H);
-        assert_buffer_eq(
-            &term,
-            &[
-                "",
-                "  Resume a previous session:",
-                "",
-                &format!("  my-project  {d}"),
-            ],
-        );
+        assert_buffer_eq(&term, &["", "  Resume a previous session:", "", &format!("  my-project  {d}")]);
     }
 }

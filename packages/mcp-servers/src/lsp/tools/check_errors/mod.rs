@@ -62,14 +62,10 @@ impl LspDiagnosticsInput {
             }
             let path = Path::new(file_path);
             if !path.is_absolute() {
-                return Err(format!(
-                    "filePath must be an absolute path, got: {file_path}"
-                ));
+                return Err(format!("filePath must be an absolute path, got: {file_path}"));
             }
             if !path.is_file() {
-                return Err(format!(
-                    "filePath must point to an existing file, got: {file_path}"
-                ));
+                return Err(format!("filePath must point to an existing file, got: {file_path}"));
             }
         }
         Ok(())
@@ -120,10 +116,7 @@ pub async fn execute_lsp_diagnostics(
     let detail = if output.summary.errors == 0 && output.summary.warnings == 0 {
         "no issues".to_string()
     } else {
-        format!(
-            "{} errors, {} warnings",
-            output.summary.errors, output.summary.warnings
-        )
+        format!("{} errors, {} warnings", output.summary.errors, output.summary.warnings)
     };
     let value = match &output.file_path {
         Some(fp) => format!("{}, {detail}", basename(fp)),
@@ -146,37 +139,20 @@ fn build_output(
         .iter()
         .filter_map(|(uri_str, diagnostics)| {
             let uri = uri_str.parse().ok()?;
-            Some(
-                diagnostics
-                    .iter()
-                    .map(move |diagnostic| FormattedDiagnostic::from_diagnostic(&uri, diagnostic)),
-            )
+            Some(diagnostics.iter().map(move |diagnostic| FormattedDiagnostic::from_diagnostic(&uri, diagnostic)))
         })
         .flatten()
         .collect();
 
-    diagnostics.sort_by(|a, b| {
-        a.file
-            .cmp(&b.file)
-            .then(a.line.cmp(&b.line))
-            .then(a.column.cmp(&b.column))
-    });
+    diagnostics.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)).then(a.column.cmp(&b.column)));
 
     let summary = count_by_severity(&diagnostics);
     let file_path = input.file_path().map(ToOwned::to_owned);
     let is_workspace = file_path.is_none();
 
     LspDiagnosticsOutput {
-        scope: if is_workspace {
-            Scope::Workspace
-        } else {
-            Scope::File
-        },
-        workspace_root: if is_workspace {
-            Some(root_path.to_string_lossy().to_string())
-        } else {
-            None
-        },
+        scope: if is_workspace { Scope::Workspace } else { Scope::File },
+        workspace_root: if is_workspace { Some(root_path.to_string_lossy().to_string()) } else { None },
         file_path,
         diagnostics,
         summary,
@@ -196,13 +172,7 @@ mod tests {
 
     fn diag(severity: DiagnosticSeverity, message: &str, line: u32) -> Diagnostic {
         Diagnostic {
-            range: Range {
-                start: Position { line, character: 0 },
-                end: Position {
-                    line,
-                    character: 10,
-                },
-            },
+            range: Range { start: Position { line, character: 0 }, end: Position { line, character: 10 } },
             severity: Some(severity),
             code: Some(lsp_types::NumberOrString::String("E0308".to_string())),
             code_description: None,
@@ -215,11 +185,7 @@ mod tests {
     }
 
     fn workspace_output(cache: &HashMap<String, Vec<Diagnostic>>) -> LspDiagnosticsOutput {
-        build_output(
-            &LspDiagnosticsInput::Workspace {},
-            Path::new("/project"),
-            cache,
-        )
+        build_output(&LspDiagnosticsInput::Workspace {}, Path::new("/project"), cache)
     }
 
     fn parse_request(json: &str) -> Result<LspDiagnosticsRequest, serde_json::Error> {
@@ -246,10 +212,7 @@ mod tests {
                 diag(DiagnosticSeverity::WARNING, "unused variable", 20),
             ],
         );
-        cache.insert(
-            uri("/project/src/lib.rs"),
-            vec![diag(DiagnosticSeverity::ERROR, "missing field", 5)],
-        );
+        cache.insert(uri("/project/src/lib.rs"), vec![diag(DiagnosticSeverity::ERROR, "missing field", 5)]);
 
         let result = workspace_output(&cache);
 
@@ -264,14 +227,9 @@ mod tests {
     #[test]
     fn test_get_diagnostics_for_file() {
         let mut cache = HashMap::new();
-        cache.insert(
-            uri("/project/src/main.rs"),
-            vec![diag(DiagnosticSeverity::ERROR, "type mismatch", 10)],
-        );
+        cache.insert(uri("/project/src/main.rs"), vec![diag(DiagnosticSeverity::ERROR, "type mismatch", 10)]);
 
-        let input = LspDiagnosticsInput::File {
-            file_path: "/project/src/main.rs".to_string(),
-        };
+        let input = LspDiagnosticsInput::File { file_path: "/project/src/main.rs".to_string() };
         let result = build_output(&input, Path::new("/project"), &cache);
 
         assert_eq!(result.diagnostics.len(), 1);
@@ -290,14 +248,8 @@ mod tests {
     #[test]
     fn test_diagnostics_sorted() {
         let mut cache = HashMap::new();
-        cache.insert(
-            uri("/project/src/b.rs"),
-            vec![diag(DiagnosticSeverity::ERROR, "error in b", 5)],
-        );
-        cache.insert(
-            uri("/project/src/a.rs"),
-            vec![diag(DiagnosticSeverity::ERROR, "error in a", 10)],
-        );
+        cache.insert(uri("/project/src/b.rs"), vec![diag(DiagnosticSeverity::ERROR, "error in b", 5)]);
+        cache.insert(uri("/project/src/a.rs"), vec![diag(DiagnosticSeverity::ERROR, "error in a", 10)]);
 
         let result = workspace_output(&cache);
         assert!(result.diagnostics[0].file.contains("a.rs"));
@@ -306,16 +258,10 @@ mod tests {
 
     #[test]
     fn test_deserialize_workspace_scope() {
-        let workspace_jsons = [
-            r#"{"input":{"scope":"workspace"}}"#,
-            r#"{"input":"{\"scope\":\"workspace\"}"}"#,
-        ];
+        let workspace_jsons = [r#"{"input":{"scope":"workspace"}}"#, r#"{"input":"{\"scope\":\"workspace\"}"}"#];
         for json in workspace_jsons {
             let request: LspDiagnosticsRequest = parse_request(json).unwrap();
-            assert!(
-                matches!(request.input, LspDiagnosticsInput::Workspace {}),
-                "failed for: {json}"
-            );
+            assert!(matches!(request.input, LspDiagnosticsInput::Workspace {}), "failed for: {json}");
         }
     }
 
@@ -362,24 +308,15 @@ mod tests {
         ];
 
         for (path, expected_msg) in cases {
-            let input = LspDiagnosticsInput::File {
-                file_path: path.to_string(),
-            };
+            let input = LspDiagnosticsInput::File { file_path: path.to_string() };
             let err = input.validate().unwrap_err();
-            assert!(
-                err.contains(expected_msg),
-                "path={path:?}: expected {expected_msg:?}, got {err:?}"
-            );
+            assert!(err.contains(expected_msg), "path={path:?}: expected {expected_msg:?}, got {err:?}");
         }
     }
 
     #[test]
     fn test_output_workspace_metadata() {
-        let output = build_output(
-            &LspDiagnosticsInput::Workspace {},
-            Path::new("/home/user/project"),
-            &HashMap::new(),
-        );
+        let output = build_output(&LspDiagnosticsInput::Workspace {}, Path::new("/home/user/project"), &HashMap::new());
 
         let json = serde_json::to_string(&output).unwrap();
         assert!(json.contains(r#""scope":"workspace""#));
@@ -389,9 +326,7 @@ mod tests {
 
     #[test]
     fn test_output_file_metadata() {
-        let input = LspDiagnosticsInput::File {
-            file_path: "/home/user/project/src/main.rs".to_string(),
-        };
+        let input = LspDiagnosticsInput::File { file_path: "/home/user/project/src/main.rs".to_string() };
         let output = build_output(&input, Path::new("/home/user/project"), &HashMap::new());
 
         let json = serde_json::to_string(&output).unwrap();

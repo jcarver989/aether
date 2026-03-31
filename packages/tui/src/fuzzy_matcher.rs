@@ -30,12 +30,7 @@ impl<T: Searchable + Send + Sync + 'static> FuzzyMatcher<T> {
         }
         let _ = matcher.tick(0);
 
-        let mut fuzzy = Self {
-            query: String::new(),
-            matches: Vec::new(),
-            matcher,
-            match_sort: None,
-        };
+        let mut fuzzy = Self { query: String::new(), matches: Vec::new(), matcher, match_sort: None };
         fuzzy.matches = fuzzy.search(false);
         fuzzy
     }
@@ -43,12 +38,7 @@ impl<T: Searchable + Send + Sync + 'static> FuzzyMatcher<T> {
     /// Creates a `FuzzyMatcher` with pre-populated matches (no Nucleo indexing).
     pub fn from_matches(matches: Vec<T>) -> Self {
         let nucleo = Nucleo::new(Config::DEFAULT, Arc::new(|| {}), Some(1), 1);
-        Self {
-            query: String::new(),
-            matches,
-            matcher: nucleo,
-            match_sort: None,
-        }
+        Self { query: String::new(), matches, matcher: nucleo, match_sort: None }
     }
 
     pub fn query(&self) -> &str {
@@ -88,13 +78,7 @@ impl<T: Searchable + Send + Sync + 'static> FuzzyMatcher<T> {
     }
 
     fn search(&mut self, append: bool) -> Vec<T> {
-        self.matcher.pattern.reparse(
-            0,
-            &self.query,
-            CaseMatching::Smart,
-            Normalization::Smart,
-            append,
-        );
+        self.matcher.pattern.reparse(0, &self.query, CaseMatching::Smart, Normalization::Smart, append);
         let mut status = self.matcher.tick(MATCH_TIMEOUT_MS);
         let mut ticks = 0;
         while status.running && ticks < MAX_TICKS_PER_QUERY {
@@ -104,10 +88,7 @@ impl<T: Searchable + Send + Sync + 'static> FuzzyMatcher<T> {
 
         let snapshot = self.matcher.snapshot();
         let limit = snapshot.matched_item_count().min(MAX_MATCHES);
-        let mut matches: Vec<T> = snapshot
-            .matched_items(0..limit)
-            .map(|item| item.data.clone())
-            .collect();
+        let mut matches: Vec<T> = snapshot.matched_items(0..limit).map(|item| item.data.clone()).collect();
         if let Some(sort) = self.match_sort {
             matches.sort_by(sort);
         }
@@ -126,9 +107,7 @@ mod tests {
 
     impl FakeItem {
         fn new(text: &str) -> Self {
-            Self {
-                text: text.to_string(),
-            }
+            Self { text: text.to_string() }
         }
     }
 
@@ -140,11 +119,7 @@ mod tests {
 
     #[test]
     fn new_returns_all_items_with_empty_query() {
-        let items = vec![
-            FakeItem::new("alpha"),
-            FakeItem::new("beta"),
-            FakeItem::new("gamma"),
-        ];
+        let items = vec![FakeItem::new("alpha"), FakeItem::new("beta"), FakeItem::new("gamma")];
         let matcher = FuzzyMatcher::new(items);
         assert_eq!(matcher.matches().len(), 3);
         assert_eq!(matcher.query(), "");
@@ -152,11 +127,7 @@ mod tests {
 
     #[test]
     fn push_query_char_filters_matches() {
-        let items = vec![
-            FakeItem::new("apple"),
-            FakeItem::new("banana"),
-            FakeItem::new("avocado"),
-        ];
+        let items = vec![FakeItem::new("apple"), FakeItem::new("banana"), FakeItem::new("avocado")];
         let mut matcher = FuzzyMatcher::new(items);
         for c in "ban".chars() {
             matcher.push_query_char(c);
@@ -167,11 +138,7 @@ mod tests {
 
     #[test]
     fn push_and_pop_query_char() {
-        let items = vec![
-            FakeItem::new("cat"),
-            FakeItem::new("car"),
-            FakeItem::new("dog"),
-        ];
+        let items = vec![FakeItem::new("cat"), FakeItem::new("car"), FakeItem::new("dog")];
         let mut matcher = FuzzyMatcher::new(items);
         matcher.push_query_char('c');
         assert_eq!(matcher.query(), "c");
@@ -206,11 +173,7 @@ mod tests {
 
     #[test]
     fn set_match_sort_reorders_matches() {
-        let items = vec![
-            FakeItem::new("banana"),
-            FakeItem::new("apple"),
-            FakeItem::new("cherry"),
-        ];
+        let items = vec![FakeItem::new("banana"), FakeItem::new("apple"), FakeItem::new("cherry")];
         let mut matcher = FuzzyMatcher::new(items);
         matcher.set_match_sort(|a, b| a.text.cmp(&b.text));
         assert_eq!(matcher.matches()[0].text, "apple");

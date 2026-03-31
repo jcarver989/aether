@@ -11,19 +11,16 @@ pub enum ConfigSetting {
 
 impl ConfigSetting {
     pub fn parse(config_id: &str, value: &str) -> Result<Self, ConfigSettingError> {
-        let id: ConfigOptionId = config_id
-            .parse()
-            .map_err(|_| ConfigSettingError::UnknownConfigId(config_id.to_string()))?;
+        let id: ConfigOptionId =
+            config_id.parse().map_err(|_| ConfigSettingError::UnknownConfigId(config_id.to_string()))?;
 
         match id {
             ConfigOptionId::Mode => Ok(Self::Mode(value.to_string())),
             ConfigOptionId::Model => Ok(Self::Model(value.to_string())),
             ConfigOptionId::ReasoningEffort => {
-                let effort = ReasoningEffort::parse(value).map_err(|_| {
-                    ConfigSettingError::InvalidValue {
-                        config_id: config_id.to_string(),
-                        value: value.to_string(),
-                    }
+                let effort = ReasoningEffort::parse(value).map_err(|_| ConfigSettingError::InvalidValue {
+                    config_id: config_id.to_string(),
+                    value: value.to_string(),
                 })?;
                 Ok(Self::ReasoningEffort(effort))
             }
@@ -72,20 +69,14 @@ mod tests {
     #[test]
     fn parse_model() {
         let setting = ConfigSetting::parse("model", "anthropic:claude-sonnet-4-5").unwrap();
-        assert_eq!(
-            setting,
-            ConfigSetting::Model("anthropic:claude-sonnet-4-5".to_string())
-        );
+        assert_eq!(setting, ConfigSetting::Model("anthropic:claude-sonnet-4-5".to_string()));
         assert_eq!(setting.config_id(), ConfigOptionId::Model);
     }
 
     #[test]
     fn parse_reasoning_effort_high() {
         let setting = ConfigSetting::parse("reasoning_effort", "high").unwrap();
-        assert_eq!(
-            setting,
-            ConfigSetting::ReasoningEffort(Some(ReasoningEffort::High))
-        );
+        assert_eq!(setting, ConfigSetting::ReasoningEffort(Some(ReasoningEffort::High)));
         assert_eq!(setting.config_id(), ConfigOptionId::ReasoningEffort);
     }
 
@@ -118,11 +109,7 @@ mod tests {
 
     #[test]
     fn config_id_round_trip() {
-        let cases: Vec<(&str, &str)> = vec![
-            ("mode", "test"),
-            ("model", "test"),
-            ("reasoning_effort", "low"),
-        ];
+        let cases: Vec<(&str, &str)> = vec![("mode", "test"), ("model", "test"), ("reasoning_effort", "low")];
         for (id_str, value) in cases {
             let setting = ConfigSetting::parse(id_str, value).unwrap();
             assert_eq!(setting.config_id().as_str(), id_str);

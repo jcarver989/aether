@@ -45,10 +45,7 @@ fn tool_start(index: u32, id: &str, name: &str) -> ChatCompletionMessageToolCall
         index,
         id: Some(id.to_string()),
         r#type: None,
-        function: Some(FunctionCallStream {
-            name: Some(name.to_string()),
-            arguments: None,
-        }),
+        function: Some(FunctionCallStream { name: Some(name.to_string()), arguments: None }),
     }
 }
 
@@ -57,10 +54,7 @@ fn tool_args(index: u32, args: &str) -> ChatCompletionMessageToolCallChunk {
         index,
         id: None,
         r#type: None,
-        function: Some(FunctionCallStream {
-            name: None,
-            arguments: Some(args.to_string()),
-        }),
+        function: Some(FunctionCallStream { name: None, arguments: Some(args.to_string()) }),
     }
 }
 
@@ -77,16 +71,8 @@ async fn collect_events(items: Vec<StreamItem>) -> Vec<LlmResponse> {
 #[tokio::test]
 async fn test_parallel_tool_calls() {
     let events = collect_events(vec![
-        chunk(
-            Some(vec![tool_start(0, "call_1", "function_a")]),
-            None,
-            None,
-        ),
-        chunk(
-            Some(vec![tool_start(1, "call_2", "function_b")]),
-            None,
-            None,
-        ),
+        chunk(Some(vec![tool_start(0, "call_1", "function_a")]), None, None),
+        chunk(Some(vec![tool_start(1, "call_2", "function_b")]), None, None),
         chunk(Some(vec![tool_args(0, r#"{"param":"#)]), None, None),
         chunk(Some(vec![tool_args(1, r#"{"value":"#)]), None, None),
         chunk(Some(vec![tool_args(0, r#""test"}"#)]), None, None),
@@ -132,12 +118,7 @@ async fn test_parallel_tool_calls() {
     assert_eq!(tool_args, 4, "Should have 4 tool argument chunks");
     assert_eq!(tool_completions, 2, "Should have 2 tool completions");
 
-    assert!(matches!(
-        events.last(),
-        Some(LlmResponse::Done {
-            stop_reason: Some(StopReason::ToolCalls)
-        })
-    ));
+    assert!(matches!(events.last(), Some(LlmResponse::Done { stop_reason: Some(StopReason::ToolCalls) })));
 }
 
 #[tokio::test]
@@ -163,8 +144,5 @@ async fn test_tool_call_followed_by_content() {
 
     assert!(tool_completion_index.is_some());
     assert!(text_index.is_some());
-    assert!(
-        tool_completion_index.unwrap() < text_index.unwrap(),
-        "Tool completion should come before text content"
-    );
+    assert!(tool_completion_index.unwrap() < text_index.unwrap(), "Tool completion should come before text content");
 }

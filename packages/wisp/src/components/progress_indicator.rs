@@ -50,11 +50,7 @@ impl ProgressIndicator {
     }
 
     fn current_message(&self) -> &'static str {
-        self.turn_count
-            .checked_sub(1)
-            .and_then(|i| MESSAGES.get(i))
-            .copied()
-            .unwrap_or("Working...")
+        self.turn_count.checked_sub(1).and_then(|i| MESSAGES.get(i)).copied().unwrap_or("Working...")
     }
 
     /// Advance the animation state. Call this on tick events.
@@ -74,14 +70,8 @@ impl ProgressIndicator {
         let frame = FRAMES[self.tick as usize % FRAMES.len()];
         let mut line = Line::default();
         line.push_styled(frame.to_string(), context.theme.info());
-        line.push_styled(
-            format!(" {}", self.current_message()),
-            context.theme.text_secondary(),
-        );
-        line.push_with_style(
-            "  (esc to interrupt)".to_string(),
-            Style::fg(context.theme.muted()).italic(),
-        );
+        line.push_styled(format!(" {}", self.current_message()), context.theme.text_secondary());
+        line.push_with_style("  (esc to interrupt)".to_string(), Style::fg(context.theme.muted()).italic());
 
         vec![line]
     }

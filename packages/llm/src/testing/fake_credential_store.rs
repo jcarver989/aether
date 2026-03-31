@@ -11,37 +11,22 @@ pub struct FakeOAuthCredentialStore {
 
 impl FakeOAuthCredentialStore {
     pub fn new() -> Self {
-        Self {
-            credentials: Mutex::new(HashMap::new()),
-        }
+        Self { credentials: Mutex::new(HashMap::new()) }
     }
 
     pub fn with_credential(self, server_id: &str, credential: OAuthCredential) -> Self {
-        self.credentials
-            .lock()
-            .unwrap()
-            .insert(server_id.to_string(), credential);
+        self.credentials.lock().unwrap().insert(server_id.to_string(), credential);
         self
     }
 }
 
 impl OAuthCredentialStorage for FakeOAuthCredentialStore {
-    async fn load_credential(
-        &self,
-        server_id: &str,
-    ) -> Result<Option<OAuthCredential>, OAuthError> {
+    async fn load_credential(&self, server_id: &str) -> Result<Option<OAuthCredential>, OAuthError> {
         Ok(self.credentials.lock().unwrap().get(server_id).cloned())
     }
 
-    async fn save_credential(
-        &self,
-        server_id: &str,
-        credential: OAuthCredential,
-    ) -> Result<(), OAuthError> {
-        self.credentials
-            .lock()
-            .unwrap()
-            .insert(server_id.to_string(), credential);
+    async fn save_credential(&self, server_id: &str, credential: OAuthCredential) -> Result<(), OAuthError> {
+        self.credentials.lock().unwrap().insert(server_id.to_string(), credential);
         Ok(())
     }
 
@@ -57,9 +42,7 @@ mod tests {
     #[test]
     fn load_returns_none_when_empty() {
         let store = FakeOAuthCredentialStore::new();
-        let result = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(store.load_credential("unknown"));
+        let result = tokio::runtime::Runtime::new().unwrap().block_on(store.load_credential("unknown"));
         assert!(result.unwrap().is_none());
     }
 
@@ -73,16 +56,9 @@ mod tests {
             expires_at: Some(9999999999999),
         };
 
-        store
-            .save_credential("my-server", cred.clone())
-            .await
-            .unwrap();
+        store.save_credential("my-server", cred.clone()).await.unwrap();
 
-        let loaded = store
-            .load_credential("my-server")
-            .await
-            .unwrap()
-            .expect("should find saved credential");
+        let loaded = store.load_credential("my-server").await.unwrap().expect("should find saved credential");
         assert_eq!(loaded.client_id, "client_1");
         assert_eq!(loaded.access_token, "tok_abc");
         assert_eq!(loaded.refresh_token.as_deref(), Some("ref_xyz"));

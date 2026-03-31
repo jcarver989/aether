@@ -19,9 +19,7 @@ impl Line {
             return Self::default();
         }
 
-        Self {
-            spans: vec![Span::new(text)],
-        }
+        Self { spans: vec![Span::new(text)] }
     }
 
     pub fn styled(text: impl Into<String>, color: Color) -> Self {
@@ -34,9 +32,7 @@ impl Line {
             return Self::default();
         }
 
-        Self {
-            spans: vec![Span::with_style(text, style)],
-        }
+        Self { spans: vec![Span::with_style(text, style)] }
     }
 
     pub fn spans(&self) -> &[Span] {
@@ -110,10 +106,7 @@ impl Line {
 
         let bg = self.spans.iter().find_map(|span| span.style().bg);
         if let Some(bg) = bg {
-            self.push_with_style(
-                format!("{:pad$}", "", pad = pad),
-                Style::default().bg_color(bg),
-            );
+            self.push_with_style(format!("{:pad$}", "", pad = pad), Style::default().bg_color(bg));
         } else {
             self.push_text(format!("{:pad$}", "", pad = pad));
         }
@@ -257,11 +250,7 @@ mod tests {
         let prepended = line.prepend("  ");
         assert_eq!(prepended.plain_text(), "  hello");
         assert_eq!(prepended.spans().len(), 2);
-        assert_eq!(
-            prepended.spans()[0].style().bg,
-            Some(Color::Blue),
-            "prepended span should inherit the bg color"
-        );
+        assert_eq!(prepended.spans()[0].style().bg, Some(Color::Blue), "prepended span should inherit the bg color");
     }
 
     #[test]

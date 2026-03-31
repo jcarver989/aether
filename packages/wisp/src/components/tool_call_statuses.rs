@@ -4,12 +4,8 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::components::sub_agent_tracker::SubAgentTracker;
-use crate::components::tool_call_status_view::{
-    ToolCallStatus, compute_diff_preview, render_tool_tree,
-};
-use crate::components::tracked_tool_call::{
-    TrackedToolCall, raw_input_fragment, upsert_tracked_tool_call,
-};
+use crate::components::tool_call_status_view::{ToolCallStatus, compute_diff_preview, render_tool_tree};
+use crate::components::tracked_tool_call::{TrackedToolCall, raw_input_fragment, upsert_tracked_tool_call};
 use tui::{Line, ViewContext};
 
 /// Tracks active tool calls and produces status lines for the frame.
@@ -33,22 +29,13 @@ pub struct ToolProgress {
 
 impl ToolCallStatuses {
     pub fn new() -> Self {
-        Self {
-            tool_order: Vec::new(),
-            tool_calls: HashMap::new(),
-            sub_agents: SubAgentTracker::default(),
-            tick: 0,
-        }
+        Self { tool_order: Vec::new(), tool_calls: HashMap::new(), sub_agents: SubAgentTracker::default(), tick: 0 }
     }
 
     pub fn progress(&self) -> ToolProgress {
         let running_any = self.any_running_including_subagents();
         let (completed_top_level, total_top_level) = self.top_level_counts();
-        ToolProgress {
-            running_any,
-            completed_top_level,
-            total_top_level,
-        }
+        ToolProgress { running_any, completed_top_level, total_top_level }
     }
 
     /// Advance the animation state. Call this on tick events.
@@ -61,11 +48,7 @@ impl ToolCallStatuses {
     /// Handle a new tool call from ACP `SessionUpdate::ToolCall`.
     pub fn on_tool_call(&mut self, tool_call: &acp::ToolCall) {
         let id = tool_call.tool_call_id.0.to_string();
-        let arguments = tool_call
-            .raw_input
-            .as_ref()
-            .map(raw_input_fragment)
-            .unwrap_or_default();
+        let arguments = tool_call.raw_input.as_ref().map(raw_input_fragment).unwrap_or_default();
 
         let tracked = upsert_tracked_tool_call(
             &mut self.tool_order,
@@ -109,11 +92,8 @@ impl ToolCallStatuses {
     }
 
     pub fn finalize_running(&mut self, cancelled: bool) {
-        let terminal_status = if cancelled {
-            ToolCallStatus::Error("cancelled".to_string())
-        } else {
-            ToolCallStatus::Success
-        };
+        let terminal_status =
+            if cancelled { ToolCallStatus::Error("cancelled".to_string()) } else { ToolCallStatus::Success };
 
         for tool_call in self.tool_calls.values_mut() {
             if matches!(tool_call.status, ToolCallStatus::Running) {
@@ -130,9 +110,7 @@ impl ToolCallStatuses {
 
     #[cfg(test)]
     pub fn is_tool_running(&self, id: &str) -> bool {
-        self.tool_calls
-            .get(id)
-            .is_some_and(|tc| matches!(tc.status, ToolCallStatus::Running))
+        self.tool_calls.get(id).is_some_and(|tc| matches!(tc.status, ToolCallStatus::Running))
     }
 
     /// Handle a sub-agent progress notification.
@@ -159,11 +137,7 @@ impl ToolCallStatuses {
     }
 
     fn top_level_counts(&self) -> (usize, usize) {
-        let total = self
-            .tool_order
-            .iter()
-            .filter(|id| !self.sub_agents.has_sub_agents(id))
-            .count();
+        let total = self.tool_order.iter().filter(|id| !self.sub_agents.has_sub_agents(id)).count();
         let completed = self
             .tool_order
             .iter()
@@ -175,10 +149,7 @@ impl ToolCallStatuses {
     }
 
     fn any_running_including_subagents(&self) -> bool {
-        self.tool_calls
-            .values()
-            .any(|tc| matches!(tc.status, ToolCallStatus::Running))
-            || self.sub_agents.any_running()
+        self.tool_calls.values().any(|tc| matches!(tc.status, ToolCallStatus::Running)) || self.sub_agents.any_running()
     }
 }
 
@@ -207,17 +178,10 @@ mod tests {
     }
 
     fn make_tool_call_update(id: &str, status: acp::ToolCallStatus) -> acp::ToolCallUpdate {
-        acp::ToolCallUpdate::new(
-            id.to_string(),
-            acp::ToolCallUpdateFields::new().status(status),
-        )
+        acp::ToolCallUpdate::new(id.to_string(), acp::ToolCallUpdateFields::new().status(status))
     }
 
-    fn make_sub_agent_notification(
-        parent_tool_id: &str,
-        agent_name: &str,
-        event_json: &str,
-    ) -> SubAgentProgressParams {
+    fn make_sub_agent_notification(parent_tool_id: &str, agent_name: &str, event_json: &str) -> SubAgentProgressParams {
         make_sub_agent_notification_with_task_id(parent_tool_id, agent_name, agent_name, event_json)
     }
 
@@ -237,10 +201,7 @@ mod tests {
     fn progress_reports_sub_agent_running_tools() {
         let mut statuses = ToolCallStatuses::new();
         statuses.on_tool_call(&make_tool_call("parent-1", "spawn_subagent", None));
-        statuses.on_tool_call_update(&make_tool_call_update(
-            "parent-1",
-            acp::ToolCallStatus::Completed,
-        ));
+        statuses.on_tool_call_update(&make_tool_call_update("parent-1", acp::ToolCallStatus::Completed));
         statuses.on_sub_agent_progress(&make_sub_agent_notification(
             "parent-1",
             "explorer",
@@ -330,14 +291,8 @@ mod tests {
         tc.status = ToolCallStatus::Success;
         tc.diff_preview = Some(DiffPreview {
             lines: vec![
-                DiffLine {
-                    tag: DiffTag::Removed,
-                    content: "old line".to_string(),
-                },
-                DiffLine {
-                    tag: DiffTag::Added,
-                    content: "new line".to_string(),
-                },
+                DiffLine { tag: DiffTag::Removed, content: "old line".to_string() },
+                DiffLine { tag: DiffTag::Added, content: "new line".to_string() },
             ],
             rows: vec![SplitDiffRow {
                 left: Some(SplitDiffCell {
@@ -358,14 +313,8 @@ mod tests {
         let lines = statuses.render_tool("tool-1", &ctx());
         assert!(lines.len() > 1);
         let all_text: String = lines.iter().map(|l| l.plain_text()).collect();
-        assert!(
-            all_text.contains("old line"),
-            "Expected removed line: {all_text}"
-        );
-        assert!(
-            all_text.contains("new line"),
-            "Expected added line: {all_text}"
-        );
+        assert!(all_text.contains("old line"), "Expected removed line: {all_text}");
+        assert!(all_text.contains("new line"), "Expected added line: {all_text}");
     }
 
     #[test]
@@ -375,10 +324,7 @@ mod tests {
 
         let tc = statuses.tool_calls.get_mut("tool-1").unwrap();
         tc.diff_preview = Some(DiffPreview {
-            lines: vec![DiffLine {
-                tag: DiffTag::Added,
-                content: "new line".to_string(),
-            }],
+            lines: vec![DiffLine { tag: DiffTag::Added, content: "new line".to_string() }],
             rows: vec![SplitDiffRow {
                 left: None,
                 right: Some(SplitDiffCell {

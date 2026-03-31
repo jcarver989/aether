@@ -14,10 +14,7 @@ pub async fn run_prompt(args: PromptArgs) -> Result<(), CliError> {
     let catalog = load_agent_catalog(&cwd).map_err(|e| CliError::AgentError(e.to_string()))?;
     let spec = resolve_agent_spec(&catalog, args.agent.as_deref(), &cwd)?;
 
-    let info = RuntimeBuilder::from_spec(cwd, spec)
-        .mcp_config_opt(args.mcp_config)
-        .build_prompt_info()
-        .await?;
+    let info = RuntimeBuilder::from_spec(cwd, spec).mcp_config_opt(args.mcp_config).build_prompt_info().await?;
 
     let system_prompt = build_prompt(&info.spec.prompts, args.system_prompt.as_deref()).await?;
     let tools_output = build_tools(&info.tool_definitions);
@@ -32,14 +29,7 @@ pub async fn run_prompt(args: PromptArgs) -> Result<(), CliError> {
     }
 
     println!();
-    println!(
-        "{}",
-        format_stats(
-            system_prompt.len(),
-            tools_output.len(),
-            info.tool_definitions.len()
-        )
-    );
+    println!("{}", format_stats(system_prompt.len(), tools_output.len(), info.tool_definitions.len()));
 
     Ok(())
 }
@@ -49,9 +39,7 @@ pub async fn build_prompt(prompts: &[Prompt], custom: Option<&str>) -> Result<St
     if let Some(custom) = custom {
         prompts.push(Prompt::text(custom));
     }
-    Prompt::build_all(&prompts)
-        .await
-        .map_err(|e| CliError::AgentError(e.to_string()))
+    Prompt::build_all(&prompts).await.map_err(|e| CliError::AgentError(e.to_string()))
 }
 
 pub fn build_tools(tools: &[ToolDefinition]) -> String {
@@ -146,19 +134,9 @@ mod tests {
     #[test]
     fn build_tools_groups_by_server() {
         let tools = vec![
-            tool(
-                "fs_read",
-                "Read a file",
-                r#"{"type":"object"}"#,
-                Some("filesystem"),
-            ),
+            tool("fs_read", "Read a file", r#"{"type":"object"}"#, Some("filesystem")),
             tool("git_log", "Show log", r#"{"type":"object"}"#, Some("git")),
-            tool(
-                "fs_write",
-                "Write a file",
-                r#"{"type":"object"}"#,
-                Some("filesystem"),
-            ),
+            tool("fs_write", "Write a file", r#"{"type":"object"}"#, Some("filesystem")),
         ];
         let output = build_tools(&tools);
         // BTreeMap sorts: filesystem < git
@@ -172,12 +150,7 @@ mod tests {
 
     #[test]
     fn build_tools_handles_no_server() {
-        let tools = vec![tool(
-            "builtin_tool",
-            "A built-in",
-            r#"{"type":"object"}"#,
-            None,
-        )];
+        let tools = vec![tool("builtin_tool", "A built-in", r#"{"type":"object"}"#, None)];
         let output = build_tools(&tools);
         assert!(output.contains("Server: (built-in)"));
         assert!(output.contains("builtin_tool"));
@@ -185,12 +158,7 @@ mod tests {
 
     #[test]
     fn build_tools_produces_api_format() {
-        let tools = vec![tool(
-            "my_tool",
-            "Does stuff",
-            r#"{"type":"object","properties":{}}"#,
-            Some("test"),
-        )];
+        let tools = vec![tool("my_tool", "Does stuff", r#"{"type":"object","properties":{}}"#, Some("test"))];
         let output = build_tools(&tools);
         // Strip "Server: test\n" prefix to get the JSON
         let json_start = output.find('[').unwrap();
@@ -209,12 +177,7 @@ mod tests {
 
     #[test]
     fn build_tools_malformed_params() {
-        let tools = vec![tool(
-            "bad_tool",
-            "Broken params",
-            "not valid json",
-            Some("srv"),
-        )];
+        let tools = vec![tool("bad_tool", "Broken params", "not valid json", Some("srv"))];
         let output = build_tools(&tools);
         assert!(output.contains("bad_tool"));
         assert!(output.contains("null"));

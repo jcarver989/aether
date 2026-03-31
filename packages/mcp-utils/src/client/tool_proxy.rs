@@ -49,12 +49,7 @@ impl ToolProxy {
         server_descriptions: &[(String, String)],
     ) -> Self {
         let instructions = Self::build_instructions(&tool_dir, server_descriptions);
-        Self {
-            name,
-            members,
-            tool_dir,
-            instructions,
-        }
+        Self { name, members, tool_dir, instructions }
     }
 
     pub fn name(&self) -> &str {
@@ -81,11 +76,7 @@ impl ToolProxy {
                 args.server, self.name
             )));
         }
-        Ok(ResolvedCall {
-            server: args.server,
-            tool: args.tool,
-            arguments: args.arguments,
-        })
+        Ok(ResolvedCall { server: args.server, tool: args.tool, arguments: args.arguments })
     }
 
     pub fn instructions(&self) -> &str {
@@ -105,8 +96,7 @@ impl ToolProxy {
     ///
     /// Uses `$AETHER_HOME/tool-proxy/<name>` or `~/.aether/tool-proxy/<name>`.
     pub fn dir(name: &str) -> Result<PathBuf, McpError> {
-        let base =
-            super::aether_home().ok_or_else(|| McpError::Other("Home directory not set".into()))?;
+        let base = super::aether_home().ok_or_else(|| McpError::Other("Home directory not set".into()))?;
         Ok(base.join("tool-proxy").join(name))
     }
 
@@ -124,12 +114,7 @@ impl ToolProxy {
     pub fn call_tool_schema() -> Arc<Map<String, Value>> {
         let schema = schemars::schema_for!(ProxyCallArgs);
         let value = serde_json::to_value(schema).expect("schema serialization cannot fail");
-        Arc::new(
-            value
-                .as_object()
-                .expect("schema is always an object")
-                .clone(),
-        )
+        Arc::new(value.as_object().expect("schema is always an object").clone())
     }
 
     /// Build a `ToolDefinition` for the proxy's `call_tool` virtual tool.
@@ -152,9 +137,7 @@ impl ToolProxy {
         tool_dir: &Path,
     ) -> Result<(), McpError> {
         let tools_response = client.list_tools(None).await.map_err(|e| {
-            McpError::ToolDiscoveryFailed(format!(
-                "Failed to list tools for nested server '{server_name}': {e}"
-            ))
+            McpError::ToolDiscoveryFailed(format!("Failed to list tools for nested server '{server_name}': {e}"))
         })?;
 
         let server_dir = tool_dir.join(server_name);
@@ -179,19 +162,10 @@ impl ToolProxy {
     /// Extract a one-line description for a nested server from its peer info.
     ///
     /// Uses `server_info.description`, falling back to the server name.
-    pub fn extract_server_description(
-        client: &RunningService<RoleClient, McpClient>,
-        server_name: &str,
-    ) -> String {
+    pub fn extract_server_description(client: &RunningService<RoleClient, McpClient>, server_name: &str) -> String {
         client
             .peer_info()
-            .and_then(|info| {
-                info.server_info
-                    .description
-                    .as_deref()
-                    .filter(|s| !s.is_empty())
-                    .map(ToString::to_string)
-            })
+            .and_then(|info| info.server_info.description.as_deref().filter(|s| !s.is_empty()).map(ToString::to_string))
             .unwrap_or_else(|| server_name.to_string())
     }
 
@@ -318,10 +292,8 @@ mod tests {
     #[test]
     fn build_proxy_instructions_includes_tool_dir_and_servers() {
         let tool_dir = std::path::Path::new("/tmp/tool-proxy/test");
-        let descriptions = vec![
-            ("math".to_string(), "Math tools".to_string()),
-            ("git".to_string(), "Git tools".to_string()),
-        ];
+        let descriptions =
+            vec![("math".to_string(), "Math tools".to_string()), ("git".to_string(), "Git tools".to_string())];
         let instr = ToolProxy::build_instructions(tool_dir, &descriptions);
         assert!(instr.contains("/tmp/tool-proxy/test"));
         assert!(instr.contains("call_tool"));
@@ -331,10 +303,7 @@ mod tests {
     }
 
     fn make_proxy(members: &[&str]) -> ToolProxy {
-        let members: HashSet<String> = members
-            .iter()
-            .map(std::string::ToString::to_string)
-            .collect();
+        let members: HashSet<String> = members.iter().map(std::string::ToString::to_string).collect();
         ToolProxy::new(
             "myproxy".to_string(),
             members,

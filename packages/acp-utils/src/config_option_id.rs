@@ -56,11 +56,7 @@ mod tests {
 
     #[test]
     fn round_trip_all_variants() {
-        for id in [
-            ConfigOptionId::Mode,
-            ConfigOptionId::Model,
-            ConfigOptionId::ReasoningEffort,
-        ] {
+        for id in [ConfigOptionId::Mode, ConfigOptionId::Model, ConfigOptionId::ReasoningEffort] {
             let parsed: ConfigOptionId = id.as_str().parse().unwrap();
             assert_eq!(parsed, id);
         }
@@ -68,11 +64,7 @@ mod tests {
 
     #[test]
     fn display_matches_as_str() {
-        for id in [
-            ConfigOptionId::Mode,
-            ConfigOptionId::Model,
-            ConfigOptionId::ReasoningEffort,
-        ] {
+        for id in [ConfigOptionId::Mode, ConfigOptionId::Model, ConfigOptionId::ReasoningEffort] {
             assert_eq!(id.to_string(), id.as_str());
         }
     }

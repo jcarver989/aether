@@ -1,6 +1,4 @@
-use async_openai::types::chat::{
-    CreateChatCompletionStreamResponse, FinishReason as OpenAiFinishReason,
-};
+use async_openai::types::chat::{CreateChatCompletionStreamResponse, FinishReason as OpenAiFinishReason};
 use async_stream;
 use tokio_stream::{Stream, StreamExt};
 use tracing::debug;
@@ -11,9 +9,7 @@ use crate::{LlmError, LlmResponse, Result, StopReason};
 /// Common stream processing logic that handles tool call state tracking and event emission.
 /// Works with standard `async_openai` `CreateChatCompletionStreamResponse` types.
 pub fn process_completion_stream<E: Into<LlmError> + Send>(
-    mut stream: impl Stream<Item = std::result::Result<CreateChatCompletionStreamResponse, E>>
-    + Send
-    + Unpin,
+    mut stream: impl Stream<Item = std::result::Result<CreateChatCompletionStreamResponse, E>> + Send + Unpin,
 ) -> impl Stream<Item = Result<LlmResponse>> + Send {
     async_stream::stream! {
         let message_id = uuid::Uuid::new_v4().to_string();

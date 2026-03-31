@@ -68,32 +68,18 @@ fn process_stream_event(
     index_to_id: &mut HashMap<u32, String>,
 ) -> Result<(Option<LlmResponse>, Option<StopReason>)> {
     use StreamEvent::{
-        ContentBlockDelta, ContentBlockStart, ContentBlockStop, Error, MessageDelta, MessageStart,
-        MessageStop, Ping,
+        ContentBlockDelta, ContentBlockStart, ContentBlockStop, Error, MessageDelta, MessageStart, MessageStop, Ping,
     };
     match event {
         MessageStart { .. } => Ok(handle_message_start()),
-        ContentBlockStart { data } => Ok(handle_content_block_start(
-            data,
-            active_tool_calls,
-            index_to_id,
-        )),
-        ContentBlockDelta { data } => Ok(handle_content_block_delta(
-            data,
-            active_tool_calls,
-            index_to_id,
-        )),
-        ContentBlockStop { data } => Ok(handle_content_block_stop(
-            &data,
-            active_tool_calls,
-            index_to_id,
-        )),
+        ContentBlockStart { data } => Ok(handle_content_block_start(data, active_tool_calls, index_to_id)),
+        ContentBlockDelta { data } => Ok(handle_content_block_delta(data, active_tool_calls, index_to_id)),
+        ContentBlockStop { data } => Ok(handle_content_block_stop(&data, active_tool_calls, index_to_id)),
         MessageDelta { data } => Ok(handle_message_delta(&data)),
         MessageStop { .. } => Ok(handle_message_stop()),
-        Error { data } => Err(LlmError::ApiError(format!(
-            "Anthropic API error: {} - {}",
-            data.error.error_type, data.error.message,
-        ))),
+        Error { data } => {
+            Err(LlmError::ApiError(format!("Anthropic API error: {} - {}", data.error.error_type, data.error.message,)))
+        }
         Ping => Ok(handle_ping()),
     }
 }
@@ -161,22 +147,13 @@ fn handle_content_block_delta(
             if let Some(id) = index_to_id.get(&delta_data.index) {
                 if let Some((_name, arguments)) = active_tool_calls.get_mut(id) {
                     arguments.push_str(&partial_json);
-                    (
-                        Some(LlmResponse::ToolRequestArg {
-                            id: id.clone(),
-                            chunk: partial_json,
-                        }),
-                        None,
-                    )
+                    (Some(LlmResponse::ToolRequestArg { id: id.clone(), chunk: partial_json }), None)
                 } else {
                     warn!("Received tool input delta for unknown tool call id: {}", id);
                     (None, None)
                 }
             } else {
-                warn!(
-                    "Received tool input delta for unknown tool call index: {}",
-                    delta_data.index
-                );
+                warn!("Received tool input delta for unknown tool call index: {}", delta_data.index);
                 (None, None)
             }
         }
@@ -190,17 +167,10 @@ fn handle_content_block_stop(
 ) -> EventResult {
     if let Some(id) = index_to_id.remove(&stop_data.index) {
         if let Some((name, arguments)) = active_tool_calls.remove(&id) {
-            let tool_call = ToolCallRequest {
-                id,
-                name,
-                arguments,
-            };
+            let tool_call = ToolCallRequest { id, name, arguments };
             (Some(LlmResponse::ToolRequestComplete { tool_call }), None)
         } else {
-            debug!(
-                "Content block stopped but tool call not found for id: {}",
-                id
-            );
+            debug!("Content block stopped but tool call not found for id: {}", id);
             (None, None)
         }
     } else {
@@ -211,11 +181,7 @@ fn handle_content_block_stop(
 
 fn handle_message_delta(delta_data: &super::types::MessageDelta) -> EventResult {
     debug!("Message delta received");
-    let stop_reason = delta_data
-        .delta
-        .stop_reason
-        .as_deref()
-        .map(map_anthropic_stop_reason);
+    let stop_reason = delta_data.delta.stop_reason.as_deref().map(map_anthropic_stop_reason);
 
     if let Some(usage) = &delta_data.delta.usage {
         (
@@ -269,20 +235,8 @@ mod tests {
         assert!(matches!(responses[0], LlmResponse::Start { .. }));
         assert!(matches!(responses[1], LlmResponse::Text { ref chunk } if chunk == "Hello"));
         assert!(matches!(responses[2], LlmResponse::Text { ref chunk } if chunk == " world"));
-        assert!(matches!(
-            responses[3],
-            LlmResponse::Usage {
-                input_tokens: 10,
-                output_tokens: 25,
-                ..
-            }
-        ));
-        assert!(matches!(
-            responses[4],
-            LlmResponse::Done {
-                stop_reason: Some(StopReason::EndTurn)
-            }
-        ));
+        assert!(matches!(responses[3], LlmResponse::Usage { input_tokens: 10, output_tokens: 25, .. }));
+        assert!(matches!(responses[4], LlmResponse::Done { stop_reason: Some(StopReason::EndTurn) }));
     }
 
     #[tokio::test]
@@ -311,20 +265,8 @@ mod tests {
         assert!(
             matches!(responses[2], LlmResponse::ToolRequestComplete { ref tool_call } if tool_call.id == "tool_123" && tool_call.name == "search")
         );
-        assert!(matches!(
-            responses[3],
-            LlmResponse::Usage {
-                input_tokens: 10,
-                output_tokens: 15,
-                ..
-            }
-        ));
-        assert!(matches!(
-            responses[4],
-            LlmResponse::Done {
-                stop_reason: Some(StopReason::ToolCalls)
-            }
-        ));
+        assert!(matches!(responses[3], LlmResponse::Usage { input_tokens: 10, output_tokens: 15, .. }));
+        assert!(matches!(responses[4], LlmResponse::Done { stop_reason: Some(StopReason::ToolCalls) }));
     }
 
     #[tokio::test]
@@ -353,14 +295,10 @@ mod tests {
         }
 
         // We should get both tool calls, but with index-based tracking we might lose one
-        let tool_starts: Vec<_> = responses
-            .iter()
-            .filter(|r| matches!(r, LlmResponse::ToolRequestStart { .. }))
-            .collect();
-        let tool_completes: Vec<_> = responses
-            .iter()
-            .filter(|r| matches!(r, LlmResponse::ToolRequestComplete { .. }))
-            .collect();
+        let tool_starts: Vec<_> =
+            responses.iter().filter(|r| matches!(r, LlmResponse::ToolRequestStart { .. })).collect();
+        let tool_completes: Vec<_> =
+            responses.iter().filter(|r| matches!(r, LlmResponse::ToolRequestComplete { .. })).collect();
 
         // With ID-based tracking, we should get both tool calls
         assert_eq!(tool_starts.len(), 2);
@@ -391,29 +329,11 @@ mod tests {
         }
 
         assert!(matches!(responses[0], LlmResponse::Start { .. }));
-        assert!(
-            matches!(responses[1], LlmResponse::Reasoning { ref chunk } if chunk == "Let me think")
-        );
-        assert!(
-            matches!(responses[2], LlmResponse::Reasoning { ref chunk } if chunk == " about this")
-        );
-        assert!(
-            matches!(responses[3], LlmResponse::Text { ref chunk } if chunk == "Here is my answer")
-        );
-        assert!(matches!(
-            responses[4],
-            LlmResponse::Usage {
-                input_tokens: 10,
-                output_tokens: 50,
-                ..
-            }
-        ));
-        assert!(matches!(
-            responses[5],
-            LlmResponse::Done {
-                stop_reason: Some(StopReason::EndTurn)
-            }
-        ));
+        assert!(matches!(responses[1], LlmResponse::Reasoning { ref chunk } if chunk == "Let me think"));
+        assert!(matches!(responses[2], LlmResponse::Reasoning { ref chunk } if chunk == " about this"));
+        assert!(matches!(responses[3], LlmResponse::Text { ref chunk } if chunk == "Here is my answer"));
+        assert!(matches!(responses[4], LlmResponse::Usage { input_tokens: 10, output_tokens: 50, .. }));
+        assert!(matches!(responses[5], LlmResponse::Done { stop_reason: Some(StopReason::EndTurn) }));
     }
 
     #[tokio::test]
@@ -426,12 +346,14 @@ mod tests {
         assert!(matches!(event, StreamEvent::MessageStart { .. }));
 
         // Test content_block_start deserialization
-        let content_block_start_json = r#"{"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}"#;
+        let content_block_start_json =
+            r#"{"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}"#;
         let event: StreamEvent = serde_json::from_str(content_block_start_json).unwrap();
         assert!(matches!(event, StreamEvent::ContentBlockStart { .. }));
 
         // Test content_block_delta deserialization
-        let content_block_delta_json = r#"{"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello"}}"#;
+        let content_block_delta_json =
+            r#"{"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello"}}"#;
         let event: StreamEvent = serde_json::from_str(content_block_delta_json).unwrap();
         assert!(matches!(event, StreamEvent::ContentBlockDelta { .. }));
 
@@ -441,7 +363,8 @@ mod tests {
         assert!(matches!(event, StreamEvent::Ping));
 
         // Test error deserialization
-        let error_json = r#"{"type": "error", "error": {"type": "rate_limit_error", "message": "Rate limit exceeded"}}"#;
+        let error_json =
+            r#"{"type": "error", "error": {"type": "rate_limit_error", "message": "Rate limit exceeded"}}"#;
         let event: StreamEvent = serde_json::from_str(error_json).unwrap();
         assert!(matches!(event, StreamEvent::Error { .. }));
     }

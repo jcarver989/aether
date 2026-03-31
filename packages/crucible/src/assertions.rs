@@ -13,14 +13,10 @@ pub fn assert_file_exists(working_dir: &Path, path: &str) -> EvalAssertionResult
     let file_path = working_dir.join(path);
     if file_path.exists() {
         tracing::debug!("✓ FileExists assertion passed: {}", path);
-        EvalAssertionResult::Success {
-            message: format!("File '{path}' exists"),
-        }
+        EvalAssertionResult::Success { message: format!("File '{path}' exists") }
     } else {
         tracing::debug!("✗ FileExists assertion failed: {}", path);
-        EvalAssertionResult::Failure {
-            message: format!("File '{path}' does not exist"),
-        }
+        EvalAssertionResult::Failure { message: format!("File '{path}' does not exist") }
     }
 }
 
@@ -31,53 +27,32 @@ pub fn assert_file_matches(working_dir: &Path, path: &str, content: &str) -> Eva
         Ok(file_content) => {
             if file_content.contains(content) {
                 tracing::debug!("✓ FileMatches assertion passed: {}", path);
-                EvalAssertionResult::Success {
-                    message: format!("File '{path}' contains '{content}'"),
-                }
+                EvalAssertionResult::Success { message: format!("File '{path}' contains '{content}'") }
             } else {
                 tracing::debug!("✗ FileMatches assertion failed: {}", path);
-                EvalAssertionResult::Failure {
-                    message: format!("File '{path}' does not contain '{content}'"),
-                }
+                EvalAssertionResult::Failure { message: format!("File '{path}' does not contain '{content}'") }
             }
         }
         Err(e) => {
             tracing::debug!("✗ FileMatches assertion failed: {} ({})", path, e);
-            EvalAssertionResult::Failure {
-                message: format!("Failed to read file '{path}': {e}"),
-            }
+            EvalAssertionResult::Failure { message: format!("Failed to read file '{path}': {e}") }
         }
     }
 }
 
 /// Check if a command exits with the expected code
-pub async fn assert_command_exit_code(
-    working_dir: &Path,
-    command: &str,
-    expected_code: i32,
-) -> EvalAssertionResult {
+pub async fn assert_command_exit_code(working_dir: &Path, command: &str, expected_code: i32) -> EvalAssertionResult {
     tracing::info!("Running command: {}", command);
 
-    let output = tokio::process::Command::new("sh")
-        .arg("-c")
-        .arg(command)
-        .current_dir(working_dir)
-        .output()
-        .await;
+    let output = tokio::process::Command::new("sh").arg("-c").arg(command).current_dir(working_dir).output().await;
 
     match output {
         Ok(output) => {
             let actual_code = output.status.code().unwrap_or(-1);
             if actual_code == expected_code {
-                tracing::debug!(
-                    "✓ CommandExitCode assertion passed: {} (exit code: {})",
-                    command,
-                    actual_code
-                );
+                tracing::debug!("✓ CommandExitCode assertion passed: {} (exit code: {})", command, actual_code);
                 EvalAssertionResult::Success {
-                    message: format!(
-                        "Command '{command}' exited with code {actual_code} as expected"
-                    ),
+                    message: format!("Command '{command}' exited with code {actual_code} as expected"),
                 }
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
@@ -96,9 +71,7 @@ pub async fn assert_command_exit_code(
         }
         Err(e) => {
             tracing::debug!("✗ CommandExitCode assertion failed: {} ({})", command, e);
-            EvalAssertionResult::Failure {
-                message: format!("Failed to execute command '{command}': {e}"),
-            }
+            EvalAssertionResult::Failure { message: format!("Failed to execute command '{command}': {e}") }
         }
     }
 }
@@ -116,11 +89,7 @@ where
 {
     tracing::info!("Running LLM judge for assertion");
     let judge_prompt = ChatMessage::User {
-        content: vec![ContentBlock::text(build_prompt(&LlmJudgeContext {
-            working_dir,
-            original_prompt,
-            messages,
-        }))],
+        content: vec![ContentBlock::text(build_prompt(&LlmJudgeContext { working_dir, original_prompt, messages }))],
         timestamp: IsoString::now(),
     };
 
@@ -133,9 +102,7 @@ where
             }
             Err(e) => {
                 tracing::error!("✗ LLM judge error: {}", e);
-                return EvalAssertionResult::Failure {
-                    message: format!("Judge LLM error: {e}"),
-                };
+                return EvalAssertionResult::Failure { message: format!("Judge LLM error: {e}") };
             }
             _ => {}
         }
@@ -149,13 +116,7 @@ where
                 EvalMetric::Numeric(numeric) => {
                     // Consider it a success if score is above 70% of max
                     let success = numeric.score / numeric.max_score >= 0.7;
-                    (
-                        success,
-                        format!(
-                            "{} (score: {}/{})",
-                            numeric.reason, numeric.score, numeric.max_score
-                        ),
-                    )
+                    (success, format!("{} (score: {}/{})", numeric.reason, numeric.score, numeric.max_score))
                 }
             };
 
@@ -171,9 +132,7 @@ where
             tracing::debug!("✗ LLM judge returned invalid JSON: {}", e);
             tracing::debug!("Raw response: {}", judge_response);
             EvalAssertionResult::Failure {
-                message: format!(
-                    "Judge returned invalid JSON: {e}\nRaw response: {judge_response}"
-                ),
+                message: format!("Judge returned invalid JSON: {e}\nRaw response: {judge_response}"),
             }
         }
     }
@@ -189,11 +148,7 @@ pub async fn assert_tool_call(
     let matching_calls: Vec<_> = messages
         .iter()
         .filter_map(|msg| {
-            if let AgentRunnerMessage::ToolCall {
-                name: call_name,
-                arguments,
-            } = msg
-            {
+            if let AgentRunnerMessage::ToolCall { name: call_name, arguments } = msg {
                 if call_name != name {
                     return None;
                 }
@@ -224,23 +179,15 @@ pub async fn assert_tool_call(
 
         if !count_valid {
             return EvalAssertionResult::Failure {
-                message: format!(
-                    "Tool '{name}' was called {actual_count} times, but expected {count_req:?}"
-                ),
+                message: format!("Tool '{name}' was called {actual_count} times, but expected {count_req:?}"),
             };
         }
     }
 
     if matching_calls.is_empty() {
-        EvalAssertionResult::Failure {
-            message: format!("Tool '{name}' was not called with matching arguments"),
-        }
+        EvalAssertionResult::Failure { message: format!("Tool '{name}' was not called with matching arguments") }
     } else {
-        tracing::debug!(
-            "✓ ToolCall assertion passed: {} (matched {} time(s))",
-            name,
-            actual_count
-        );
+        tracing::debug!("✓ ToolCall assertion passed: {} (matched {} time(s))", name, actual_count);
         EvalAssertionResult::Success {
             message: format!("Tool '{name}' was called {actual_count} time(s) successfully"),
         }

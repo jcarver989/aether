@@ -45,16 +45,8 @@ fn unfocused_renders_selected_title_inline() {
     let rs = RadioSelect::new(sample_options(), 1);
     let ctx = ViewContext::new((80, 24));
     let lines = rs.render_field(&ctx, false);
-    assert_eq!(
-        lines.len(),
-        1,
-        "Unfocused should render a single inline line"
-    );
+    assert_eq!(lines.len(), 1, "Unfocused should render a single inline line");
     let term = render_lines(&lines, 80, 24);
     let output = term.get_lines();
-    assert!(
-        output[0].contains("Beta"),
-        "Expected 'Beta' in unfocused render, got: '{}'",
-        output[0]
-    );
+    assert!(output[0].contains("Beta"), "Expected 'Beta' in unfocused render, got: '{}'", output[0]);
 }

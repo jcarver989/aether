@@ -50,21 +50,14 @@ pub struct GenericOpenAiProvider {
 
 impl GenericOpenAiProvider {
     pub fn from_env(config: &'static ProviderConfig) -> Result<Self> {
-        let api_key = std::env::var(config.env_var)
-            .map_err(|_| LlmError::MissingApiKey(config.env_var.to_string()))?;
+        let api_key = std::env::var(config.env_var).map_err(|_| LlmError::MissingApiKey(config.env_var.to_string()))?;
         Ok(Self::new(api_key, config))
     }
 
     pub fn new(api_key: String, config: &'static ProviderConfig) -> Self {
-        let openai_config = OpenAIConfig::new()
-            .with_api_key(api_key)
-            .with_api_base(config.api_base.to_string());
+        let openai_config = OpenAIConfig::new().with_api_key(api_key).with_api_base(config.api_base.to_string());
 
-        Self {
-            client: Client::with_config(openai_config),
-            model: config.default_model.to_string(),
-            config,
-        }
+        Self { client: Client::with_config(openai_config), model: config.default_model.to_string(), config }
     }
 
     pub fn with_model(mut self, model: &str) -> Self {
@@ -75,9 +68,7 @@ impl GenericOpenAiProvider {
 
 impl StreamingModelProvider for GenericOpenAiProvider {
     fn model(&self) -> Option<LlmModel> {
-        format!("{}:{}", self.config.prefix, self.model)
-            .parse()
-            .ok()
+        format!("{}:{}", self.config.prefix, self.model).parse().ok()
     }
 
     fn context_window(&self) -> Option<u32> {

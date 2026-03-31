@@ -45,11 +45,7 @@ pub struct AgentSpec {
 
 impl AgentSpec {
     /// Create a default (no-mode) agent spec with inherited prompts.
-    pub fn default_spec(
-        model: &LlmModel,
-        reasoning_effort: Option<ReasoningEffort>,
-        prompts: Vec<Prompt>,
-    ) -> Self {
+    pub fn default_spec(model: &LlmModel, reasoning_effort: Option<ReasoningEffort>, prompts: Vec<Prompt>) -> Self {
         Self {
             name: "__default__".to_string(),
             description: "Default agent".to_string(),
@@ -99,27 +95,19 @@ pub struct ToolFilter {
 impl ToolFilter {
     /// Apply this filter to a list of tool definitions.
     pub fn apply(&self, tools: Vec<ToolDefinition>) -> Vec<ToolDefinition> {
-        tools
-            .into_iter()
-            .filter(|t| self.is_allowed(&t.name))
-            .collect()
+        tools.into_iter().filter(|t| self.is_allowed(&t.name)).collect()
     }
 
     /// Check whether a tool name passes this filter.
     pub fn is_allowed(&self, tool_name: &str) -> bool {
-        let allowed =
-            self.allow.is_empty() || self.allow.iter().any(|p| matches_pattern(p, tool_name));
+        let allowed = self.allow.is_empty() || self.allow.iter().any(|p| matches_pattern(p, tool_name));
         allowed && !self.deny.iter().any(|p| matches_pattern(p, tool_name))
     }
 }
 
 /// Match a pattern against a name, supporting a trailing `*` wildcard.
 fn matches_pattern(pattern: &str, name: &str) -> bool {
-    if let Some(prefix) = pattern.strip_suffix('*') {
-        name.starts_with(prefix)
-    } else {
-        pattern == name
-    }
+    if let Some(prefix) = pattern.strip_suffix('*') { name.starts_with(prefix) } else { pattern == name }
 }
 
 /// Defines how an agent can be invoked.
@@ -138,34 +126,22 @@ impl AgentSpecExposure {
     /// Not intended for authored agent definitions — all authored agents must
     /// have at least one invocation surface.
     pub fn none() -> Self {
-        Self {
-            user_invocable: false,
-            agent_invocable: false,
-        }
+        Self { user_invocable: false, agent_invocable: false }
     }
 
     /// Create an exposure that is only user invocable.
     pub fn user_only() -> Self {
-        Self {
-            user_invocable: true,
-            agent_invocable: false,
-        }
+        Self { user_invocable: true, agent_invocable: false }
     }
 
     /// Create an exposure that is only agent invocable.
     pub fn agent_only() -> Self {
-        Self {
-            user_invocable: false,
-            agent_invocable: true,
-        }
+        Self { user_invocable: false, agent_invocable: true }
     }
 
     /// Create an exposure that is both user and agent invocable.
     pub fn both() -> Self {
-        Self {
-            user_invocable: true,
-            agent_invocable: true,
-        }
+        Self { user_invocable: true, agent_invocable: true }
     }
 }
 
@@ -190,10 +166,7 @@ mod tests {
     #[test]
     fn default_spec_has_expected_fields() {
         let model: LlmModel = "anthropic:claude-sonnet-4-5".parse().unwrap();
-        let prompts = vec![Prompt::from_globs(
-            vec!["BASE.md".to_string()],
-            PathBuf::from("/tmp"),
-        )];
+        let prompts = vec![Prompt::from_globs(vec!["BASE.md".to_string()], PathBuf::from("/tmp"))];
         let spec = AgentSpec::default_spec(&model, None, prompts.clone());
 
         assert_eq!(spec.name, "__default__");
@@ -251,12 +224,7 @@ mod tests {
     }
 
     fn make_tool(name: &str) -> ToolDefinition {
-        ToolDefinition {
-            name: name.to_string(),
-            description: String::new(),
-            parameters: String::new(),
-            server: None,
-        }
+        ToolDefinition { name: name.to_string(), description: String::new(), parameters: String::new(), server: None }
     }
 
     #[test]
@@ -269,10 +237,7 @@ mod tests {
 
     #[test]
     fn allow_keeps_only_matching_tools() {
-        let filter = ToolFilter {
-            allow: vec!["read_file".to_string(), "grep".to_string()],
-            deny: vec![],
-        };
+        let filter = ToolFilter { allow: vec!["read_file".to_string(), "grep".to_string()], deny: vec![] };
         let tools = vec![make_tool("bash"), make_tool("read_file"), make_tool("grep")];
         let result = filter.apply(tools);
         let names: Vec<_> = result.iter().map(|t| t.name.as_str()).collect();
@@ -281,10 +246,7 @@ mod tests {
 
     #[test]
     fn deny_removes_matching_tools() {
-        let filter = ToolFilter {
-            allow: vec![],
-            deny: vec!["bash".to_string()],
-        };
+        let filter = ToolFilter { allow: vec![], deny: vec!["bash".to_string()] };
         let tools = vec![make_tool("bash"), make_tool("read_file")];
         let result = filter.apply(tools);
         let names: Vec<_> = result.iter().map(|t| t.name.as_str()).collect();
@@ -293,15 +255,8 @@ mod tests {
 
     #[test]
     fn wildcard_matching() {
-        let filter = ToolFilter {
-            allow: vec!["coding__*".to_string()],
-            deny: vec![],
-        };
-        let tools = vec![
-            make_tool("coding__grep"),
-            make_tool("coding__read_file"),
-            make_tool("plugins__bash"),
-        ];
+        let filter = ToolFilter { allow: vec!["coding__*".to_string()], deny: vec![] };
+        let tools = vec![make_tool("coding__grep"), make_tool("coding__read_file"), make_tool("plugins__bash")];
         let result = filter.apply(tools);
         let names: Vec<_> = result.iter().map(|t| t.name.as_str()).collect();
         assert_eq!(names, vec!["coding__grep", "coding__read_file"]);
@@ -309,10 +264,7 @@ mod tests {
 
     #[test]
     fn combined_allow_and_deny() {
-        let filter = ToolFilter {
-            allow: vec!["coding__*".to_string()],
-            deny: vec!["coding__write_file".to_string()],
-        };
+        let filter = ToolFilter { allow: vec!["coding__*".to_string()], deny: vec!["coding__write_file".to_string()] };
         let tools = vec![
             make_tool("coding__grep"),
             make_tool("coding__write_file"),
@@ -326,10 +278,7 @@ mod tests {
 
     #[test]
     fn is_allowed_exact_match() {
-        let filter = ToolFilter {
-            allow: vec!["bash".to_string()],
-            deny: vec![],
-        };
+        let filter = ToolFilter { allow: vec!["bash".to_string()], deny: vec![] };
         assert!(filter.is_allowed("bash"));
         assert!(!filter.is_allowed("bash_extended"));
     }

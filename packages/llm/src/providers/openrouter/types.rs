@@ -1,6 +1,5 @@
 use async_openai::types::chat::{
-    ChatCompletionStreamOptions, ChatCompletionToolChoiceOption, ChatCompletionTools,
-    ResponseFormat, StopConfiguration,
+    ChatCompletionStreamOptions, ChatCompletionToolChoiceOption, ChatCompletionTools, ResponseFormat, StopConfiguration,
 };
 use serde::{Deserialize, Serialize};
 
@@ -25,9 +24,7 @@ pub struct CacheControl {
 
 impl CacheControl {
     pub fn ephemeral() -> Self {
-        Self {
-            cache_type: "ephemeral".to_string(),
-        }
+        Self { cache_type: "ephemeral".to_string() }
     }
 }
 
@@ -80,10 +77,7 @@ impl From<CompatibleChatRequest> for OpenRouterChatRequest {
             temperature: None,
             top_p: None,
             max_completion_tokens: None,
-            stream_options: Some(ChatCompletionStreamOptions {
-                include_usage: Some(true),
-                include_obfuscation: None,
-            }),
+            stream_options: Some(ChatCompletionStreamOptions { include_usage: Some(true), include_obfuscation: None }),
             usage: Some(OpenRouterUsage { include: true }),
             presence_penalty: None,
             frequency_penalty: None,

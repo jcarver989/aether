@@ -35,13 +35,10 @@ pub struct VisualFrame {
 impl VisualFrame {
     /// Creates a `VisualFrame` from a logical Frame, applying soft-wrap and viewport split.
     pub fn from_frame(frame: &Frame, size: Size, flushed_visual_count: usize) -> Self {
-        let (wrapped_lines, logical_to_visual) =
-            soft_wrap_lines_with_map(frame.lines(), size.width);
+        let (wrapped_lines, logical_to_visual) = soft_wrap_lines_with_map(frame.lines(), size.width);
 
-        let mut visual_cursor_row = logical_to_visual
-            .get(frame.cursor().row)
-            .copied()
-            .unwrap_or_else(|| wrapped_lines.len().saturating_sub(1));
+        let mut visual_cursor_row =
+            logical_to_visual.get(frame.cursor().row).copied().unwrap_or_else(|| wrapped_lines.len().saturating_sub(1));
 
         let mut visual_cursor_col = frame.cursor().col;
         let width = usize::from(size.width);
@@ -77,11 +74,7 @@ impl VisualFrame {
         Self {
             scrollback_lines,
             visible_lines,
-            cursor: Cursor {
-                row: final_cursor_row,
-                col: visual_cursor_col,
-                is_visible: frame.cursor().is_visible,
-            },
+            cursor: Cursor { row: final_cursor_row, col: visual_cursor_col, is_visible: frame.cursor().is_visible },
             overflow,
         }
     }
@@ -104,12 +97,7 @@ impl VisualFrame {
 
     /// Create an empty `VisualFrame` with no lines and no overflow.
     pub fn empty() -> Self {
-        Self {
-            scrollback_lines: Vec::new(),
-            visible_lines: Vec::new(),
-            cursor: Cursor::hidden(),
-            overflow: 0,
-        }
+        Self { scrollback_lines: Vec::new(), visible_lines: Vec::new(), cursor: Cursor::hidden(), overflow: 0 }
     }
 
     /// Diff this frame's visible lines against `new`, returning the minimal rewrite needed.
@@ -121,32 +109,18 @@ impl VisualFrame {
             return None;
         }
 
-        let first_diff = prev
-            .iter()
-            .zip(next.iter())
-            .position(|(old, new)| old != new)
-            .unwrap_or(prev.len().min(next.len()));
+        let first_diff =
+            prev.iter().zip(next.iter()).position(|(old, new)| old != new).unwrap_or(prev.len().min(next.len()));
 
-        let rewrite_from = if next.is_empty() {
-            0
-        } else {
-            first_diff.min(next.len() - 1)
-        };
+        let rewrite_from = if next.is_empty() { 0 } else { first_diff.min(next.len() - 1) };
 
-        Some(LineDiff {
-            rewrite_from,
-            lines: &next[rewrite_from..],
-            previous_row_count: prev.len(),
-        })
+        Some(LineDiff { rewrite_from, lines: &next[rewrite_from..], previous_row_count: prev.len() })
     }
 }
 
 /// Prepare logical lines for scrollback using the same width semantics as `VisualFrame`.
 pub fn prepare_lines_for_scrollback(lines: &[Line], width: u16) -> Vec<Line> {
-    lines
-        .iter()
-        .flat_map(|line| super::soft_wrap::soft_wrap_line(line, width))
-        .collect()
+    lines.iter().flat_map(|line| super::soft_wrap::soft_wrap_line(line, width)).collect()
 }
 
 #[cfg(test)]
@@ -156,17 +130,10 @@ mod tests {
 
     #[test]
     fn visual_frame_from_frame_soft_wraps_and_splits() {
-        let frame = Frame::new(vec![Line::new("abcdef")]).with_cursor(Cursor {
-            row: 0,
-            col: 5,
-            is_visible: true,
-        });
+        let frame = Frame::new(vec![Line::new("abcdef")]).with_cursor(Cursor { row: 0, col: 5, is_visible: true });
 
         let visual = VisualFrame::from_frame(&frame, Size::from((3, 5)), 0);
-        assert_eq!(
-            visual.visible_lines(),
-            &[Line::new("abc"), Line::new("def")]
-        );
+        assert_eq!(visual.visible_lines(), &[Line::new("abc"), Line::new("def")]);
         assert_eq!(visual.cursor().row, 1);
         assert_eq!(visual.cursor().col, 2);
         assert_eq!(visual.overflow(), 0);
@@ -174,23 +141,11 @@ mod tests {
 
     #[test]
     fn visual_frame_splits_overflow_from_visible_lines() {
-        let frame = Frame::new(vec![
-            Line::new("L1"),
-            Line::new("L2"),
-            Line::new("L3"),
-            Line::new("L4"),
-        ])
-        .with_cursor(Cursor {
-            row: 3,
-            col: 0,
-            is_visible: true,
-        });
+        let frame = Frame::new(vec![Line::new("L1"), Line::new("L2"), Line::new("L3"), Line::new("L4")])
+            .with_cursor(Cursor { row: 3, col: 0, is_visible: true });
 
         let visual = VisualFrame::from_frame(&frame, Size::from((80, 2)), 0);
-        assert_eq!(
-            visual.scrollback_lines(),
-            &[Line::new("L1"), Line::new("L2")]
-        );
+        assert_eq!(visual.scrollback_lines(), &[Line::new("L1"), Line::new("L2")]);
         assert_eq!(visual.visible_lines(), &[Line::new("L3"), Line::new("L4")]);
         assert_eq!(visual.cursor().row, 1);
         assert_eq!(visual.cursor().col, 0);
@@ -199,25 +154,13 @@ mod tests {
 
     #[test]
     fn visual_frame_skips_already_flushed_overflow() {
-        let frame = Frame::new(vec![
-            Line::new("L1"),
-            Line::new("L2"),
-            Line::new("L3"),
-            Line::new("L4"),
-            Line::new("L5"),
-        ])
-        .with_cursor(Cursor {
-            row: 4,
-            col: 0,
-            is_visible: true,
-        });
+        let frame =
+            Frame::new(vec![Line::new("L1"), Line::new("L2"), Line::new("L3"), Line::new("L4"), Line::new("L5")])
+                .with_cursor(Cursor { row: 4, col: 0, is_visible: true });
 
         let visual = VisualFrame::from_frame(&frame, Size::from((80, 2)), 1);
 
-        assert_eq!(
-            visual.scrollback_lines(),
-            &[Line::new("L2"), Line::new("L3")]
-        );
+        assert_eq!(visual.scrollback_lines(), &[Line::new("L2"), Line::new("L3")]);
         assert_eq!(visual.visible_lines(), &[Line::new("L4"), Line::new("L5")]);
         assert_eq!(visual.cursor().row, 1);
         assert_eq!(visual.overflow(), 3);
@@ -225,12 +168,11 @@ mod tests {
 
     #[test]
     fn visual_frame_cursor_in_scrollback_gets_clamped() {
-        let frame = Frame::new(vec![Line::new("L1"), Line::new("L2"), Line::new("L3")])
-            .with_cursor(Cursor {
-                row: 0,
-                col: 0,
-                is_visible: true,
-            });
+        let frame = Frame::new(vec![Line::new("L1"), Line::new("L2"), Line::new("L3")]).with_cursor(Cursor {
+            row: 0,
+            col: 0,
+            is_visible: true,
+        });
 
         let visual = VisualFrame::from_frame(&frame, Size::from((80, 2)), 0);
         assert_eq!(visual.cursor().row, 0);
@@ -247,11 +189,7 @@ mod tests {
 
     #[test]
     fn visual_frame_zero_width_keeps_lines_unwrapped() {
-        let frame = Frame::new(vec![Line::new("abcdef")]).with_cursor(Cursor {
-            row: 0,
-            col: 3,
-            is_visible: true,
-        });
+        let frame = Frame::new(vec![Line::new("abcdef")]).with_cursor(Cursor { row: 0, col: 3, is_visible: true });
 
         let visual = VisualFrame::from_frame(&frame, Size::from((0, 5)), 0);
         assert_eq!(visual.visible_lines(), &[Line::new("abcdef")]);
@@ -262,11 +200,7 @@ mod tests {
     fn prepare_lines_for_scrollback_matches_visual_frame_wrapping() {
         let lines = vec![Line::new("abcdef")];
         let visual_frame_lines = {
-            let frame = Frame::new(lines.clone()).with_cursor(Cursor {
-                row: 0,
-                col: 0,
-                is_visible: true,
-            });
+            let frame = Frame::new(lines.clone()).with_cursor(Cursor { row: 0, col: 0, is_visible: true });
             let visual = VisualFrame::from_frame(&frame, Size::from((3, 5)), 0);
             visual.visible_lines().to_vec()
         };

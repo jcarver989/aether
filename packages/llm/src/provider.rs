@@ -44,9 +44,7 @@ pub trait StreamingModelProvider: Send + Sync {
 /// Returns `None` if the model is not in the catalog.
 pub fn get_context_window(provider: &str, model_id: &str) -> Option<u32> {
     let key = format!("{provider}:{model_id}");
-    key.parse::<LlmModel>()
-        .ok()
-        .and_then(|m| m.context_window())
+    key.parse::<LlmModel>().ok().and_then(|m| m.context_window())
 }
 
 impl StreamingModelProvider for Box<dyn StreamingModelProvider> {
@@ -91,10 +89,7 @@ mod tests {
 
     #[test]
     fn lookup_context_window_known_model() {
-        assert_eq!(
-            get_context_window("anthropic", "claude-opus-4-6"),
-            Some(1_000_000)
-        );
+        assert_eq!(get_context_window("anthropic", "claude-opus-4-6"), Some(1_000_000));
     }
 
     #[test]

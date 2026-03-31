@@ -1,7 +1,7 @@
 use aws_sdk_bedrockruntime::types::{
-    ContentBlock as BedrockContentBlock, ConversationRole, ImageBlock, ImageFormat, ImageSource,
-    Message, SystemContentBlock, Tool, ToolConfiguration, ToolInputSchema, ToolResultBlock,
-    ToolResultContentBlock, ToolResultStatus, ToolSpecification, ToolUseBlock,
+    ContentBlock as BedrockContentBlock, ConversationRole, ImageBlock, ImageFormat, ImageSource, Message,
+    SystemContentBlock, Tool, ToolConfiguration, ToolInputSchema, ToolResultBlock, ToolResultContentBlock,
+    ToolResultStatus, ToolSpecification, ToolUseBlock,
 };
 use aws_smithy_types::{Blob, Document, Number};
 use base64::Engine;
@@ -9,9 +9,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::Value;
 use std::{collections::HashMap, fmt::Display, result};
 
-use crate::{
-    ChatMessage, ContentBlock, LlmError, Result, ToolCallError, ToolCallResult, ToolDefinition,
-};
+use crate::{ChatMessage, ContentBlock, LlmError, Result, ToolCallError, ToolCallResult, ToolDefinition};
 
 fn bedrock_err(e: impl Display) -> LlmError {
     LlmError::Other(e.to_string())
@@ -30,11 +28,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> Result<(Vec<SystemContentBlock>
                 bedrock_messages.push(build_user_content_blocks(content)?);
             }
 
-            ChatMessage::Assistant {
-                content,
-                tool_calls,
-                ..
-            } => {
+            ChatMessage::Assistant { content, tool_calls, .. } => {
                 bedrock_messages.push(map_assistant_message(content, tool_calls)?);
             }
 
@@ -47,9 +41,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> Result<(Vec<SystemContentBlock>
             }
 
             ChatMessage::Summary { content, .. } => {
-                bedrock_messages.push(build_user_message(&format!(
-                    "[Previous conversation handoff]\n\n{content}"
-                ))?);
+                bedrock_messages.push(build_user_message(&format!("[Previous conversation handoff]\n\n{content}"))?);
             }
         }
     }
@@ -58,29 +50,22 @@ pub fn map_messages(messages: &[ChatMessage]) -> Result<(Vec<SystemContentBlock>
 }
 
 pub fn map_tools(tools: &[ToolDefinition]) -> Result<ToolConfiguration> {
-    let bedrock_tools: Vec<Tool> =
-        tools
-            .iter()
-            .map(|tool| {
-                let schema_value: serde_json::Value = serde_json::from_str(&tool.parameters)
-                    .map_err(|e| LlmError::ToolParameterParsing {
-                        tool_name: tool.name.clone(),
-                        error: e.to_string(),
-                    })?;
-                let spec = ToolSpecification::builder()
-                    .name(&tool.name)
-                    .description(&tool.description)
-                    .input_schema(ToolInputSchema::Json(json_to_document(&schema_value)))
-                    .build()
-                    .map_err(bedrock_err)?;
-                Ok(Tool::ToolSpec(spec))
-            })
-            .collect::<Result<_>>()?;
+    let bedrock_tools: Vec<Tool> = tools
+        .iter()
+        .map(|tool| {
+            let schema_value: serde_json::Value = serde_json::from_str(&tool.parameters)
+                .map_err(|e| LlmError::ToolParameterParsing { tool_name: tool.name.clone(), error: e.to_string() })?;
+            let spec = ToolSpecification::builder()
+                .name(&tool.name)
+                .description(&tool.description)
+                .input_schema(ToolInputSchema::Json(json_to_document(&schema_value)))
+                .build()
+                .map_err(bedrock_err)?;
+            Ok(Tool::ToolSpec(spec))
+        })
+        .collect::<Result<_>>()?;
 
-    ToolConfiguration::builder()
-        .set_tools(Some(bedrock_tools))
-        .build()
-        .map_err(bedrock_err)
+    ToolConfiguration::builder().set_tools(Some(bedrock_tools)).build().map_err(bedrock_err)
 }
 
 fn build_user_message(content: &str) -> Result<Message> {
@@ -99,9 +84,8 @@ fn build_user_content_blocks(parts: &[ContentBlock]) -> Result<Message> {
                 builder = builder.content(BedrockContentBlock::Text(text.clone()));
             }
             ContentBlock::Image { data, mime_type } => {
-                let bytes = BASE64
-                    .decode(data)
-                    .map_err(|e| LlmError::Other(format!("Invalid base64 image data: {e}")))?;
+                let bytes =
+                    BASE64.decode(data).map_err(|e| LlmError::Other(format!("Invalid base64 image data: {e}")))?;
                 let format = mime_to_image_format(mime_type);
                 builder = builder.content(BedrockContentBlock::Image(
                     ImageBlock::builder()
@@ -112,9 +96,7 @@ fn build_user_content_blocks(parts: &[ContentBlock]) -> Result<Message> {
                 ));
             }
             ContentBlock::Audio { .. } => {
-                return Err(LlmError::UnsupportedContent(
-                    "Bedrock does not support audio input".into(),
-                ));
+                return Err(LlmError::UnsupportedContent("Bedrock does not support audio input".into()));
             }
         }
     }
@@ -164,11 +146,7 @@ fn map_assistant_message(content: &str, tool_calls: &[crate::ToolCallRequest]) -
 
 fn map_tool_call_result(result: &result::Result<ToolCallResult, ToolCallError>) -> Result<Message> {
     let (id, content_text, status) = match result {
-        Ok(tool_result) => (
-            &tool_result.id,
-            &tool_result.result,
-            ToolResultStatus::Success,
-        ),
+        Ok(tool_result) => (&tool_result.id, &tool_result.result, ToolResultStatus::Success),
         Err(tool_error) => (&tool_error.id, &tool_error.error, ToolResultStatus::Error),
     };
 
@@ -204,10 +182,7 @@ fn json_to_document(value: &Value) -> Document {
         Value::String(s) => Document::String(s.clone()),
         Value::Array(arr) => Document::Array(arr.iter().map(json_to_document).collect()),
         Value::Object(obj) => {
-            let map: HashMap<String, Document> = obj
-                .iter()
-                .map(|(k, v)| (k.clone(), json_to_document(v)))
-                .collect();
+            let map: HashMap<String, Document> = obj.iter().map(|(k, v)| (k.clone(), json_to_document(v))).collect();
             Document::Object(map)
         }
     }
@@ -221,10 +196,8 @@ mod tests {
 
     #[test]
     fn test_map_simple_user_message() {
-        let messages = vec![ChatMessage::User {
-            content: vec![ContentBlock::text("Hello")],
-            timestamp: IsoString::now(),
-        }];
+        let messages =
+            vec![ChatMessage::User { content: vec![ContentBlock::text("Hello")], timestamp: IsoString::now() }];
 
         let (system, mapped) = map_messages(&messages).unwrap();
         assert!(system.is_empty());
@@ -266,23 +239,14 @@ mod tests {
             timestamp: IsoString::now(),
         }];
 
-        assert!(matches!(
-            map_messages(&messages),
-            Err(LlmError::UnsupportedContent(_))
-        ));
+        assert!(matches!(map_messages(&messages), Err(LlmError::UnsupportedContent(_))));
     }
 
     #[test]
     fn test_map_system_message() {
         let messages = vec![
-            ChatMessage::System {
-                content: "You are helpful".to_string(),
-                timestamp: IsoString::now(),
-            },
-            ChatMessage::User {
-                content: vec![ContentBlock::text("Hello")],
-                timestamp: IsoString::now(),
-            },
+            ChatMessage::System { content: "You are helpful".to_string(), timestamp: IsoString::now() },
+            ChatMessage::User { content: vec![ContentBlock::text("Hello")], timestamp: IsoString::now() },
         ];
 
         let (system, mapped) = map_messages(&messages).unwrap();
@@ -371,10 +335,7 @@ mod tests {
 
     #[test]
     fn test_map_error_message() {
-        let messages = vec![ChatMessage::Error {
-            message: "something broke".to_string(),
-            timestamp: IsoString::now(),
-        }];
+        let messages = vec![ChatMessage::Error { message: "something broke".to_string(), timestamp: IsoString::now() }];
 
         let (_system, mapped) = map_messages(&messages).unwrap();
         assert_eq!(mapped.len(), 1);
@@ -409,8 +370,7 @@ mod tests {
         let tools = vec![ToolDefinition {
             name: "search".to_string(),
             description: "Search for information".to_string(),
-            parameters: r#"{"type": "object", "properties": {"query": {"type": "string"}}}"#
-                .to_string(),
+            parameters: r#"{"type": "object", "properties": {"query": {"type": "string"}}}"#.to_string(),
             server: None,
         }];
 
@@ -447,10 +407,7 @@ mod tests {
     #[test]
     fn test_json_to_document_primitives() {
         assert_eq!(json_to_document(&serde_json::Value::Null), Document::Null);
-        assert_eq!(
-            json_to_document(&serde_json::Value::Bool(true)),
-            Document::Bool(true)
-        );
+        assert_eq!(json_to_document(&serde_json::Value::Bool(true)), Document::Bool(true));
         assert_eq!(
             json_to_document(&serde_json::Value::String("hello".to_string())),
             Document::String("hello".to_string())
@@ -459,10 +416,8 @@ mod tests {
 
     #[test]
     fn test_json_to_document_nested_object() {
-        let json: serde_json::Value = serde_json::from_str(
-            r#"{"type": "object", "properties": {"name": {"type": "string"}}}"#,
-        )
-        .unwrap();
+        let json: serde_json::Value =
+            serde_json::from_str(r#"{"type": "object", "properties": {"name": {"type": "string"}}}"#).unwrap();
 
         let doc = json_to_document(&json);
         match &doc {

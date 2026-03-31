@@ -62,25 +62,17 @@ pub(crate) struct NoteFrontmatter {
     pub updated: String,
 }
 
-pub fn save_note(
-    input: &SaveNoteInput,
-    notes_dir: &Path,
-    today: &str,
-) -> Result<SaveNoteOutput, NoteError> {
+pub fn save_note(input: &SaveNoteInput, notes_dir: &Path, today: &str) -> Result<SaveNoteOutput, NoteError> {
     let content = input.content.trim();
     if content.is_empty() {
-        return Err(NoteError::InvalidContent(
-            "content must not be empty".to_string(),
-        ));
+        return Err(NoteError::InvalidContent("content must not be empty".to_string()));
     }
 
     std::fs::create_dir_all(notes_dir)?;
 
     let filename = normalize_topic(&input.topic);
     if filename.is_empty() {
-        return Err(NoteError::InvalidContent(
-            "topic must contain at least one alphanumeric character".to_string(),
-        ));
+        return Err(NoteError::InvalidContent("topic must contain at least one alphanumeric character".to_string()));
     }
 
     let note_path = notes_dir.join(format!("{filename}.md"));
@@ -90,11 +82,7 @@ pub fn save_note(
         let merged_tags = merge_tags(&frontmatter.tags, &input.tags);
         let new_body = format!("{body}\n\n{content}");
 
-        let fm = NoteFrontmatter {
-            topic: frontmatter.topic,
-            tags: merged_tags,
-            updated: today.to_string(),
-        };
+        let fm = NoteFrontmatter { topic: frontmatter.topic, tags: merged_tags, updated: today.to_string() };
 
         let file_content = render_note(&fm, &new_body);
         std::fs::write(&note_path, &file_content)?;
@@ -113,11 +101,7 @@ pub fn save_note(
         (SaveNoteStatus::Created, content.to_string())
     };
 
-    Ok(SaveNoteOutput {
-        topic: filename,
-        status,
-        content: final_content,
-    })
+    Ok(SaveNoteOutput { topic: filename, status, content: final_content })
 }
 
 fn normalize_topic(topic: &str) -> String {
@@ -137,8 +121,8 @@ fn parse_note(content: &str) -> Result<(NoteFrontmatter, String), NoteError> {
     let (yaml, body) = split_frontmatter(content)
         .ok_or_else(|| NoteError::InvalidContent("note file missing frontmatter".to_string()))?;
 
-    let fm: NoteFrontmatter = serde_yml::from_str(yaml)
-        .map_err(|e| NoteError::InvalidContent(format!("invalid YAML frontmatter: {e}")))?;
+    let fm: NoteFrontmatter =
+        serde_yml::from_str(yaml).map_err(|e| NoteError::InvalidContent(format!("invalid YAML frontmatter: {e}")))?;
 
     Ok((fm, body.to_string()))
 }
@@ -276,11 +260,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let notes_dir = temp_dir.path().join("notes");
 
-        let input = SaveNoteInput {
-            topic: "test".to_string(),
-            content: "   ".to_string(),
-            tags: vec![],
-        };
+        let input = SaveNoteInput { topic: "test".to_string(), content: "   ".to_string(), tags: vec![] };
         let result = save_note(&input, &notes_dir, "2026-01-01");
         assert!(result.is_err());
     }
@@ -290,11 +270,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let notes_dir = temp_dir.path().join("notes");
 
-        let input = SaveNoteInput {
-            topic: "!!!".to_string(),
-            content: "Some content.".to_string(),
-            tags: vec![],
-        };
+        let input = SaveNoteInput { topic: "!!!".to_string(), content: "Some content.".to_string(), tags: vec![] };
         let result = save_note(&input, &notes_dir, "2026-01-01");
         assert!(result.is_err());
     }
@@ -304,11 +280,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let notes_dir = temp_dir.path().join("notes");
 
-        let input = SaveNoteInput {
-            topic: "Agent Spec".to_string(),
-            content: "Learning.".to_string(),
-            tags: vec![],
-        };
+        let input = SaveNoteInput { topic: "Agent Spec".to_string(), content: "Learning.".to_string(), tags: vec![] };
         let output = save_note(&input, &notes_dir, "2026-01-01").unwrap();
         assert_eq!(output.topic, "agent-spec");
         assert!(notes_dir.join("agent-spec.md").is_file());
@@ -319,22 +291,14 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let notes_dir = temp_dir.path().join("deeply").join("nested").join("notes");
 
-        let input = SaveNoteInput {
-            topic: "test".to_string(),
-            content: "Works.".to_string(),
-            tags: vec![],
-        };
+        let input = SaveNoteInput { topic: "test".to_string(), content: "Works.".to_string(), tags: vec![] };
         save_note(&input, &notes_dir, "2026-01-01").unwrap();
         assert!(notes_dir.join("test.md").is_file());
     }
 
     #[test]
     fn test_render_note_no_tags() {
-        let fm = NoteFrontmatter {
-            topic: "test".to_string(),
-            tags: vec![],
-            updated: "2026-01-01".to_string(),
-        };
+        let fm = NoteFrontmatter { topic: "test".to_string(), tags: vec![], updated: "2026-01-01".to_string() };
         let rendered = render_note(&fm, "Body content.");
         assert!(!rendered.contains("tags:"));
         assert!(rendered.contains("topic: test"));

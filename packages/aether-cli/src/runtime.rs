@@ -121,10 +121,8 @@ impl RuntimeBuilder {
             agent_builder = agent_builder.messages(msgs);
         }
 
-        let (agent_tx, agent_rx, agent_handle) = agent_builder
-            .spawn()
-            .await
-            .map_err(|e| CliError::AgentError(e.to_string()))?;
+        let (agent_tx, agent_rx, agent_handle) =
+            agent_builder.spawn().await.map_err(|e| CliError::AgentError(e.to_string()))?;
 
         Ok(Runtime {
             agent_tx,
@@ -140,10 +138,7 @@ impl RuntimeBuilder {
     pub async fn build_prompt_info(self) -> Result<PromptInfo, CliError> {
         let mcp = self.spawn_mcp().await?;
         let filtered_tools = mcp.spec.tools.apply(mcp.tool_definitions);
-        Ok(PromptInfo {
-            spec: mcp.spec,
-            tool_definitions: filtered_tools,
-        })
+        Ok(PromptInfo { spec: mcp.spec, tool_definitions: filtered_tools })
     }
 
     async fn spawn_mcp(self) -> Result<McpParts, CliError> {
@@ -161,14 +156,10 @@ impl RuntimeBuilder {
 
         if let Some(ref config_path) = mcp_config_path {
             debug!("Loading MCP config from: {}", config_path.display());
-            let config_str = config_path
-                .to_str()
-                .ok_or_else(|| CliError::McpError("Invalid MCP config path".to_string()))?;
+            let config_str =
+                config_path.to_str().ok_or_else(|| CliError::McpError("Invalid MCP config path".to_string()))?;
 
-            builder = builder
-                .from_json_file(config_str)
-                .await
-                .map_err(|e| CliError::McpError(e.to_string()))?;
+            builder = builder.from_json_file(config_str).await.map_err(|e| CliError::McpError(e.to_string()))?;
         }
 
         let McpSpawnResult {
@@ -178,22 +169,12 @@ impl RuntimeBuilder {
             command_tx: mcp_tx,
             elicitation_rx,
             handle: mcp_handle,
-        } = builder
-            .spawn()
-            .await
-            .map_err(|e| CliError::McpError(e.to_string()))?;
+        } = builder.spawn().await.map_err(|e| CliError::McpError(e.to_string()))?;
 
         let mut spec = self.spec;
         spec.prompts.push(Prompt::mcp_instructions(instructions));
 
-        Ok(McpParts {
-            spec,
-            tool_definitions,
-            mcp_tx,
-            elicitation_rx,
-            server_statuses,
-            mcp_handle,
-        })
+        Ok(McpParts { spec, tool_definitions, mcp_tx, elicitation_rx, server_statuses, mcp_handle })
     }
 }
 

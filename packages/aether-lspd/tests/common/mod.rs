@@ -14,10 +14,7 @@ static FAKE_SERVER_ENV: Once = Once::new();
 #[allow(dead_code)]
 pub fn use_fake_rust_server() {
     FAKE_SERVER_ENV.call_once(|| {
-        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests")
-            .join("common")
-            .join("fake_lsp_server.py");
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("common").join("fake_lsp_server.py");
         unsafe {
             std::env::set_var("AETHER_LSPD_SERVER_COMMAND_RUST_ANALYZER", "python3");
             std::env::set_var(

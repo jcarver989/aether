@@ -81,19 +81,11 @@ impl FileStatus {
 
 impl FileDiff {
     pub fn additions(&self) -> usize {
-        self.hunks
-            .iter()
-            .flat_map(|hunk| &hunk.lines)
-            .filter(|line| line.kind == PatchLineKind::Added)
-            .count()
+        self.hunks.iter().flat_map(|hunk| &hunk.lines).filter(|line| line.kind == PatchLineKind::Added).count()
     }
 
     pub fn deletions(&self) -> usize {
-        self.hunks
-            .iter()
-            .flat_map(|hunk| &hunk.lines)
-            .filter(|line| line.kind == PatchLineKind::Removed)
-            .count()
+        self.hunks.iter().flat_map(|hunk| &hunk.lines).filter(|line| line.kind == PatchLineKind::Removed).count()
     }
 }
 
@@ -108,10 +100,7 @@ pub(crate) async fn load_git_diff(
     let diff_output = run_git_diff(&repo_root).await?;
 
     if diff_output.trim().is_empty() {
-        return Ok(GitDiffDocument {
-            repo_root,
-            files: Vec::new(),
-        });
+        return Ok(GitDiffDocument { repo_root, files: Vec::new() });
     }
 
     let files = parse_unified_diff(&diff_output)?;
@@ -125,18 +114,14 @@ async fn resolve_repo_root(working_dir: &Path) -> Result<PathBuf, GitDiffError> 
         .current_dir(working_dir)
         .output()
         .await
-        .map_err(|e| GitDiffError::CommandFailed {
-            stderr: e.to_string(),
-        })?;
+        .map_err(|e| GitDiffError::CommandFailed { stderr: e.to_string() })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         if stderr.contains("not a git repository") {
             return Err(GitDiffError::NotARepository);
         }
-        return Err(GitDiffError::CommandFailed {
-            stderr: stderr.into_owned(),
-        });
+        return Err(GitDiffError::CommandFailed { stderr: stderr.into_owned() });
     }
 
     let root = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -145,35 +130,22 @@ async fn resolve_repo_root(working_dir: &Path) -> Result<PathBuf, GitDiffError> 
 
 async fn run_git_diff(repo_root: &Path) -> Result<String, GitDiffError> {
     let output = tokio::process::Command::new("git")
-        .args([
-            "diff",
-            "--no-ext-diff",
-            "--find-renames",
-            "--unified=3",
-            "HEAD",
-        ])
+        .args(["diff", "--no-ext-diff", "--find-renames", "--unified=3", "HEAD"])
         .current_dir(repo_root)
         .output()
         .await
-        .map_err(|e| GitDiffError::CommandFailed {
-            stderr: e.to_string(),
-        })?;
+        .map_err(|e| GitDiffError::CommandFailed { stderr: e.to_string() })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(GitDiffError::CommandFailed {
-            stderr: stderr.into_owned(),
-        });
+        return Err(GitDiffError::CommandFailed { stderr: stderr.into_owned() });
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 pub(crate) fn parse_unified_diff(input: &str) -> Result<Vec<FileDiff>, GitDiffError> {
-    split_diff_files(input)
-        .into_iter()
-        .map(parse_file_diff)
-        .collect()
+    split_diff_files(input).into_iter().map(parse_file_diff).collect()
 }
 
 fn split_diff_files(input: &str) -> Vec<&str> {
@@ -182,9 +154,7 @@ fn split_diff_files(input: &str) -> Vec<&str> {
     let mut line_start = 0;
 
     while line_start < input.len() {
-        let line_end = input[line_start..]
-            .find('\n')
-            .map_or(input.len(), |idx| line_start + idx + 1);
+        let line_end = input[line_start..].find('\n').map_or(input.len(), |idx| line_start + idx + 1);
         let line = &input[line_start..line_end];
 
         if line.starts_with("diff --git ") {
@@ -212,19 +182,9 @@ fn parse_file_diff(chunk: &str) -> Result<FileDiff, GitDiffError> {
 
     let (old_path, new_path) = parse_diff_header(lines[0])?;
     let (status, binary, rename_from, hunk_start) = scan_file_metadata(&lines);
-    let hunks = if binary {
-        Vec::new()
-    } else {
-        parse_file_hunks(&lines[hunk_start..])?
-    };
+    let hunks = if binary { Vec::new() } else { parse_file_hunks(&lines[hunk_start..])? };
 
-    Ok(FileDiff {
-        old_path: resolve_old_path(status, rename_from, old_path),
-        path: new_path,
-        status,
-        hunks,
-        binary,
-    })
+    Ok(FileDiff { old_path: resolve_old_path(status, rename_from, old_path), path: new_path, status, hunks, binary })
 }
 
 fn scan_file_metadata(lines: &[&str]) -> (FileStatus, bool, Option<String>, usize) {
@@ -272,11 +232,7 @@ fn parse_file_hunks(lines: &[&str]) -> Result<Vec<Hunk>, GitDiffError> {
     Ok(hunks)
 }
 
-fn resolve_old_path(
-    status: FileStatus,
-    rename_from: Option<String>,
-    old_path: String,
-) -> Option<String> {
+fn resolve_old_path(status: FileStatus, rename_from: Option<String>, old_path: String) -> Option<String> {
     if status == FileStatus::Added {
         None
     } else if status == FileStatus::Renamed {
@@ -296,9 +252,7 @@ fn parse_diff_header(line: &str) -> Result<(String, String), GitDiffError> {
         let new = b.to_string();
         Ok((old, new))
     } else {
-        Err(GitDiffError::ParseError(format!(
-            "Cannot parse paths from: {line}"
-        )))
+        Err(GitDiffError::ParseError(format!("Cannot parse paths from: {line}")))
     }
 }
 
@@ -370,17 +324,7 @@ fn parse_hunk(lines: &[&str]) -> Result<(Hunk, usize), GitDiffError> {
         i += 1;
     }
 
-    Ok((
-        Hunk {
-            header: header.to_string(),
-            old_start,
-            old_count,
-            new_start,
-            new_count,
-            lines: patch_lines,
-        },
-        i,
-    ))
+    Ok((Hunk { header: header.to_string(), old_start, old_count, new_start, new_count, lines: patch_lines }, i))
 }
 
 fn parse_hunk_header(header: &str) -> Result<(usize, usize, usize, usize), GitDiffError> {
@@ -658,8 +602,7 @@ index abc..def 100644
 
     #[test]
     fn parse_hunk_header_without_comma() {
-        let (start, count, new_start, new_count) =
-            parse_hunk_header("@@ -1 +1 @@ fn main()").unwrap();
+        let (start, count, new_start, new_count) = parse_hunk_header("@@ -1 +1 @@ fn main()").unwrap();
         assert_eq!(start, 1);
         assert_eq!(count, 1);
         assert_eq!(new_start, 1);

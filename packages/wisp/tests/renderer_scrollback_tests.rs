@@ -3,24 +3,14 @@ use tui::testing::TestTerminal;
 use tui::{Cursor, Frame, Line, Theme};
 
 fn render_frame(renderer: &mut Renderer<TestTerminal>, lines: Vec<Line>, cursor: Cursor) {
-    renderer
-        .render_frame(|_ctx| Frame::new(lines).with_cursor(cursor))
-        .unwrap();
+    renderer.render_frame(|_ctx| Frame::new(lines).with_cursor(cursor)).unwrap();
 }
 
 #[test]
 fn render_soft_wraps_before_diffing() {
     let mut renderer = create_renderer(3, 20);
 
-    render_frame(
-        &mut renderer,
-        vec![Line::new("abcdef")],
-        Cursor {
-            row: 0,
-            col: 5,
-            is_visible: true,
-        },
-    );
+    render_frame(&mut renderer, vec![Line::new("abcdef")], Cursor { row: 0, col: 5, is_visible: true });
 
     let lines = renderer.writer().get_lines();
     assert_eq!(lines[0], "abc");
@@ -31,19 +21,9 @@ fn render_soft_wraps_before_diffing() {
 fn push_to_scrollback_soft_wraps_long_lines() {
     let mut renderer = create_renderer(5, 20);
 
-    render_frame(
-        &mut renderer,
-        vec![Line::new("abcde")],
-        Cursor {
-            row: 0,
-            col: 0,
-            is_visible: true,
-        },
-    );
+    render_frame(&mut renderer, vec![Line::new("abcde")], Cursor { row: 0, col: 0, is_visible: true });
 
-    renderer
-        .push_to_scrollback(&[Line::new("0123456789")])
-        .unwrap();
+    renderer.push_to_scrollback(&[Line::new("0123456789")]).unwrap();
 
     let transcript = renderer.writer().get_transcript_lines();
     assert!(
@@ -64,15 +44,7 @@ fn push_to_scrollback_soft_wraps_long_lines() {
 fn out_of_bounds_cursor_clamps_without_panicking() {
     let mut renderer = create_renderer(4, 20);
 
-    render_frame(
-        &mut renderer,
-        vec![Line::new("a")],
-        Cursor {
-            row: 10,
-            col: 100,
-            is_visible: true,
-        },
-    );
+    render_frame(&mut renderer, vec![Line::new("a")], Cursor { row: 10, col: 100, is_visible: true });
 
     let lines = renderer.writer().get_lines();
     assert_eq!(lines[0], "a");
@@ -84,18 +56,8 @@ fn render_flushes_overflow_to_scrollback() {
 
     render_frame(
         &mut renderer,
-        vec![
-            Line::new("L1"),
-            Line::new("L2"),
-            Line::new("L3"),
-            Line::new("L4"),
-            Line::new("L5"),
-        ],
-        Cursor {
-            row: 4,
-            col: 0,
-            is_visible: true,
-        },
+        vec![Line::new("L1"), Line::new("L2"), Line::new("L3"), Line::new("L4"), Line::new("L5")],
+        Cursor { row: 4, col: 0, is_visible: true },
     );
 
     let visible = renderer.writer().get_lines();
@@ -104,14 +66,8 @@ fn render_flushes_overflow_to_scrollback() {
     assert_eq!(visible[2], "L5");
 
     let transcript = renderer.writer().get_transcript_lines();
-    assert!(
-        transcript.iter().any(|l| l == "L1"),
-        "L1 should be in scrollback: {transcript:?}"
-    );
-    assert!(
-        transcript.iter().any(|l| l == "L2"),
-        "L2 should be in scrollback: {transcript:?}"
-    );
+    assert!(transcript.iter().any(|l| l == "L1"), "L1 should be in scrollback: {transcript:?}");
+    assert!(transcript.iter().any(|l| l == "L2"), "L2 should be in scrollback: {transcript:?}");
 }
 
 #[test]
@@ -120,17 +76,8 @@ fn render_progressively_flushes_overflow() {
 
     render_frame(
         &mut renderer,
-        vec![
-            Line::new("L1"),
-            Line::new("L2"),
-            Line::new("L3"),
-            Line::new("L4"),
-        ],
-        Cursor {
-            row: 3,
-            col: 0,
-            is_visible: true,
-        },
+        vec![Line::new("L1"), Line::new("L2"), Line::new("L3"), Line::new("L4")],
+        Cursor { row: 3, col: 0, is_visible: true },
     );
 
     let transcript_after_first = renderer.writer().get_transcript_lines();
@@ -141,19 +88,8 @@ fn render_progressively_flushes_overflow() {
 
     render_frame(
         &mut renderer,
-        vec![
-            Line::new("L1"),
-            Line::new("L2"),
-            Line::new("L3"),
-            Line::new("L4"),
-            Line::new("L5"),
-            Line::new("L6"),
-        ],
-        Cursor {
-            row: 5,
-            col: 0,
-            is_visible: true,
-        },
+        vec![Line::new("L1"), Line::new("L2"), Line::new("L3"), Line::new("L4"), Line::new("L5"), Line::new("L6")],
+        Cursor { row: 5, col: 0, is_visible: true },
     );
 
     let transcript_after_second = renderer.writer().get_transcript_lines();
@@ -178,38 +114,16 @@ fn push_to_scrollback_resets_flushed_count() {
 
     render_frame(
         &mut renderer,
-        vec![
-            Line::new("L1"),
-            Line::new("L2"),
-            Line::new("L3"),
-            Line::new("L4"),
-            Line::new("L5"),
-        ],
-        Cursor {
-            row: 4,
-            col: 0,
-            is_visible: true,
-        },
+        vec![Line::new("L1"), Line::new("L2"), Line::new("L3"), Line::new("L4"), Line::new("L5")],
+        Cursor { row: 4, col: 0, is_visible: true },
     );
 
-    renderer
-        .push_to_scrollback(&[Line::new("committed")])
-        .unwrap();
+    renderer.push_to_scrollback(&[Line::new("committed")]).unwrap();
 
     render_frame(
         &mut renderer,
-        vec![
-            Line::new("A1"),
-            Line::new("A2"),
-            Line::new("A3"),
-            Line::new("A4"),
-            Line::new("A5"),
-        ],
-        Cursor {
-            row: 4,
-            col: 0,
-            is_visible: true,
-        },
+        vec![Line::new("A1"), Line::new("A2"), Line::new("A3"), Line::new("A4"), Line::new("A5")],
+        Cursor { row: 4, col: 0, is_visible: true },
     );
 
     let transcript = renderer.writer().get_transcript_lines();

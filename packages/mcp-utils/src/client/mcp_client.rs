@@ -3,8 +3,8 @@ use rmcp::{
     ClientHandler, RoleClient,
     handler::client::progress::ProgressDispatcher,
     model::{
-        ClientInfo, CreateElicitationRequestParams, CreateElicitationResult, ElicitationAction,
-        ErrorData, ListRootsResult, ProgressNotificationParam,
+        ClientInfo, CreateElicitationRequestParams, CreateElicitationResult, ElicitationAction, ErrorData,
+        ListRootsResult, ProgressNotificationParam,
     },
     service::{NotificationContext, RequestContext},
 };
@@ -29,12 +29,7 @@ impl McpClient {
         elicitation_sender: mpsc::Sender<ElicitationRequest>,
         roots: Arc<RwLock<Vec<Root>>>,
     ) -> Self {
-        Self {
-            client_info,
-            progress_dispatcher: ProgressDispatcher::new(),
-            elicitation_sender,
-            roots,
-        }
+        Self { client_info, progress_dispatcher: ProgressDispatcher::new(), elicitation_sender, roots }
     }
 }
 
@@ -43,11 +38,7 @@ impl ClientHandler for McpClient {
         self.client_info.clone()
     }
 
-    async fn on_progress(
-        &self,
-        params: ProgressNotificationParam,
-        _context: NotificationContext<RoleClient>,
-    ) -> () {
+    async fn on_progress(&self, params: ProgressNotificationParam, _context: NotificationContext<RoleClient>) -> () {
         self.progress_dispatcher.handle_notification(params).await;
     }
 
@@ -57,31 +48,19 @@ impl ClientHandler for McpClient {
         _context: RequestContext<RoleClient>,
     ) -> Result<CreateElicitationResult, ErrorData> {
         let (response_tx, response_rx) = oneshot::channel();
-        let elicitation_request = ElicitationRequest {
-            request,
-            response_sender: response_tx,
-        };
+        let elicitation_request = ElicitationRequest { request, response_sender: response_tx };
 
         match self.elicitation_sender.send(elicitation_request).await {
             Ok(()) => match response_rx.await {
                 Ok(result) => Ok(result),
-                Err(_) => Ok(CreateElicitationResult {
-                    action: ElicitationAction::Decline,
-                    content: None,
-                }),
+                Err(_) => Ok(CreateElicitationResult { action: ElicitationAction::Decline, content: None }),
             },
 
-            Err(_) => Ok(CreateElicitationResult {
-                action: ElicitationAction::Decline,
-                content: None,
-            }),
+            Err(_) => Ok(CreateElicitationResult { action: ElicitationAction::Decline, content: None }),
         }
     }
 
-    async fn list_roots(
-        &self,
-        _context: RequestContext<RoleClient>,
-    ) -> Result<ListRootsResult, ErrorData> {
+    async fn list_roots(&self, _context: RequestContext<RoleClient>) -> Result<ListRootsResult, ErrorData> {
         let roots = self.roots.read().await;
 
         Ok(ListRootsResult::new(roots.clone()))

@@ -1,9 +1,8 @@
 use async_openai::types::chat::{
     ChatChoiceStream, ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk,
-    ChatCompletionMessageToolCalls, ChatCompletionStreamOptions,
-    ChatCompletionStreamResponseDelta as OpenAiDelta, ChatCompletionTools, CompletionUsage,
-    CreateChatCompletionStreamResponse, FinishReason as OpenAiFinishReason, FunctionCall,
-    FunctionCallStream, FunctionType, Role,
+    ChatCompletionMessageToolCalls, ChatCompletionStreamOptions, ChatCompletionStreamResponseDelta as OpenAiDelta,
+    ChatCompletionTools, CompletionUsage, CreateChatCompletionStreamResponse, FinishReason as OpenAiFinishReason,
+    FunctionCall, FunctionCallStream, FunctionType, Role,
 };
 use serde::{Deserialize, Serialize};
 
@@ -109,27 +108,17 @@ pub fn map_messages(messages: &[ChatMessage]) -> crate::Result<Vec<CompatibleCha
 
     for message in messages {
         let mapped = match message {
-            ChatMessage::System { content, .. } => Some(CompatibleChatMessage::System {
-                content: content.clone(),
-            }),
-            ChatMessage::User { content, .. } => Some(CompatibleChatMessage::User {
-                content: map_user_content(content)?,
-            }),
-            ChatMessage::Assistant {
-                content,
-                reasoning,
-                tool_calls,
-                ..
-            } => {
+            ChatMessage::System { content, .. } => Some(CompatibleChatMessage::System { content: content.clone() }),
+            ChatMessage::User { content, .. } => {
+                Some(CompatibleChatMessage::User { content: map_user_content(content)? })
+            }
+            ChatMessage::Assistant { content, reasoning, tool_calls, .. } => {
                 let openai_tool_calls: Vec<_> = tool_calls
                     .iter()
                     .map(|call| {
                         ChatCompletionMessageToolCalls::Function(ChatCompletionMessageToolCall {
                             id: call.id.clone(),
-                            function: FunctionCall {
-                                name: call.name.clone(),
-                                arguments: call.arguments.clone(),
-                            },
+                            function: FunctionCall { name: call.name.clone(), arguments: call.arguments.clone() },
                         })
                     })
                     .collect();
@@ -145,11 +134,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> crate::Result<Vec<CompatibleCha
                     None
                 };
 
-                Some(CompatibleChatMessage::Assistant {
-                    content: content.clone(),
-                    reasoning_content,
-                    tool_calls,
-                })
+                Some(CompatibleChatMessage::Assistant { content: content.clone(), reasoning_content, tool_calls })
             }
             ChatMessage::ToolCallResult(r) => {
                 let (content, tool_call_id) = match r {
@@ -157,10 +142,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> crate::Result<Vec<CompatibleCha
                     Err(tool_error) => (tool_error.error.clone(), tool_error.id.clone()),
                 };
 
-                Some(CompatibleChatMessage::Tool {
-                    content,
-                    tool_call_id,
-                })
+                Some(CompatibleChatMessage::Tool { content, tool_call_id })
             }
             ChatMessage::Summary { content, .. } => Some(CompatibleChatMessage::User {
                 content: UserContent::Text(format!("[Previous conversation handoff]\n\n{content}")),
@@ -177,9 +159,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> crate::Result<Vec<CompatibleCha
 }
 
 fn map_user_content(parts: &[ContentBlock]) -> crate::Result<UserContent> {
-    let has_non_text = parts
-        .iter()
-        .any(|p| !matches!(p, ContentBlock::Text { .. }));
+    let has_non_text = parts.iter().any(|p| !matches!(p, ContentBlock::Text { .. }));
 
     if !has_non_text {
         return Ok(UserContent::Text(ContentBlock::join_text(parts)));
@@ -189,15 +169,11 @@ fn map_user_content(parts: &[ContentBlock]) -> crate::Result<UserContent> {
     for p in parts {
         match p {
             ContentBlock::Text { text } => items.push(UserContentPart::Text { text: text.clone() }),
-            ContentBlock::Image { .. } => items.push(UserContentPart::ImageUrl {
-                image_url: ImageUrlContent {
-                    url: p.as_data_uri().unwrap(),
-                },
-            }),
+            ContentBlock::Image { .. } => {
+                items.push(UserContentPart::ImageUrl { image_url: ImageUrlContent { url: p.as_data_uri().unwrap() } })
+            }
             ContentBlock::Audio { .. } => {
-                return Err(crate::LlmError::UnsupportedContent(
-                    "This provider does not support audio input".into(),
-                ));
+                return Err(crate::LlmError::UnsupportedContent("This provider does not support audio input".into()));
             }
         }
     }
@@ -272,12 +248,8 @@ impl From<ChatCompletionStreamResponse> for CreateChatCompletionStreamResponse {
 impl From<FinishReason> for OpenAiFinishReason {
     fn from(reason: FinishReason) -> Self {
         match reason {
-            FinishReason::Stop | FinishReason::Error | FinishReason::NetworkError => {
-                OpenAiFinishReason::Stop
-            }
-            FinishReason::Length | FinishReason::ModelContextWindowExceeded => {
-                OpenAiFinishReason::Length
-            }
+            FinishReason::Stop | FinishReason::Error | FinishReason::NetworkError => OpenAiFinishReason::Stop,
+            FinishReason::Length | FinishReason::ModelContextWindowExceeded => OpenAiFinishReason::Length,
             FinishReason::ToolCalls => OpenAiFinishReason::ToolCalls,
             FinishReason::ContentFilter => OpenAiFinishReason::ContentFilter,
             FinishReason::FunctionCall => OpenAiFinishReason::FunctionCall,
@@ -302,9 +274,7 @@ impl From<ChatCompletionStreamResponseDelta> for OpenAiDelta {
             role: delta.role,
             content: delta.content,
             refusal: None,
-            tool_calls: delta
-                .tool_calls
-                .map(|calls| calls.into_iter().map(Into::into).collect()),
+            tool_calls: delta.tool_calls.map(|calls| calls.into_iter().map(Into::into).collect()),
             #[allow(deprecated)]
             function_call: None,
         }
@@ -316,10 +286,7 @@ impl From<ToolCallDelta> for ChatCompletionMessageToolCallChunk {
         ChatCompletionMessageToolCallChunk {
             index: u32::try_from(call.index).unwrap_or(0),
             id: call.id,
-            r#type: call
-                .tool_type
-                .filter(|t| t == "function")
-                .map(|_| FunctionType::Function),
+            r#type: call.tool_type.filter(|t| t == "function").map(|_| FunctionType::Function),
             function: call.function.map(Into::into),
         }
     }
@@ -327,10 +294,7 @@ impl From<ToolCallDelta> for ChatCompletionMessageToolCallChunk {
 
 impl From<FunctionCallDelta> for FunctionCallStream {
     fn from(f: FunctionCallDelta) -> Self {
-        FunctionCallStream {
-            name: f.name,
-            arguments: f.arguments,
-        }
+        FunctionCallStream { name: f.name, arguments: f.arguments }
     }
 }
 
@@ -371,10 +335,7 @@ mod tests {
     fn context_with_assistant_message(message: ChatMessage) -> crate::Context {
         crate::Context::new(
             vec![
-                ChatMessage::User {
-                    content: vec![ContentBlock::text("run a tool")],
-                    timestamp: IsoString::now(),
-                },
+                ChatMessage::User { content: vec![ContentBlock::text("run a tool")], timestamp: IsoString::now() },
                 message,
             ],
             vec![ToolDefinition {
@@ -389,9 +350,7 @@ mod tests {
     #[test]
     fn test_build_request_includes_reasoning_content_on_assistant_tool_message() {
         let context = context_with_assistant_message(assistant_with_tool_call(Some("trace chunk")));
-        let request =
-            crate::providers::openai_compatible::build_chat_request("test-model", &context)
-                .unwrap();
+        let request = crate::providers::openai_compatible::build_chat_request("test-model", &context).unwrap();
 
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["messages"][1]["role"], "assistant");
@@ -401,15 +360,10 @@ mod tests {
     #[test]
     fn test_build_request_includes_stream_options_with_usage() {
         let context = crate::Context::new(
-            vec![ChatMessage::User {
-                content: vec![ContentBlock::text("hello")],
-                timestamp: IsoString::now(),
-            }],
+            vec![ChatMessage::User { content: vec![ContentBlock::text("hello")], timestamp: IsoString::now() }],
             vec![],
         );
-        let request =
-            crate::providers::openai_compatible::build_chat_request("test-model", &context)
-                .unwrap();
+        let request = crate::providers::openai_compatible::build_chat_request("test-model", &context).unwrap();
 
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["stream_options"]["include_usage"], true);
@@ -418,9 +372,7 @@ mod tests {
     #[test]
     fn test_build_request_sends_empty_reasoning_content_on_tool_call_when_none() {
         let context = context_with_assistant_message(assistant_with_tool_call(None));
-        let request =
-            crate::providers::openai_compatible::build_chat_request("test-model", &context)
-                .unwrap();
+        let request = crate::providers::openai_compatible::build_chat_request("test-model", &context).unwrap();
 
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["messages"][1]["role"], "assistant");
@@ -438,10 +390,7 @@ mod tests {
     fn test_user_message_with_image_serializes_as_array() {
         let content = map_user_content(&[
             ContentBlock::text("Look:"),
-            ContentBlock::Image {
-                data: "aW1n".to_string(),
-                mime_type: "image/png".to_string(),
-            },
+            ContentBlock::Image { data: "aW1n".to_string(), mime_type: "image/png".to_string() },
         ])
         .unwrap();
         let json = serde_json::to_value(&content).unwrap();
@@ -450,12 +399,7 @@ mod tests {
         assert_eq!(parts[0]["type"], "text");
         assert_eq!(parts[0]["text"], "Look:");
         assert_eq!(parts[1]["type"], "image_url");
-        assert!(
-            parts[1]["image_url"]["url"]
-                .as_str()
-                .unwrap()
-                .starts_with("data:image/png;base64,")
-        );
+        assert!(parts[1]["image_url"]["url"].as_str().unwrap().starts_with("data:image/png;base64,"));
     }
 
     #[test]
@@ -464,24 +408,15 @@ mod tests {
             data: "YXVkaW8=".to_string(),
             mime_type: "audio/wav".to_string(),
         }]);
-        assert!(matches!(
-            result,
-            Err(crate::LlmError::UnsupportedContent(_))
-        ));
+        assert!(matches!(result, Err(crate::LlmError::UnsupportedContent(_))));
     }
 
     #[test]
     fn test_user_message_audio_with_text_errors() {
         let result = map_user_content(&[
             ContentBlock::text("Listen:"),
-            ContentBlock::Audio {
-                data: "YXVkaW8=".to_string(),
-                mime_type: "audio/wav".to_string(),
-            },
+            ContentBlock::Audio { data: "YXVkaW8=".to_string(), mime_type: "audio/wav".to_string() },
         ]);
-        assert!(matches!(
-            result,
-            Err(crate::LlmError::UnsupportedContent(_))
-        ));
+        assert!(matches!(result, Err(crate::LlmError::UnsupportedContent(_))));
     }
 }

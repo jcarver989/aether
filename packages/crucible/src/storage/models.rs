@@ -1,9 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{
-    Eval, EvalAssertion, evals::assertion::EvalAssertionResult as EvalAssertionResultEnum,
-};
+use crate::{Eval, EvalAssertion, evals::assertion::EvalAssertionResult as EvalAssertionResultEnum};
 
 /// Result of an evaluation in various states
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,18 +27,11 @@ pub enum EvalResult {
 impl EvalResult {
     /// Create a new `EvalResult` in "Started" state
     pub fn started(eval: &Eval, eval_id: Uuid) -> Self {
-        EvalResult::Started {
-            id: eval_id,
-            eval_name: eval.name.clone(),
-        }
+        EvalResult::Started { id: eval_id, eval_name: eval.name.clone() }
     }
 
     /// Create a completed `EvalResult` with assertion results
-    pub fn completed(
-        eval: &Eval,
-        eval_id: Uuid,
-        results: &[(EvalAssertion, EvalAssertionResultEnum)],
-    ) -> EvalResult {
+    pub fn completed(eval: &Eval, eval_id: Uuid, results: &[(EvalAssertion, EvalAssertionResultEnum)]) -> EvalResult {
         let assertions: Vec<EvalAssertionResult> = results
             .iter()
             .map(|(assertion, result)| EvalAssertionResult {
@@ -71,9 +62,7 @@ impl EvalResult {
     /// Get the eval ID regardless of state
     pub fn id(&self) -> Uuid {
         match self {
-            EvalResult::Started { id, .. }
-            | EvalResult::Running { id, .. }
-            | EvalResult::Completed { id, .. } => *id,
+            EvalResult::Started { id, .. } | EvalResult::Running { id, .. } | EvalResult::Completed { id, .. } => *id,
         }
     }
 
@@ -159,11 +148,7 @@ impl DiffStats {
             }
         }
 
-        Self {
-            files_changed,
-            lines_added,
-            lines_removed,
-        }
+        Self { files_changed, lines_added, lines_removed }
     }
 }
 

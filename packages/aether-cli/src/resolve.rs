@@ -3,30 +3,19 @@ use aether_core::agent_spec::AgentSpec;
 use aether_project::AgentCatalog;
 use std::path::Path;
 
-pub fn resolve_agent_spec(
-    catalog: &AgentCatalog,
-    agent_name: Option<&str>,
-    cwd: &Path,
-) -> Result<AgentSpec, CliError> {
+pub fn resolve_agent_spec(catalog: &AgentCatalog, agent_name: Option<&str>, cwd: &Path) -> Result<AgentSpec, CliError> {
     match agent_name {
-        Some(name) => catalog
-            .resolve(name, cwd)
-            .map_err(|e| CliError::AgentError(e.to_string())),
+        Some(name) => catalog.resolve(name, cwd).map_err(|e| CliError::AgentError(e.to_string())),
 
         None => {
             if let Some(first) = catalog.user_invocable().next() {
-                catalog
-                    .resolve(&first.name, cwd)
-                    .map_err(|e| CliError::AgentError(e.to_string()))
+                catalog.resolve(&first.name, cwd).map_err(|e| CliError::AgentError(e.to_string()))
             } else {
-                let model = "anthropic:claude-sonnet-4-5"
-                    .parse()
-                    .map_err(|e: String| CliError::ModelError(e))?;
+                let model = "anthropic:claude-sonnet-4-5".parse().map_err(|e: String| CliError::ModelError(e))?;
 
                 Ok(catalog.resolve_default(&model, None, cwd))
             }
         }
-
     }
 }
 

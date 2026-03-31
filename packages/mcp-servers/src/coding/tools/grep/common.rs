@@ -44,11 +44,7 @@ impl MatchCollectorSink {
         }
     }
 
-    pub fn with_max_results(
-        file_path: &Path,
-        line_numbers: bool,
-        max_results: Option<usize>,
-    ) -> Self {
+    pub fn with_max_results(file_path: &Path, line_numbers: bool, max_results: Option<usize>) -> Self {
         Self {
             file_path: file_path.to_path_buf(),
             line_numbers,
@@ -62,11 +58,7 @@ impl MatchCollectorSink {
 impl Sink for MatchCollectorSink {
     type Error = std::io::Error;
 
-    fn matched(
-        &mut self,
-        _searcher: &grep::searcher::Searcher,
-        mat: &SinkMatch<'_>,
-    ) -> Result<bool, Self::Error> {
+    fn matched(&mut self, _searcher: &grep::searcher::Searcher, mat: &SinkMatch<'_>) -> Result<bool, Self::Error> {
         // Check if we've hit the max results limit
         if let Some(max) = self.max_results
             && self.matches.len() >= max
@@ -76,19 +68,11 @@ impl Sink for MatchCollectorSink {
 
         let line_str = std::str::from_utf8(mat.bytes()).unwrap_or("<invalid utf8>");
 
-        let before_context = if self.context_before.is_empty() {
-            None
-        } else {
-            Some(self.context_before.clone())
-        };
+        let before_context = if self.context_before.is_empty() { None } else { Some(self.context_before.clone()) };
 
         let match_data = MatchData {
             file: self.file_path.display().to_string(),
-            line_number: if self.line_numbers {
-                mat.line_number().and_then(|n| usize::try_from(n).ok())
-            } else {
-                None
-            },
+            line_number: if self.line_numbers { mat.line_number().and_then(|n| usize::try_from(n).ok()) } else { None },
             line: line_str.to_string(),
             before_context,
             after_context: None, // Will be filled by context method
@@ -147,11 +131,7 @@ impl Default for HasMatchSink {
 impl Sink for HasMatchSink {
     type Error = std::io::Error;
 
-    fn matched(
-        &mut self,
-        _searcher: &grep::searcher::Searcher,
-        _mat: &SinkMatch<'_>,
-    ) -> Result<bool, Self::Error> {
+    fn matched(&mut self, _searcher: &grep::searcher::Searcher, _mat: &SinkMatch<'_>) -> Result<bool, Self::Error> {
         self.has_match = true;
         Ok(false)
     }
@@ -176,11 +156,7 @@ impl Default for CountSink {
 impl Sink for CountSink {
     type Error = std::io::Error;
 
-    fn matched(
-        &mut self,
-        _searcher: &grep::searcher::Searcher,
-        _mat: &SinkMatch<'_>,
-    ) -> Result<bool, Self::Error> {
+    fn matched(&mut self, _searcher: &grep::searcher::Searcher, _mat: &SinkMatch<'_>) -> Result<bool, Self::Error> {
         self.count += 1;
         Ok(true)
     }

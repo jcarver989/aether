@@ -21,9 +21,7 @@ impl SettingsStore {
     }
 
     pub fn from_path(home: &Path) -> Self {
-        Self {
-            home: home.to_path_buf(),
-        }
+        Self { home: home.to_path_buf() }
     }
 
     pub fn home(&self) -> &Path {
@@ -61,10 +59,7 @@ fn load_or_create_at<T: Serialize + DeserializeOwned + Default>(path: &Path) -> 
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             let defaults = T::default();
             if let Err(error) = save_to_path(path, &defaults) {
-                warn!(
-                    "Failed to write default settings to {}: {error}",
-                    path.display()
-                );
+                warn!("Failed to write default settings to {}: {error}", path.display());
             }
             return defaults;
         }
@@ -104,9 +99,7 @@ fn save_to_path<T: Serialize>(path: &Path, settings: &T) -> io::Result<()> {
 }
 
 fn temp_path_for(path: &Path) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_nanos());
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |duration| duration.as_nanos());
     let pid = std::process::id();
     path.with_extension(format!("json.tmp.{pid}.{nanos}"))
 }
@@ -137,9 +130,7 @@ mod tests {
     fn round_trip_serde() {
         let temp_dir = TempDir::new().unwrap();
         let path = temp_dir.path().join("settings.json");
-        let settings = FakeSettings {
-            name: "test".to_string(),
-        };
+        let settings = FakeSettings { name: "test".to_string() };
 
         save_to_path(&path, &settings).unwrap();
         let loaded: FakeSettings = load_or_create_at(&path);
@@ -192,14 +183,10 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let path = temp_dir.path().join("settings.json");
 
-        let first = FakeSettings {
-            name: "first".to_string(),
-        };
+        let first = FakeSettings { name: "first".to_string() };
         save_to_path(&path, &first).unwrap();
 
-        let second = FakeSettings {
-            name: "second".to_string(),
-        };
+        let second = FakeSettings { name: "second".to_string() };
         save_to_path(&path, &second).unwrap();
 
         let loaded: FakeSettings = load_or_create_at(&path);
@@ -221,9 +208,7 @@ mod tests {
         let settings: FakeSettings = store.load_or_create();
         assert_eq!(settings, FakeSettings::default());
 
-        let updated = FakeSettings {
-            name: "updated".to_string(),
-        };
+        let updated = FakeSettings { name: "updated".to_string() };
         store.save(&updated).unwrap();
 
         let loaded: FakeSettings = store.load_or_create();

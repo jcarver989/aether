@@ -58,14 +58,8 @@ fn make_multi_select_menu() -> SettingsMenu {
 
 fn make_server_statuses() -> Vec<McpServerStatusEntry> {
     vec![
-        McpServerStatusEntry {
-            name: "github".to_string(),
-            status: McpServerStatus::Connected { tool_count: 5 },
-        },
-        McpServerStatusEntry {
-            name: "linear".to_string(),
-            status: McpServerStatus::NeedsOAuth,
-        },
+        McpServerStatusEntry { name: "github".to_string(), status: McpServerStatus::Connected { tool_count: 5 } },
+        McpServerStatusEntry { name: "linear".to_string(), status: McpServerStatus::NeedsOAuth },
     ]
 }
 
@@ -98,10 +92,7 @@ fn make_auth_methods() -> Vec<acp::AuthMethod> {
 
 /// Helper to create a ConfigOverlay with the server status overlay open.
 /// Replaces the old `with_server_overlay()` test-only method.
-async fn open_server_overlay(
-    mut menu: SettingsMenu,
-    statuses: Vec<McpServerStatusEntry>,
-) -> SettingsOverlay {
+async fn open_server_overlay(mut menu: SettingsMenu, statuses: Vec<McpServerStatusEntry>) -> SettingsOverlay {
     menu.add_mcp_servers_entry("1 connected, 1 needs auth");
     let mut overlay = SettingsOverlay::new(menu, statuses, vec![]);
     // Navigate past provider (0) and model (1) to MCP servers (2)
@@ -167,16 +158,10 @@ fn selected_entry_has_bg_color() {
     let ctx = ViewContext::new((80, 24));
     let term = render_component(|c| overlay.render(c), 80, 24);
     let output = term.get_lines();
-    let row = output
-        .iter()
-        .position(|l| l.contains("Provider: OpenRouter"))
-        .expect("expected provider row to be rendered");
+    let row =
+        output.iter().position(|l| l.contains("Provider: OpenRouter")).expect("expected provider row to be rendered");
     let style = term.style_of_text(row, "Provider: OpenRouter").unwrap();
-    assert_eq!(
-        style.bg,
-        Some(ctx.theme.highlight_bg()),
-        "selected entry should have highlight_bg"
-    );
+    assert_eq!(style.bg, Some(ctx.theme.highlight_bg()), "selected entry should have highlight_bg");
 }
 
 #[test]
@@ -233,14 +218,8 @@ async fn render_server_overlay_hides_top_level_rows() {
     let lines = render_plain_text(&mut overlay);
     let text = lines.join("\n");
 
-    assert!(
-        text.contains("github  \u{2713} 5 tools"),
-        "rendered:\n{text}"
-    );
-    assert!(
-        text.contains("linear  \u{26A1} needs authentication"),
-        "rendered:\n{text}"
-    );
+    assert!(text.contains("github  \u{2713} 5 tools"), "rendered:\n{text}");
+    assert!(text.contains("linear  \u{26A1} needs authentication"), "rendered:\n{text}");
     assert!(!text.contains("Provider: OpenRouter"), "rendered:\n{text}");
     assert!(!text.contains("Model: GPT-4o"), "rendered:\n{text}");
     assert!(text.contains("[Enter] Authenticate"), "rendered:\n{text}");
@@ -260,14 +239,8 @@ async fn render_provider_login_overlay_hides_top_level_rows() {
     let lines = render_plain_text(&mut overlay);
     let text = lines.join("\n");
 
-    assert!(
-        text.contains("Anthropic  \u{26A1} needs login"),
-        "rendered:\n{text}"
-    );
-    assert!(
-        text.contains("OpenRouter  \u{26A1} needs login"),
-        "rendered:\n{text}"
-    );
+    assert!(text.contains("Anthropic  \u{26A1} needs login"), "rendered:\n{text}");
+    assert!(text.contains("OpenRouter  \u{26A1} needs login"), "rendered:\n{text}");
     assert!(!text.contains("Provider: OpenRouter"), "rendered:\n{text}");
     assert!(!text.contains("Model: GPT-4o"), "rendered:\n{text}");
     assert!(text.contains("[Enter] Authenticate"), "rendered:\n{text}");
@@ -323,11 +296,7 @@ fn update_settings_options_never_renders_reasoning_row() {
     // Rendered lines do not contain Reasoning Effort
     let term = render_component(|ctx| overlay.render(ctx), 80, 24);
     let text = term.get_lines().join("\n");
-    assert!(
-        !text.contains("Reasoning Effort"),
-        "Reasoning Effort should NOT appear initially; got:\n{}",
-        text
-    );
+    assert!(!text.contains("Reasoning Effort"), "Reasoning Effort should NOT appear initially; got:\n{}", text);
 
     // After update to model-only options, still no Reasoning Effort
     let updated_options = vec![agent_client_protocol::SessionConfigOption::select(
@@ -343,11 +312,7 @@ fn update_settings_options_never_renders_reasoning_row() {
 
     let term = render_component(|ctx| overlay.render(ctx), 80, 24);
     let text = term.get_lines().join("\n");
-    assert!(
-        !text.contains("Reasoning Effort"),
-        "Reasoning Effort should NOT appear after update; got:\n{}",
-        text
-    );
+    assert!(!text.contains("Reasoning Effort"), "Reasoning Effort should NOT appear after update; got:\n{}", text);
 }
 
 #[tokio::test]
@@ -367,15 +332,9 @@ async fn footer_shows_toggle_when_model_selector_open() {
 #[tokio::test]
 async fn tall_terminal_shows_more_picker_items() {
     // Create a menu with many model options
-    let many_models: Vec<SessionConfigSelectOption> = (0..20)
-        .map(|i| SessionConfigSelectOption::new(format!("model-{i}"), format!("Model {i}")))
-        .collect();
-    let options = vec![agent_client_protocol::SessionConfigOption::select(
-        "model",
-        "Model",
-        "model-0",
-        many_models,
-    )];
+    let many_models: Vec<SessionConfigSelectOption> =
+        (0..20).map(|i| SessionConfigSelectOption::new(format!("model-{i}"), format!("Model {i}"))).collect();
+    let options = vec![agent_client_protocol::SessionConfigOption::select("model", "Model", "model-0", many_models)];
     let menu = SettingsMenu::from_config_options(&options);
     let mut overlay = SettingsOverlay::new(menu, vec![], vec![]);
     overlay.on_event(&Event::Key(key(KeyCode::Enter))).await; // open picker
@@ -422,8 +381,5 @@ async fn multi_select_entry_opens_model_selector() {
     overlay.on_event(&Event::Key(key(KeyCode::Enter))).await;
 
     let footer = render_footer(&mut overlay);
-    assert!(
-        footer.contains("Toggle"),
-        "expected model selector, got: {footer}"
-    );
+    assert!(footer.contains("Toggle"), "expected model selector, got: {footer}");
 }
