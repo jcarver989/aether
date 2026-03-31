@@ -1,7 +1,3 @@
-//! Test helpers for creating temporary projects (Cargo, Node).
-//!
-//! Gated behind the `testing` feature flag.
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -9,7 +5,7 @@ use tempfile::TempDir;
 
 use crate::uri::path_to_uri;
 
-/// Trait for temporary test projects that support adding files and generating URIs.
+#[doc = include_str!("docs/testing.md")]
 pub trait TestProject {
     fn root(&self) -> &Path;
 

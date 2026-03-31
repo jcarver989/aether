@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::io;
 use std::path::PathBuf;
 
-/// Top-level daemon request
+#[doc = include_str!("docs/protocol.md")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DaemonRequest {
     Initialize(InitializeRequest),

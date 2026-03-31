@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::LazyLock;
 
-/// Language identifier for LSP
+#[doc = include_str!("docs/language_catalog.md")]
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum LanguageId {
     Rust,

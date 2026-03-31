@@ -15,7 +15,7 @@ use tokio::sync::{RwLock, oneshot};
 use tokio::time::sleep;
 use uuid::Uuid;
 
-/// Stateful daemon runtime.
+#[doc = include_str!("docs/daemon.md")]
 pub struct LspDaemon {
     socket_path: PathBuf,
     idle_timeout: Option<Duration>,

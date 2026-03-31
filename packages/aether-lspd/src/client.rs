@@ -28,6 +28,7 @@ use crate::language_catalog::LanguageId;
 use crate::protocol::{DaemonRequest, DaemonResponse, InitializeRequest, read_frame, write_frame};
 use crate::socket_path::{ensure_socket_dir, log_file_path};
 
+#[doc = include_str!("docs/client_error.md")]
 #[derive(Debug, Error)]
 pub enum ClientError {
     #[error("Failed to connect to daemon: {0}")]
@@ -60,6 +61,7 @@ pub enum ClientError {
 
 pub type ClientResult<T> = std::result::Result<T, ClientError>;
 
+#[doc = include_str!("docs/client.md")]
 pub struct LspClient {
     writer: Mutex<WriteHalf<UnixStream>>,
     pending: Arc<Mutex<HashMap<i64, oneshot::Sender<PendingResult>>>>,
