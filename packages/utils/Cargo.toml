@@ -9,6 +9,9 @@ readme = "README.md"
 keywords = ["aether", "utilities"]
 categories = ["development-tools"]
 
+[package.metadata.dist]
+dist = false
+
 [lib]
 name = "utils"
 path = "src/lib.rs"

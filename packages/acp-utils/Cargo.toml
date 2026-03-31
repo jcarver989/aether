@@ -9,6 +9,9 @@ readme = "README.md"
 keywords = ["acp", "aether", "agent", "protocol"]
 categories = ["api-bindings", "asynchronous"]
 
+[package.metadata.dist]
+dist = false
+
 [lib]
 name = "acp_utils"
 path = "src/lib.rs"

@@ -9,6 +9,9 @@ readme = "README.md"
 keywords = ["llm", "ai", "aether", "openai", "anthropic"]
 categories = ["api-bindings", "asynchronous"]
 
+[package.metadata.dist]
+dist = false
+
 [lib]
 name = "llm"
 path = "src/lib.rs"

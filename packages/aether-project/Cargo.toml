@@ -9,6 +9,9 @@ readme = "README.md"
 keywords = ["aether", "agent", "configuration"]
 categories = ["development-tools"]
 
+[package.metadata.dist]
+dist = false
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]

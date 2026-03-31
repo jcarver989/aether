@@ -9,6 +9,9 @@ readme = "README.md"
 keywords = ["aether", "llm", "codegen"]
 categories = ["development-tools"]
 
+[package.metadata.dist]
+dist = false
+
 [lib]
 name = "llm_codegen"
 path = "src/lib.rs"
