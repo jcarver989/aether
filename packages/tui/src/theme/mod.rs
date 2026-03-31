@@ -25,10 +25,7 @@ impl std::error::Error for ThemeBuildError {}
 #[cfg(feature = "syntax")]
 mod syntax;
 
-/// Full resolved theme for TUI rendering.
-///
-/// Owns the semantic color palette used throughout the UI and, when enabled,
-/// the cached syntax-highlighting theme.
+#[doc = include_str!("../docs/theme.md")]
 #[derive(Clone, Debug)]
 pub struct Theme {
     // Base colors

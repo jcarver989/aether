@@ -1,6 +1,6 @@
 use crossterm::style::Color;
 
-/// Text styling: foreground/background colors and attributes (bold, italic, etc.).
+#[doc = include_str!("../docs/style.md")]
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Style {

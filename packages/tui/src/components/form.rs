@@ -17,10 +17,7 @@ pub enum FormMessage {
     Submit,
 }
 
-/// A multi-field form rendered as a tabbed pane.
-///
-/// Each field gets its own full pane with a tab bar at the top for navigation.
-/// A virtual "Submit" tab follows all field tabs.
+#[doc = include_str!("../docs/form.md")]
 pub struct Form {
     pub message: String,
     pub fields: Vec<FormField>,

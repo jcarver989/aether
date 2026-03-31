@@ -1,3 +1,5 @@
+#![doc = include_str!("../docs/testing.md")]
+
 mod helpers;
 mod test_terminal;
 
