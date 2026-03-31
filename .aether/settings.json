@@ -1,5 +1,5 @@
 {
-  "prompts": ["SYSTEM.md", "AGENTS.md"],
+  "prompts": [".aether/SYSTEM.md", "AGENTS.md"],
   "agents": [
     {
       "name": "Frontier",
@@ -7,8 +7,7 @@
       "model": "codex:gpt-5.4",
       "reasoningEffort": "high",
       "userInvocable": true,
-      "agentInvocable": false,
-      "prompts": []
+      "agentInvocable": false
     },
     {
       "name": "Builder",
@@ -16,17 +15,15 @@
       "model": "codex:gpt-5.3-codex",
       "reasoningEffort": "high",
       "userInvocable": true,
-      "agentInvocable": false,
-      "prompts": []
+      "agentInvocable": false
     },
     {
-      "name": "Smart",
+      "name": "Cheap",
       "description": "ZAI GLM-5 with high reasoning",
       "model": "zai:glm-5.1",
       "reasoningEffort": "high",
       "userInvocable": true,
-      "agentInvocable": false,
-      "prompts": []
+      "agentInvocable": false
     },
     {
       "name": "Fast",
@@ -34,17 +31,7 @@
       "model": "openrouter:minimax/minimax-m2.7",
       "reasoningEffort": "high",
       "userInvocable": true,
-      "agentInvocable": false,
-      "prompts": []
-    },
-    {
-      "name": "Alloy",
-      "description": "Alloy of ZAI GLM-5 and Moonshot Kimi K2.5",
-      "model": "zai:glm-5,moonshot:kimi-k2.5",
-      "reasoningEffort": "high",
-      "userInvocable": true,
-      "agentInvocable": false,
-      "prompts": []
+      "agentInvocable": false
     },
     {
       "name": "Local",
@@ -54,7 +41,7 @@
       "agentInvocable": false
     },
     {
-      "name": "codebase-explorer",
+      "name": "Explorer",
       "description": "Explores codebases to find relevant files, patterns, and integration points",
       "model": "zai:glm-4.7",
       "userInvocable": false,
