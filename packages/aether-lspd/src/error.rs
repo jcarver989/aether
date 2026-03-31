@@ -1,7 +1,7 @@
 use std::io;
 use thiserror::Error;
 
-/// Errors that can occur in the daemon (server-side)
+#[doc = include_str!("docs/daemon_error.md")]
 #[derive(Debug, Error)]
 pub enum DaemonError {
     /// IO error

@@ -2,19 +2,7 @@ use crate::language_catalog::LanguageId;
 use crate::language_catalog::socket_identity_for_language;
 use std::path::{Path, PathBuf};
 
-/// Generate a deterministic socket path for a given workspace and language
-///
-/// The socket path is derived from:
-/// - The canonical workspace root path
-/// - The language identifier
-/// - The current user's UID (to avoid permission issues)
-///
-/// # Arguments
-/// * `workspace_root` - The root directory of the workspace
-/// * `language` - The language for the LSP
-///
-/// # Returns
-/// A path to the Unix domain socket for this workspace/language combination
+#[doc = include_str!("docs/socket_path.md")]
 pub fn socket_path(workspace_root: &Path, language: LanguageId) -> PathBuf {
     let socket_dir = get_socket_dir();
     let socket_name = generate_socket_name(workspace_root, language);
