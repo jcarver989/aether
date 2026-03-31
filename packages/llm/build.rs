@@ -22,7 +22,7 @@ fn main() {
 
     // Combine deepseek + moonshot + zai into a single doc for the openai_compatible module
     let mut combined = String::from(
-        "OpenAI-compatible LLM providers.\n\nShared infrastructure for providers whose APIs are compatible with the OpenAI chat completions format.\n\n",
+        "`OpenAI`-compatible LLM providers.\n\nShared infrastructure for providers whose APIs are compatible with the `OpenAI` chat completions format.\n\n",
     );
     for key in ["deepseek", "moonshotai", "zai"] {
         if let Some(doc) = output.provider_docs.get(key) {

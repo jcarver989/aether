@@ -184,8 +184,7 @@ fn split_diff_files(input: &str) -> Vec<&str> {
     while line_start < input.len() {
         let line_end = input[line_start..]
             .find('\n')
-            .map(|idx| line_start + idx + 1)
-            .unwrap_or(input.len());
+            .map_or(input.len(), |idx| line_start + idx + 1);
         let line = &input[line_start..line_end];
 
         if line.starts_with("diff --git ") {

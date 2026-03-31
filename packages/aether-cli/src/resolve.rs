@@ -13,19 +13,20 @@ pub fn resolve_agent_spec(
             .resolve(name, cwd)
             .map_err(|e| CliError::AgentError(e.to_string())),
 
-        None => match catalog.user_invocable().next() {
-            Some(first) => catalog
-                .resolve(&first.name, cwd)
-                .map_err(|e| CliError::AgentError(e.to_string())),
-
-            None => {
+        None => {
+            if let Some(first) = catalog.user_invocable().next() {
+                catalog
+                    .resolve(&first.name, cwd)
+                    .map_err(|e| CliError::AgentError(e.to_string()))
+            } else {
                 let model = "anthropic:claude-sonnet-4-5"
                     .parse()
                     .map_err(|e: String| CliError::ModelError(e))?;
 
                 Ok(catalog.resolve_default(&model, None, cwd))
             }
-        },
+        }
+
     }
 }
 

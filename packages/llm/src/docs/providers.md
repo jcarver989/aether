@@ -7,18 +7,18 @@ Each submodule implements [`StreamingModelProvider`](crate::StreamingModelProvid
 | Module | Provider | Env var | Feature flag |
 |--------|----------|---------|-------------|
 | [`anthropic`] | Anthropic (Claude) | `ANTHROPIC_API_KEY` | -- |
-| [`openai`] | OpenAI (GPT) | `OPENAI_API_KEY` | -- |
-| [`openrouter`] | OpenRouter | `OPENROUTER_API_KEY` | -- |
+| [`openai`] | `OpenAI` (GPT) | `OPENAI_API_KEY` | -- |
+| [`openrouter`] | `OpenRouter` | `OPENROUTER_API_KEY` | -- |
 | [`gemini`] | Google Gemini | `GEMINI_API_KEY` | -- |
 | [`local::ollama`] | Ollama | -- (local) | -- |
 | [`local::llama_cpp`] | llama.cpp | -- (local) | -- |
-| [`openai_compatible`] | DeepSeek, ZAI, Moonshot | varies | -- |
+| [`openai_compatible`] | `DeepSeek`, ZAI, Moonshot | varies | -- |
 | [`bedrock`] | AWS Bedrock | AWS credentials | `bedrock` |
-| [`codex`] | OpenAI Codex (OAuth) | -- (OAuth) | `codex` |
+| [`codex`] | `OpenAI` Codex (OAuth) | -- (OAuth) | `codex` |
 
 # OpenAI-compatible providers
 
-The [`openai_compatible`] module provides a shared [`GenericOpenAiProvider`](openai_compatible::generic::GenericOpenAiProvider) that works with any OpenAI-compatible API. DeepSeek, ZAI, and Moonshot use this with pre-configured [`ProviderConfig`](openai_compatible::generic::ProviderConfig) constants.
+The [`openai_compatible`] module provides a shared [`GenericOpenAiProvider`](openai_compatible::generic::GenericOpenAiProvider) that works with any `OpenAI`-compatible API. `DeepSeek`, ZAI, and Moonshot use this with pre-configured [`ProviderConfig`](openai_compatible::generic::ProviderConfig) constants.
 
 # Adding a new provider
 

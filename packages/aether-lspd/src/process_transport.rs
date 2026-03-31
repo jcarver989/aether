@@ -184,13 +184,13 @@ impl ProcessTransportActor {
                 let id = self.next_id;
                 self.next_id += 1;
                 self.pending.insert(id, request.response_tx);
-                if let Err(err) = self.send_request(id, &request.method, request.params).await {
-                    if let Some(tx) = self.pending.remove(&id) {
-                        let _ = tx.send(Err(LspErrorResponse {
-                            code: -1,
-                            message: err.to_string(),
-                        }));
-                    }
+                if let Err(err) = self.send_request(id, &request.method, request.params).await
+                    && let Some(tx) = self.pending.remove(&id)
+                {
+                    let _ = tx.send(Err(LspErrorResponse {
+                        code: -1,
+                        message: err.to_string(),
+                    }));
                 }
                 true
             }
@@ -296,10 +296,10 @@ impl ProcessTransportActor {
                 let params = message.get("params").cloned().unwrap_or(Value::Null);
                 match method {
                     RegisterCapability::METHOD => {
-                        self.handle_register_capability(&id, &params).await
+                        self.handle_register_capability(&id, &params).await;
                     }
                     UnregisterCapability::METHOD => {
-                        self.handle_unregister_capability(&id, &params).await
+                        self.handle_unregister_capability(&id, &params).await;
                     }
                     WorkDoneProgressCreate::METHOD => {
                         let _ = self.send_ok_response(&id).await;
