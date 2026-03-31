@@ -41,10 +41,7 @@ impl LspMcpArgs {
     }
 }
 
-/// MCP server that exposes LSP-based code intelligence tools.
-///
-/// Provides language-aware symbol lookup, document structure, diagnostics,
-/// and call hierarchy — without bundling file I/O tools.
+#[doc = include_str!("../docs/lsp_mcp.md")]
 pub struct LspMcp {
     tool_router: ToolRouter<Self>,
     lsp: Arc<LspRegistry>,

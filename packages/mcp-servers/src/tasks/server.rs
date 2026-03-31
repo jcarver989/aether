@@ -39,14 +39,7 @@ impl TasksMcpArgs {
     }
 }
 
-/// MCP server for task management in deep research agent workflows.
-///
-/// Provides tools for creating, listing, and updating tasks organized into
-/// hierarchical trees with dependency tracking.
-///
-/// By default, tasks are session-scoped: stored in a temporary directory that
-/// is automatically cleaned up when this server is dropped. Use
-/// [`TasksMcp::new_persistent`] or `--dir` to opt into cross-session storage.
+#[doc = include_str!("../docs/tasks_mcp.md")]
 #[derive(Debug)]
 pub struct TasksMcp {
     task_store: Mutex<TaskStore>,

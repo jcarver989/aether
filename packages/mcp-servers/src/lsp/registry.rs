@@ -36,7 +36,7 @@ use lsp_types::Diagnostic;
 use super::common::{find_symbol_column, path_to_uri, uri_to_path};
 use super::error::LspError;
 
-/// Registry that manages LSP daemon clients, connecting lazily on demand
+#[doc = include_str!("../docs/lsp_registry.md")]
 pub struct LspRegistry {
     /// Active daemon clients keyed by the daemon socket path they share.
     clients: RwLock<HashMap<PathBuf, Arc<LspClient>>>,

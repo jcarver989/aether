@@ -3,7 +3,7 @@
 use aether_lspd::ClientError;
 use thiserror::Error;
 
-/// Errors that can occur during LSP operations
+#[doc = include_str!("../docs/lsp_error.md")]
 #[derive(Debug, Error)]
 pub enum LspError {
     /// I/O error (e.g., reading a file)

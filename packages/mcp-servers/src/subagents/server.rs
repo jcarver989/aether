@@ -38,6 +38,7 @@ impl SubAgentsMcpArgs {
     }
 }
 
+#[doc = include_str!("../docs/subagents_mcp.md")]
 #[derive(Clone)]
 pub struct SubAgentsMcp {
     catalog: AgentCatalog,

@@ -1,18 +1,4 @@
-//! Tasks MCP server for deep research agent workflows.
-//!
-//! This module provides a standalone MCP server for task management with support for:
-//! - Hierarchical task trees (root tasks with subtasks)
-//! - Dependency tracking between tasks
-//! - Multi-agent coordination via assignees
-//! - Git-friendly JSONL file storage
-//!
-//! # Usage
-//!
-//! ```rust,ignore
-//! use mcp_tasks::{TasksMcp, ServiceExt};
-//!
-//! let server = TasksMcp::new(".".into()).into_dyn();
-//! ```
+#![doc = include_str!("../docs/tasks_module.md")]
 
 mod server;
 mod task_index;

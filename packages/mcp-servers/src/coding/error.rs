@@ -5,7 +5,7 @@
 
 use thiserror::Error;
 
-/// Top-level error type for all coding tool operations
+#[doc = include_str!("../docs/coding_error.md")]
 #[derive(Debug, Error)]
 pub enum CodingError {
     /// File operation errors (read, write, edit)
