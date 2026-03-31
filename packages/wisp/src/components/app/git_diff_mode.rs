@@ -109,25 +109,19 @@ impl GitDiffViewState {
     }
 
     pub(crate) fn max_patch_scroll(&self) -> usize {
-        if let Some(file) = self.selected_file() {
-            let total_lines = self
-                .cached_patch_lines
-                .len()
-                .max(file.hunks.iter().map(|h| h.lines.len()).sum::<usize>() + file.hunks.len().saturating_sub(1));
-            return total_lines.saturating_sub(1);
-        }
-        0
+        self.cached_patch_lines.len().saturating_sub(1)
     }
 
     pub(crate) fn selected_hunk_offsets(&self) -> Vec<usize> {
-        let Some(file) = self.selected_file() else {
-            return Vec::new();
-        };
-        let mut offsets = Vec::with_capacity(file.hunks.len());
-        let mut offset = 0;
-        for hunk in &file.hunks {
-            offsets.push(offset);
-            offset += hunk.lines.len() + 1;
+        let mut offsets = Vec::new();
+        let mut last_hunk: Option<usize> = None;
+        for (i, r) in self.cached_patch_line_refs.iter().enumerate() {
+            if let Some(pl_ref) = r {
+                if last_hunk != Some(pl_ref.hunk_index) {
+                    offsets.push(i);
+                    last_hunk = Some(pl_ref.hunk_index);
+                }
+            }
         }
         offsets
     }
