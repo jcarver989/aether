@@ -1,3 +1,5 @@
+#![doc = include_str!("../docs/oauth.md")]
+
 pub mod browser;
 pub mod credential_store;
 pub mod error;

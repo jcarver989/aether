@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// Definition of a tool available to the LLM
+#[doc = include_str!("docs/tools.md")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolDefinition {
     pub name: String,

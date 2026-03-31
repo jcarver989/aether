@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::ToolCallRequest;
 
+#[doc = include_str!("docs/stop_reason.md")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StopReason {
@@ -14,6 +15,7 @@ pub enum StopReason {
     Unknown(String),
 }
 
+#[doc = include_str!("docs/llm_response.md")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum LlmResponse {

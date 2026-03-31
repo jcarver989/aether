@@ -1,3 +1,5 @@
+#![doc = include_str!("../docs/catalog.md")]
+
 use crate::providers::local::discovery::discover_local_models;
 
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));

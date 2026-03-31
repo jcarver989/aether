@@ -7,6 +7,7 @@ use crate::types::IsoString;
 
 use super::{ChatMessage, ToolDefinition};
 
+#[doc = include_str!("docs/context.md")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Context {
     messages: Vec<ChatMessage>,

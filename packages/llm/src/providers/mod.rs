@@ -1,3 +1,5 @@
+#![doc = include_str!("../docs/providers.md")]
+
 pub mod anthropic;
 #[cfg(feature = "bedrock")]
 pub mod bedrock;

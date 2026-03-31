@@ -1,0 +1,34 @@
+A streaming response event from an LLM provider.
+
+Providers return an [`LlmResponseStream`](crate::LlmResponseStream) that yields a sequence of these events as the model generates its response. The stream follows a defined lifecycle:
+
+```text
+Start -> (Text | Reasoning | EncryptedReasoning | ToolRequest*)* -> Usage -> Done
+```
+
+# Text generation
+
+- **`Start`** -- Stream opened, contains the `message_id`.
+- **`Text`** -- A chunk of generated text.
+- **`Reasoning`** -- A chunk of the model's chain-of-thought reasoning (visible summary).
+- **`EncryptedReasoning`** -- Opaque encrypted reasoning content (model-specific, can be replayed to the same model in future turns).
+
+# Tool calling
+
+Tool calls are streamed in three phases:
+
+1. **`ToolRequestStart`** -- The model begins a tool call (`id` + `name`).
+2. **`ToolRequestArg`** -- Argument JSON arrives in chunks (same `id`).
+3. **`ToolRequestComplete`** -- The fully assembled [`ToolCallRequest`] is ready to execute.
+
+Multiple tool calls can be interleaved in a single response.
+
+# Completion
+
+- **`Usage`** -- Token usage statistics (`input_tokens`, `output_tokens`, optional `cached_input_tokens`).
+- **`Done`** -- Stream complete, with an optional [`StopReason`].
+- **`Error`** -- An error occurred during generation.
+
+# Convenience constructors
+
+Each variant has a corresponding constructor method (e.g. [`LlmResponse::text("chunk")`](LlmResponse::text), [`LlmResponse::done()`](LlmResponse::done)) to simplify test fixture construction.
