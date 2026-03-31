@@ -399,6 +399,7 @@ fn render_patch_cell(
             FileStatus::Added => "new file",
             FileStatus::Deleted => "deleted",
             FileStatus::Renamed => "renamed",
+            FileStatus::Untracked => "untracked",
         };
         let full_header = format!("{header_text}  ({status_label})");
         let truncated = truncate_text(&full_header, right_width);
