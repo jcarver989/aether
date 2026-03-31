@@ -34,6 +34,7 @@ pub mod testing;
 // Core re-exports - always available
 pub use components::checkbox::Checkbox;
 pub use components::form::{Form, FormField, FormFieldKind, FormMessage};
+pub use components::gallery::{Gallery, GalleryMessage};
 pub use components::layout::Layout;
 pub use components::multi_select::MultiSelect;
 pub use components::number_field::NumberField;
@@ -47,6 +48,7 @@ pub use components::text_field::TextField;
 pub use components::{Component, Cursor, Event, PickerMessage, ViewContext, merge, wrap_selection};
 pub use diffs::diff_types::{DiffLine, DiffPreview, DiffTag, SplitDiffCell, SplitDiffRow};
 pub use focus::{FocusOutcome, FocusRing};
+pub use rendering::columns::side_by_side;
 pub use rendering::frame::Frame;
 pub use rendering::line::Line;
 pub use rendering::style::Style;
