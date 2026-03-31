@@ -1,6 +1,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+#[doc = include_str!("docs/git_diff_document.md")]
 #[allow(dead_code)]
 pub struct GitDiffDocument {
     pub repo_root: PathBuf,
@@ -49,6 +50,7 @@ pub enum PatchLineKind {
     Meta,
 }
 
+#[doc = include_str!("docs/git_diff_error.md")]
 #[derive(Debug)]
 pub enum GitDiffError {
     NotARepository,

@@ -7,6 +7,7 @@ use agent_client_protocol::{
 use tui::{Color, Line, ViewContext, display_width_text};
 use utils::ReasoningEffort;
 
+#[doc = include_str!("../docs/status_line.md")]
 pub struct StatusLine<'a> {
     pub agent_name: &'a str,
     pub config_options: &'a [SessionConfigOption],

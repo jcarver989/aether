@@ -30,6 +30,7 @@ pub(crate) enum Modal {
     SessionPicker(SessionPicker),
 }
 
+#[doc = include_str!("../docs/conversation_screen.md")]
 pub struct ConversationScreen {
     pub(crate) conversation: ConversationBuffer,
     pub tool_call_statuses: ToolCallStatuses,

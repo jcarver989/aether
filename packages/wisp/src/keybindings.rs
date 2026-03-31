@@ -1,5 +1,6 @@
 use tui::{KeyCode, KeyEvent, KeyModifiers};
 
+#[doc = include_str!("docs/key_binding.md")]
 #[derive(Clone, Debug)]
 pub struct KeyBinding {
     pub code: KeyCode,
@@ -23,6 +24,7 @@ impl KeyBinding {
     }
 }
 
+#[doc = include_str!("docs/keybindings.md")]
 #[derive(Clone, Debug)]
 pub struct Keybindings {
     pub exit: KeyBinding,

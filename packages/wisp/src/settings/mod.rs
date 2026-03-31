@@ -1,3 +1,5 @@
+#![doc = include_str!("../docs/settings_module.md")]
+
 pub mod menu;
 pub mod overlay;
 pub(crate) mod picker;
@@ -15,6 +17,7 @@ use tracing::warn;
 #[cfg(test)]
 pub(crate) static WISP_HOME_ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+#[doc = include_str!("../docs/wisp_settings.md")]
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct WispSettings {
