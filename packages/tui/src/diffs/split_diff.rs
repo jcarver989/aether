@@ -429,5 +429,4 @@ mod tests {
             "should have blank gutter: {text:?}"
         );
     }
-
 }

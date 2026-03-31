@@ -250,15 +250,18 @@ fn build_provider_models(data: &ModelsDevData) -> Result<ProviderModels, String>
             .get(json_key)
             .ok_or_else(|| format!("Provider '{json_key}' not found in models.dev data"))?;
 
-        let mut models: Vec<ModelInfo> =
-            collect_models_from(cfg, &provider_data.models);
+        let mut models: Vec<ModelInfo> = collect_models_from(cfg, &provider_data.models);
 
         for &extra_key in cfg.extra_source_ids {
             if let Some(extra_data) = data.get(extra_key) {
                 let extra = collect_models_from(cfg, &extra_data.models);
                 let existing_ids: std::collections::HashSet<String> =
                     models.iter().map(|m| m.model_id.clone()).collect();
-                models.extend(extra.into_iter().filter(|m| !existing_ids.contains(&m.model_id)));
+                models.extend(
+                    extra
+                        .into_iter()
+                        .filter(|m| !existing_ids.contains(&m.model_id)),
+                );
             }
         }
 
@@ -269,7 +272,10 @@ fn build_provider_models(data: &ModelsDevData) -> Result<ProviderModels, String>
     Ok(provider_models)
 }
 
-fn collect_models_from(cfg: &ProviderConfig, models: &HashMap<String, ModelData>) -> Vec<ModelInfo> {
+fn collect_models_from(
+    cfg: &ProviderConfig,
+    models: &HashMap<String, ModelData>,
+) -> Vec<ModelInfo> {
     models
         .values()
         .filter(|m| m.tool_call == Some(true))
@@ -1048,7 +1054,10 @@ fn emit_provider_docs(ctx: &CodegenCtx) -> HashMap<String, String> {
                 pushln(&mut doc, "This provider uses OAuth authentication.");
             }
             None => {
-                pushln(&mut doc, "Uses the default AWS credential chain (environment variables, config files, IAM roles).");
+                pushln(
+                    &mut doc,
+                    "Uses the default AWS credential chain (environment variables, config files, IAM roles).",
+                );
             }
         }
         blank(&mut doc);
@@ -1096,10 +1105,7 @@ fn emit_provider_docs(ctx: &CodegenCtx) -> HashMap<String, String> {
     // Dynamic providers
     for dyn_cfg in DYNAMIC_PROVIDERS {
         let mut doc = String::new();
-        pushln(
-            &mut doc,
-            format!("{} LLM provider.", dyn_cfg.display_name),
-        );
+        pushln(&mut doc, format!("{} LLM provider.", dyn_cfg.display_name));
         blank(&mut doc);
         pushln(
             &mut doc,
@@ -1451,7 +1457,11 @@ mod tests {
         let root = data.as_object_mut().unwrap();
 
         // Add a model to the zai-coding-plan extra source that doesn't exist in zai
-        let extra = root.get_mut("zai-coding-plan").unwrap().as_object_mut().unwrap();
+        let extra = root
+            .get_mut("zai-coding-plan")
+            .unwrap()
+            .as_object_mut()
+            .unwrap();
         extra.insert(
             "models".to_string(),
             json!({
@@ -1487,7 +1497,11 @@ mod tests {
                 }
             }),
         );
-        let extra = root.get_mut("zai-coding-plan").unwrap().as_object_mut().unwrap();
+        let extra = root
+            .get_mut("zai-coding-plan")
+            .unwrap()
+            .as_object_mut()
+            .unwrap();
         extra.insert(
             "models".to_string(),
             json!({
@@ -1501,7 +1515,9 @@ mod tests {
         );
 
         let source = generate_from_value(&data);
-        let from_str_matches = source.matches("\"shared-model\" => Ok(Self::SharedModel),").count();
+        let from_str_matches = source
+            .matches("\"shared-model\" => Ok(Self::SharedModel),")
+            .count();
         assert_eq!(from_str_matches, 1);
     }
 

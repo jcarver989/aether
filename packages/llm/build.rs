@@ -21,7 +21,9 @@ fn main() {
     }
 
     // Combine deepseek + moonshot + zai into a single doc for the openai_compatible module
-    let mut combined = String::from("OpenAI-compatible LLM providers.\n\nShared infrastructure for providers whose APIs are compatible with the OpenAI chat completions format.\n\n");
+    let mut combined = String::from(
+        "OpenAI-compatible LLM providers.\n\nShared infrastructure for providers whose APIs are compatible with the OpenAI chat completions format.\n\n",
+    );
     for key in ["deepseek", "moonshotai", "zai"] {
         if let Some(doc) = output.provider_docs.get(key) {
             combined.push_str(doc);
@@ -31,7 +33,9 @@ fn main() {
     std::fs::write(docs_dir.join("openai_compatible.md"), combined).unwrap();
 
     // Combine ollama + llamacpp into a single doc for the local module
-    let mut local = String::from("Local LLM providers.\n\nProviders that run models on the local machine without requiring API keys.\n\n");
+    let mut local = String::from(
+        "Local LLM providers.\n\nProviders that run models on the local machine without requiring API keys.\n\n",
+    );
     for key in ["ollama", "llamacpp"] {
         if let Some(doc) = output.provider_docs.get(key) {
             local.push_str(doc);
