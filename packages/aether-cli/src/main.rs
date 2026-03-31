@@ -3,8 +3,8 @@ use std::process::ExitCode;
 use tokio::runtime::Runtime;
 
 use aether_cli::acp::{AcpArgs, run_acp};
+use aether_cli::agent::{AgentCommand, run_new};
 use aether_cli::headless::{HeadlessArgs, run_headless};
-use aether_cli::init::{InitArgs, run_init};
 use aether_cli::show_prompt::{PromptArgs, run_prompt};
 
 #[derive(Parser)]
@@ -27,8 +27,9 @@ enum Command {
     Acp(AcpArgs),
     /// Print the fully assembled system prompt (for debugging)
     ShowPrompt(PromptArgs),
-    /// Initialize a new Aether project
-    Init(InitArgs),
+    /// Manage agents
+    #[command(subcommand)]
+    Agent(AgentCommand),
 }
 
 fn main() -> ExitCode {
@@ -48,7 +49,9 @@ fn main() -> ExitCode {
             rt.block_on(run_prompt(args)).map(|()| ExitCode::SUCCESS).map_err(|e| e.to_string())
         }
 
-        Some(Command::Init(args)) => rt.block_on(run_init(args)).map(|()| ExitCode::SUCCESS).map_err(|e| e.to_string()),
+        Some(Command::Agent(AgentCommand::New(args))) => {
+            rt.block_on(run_new(args)).map(|()| ExitCode::SUCCESS).map_err(|e| e.to_string())
+        }
 
         None => rt.block_on(wisp::run_tui("aether acp")).map(|()| ExitCode::SUCCESS).map_err(|e| e.to_string()),
     };
