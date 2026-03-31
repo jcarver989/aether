@@ -7,6 +7,7 @@ use std::env::current_dir;
 use tokio::sync::mpsc;
 use tui::Theme;
 
+#[doc = include_str!("docs/runtime_state.md")]
 pub struct RuntimeState {
     pub session_id: acp::SessionId,
     pub agent_name: String,

@@ -1,7 +1,7 @@
 use acp_utils::client::AcpClientError;
 use std::fmt;
 
-/// Application-level errors for the Wisp TUI.
+#[doc = include_str!("docs/app_error.md")]
 #[derive(Debug)]
 pub enum AppError {
     Io(std::io::Error),

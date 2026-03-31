@@ -18,6 +18,7 @@ impl Searchable for CommandEntry {
     }
 }
 
+#[doc = include_str!("../docs/command_picker.md")]
 pub struct CommandPicker {
     combobox: Combobox<CommandEntry>,
 }

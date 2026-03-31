@@ -2,6 +2,7 @@ use crate::keybindings::Keybindings;
 use std::path::PathBuf;
 use tui::{Component, Event, Frame, KeyEvent, Line, TextField, ViewContext};
 
+#[doc = include_str!("../docs/text_input.md")]
 pub struct TextInput {
     field: TextField,
     mentions: Vec<SelectedFileMention>,

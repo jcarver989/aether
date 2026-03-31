@@ -17,6 +17,7 @@ struct Segment {
     content: SegmentContent,
 }
 
+#[doc = include_str!("../docs/conversation_window.md")]
 pub struct ConversationBuffer {
     segments: Vec<Segment>,
     thought_block_open: bool,

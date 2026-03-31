@@ -29,6 +29,7 @@ pub struct PromptAttachment {
     pub display_name: String,
 }
 
+#[doc = include_str!("../../docs/app.md")]
 pub struct App {
     agent_name: String,
     context_usage_pct: Option<u8>,

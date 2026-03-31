@@ -5,6 +5,7 @@ use tui::{Combobox, Component, Event, Frame, Line, PickerMessage, Searchable, Vi
 
 const MAX_INDEXED_FILES: usize = 50_000;
 
+#[doc = include_str!("../docs/file_picker.md")]
 pub struct FilePicker {
     combobox: Combobox<FileMatch>,
 }

@@ -1,3 +1,5 @@
+#![doc = include_str!("../docs/components_module.md")]
+
 pub mod app;
 pub mod command_picker;
 pub(crate) mod context_bar;
