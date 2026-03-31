@@ -1,3 +1,5 @@
+#![doc = include_str!(concat!(env!("OUT_DIR"), "/docs/codex.md"))]
+
 pub mod mappers;
 pub mod oauth;
 pub mod provider;
