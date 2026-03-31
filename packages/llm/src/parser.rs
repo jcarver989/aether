@@ -15,9 +15,7 @@ use crate::providers::{
 };
 use crate::{LlmError, ProviderFactory, StreamingModelProvider, alloyed::AlloyedModelProvider};
 
-/// Parser that turns a provider:model string (e.g. anthropic:claude-sonnet-4.5) into
-/// a `StreamingLlmProvider`
-///
+#[doc = include_str!("docs/parser.md")]
 pub struct ModelProviderParser {
     factories: HashMap<String, CreateProviderFn>,
 }

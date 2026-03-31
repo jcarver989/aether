@@ -5,6 +5,7 @@ use crate::types::IsoString;
 
 use super::{ToolCallError, ToolCallRequest, ToolCallResult};
 
+#[doc = include_str!("docs/content_block.md")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ContentBlock {
@@ -62,6 +63,11 @@ impl ContentBlock {
     }
 }
 
+/// Opaque encrypted reasoning content from an LLM response.
+///
+/// This is model-specific: encrypted content from one model cannot be replayed
+/// to a different model. Use [`Context::filter_encrypted_reasoning`](crate::Context::filter_encrypted_reasoning)
+/// to strip content that doesn't match the target model.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EncryptedReasoningContent {
     pub id: String,
@@ -73,6 +79,10 @@ pub struct EncryptedReasoningContent {
     pub content: String,
 }
 
+/// Reasoning metadata from an assistant response.
+///
+/// Contains an optional human-readable summary and optional encrypted content
+/// that can be replayed to the same model in future turns.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct AssistantReasoning {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -95,6 +105,7 @@ impl AssistantReasoning {
     }
 }
 
+#[doc = include_str!("docs/chat_message.md")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ChatMessage {

@@ -14,6 +14,17 @@ Multi-provider LLM abstraction layer for the Aether AI agent framework.
 | Ollama | `ollama:llama3.2` | None (local) |
 | Llama.cpp | `llamacpp` | None (local) |
 
+## Documentation
+
+Full API documentation is available on [docs.rs](https://docs.rs/aether-llm).
+
+Key entry points:
+- [`StreamingModelProvider`] -- the core trait all providers implement
+- [`Context`] -- conversation state management
+- [`ChatMessage`] -- message types for building conversations
+- [`LlmResponse`] -- streaming response events
+- [`ModelProviderParser`](parser::ModelProviderParser) -- parse `"provider:model"` strings into providers
+
 ## Key Types
 
 - **`StreamingModelProvider`** -- Core trait for all LLM providers. Implement this to add a new provider.

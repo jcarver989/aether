@@ -47,6 +47,7 @@ impl fmt::Display for ContextOverflowError {
     }
 }
 
+#[doc = include_str!("docs/llm_error.md")]
 #[derive(Debug, Error, Clone)]
 pub enum LlmError {
     /// Environment variable not set or invalid

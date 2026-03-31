@@ -5,14 +5,15 @@ use tokio_stream::Stream;
 
 use super::{Context, LlmResponse};
 
-// We use Box<dyn> here instead of impl Stream primarily to support a nicer user-facing API for
-// alloyed models -- i.e. it allows us to have Vec<Box<dyn ModelProvider>> in AlloyedModelProvider
+/// A stream of [`LlmResponse`] events from an LLM provider.
+///
+/// This is a pinned, boxed, `Send` stream used as the return type of
+/// [`StreamingModelProvider::stream_response`]. Boxing is required to support
+/// trait objects (`Vec<Box<dyn StreamingModelProvider>>`) in types like
+/// [`AlloyedModelProvider`](crate::alloyed::AlloyedModelProvider).
 pub type LlmResponseStream = Pin<Box<dyn Stream<Item = LlmResult<LlmResponse>> + Send>>;
 
-/// Factory trait for constructing model providers
-///
-/// This trait is separate from `StreamingModelProvider` to allow trait objects
-/// (Box<dyn StreamingModelProvider>) to work without construction methods.
+#[doc = include_str!("docs/provider_factory.md")]
 pub trait ProviderFactory: Sized {
     /// Create provider from environment variables and default configuration
     fn from_env() -> super::Result<Self>;
@@ -21,6 +22,7 @@ pub trait ProviderFactory: Sized {
     fn with_model(self, model: &str) -> Self;
 }
 
+#[doc = include_str!("docs/streaming_model_provider.md")]
 pub trait StreamingModelProvider: Send + Sync {
     fn stream_response(&self, context: &Context) -> LlmResponseStream;
     fn display_name(&self) -> String;
