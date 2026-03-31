@@ -9,6 +9,9 @@ readme = "README.md"
 keywords = ["tui", "terminal", "cli", "ui", "component"]
 categories = ["command-line-interface"]
 
+[package.metadata.dist]
+dist = false
+
 [lib]
 name = "tui"
 path = "src/lib.rs"

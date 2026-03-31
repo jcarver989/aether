@@ -9,6 +9,9 @@ readme = "README.md"
 keywords = ["mcp", "aether", "agent", "tools"]
 categories = ["api-bindings", "asynchronous"]
 
+[package.metadata.dist]
+dist = false
+
 [lib]
 name = "mcp_utils"
 path = "src/lib.rs"

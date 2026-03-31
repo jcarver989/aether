@@ -9,6 +9,9 @@ readme = "README.md"
 keywords = ["tui", "ai", "agent", "acp", "terminal"]
 categories = ["command-line-interface"]
 
+[package.metadata.dist]
+dist = false
+
 [lib]
 name = "wisp"
 path = "src/lib.rs"

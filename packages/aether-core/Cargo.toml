@@ -9,6 +9,9 @@ readme = "README.md"
 keywords = ["ai", "agent", "mcp", "llm", "async"]
 categories = ["asynchronous", "api-bindings"]
 
+[package.metadata.dist]
+dist = false
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
