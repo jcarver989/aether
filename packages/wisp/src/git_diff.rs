@@ -22,6 +22,7 @@ pub enum FileStatus {
     Added,
     Deleted,
     Renamed,
+    Untracked,
 }
 
 #[allow(dead_code)]
@@ -77,6 +78,7 @@ impl FileStatus {
             Self::Added => 'A',
             Self::Deleted => 'D',
             Self::Renamed => 'R',
+            Self::Untracked => '?',
         }
     }
 }
@@ -99,13 +101,19 @@ pub(crate) async fn load_git_diff(
         Some(root) => root.to_path_buf(),
         None => resolve_repo_root(working_dir).await?,
     };
-    let diff_output = run_git_diff(&repo_root).await?;
+    let diff_output = run_git_command(&repo_root, &["diff", "--no-ext-diff", "--find-renames", "--unified=3", "HEAD"]).await?;
 
-    if diff_output.trim().is_empty() {
-        return Ok(GitDiffDocument { repo_root, files: Vec::new() });
+    let mut files = if diff_output.trim().is_empty() {
+        Vec::new()
+    } else {
+        parse_unified_diff(&diff_output)?
+    };
+
+    let untracked_stdout = run_git_command(&repo_root, &["ls-files", "--others", "--exclude-standard"]).await?;
+    for path in untracked_stdout.lines().filter(|l| !l.is_empty()).map(String::from) {
+        files.push(build_untracked_file_diff(&repo_root, path).await);
     }
 
-    let files = parse_unified_diff(&diff_output)?;
     Ok(GitDiffDocument { repo_root, files })
 }
 
@@ -130,9 +138,9 @@ async fn resolve_repo_root(working_dir: &Path) -> Result<PathBuf, GitDiffError> 
     Ok(PathBuf::from(root))
 }
 
-async fn run_git_diff(repo_root: &Path) -> Result<String, GitDiffError> {
+async fn run_git_command(repo_root: &Path, args: &[&str]) -> Result<String, GitDiffError> {
     let output = tokio::process::Command::new("git")
-        .args(["diff", "--no-ext-diff", "--find-renames", "--unified=3", "HEAD"])
+        .args(args)
         .current_dir(repo_root)
         .output()
         .await
@@ -144,6 +152,63 @@ async fn run_git_diff(repo_root: &Path) -> Result<String, GitDiffError> {
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+async fn build_untracked_file_diff(repo_root: &Path, relative_path: String) -> FileDiff {
+    let full_path = repo_root.join(&relative_path);
+    let Ok(bytes) = tokio::fs::read(&full_path).await else {
+        return binary_untracked(relative_path);
+    };
+
+    if bytes.iter().take(8192).any(|&b| b == 0) {
+        return binary_untracked(relative_path);
+    }
+
+    let Ok(content) = String::from_utf8(bytes) else {
+        return binary_untracked(relative_path);
+    };
+
+    let text_lines: Vec<&str> = content.lines().collect();
+    let line_count = text_lines.len();
+
+    let hunk_header = format!("@@ -0,0 +1,{line_count} @@");
+
+    let mut patch_lines = vec![PatchLine {
+        kind: PatchLineKind::HunkHeader,
+        text: hunk_header.clone(),
+        old_line_no: None,
+        new_line_no: None,
+    }];
+
+    for (i, line) in text_lines.iter().enumerate() {
+        patch_lines.push(PatchLine {
+            kind: PatchLineKind::Added,
+            text: line.to_string(),
+            old_line_no: None,
+            new_line_no: Some(i + 1),
+        });
+    }
+
+    let hunk = Hunk {
+        header: hunk_header,
+        old_start: 0,
+        old_count: 0,
+        new_start: 1,
+        new_count: line_count,
+        lines: patch_lines,
+    };
+
+    FileDiff {
+        old_path: None,
+        path: relative_path,
+        status: FileStatus::Untracked,
+        hunks: vec![hunk],
+        binary: false,
+    }
+}
+
+fn binary_untracked(path: String) -> FileDiff {
+    FileDiff { old_path: None, path, status: FileStatus::Untracked, hunks: Vec::new(), binary: true }
 }
 
 pub(crate) fn parse_unified_diff(input: &str) -> Result<Vec<FileDiff>, GitDiffError> {
@@ -235,7 +300,7 @@ fn parse_file_hunks(lines: &[&str]) -> Result<Vec<Hunk>, GitDiffError> {
 }
 
 fn resolve_old_path(status: FileStatus, rename_from: Option<String>, old_path: String) -> Option<String> {
-    if status == FileStatus::Added {
+    if status == FileStatus::Added || status == FileStatus::Untracked {
         None
     } else if status == FileStatus::Renamed {
         rename_from.or(Some(old_path))
@@ -617,5 +682,50 @@ index abc..def 100644
         assert_eq!(FileStatus::Added.marker(), 'A');
         assert_eq!(FileStatus::Deleted.marker(), 'D');
         assert_eq!(FileStatus::Renamed.marker(), 'R');
+        assert_eq!(FileStatus::Untracked.marker(), '?');
+    }
+
+    #[tokio::test]
+    async fn build_untracked_text_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("hello.txt");
+        std::fs::write(&file_path, "line one\nline two\nline three\n").unwrap();
+
+        let diff = build_untracked_file_diff(dir.path(), "hello.txt".to_string()).await;
+        assert_eq!(diff.path, "hello.txt");
+        assert!(diff.old_path.is_none());
+        assert_eq!(diff.status, FileStatus::Untracked);
+        assert!(!diff.binary);
+        assert_eq!(diff.hunks.len(), 1);
+        assert_eq!(diff.additions(), 3);
+        assert_eq!(diff.deletions(), 0);
+
+        let hunk = &diff.hunks[0];
+        assert_eq!(hunk.old_start, 0);
+        assert_eq!(hunk.old_count, 0);
+        assert_eq!(hunk.new_start, 1);
+        assert_eq!(hunk.new_count, 3);
+        assert_eq!(hunk.lines[1].new_line_no, Some(1));
+        assert_eq!(hunk.lines[1].text, "line one");
+    }
+
+    #[tokio::test]
+    async fn build_untracked_binary_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("image.bin");
+        std::fs::write(&file_path, b"PNG\x00\x00binary data").unwrap();
+
+        let diff = build_untracked_file_diff(dir.path(), "image.bin".to_string()).await;
+        assert_eq!(diff.status, FileStatus::Untracked);
+        assert!(diff.binary);
+        assert!(diff.hunks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn build_untracked_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let diff = build_untracked_file_diff(dir.path(), "does_not_exist.txt".to_string()).await;
+        assert!(diff.binary);
+        assert!(diff.hunks.is_empty());
     }
 }

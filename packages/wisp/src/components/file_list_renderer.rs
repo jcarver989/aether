@@ -96,9 +96,9 @@ fn row_style(is_selected: bool, theme: &tui::Theme) -> Style {
 
 fn push_status_marker(line: &mut Line, status: FileStatus, is_selected: bool, theme: &tui::Theme) {
     let status_color = match status {
-        FileStatus::Added => theme.diff_added_fg(),
         FileStatus::Deleted | FileStatus::Renamed => theme.diff_removed_fg(),
         FileStatus::Modified => theme.text_secondary(),
+        FileStatus::Added | FileStatus::Untracked => theme.diff_added_fg(),
     };
     line.push_with_style(
         format!("{} ", status.marker()),
