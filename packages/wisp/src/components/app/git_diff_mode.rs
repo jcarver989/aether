@@ -513,13 +513,7 @@ mod tests {
         mode
     }
 
-    fn comment(
-        file: &str,
-        line_text: &str,
-        line_number: usize,
-        kind: PatchLineKind,
-        comment: &str,
-    ) -> QueuedComment {
+    fn comment(file: &str, line_text: &str, line_number: usize, kind: PatchLineKind, comment: &str) -> QueuedComment {
         QueuedComment {
             file_path: file.to_string(),
             line_text: line_text.to_string(),
