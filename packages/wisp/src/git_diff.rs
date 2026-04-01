@@ -101,13 +101,10 @@ pub(crate) async fn load_git_diff(
         Some(root) => root.to_path_buf(),
         None => resolve_repo_root(working_dir).await?,
     };
-    let diff_output = run_git_command(&repo_root, &["diff", "--no-ext-diff", "--find-renames", "--unified=3", "HEAD"]).await?;
+    let diff_output =
+        run_git_command(&repo_root, &["diff", "--no-ext-diff", "--find-renames", "--unified=3", "HEAD"]).await?;
 
-    let mut files = if diff_output.trim().is_empty() {
-        Vec::new()
-    } else {
-        parse_unified_diff(&diff_output)?
-    };
+    let mut files = if diff_output.trim().is_empty() { Vec::new() } else { parse_unified_diff(&diff_output)? };
 
     let untracked_stdout = run_git_command(&repo_root, &["ls-files", "--others", "--exclude-standard"]).await?;
     for path in untracked_stdout.lines().filter(|l| !l.is_empty()).map(String::from) {
@@ -198,13 +195,7 @@ async fn build_untracked_file_diff(repo_root: &Path, relative_path: String) -> F
         lines: patch_lines,
     };
 
-    FileDiff {
-        old_path: None,
-        path: relative_path,
-        status: FileStatus::Untracked,
-        hunks: vec![hunk],
-        binary: false,
-    }
+    FileDiff { old_path: None, path: relative_path, status: FileStatus::Untracked, hunks: vec![hunk], binary: false }
 }
 
 fn binary_untracked(path: String) -> FileDiff {

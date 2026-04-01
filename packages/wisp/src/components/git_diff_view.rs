@@ -859,10 +859,7 @@ mod tests {
                         h2,
                         (10, 1),
                         (10, 1),
-                        vec![
-                            patch_line(HunkHeader, h2, None, None),
-                            patch_line(Context, "end", Some(10), Some(10)),
-                        ],
+                        vec![patch_line(HunkHeader, h2, None, None), patch_line(Context, "end", Some(10), Some(10))],
                     ),
                 ],
             )],

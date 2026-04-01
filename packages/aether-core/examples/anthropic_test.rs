@@ -44,7 +44,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("Max tokens: {}", args.max_tokens);
     println!("{}", "=".repeat(50));
 
-    let provider = AnthropicProvider::from_env().await?
+    let provider = AnthropicProvider::from_env()
+        .await?
         .with_model(&args.model)
         .with_temperature(args.temperature)
         .with_max_tokens(args.max_tokens);

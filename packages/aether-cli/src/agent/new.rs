@@ -178,10 +178,7 @@ fn format_provider_lines(statuses: &[ProviderStatus], theme: &Theme) -> Vec<Line
         lines.push(Line::new(String::new()));
         lines.push(Line::styled("  Not Configured".to_string(), dim));
         lines.push(Line::new(String::new()));
-        lines.push(Line::styled(
-            "  Set the environment variable to enable these providers.".to_string(),
-            dim,
-        ));
+        lines.push(Line::styled("  Set the environment variable to enable these providers.".to_string(), dim));
         lines.push(Line::new(String::new()));
 
         let header = format!("  {:<name_width$}  {}", "Provider", "Environment Variable");

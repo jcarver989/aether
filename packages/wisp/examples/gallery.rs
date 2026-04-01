@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use agent_client_protocol::{PlanEntry, PlanEntryPriority, PlanEntryStatus};
 use tui::{
-    Component, CrosstermEvent, Event, Frame, Gallery, GalleryMessage, Line, MouseCapture, Renderer,
-    TerminalSession, Theme, ViewContext, spawn_terminal_event_task, terminal_size,
+    Component, CrosstermEvent, Event, Frame, Gallery, GalleryMessage, Line, MouseCapture, Renderer, TerminalSession,
+    Theme, ViewContext, spawn_terminal_event_task, terminal_size,
 };
 use wisp::components::command_picker::{CommandEntry, CommandPicker};
 use wisp::components::file_picker::{FileMatch, FilePicker};
@@ -188,9 +188,7 @@ impl Component for PlanViewStory {
     }
 
     fn render(&mut self, ctx: &ViewContext) -> Frame {
-        let view = PlanView {
-            entries: &self.entries,
-        };
+        let view = PlanView { entries: &self.entries };
         Frame::new(view.render(ctx))
     }
 }
@@ -237,31 +235,11 @@ fn sample_commands() -> Vec<CommandEntry> {
 
 fn sample_plan_entries() -> Vec<PlanEntry> {
     vec![
-        PlanEntry::new(
-            "Research AI agent patterns",
-            PlanEntryPriority::Medium,
-            PlanEntryStatus::Completed,
-        ),
-        PlanEntry::new(
-            "Implement task tracking",
-            PlanEntryPriority::High,
-            PlanEntryStatus::Completed,
-        ),
-        PlanEntry::new(
-            "Build component gallery",
-            PlanEntryPriority::Medium,
-            PlanEntryStatus::InProgress,
-        ),
-        PlanEntry::new(
-            "Write integration tests",
-            PlanEntryPriority::Medium,
-            PlanEntryStatus::Pending,
-        ),
-        PlanEntry::new(
-            "Update documentation",
-            PlanEntryPriority::Low,
-            PlanEntryStatus::Pending,
-        ),
+        PlanEntry::new("Research AI agent patterns", PlanEntryPriority::Medium, PlanEntryStatus::Completed),
+        PlanEntry::new("Implement task tracking", PlanEntryPriority::High, PlanEntryStatus::Completed),
+        PlanEntry::new("Build component gallery", PlanEntryPriority::Medium, PlanEntryStatus::InProgress),
+        PlanEntry::new("Write integration tests", PlanEntryPriority::Medium, PlanEntryStatus::Pending),
+        PlanEntry::new("Update documentation", PlanEntryPriority::Low, PlanEntryStatus::Pending),
     ]
 }
 
