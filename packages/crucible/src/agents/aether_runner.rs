@@ -97,7 +97,7 @@ async fn stream_agent_messages(mut rx: Receiver<AgentMessage>, tx: Sender<AgentR
     while let Some(message) = rx.recv().await {
         match &message {
             AgentMessage::Text { chunk, is_complete, .. } => {
-                handle_text(chunk, *is_complete, &mut accumulated_text, &tx).await?
+                handle_text(chunk, *is_complete, &mut accumulated_text, &tx).await?;
             }
 
             AgentMessage::ToolCall { request, .. } => {
@@ -136,7 +136,7 @@ async fn stream_agent_messages(mut rx: Receiver<AgentMessage>, tx: Sender<AgentR
             }
 
             AgentMessage::ToolProgress { request, progress, total, message } => {
-                handle_tool_progress(request, *progress, *total, message.as_ref())
+                handle_tool_progress(request, *progress, *total, message.as_ref());
             }
 
             AgentMessage::Error { message: msg } => {

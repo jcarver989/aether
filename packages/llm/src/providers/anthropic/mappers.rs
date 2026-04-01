@@ -98,7 +98,7 @@ fn map_content_blocks(parts: &[ContentBlock]) -> Result<Content> {
     for p in parts {
         match p {
             ContentBlock::Text { text } => {
-                blocks.push(AnthropicContentBlock::Text { text: text.clone(), cache_control: None })
+                blocks.push(AnthropicContentBlock::Text { text: text.clone(), cache_control: None });
             }
             ContentBlock::Image { data, mime_type } => blocks.push(AnthropicContentBlock::Image {
                 source: ImageSource {

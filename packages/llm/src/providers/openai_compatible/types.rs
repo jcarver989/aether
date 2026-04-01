@@ -170,7 +170,7 @@ fn map_user_content(parts: &[ContentBlock]) -> crate::Result<UserContent> {
         match p {
             ContentBlock::Text { text } => items.push(UserContentPart::Text { text: text.clone() }),
             ContentBlock::Image { .. } => {
-                items.push(UserContentPart::ImageUrl { image_url: ImageUrlContent { url: p.as_data_uri().unwrap() } })
+                items.push(UserContentPart::ImageUrl { image_url: ImageUrlContent { url: p.as_data_uri().unwrap() } });
             }
             ContentBlock::Audio { .. } => {
                 return Err(crate::LlmError::UnsupportedContent("This provider does not support audio input".into()));

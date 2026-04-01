@@ -114,11 +114,11 @@ impl GitDiffViewState {
         let mut offsets = Vec::new();
         let mut last_hunk: Option<usize> = None;
         for (i, r) in self.cached_patch_line_refs.iter().enumerate() {
-            if let Some(pl_ref) = r {
-                if last_hunk != Some(pl_ref.hunk_index) {
-                    offsets.push(i);
-                    last_hunk = Some(pl_ref.hunk_index);
-                }
+            if let Some(pl_ref) = r
+                && last_hunk != Some(pl_ref.hunk_index)
+            {
+                offsets.push(i);
+                last_hunk = Some(pl_ref.hunk_index);
             }
         }
         offsets
