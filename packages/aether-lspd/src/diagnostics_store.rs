@@ -12,6 +12,7 @@ pub(crate) struct DiagnosticsStore {
     state: Arc<RwLock<HashMap<Uri, PublishDiagnosticsParams>>>,
     notify: Arc<Notify>,
     version: Arc<AtomicU64>,
+    uri_versions: Arc<RwLock<HashMap<Uri, u64>>>,
 }
 
 impl DiagnosticsStore {
@@ -20,13 +21,15 @@ impl DiagnosticsStore {
     }
 
     pub(crate) async fn publish(&self, diagnostics: PublishDiagnosticsParams) {
-        self.state.write().await.insert(diagnostics.uri.clone(), diagnostics);
-        self.version.fetch_add(1, Ordering::Relaxed);
+        let uri = diagnostics.uri.clone();
+        let version = self.version.fetch_add(1, Ordering::Relaxed) + 1;
+        self.state.write().await.insert(uri.clone(), diagnostics);
+        self.uri_versions.write().await.insert(uri, version);
         self.notify.notify_waiters();
     }
 
-    pub(crate) fn current_version(&self) -> u64 {
-        self.version.load(Ordering::Relaxed)
+    pub(crate) async fn current_uri_version(&self, uri: &Uri) -> u64 {
+        self.uri_versions.read().await.get(uri).copied().unwrap_or_default()
     }
 
     pub(crate) async fn get(&self, uri: Option<&Uri>) -> Vec<PublishDiagnosticsParams> {
@@ -44,16 +47,18 @@ impl DiagnosticsStore {
         }
 
         let mut state = self.state.write().await;
+        let mut uri_versions = self.uri_versions.write().await;
         for uri in uris {
             state.remove(uri);
+            uri_versions.remove(uri);
         }
     }
 
-    pub(crate) async fn wait_for_fresh(&self, version_before: u64, timeout: Duration) {
+    pub(crate) async fn wait_for_uri_fresh(&self, uri: &Uri, version_before: u64, timeout: Duration) {
         let deadline = tokio::time::Instant::now() + timeout;
 
         loop {
-            let current_version = self.current_version();
+            let current_version = self.current_uri_version(uri).await;
             if current_version != version_before {
                 break;
             }
@@ -69,7 +74,7 @@ impl DiagnosticsStore {
             }
         }
 
-        let mut last_version = self.current_version();
+        let mut last_version = self.current_uri_version(uri).await;
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
@@ -79,13 +84,13 @@ impl DiagnosticsStore {
             let settle_wait = DIAGNOSTICS_SETTLE_DURATION.min(remaining);
             tokio::select! {
                 () = self.notify.notified() => {
-                    let new_version = self.current_version();
+                    let new_version = self.current_uri_version(uri).await;
                     if new_version != last_version {
                         last_version = new_version;
                     }
                 }
                 () = tokio::time::sleep(settle_wait) => {
-                    let final_version = self.current_version();
+                    let final_version = self.current_uri_version(uri).await;
                     if final_version == last_version {
                         return;
                     }
@@ -114,24 +119,51 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn wait_for_fresh_waits_for_settle_window() {
+    async fn wait_for_uri_fresh_waits_for_settle_window() {
         let store = DiagnosticsStore::new();
-        let version_before = store.current_version();
+        let uri: Uri = "file:///test.rs".parse().unwrap();
+        let version_before = store.current_uri_version(&uri).await;
         let publish_store = store.clone();
+        let publish_uri = uri.clone();
 
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(10)).await;
-            publish_store.publish(diagnostics("file:///test.rs", "first")).await;
+            publish_store.publish(diagnostics(publish_uri.as_str(), "first")).await;
             tokio::time::sleep(Duration::from_millis(50)).await;
-            publish_store.publish(diagnostics("file:///test.rs", "second")).await;
+            publish_store.publish(diagnostics(publish_uri.as_str(), "second")).await;
         });
 
         let start = tokio::time::Instant::now();
-        store.wait_for_fresh(version_before, Duration::from_secs(2)).await;
+        store.wait_for_uri_fresh(&uri, version_before, Duration::from_secs(2)).await;
 
         assert!(start.elapsed() >= Duration::from_millis(600), "store should wait through the settle window");
         let diags = store.get(None).await;
         assert_eq!(diags[0].diagnostics[0].message, "second");
+    }
+
+    #[tokio::test]
+    async fn wait_for_uri_fresh_ignores_unrelated_publishes() {
+        let store = DiagnosticsStore::new();
+        let target: Uri = "file:///target.rs".parse().unwrap();
+        let other: Uri = "file:///other.rs".parse().unwrap();
+        let version_before = store.current_uri_version(&target).await;
+
+        let waiter = {
+            let store = store.clone();
+            let target = target.clone();
+            tokio::spawn(async move {
+                store.wait_for_uri_fresh(&target, version_before, Duration::from_secs(2)).await;
+            })
+        };
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        store.publish(diagnostics(other.as_str(), "other")).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        assert!(!waiter.is_finished(), "unrelated publishes should not satisfy target URI freshness");
+
+        store.publish(diagnostics(target.as_str(), "target")).await;
+        waiter.await.unwrap();
     }
 
     #[tokio::test]
