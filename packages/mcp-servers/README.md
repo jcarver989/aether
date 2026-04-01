@@ -8,6 +8,7 @@ Pre-built [MCP](https://modelcontextprotocol.io/) tool servers for Aether agents
 | `skills` | [`SkillsMcp`](src/skills/README.md) | Slash commands and reusable skill prompts |
 | `tasks` | [`TasksMcp`](src/tasks/README.md) | Hierarchical task management with dependencies |
 | `subagents` | [`SubAgentsMcp`](src/subagents/README.md) | Spawn and orchestrate sub-agents |
+| `survey` | [`SurveyMcp`](src/survey/README.md) | Human-in-the-loop elicitation (ask the user questions) |
 
 ## Documentation
 
@@ -119,6 +120,7 @@ let server = CodingMcp::with_tools(lsp_tools).into_dyn();
 - [`SkillsMcp`](src/skills/README.md)
 - [`TasksMcp`](src/tasks/README.md)
 - [`SubAgentsMcp`](src/subagents/README.md)
+- [`SurveyMcp`](src/survey/README.md)
 
 ---
 

@@ -5,23 +5,34 @@ A Rust library for writing automated tests (evals) for LLM-powered agents.
 ## Quick Start
 
 ```rust
-use crucible::{Crucible, EvalsConfig};
-use aether_core::llm::openrouter::OpenRouter;
+use crucible::{AetherRunner, Eval, EvalAssertion, EvalRunner, EvalsConfig, FileSystemStore, WorkingDirectory};
+use llm::providers::openrouter::OpenRouterProvider;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let llm = OpenRouter::new("anthropic/claude-sonnet-4-5-20250929")?;
-    let judge_llm = OpenRouter::new("anthropic/claude-sonnet-4-5-20250929")?;
+    let llm = OpenRouterProvider::default("anthropic/claude-sonnet-4-5-20250929")?;
+    let judge_llm = OpenRouterProvider::default("anthropic/claude-sonnet-4-5-20250929")?;
 
-    let config = EvalsConfig::new(llm, judge_llm)
+    let runner = AetherRunner::new(llm);
+    let store = FileSystemStore::new("./results".into())?;
+    let config = EvalsConfig::new(judge_llm)
         .with_batch_size(3)
-        .with_serve(true);  // View results at localhost:3000
+        .with_serve(true);
 
-    let summary = Crucible::new("./my-agent".into())
-        .run_evals(config)
+    let evals = vec![
+        Eval::new(
+            "hello_world",
+            "Write 'Hello, World!' to hello.txt",
+            WorkingDirectory::empty()?,
+            vec![EvalAssertion::file_exists("hello.txt")],
+        ),
+    ];
+
+    let run_id = EvalRunner::new(runner, store)
+        .run_evals(evals, config)
         .await?;
 
-    println!("Passed: {}/{}", summary.passed, summary.total);
+    println!("Run: {run_id}");
     Ok(())
 }
 ```
@@ -117,16 +128,17 @@ The agent starts at `start_commit` and `eval_commit` provides reference for LLM 
 ## Configuration
 
 ```rust
+use std::time::Duration;
+
 // Control batching and rate limiting
-let config = EvalsConfig::new(llm, judge_llm)
+let config = EvalsConfig::new(judge_llm)
     .with_batch_size(5)
     .with_batch_delay(Duration::from_secs(1))
     .with_serve(true);
 
-// Custom output directory and MCP servers
-let crucible = Crucible::new("./my-agent".into())
-    .with_output_dir("./results".into())
-    .with_server_factory("my-server", factory);
+// Custom output directory and MCP server factories
+let eval_runner = EvalRunner::new(runner, store)
+    .with_output_dir("./results".into());
 ```
 
 ## Output

@@ -32,9 +32,9 @@ CLI args ──→ RuntimeState (ACP handshake + theme) ──→ App event loop
                                     Renderer::render_frame  ◀───────────────┘
 ```
 
-1. [`RuntimeState`] spawns the agent subprocess, performs the ACP `initialize` / `newSession` handshake, and loads the theme.
-2. [`App`](components::app::App) owns two screens — the conversation and a git diff viewer — plus a settings overlay. It routes terminal events, ACP events, and ticks to the active screen.
-3. The [`tui`] library's diff-based [`Renderer`](tui::Renderer) turns each frame into minimal ANSI output.
+1. `RuntimeState` spawns the agent subprocess, performs the ACP `initialize` / `newSession` handshake, and loads the theme.
+2. `App` owns two screens — the conversation and a git diff viewer — plus a settings overlay. It routes terminal events, ACP events, and ticks to the active screen.
+3. The `tui` library's diff-based `Renderer` turns each frame into minimal ANSI output.
 
 ## Keybindings
 
@@ -101,7 +101,7 @@ wisp --log-dir ~/logs
 
 Run `cargo doc -p wisp --open` for full API docs. Key entry points:
 
-- [`run_tui`] — launch wisp with an agent command
-- [`RuntimeState`](runtime_state::RuntimeState) — ACP session bootstrap
-- [`App`](components::app::App) — main application component
-- [`settings`] — Wisp and theme configuration
+- `run_tui` — launch wisp with an agent command
+- `RuntimeState` — ACP session bootstrap
+- `App` — main application component
+- `settings` — Wisp and theme configuration

@@ -75,13 +75,13 @@ Create a custom agent in ~10 minutes, no Rust code required.
    - **Headless CLI** — single prompt in, text out:
 
      ```bash
-     cargo run -p aether-agent-cli --bin aether -- -m anthropic:claude-sonnet-4-20250514 "Refactor auth module"
+     cargo run -p aether-agent-cli --bin aether -- -m anthropic:claude-sonnet-4-5-20250929 "Refactor auth module"
      ```
 
    - **ACP server** — for editor/IDE integration via [ACP](https://agentclientprotocol.com/get-started/introduction):
 
      ```bash
-     cargo run -p aether-agent-cli --bin aether-acp -- --model anthropic:claude-sonnet-4-20250514 --mcp-config mcp.json
+     cargo run -p aether-agent-cli --bin aether-acp -- --model anthropic:claude-sonnet-4-5-20250929 --mcp-config mcp.json
      ```
 
 ### 2. Build a custom agent as a Rust library
@@ -116,7 +116,7 @@ Use `aether-agent-core` as a Rust library to build your own agent in ~25 lines. 
 
        // 3. Build and spawn the agent
        let (tx, mut rx, _handle) = agent(llm)
-           .system_prompt(Prompt::agents_md())  // loads AGENTS.md from cwd
+           .system_prompt(Prompt::from_globs(vec!["AGENTS.md".into()], ".".into()))
            .tools(mcp_tx, tools)
            .spawn()
            .await?;
@@ -166,7 +166,18 @@ Agents get their tools from [MCP](https://modelcontextprotocol.io/) servers — 
 
 Combine all the above for a "batteries-included" AI coding agent: [`wisp`](packages/wisp) (TUI) + [`aether-agent-cli`](packages/aether-cli) (ACP server) + the pre-built [MCP tool servers](packages/mcp-servers).
 
-See each package's README for detailed usage: [`aether-agent-core`](packages/aether-core), [`llm`](packages/llm), [`wisp`](packages/wisp), [`aether-agent-cli`](packages/aether-cli).
+## Packages
+
+| Package | Description |
+|---------|-------------|
+| [`aether-agent-core`](packages/aether-core) | Core agent library — LLM + prompt + tools in a loop |
+| [`llm`](packages/llm) | Multi-provider LLM abstraction (Anthropic, OpenAI, OpenRouter, Ollama, etc.) |
+| [`wisp`](packages/wisp) | Terminal UI for AI agents, built on ACP |
+| [`aether-agent-cli`](packages/aether-cli) | Headless CLI and ACP server for editor integration |
+| [`mcp-servers`](packages/mcp-servers) | Pre-built MCP tool servers (coding, skills, tasks, sub-agents, survey) |
+| [`crucible`](packages/crucible) | Automated testing (evals) for LLM agents |
+| [`aether-lspd`](packages/aether-lspd) | LSP daemon — shares language servers across agents |
+| [`aether-project`](packages/aether-project) | Project configuration and agent catalog from `.aether/settings.json` |
 
 ## Development
 
