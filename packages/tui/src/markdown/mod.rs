@@ -94,7 +94,7 @@ impl<'a> MarkdownRenderer<'a> {
     fn handle_start(&mut self, tag: Tag<'_>) {
         match tag {
             Tag::Heading { .. } | Tag::BlockQuote(_) | Tag::List(_) | Tag::Item | Tag::Paragraph => {
-                self.handle_block_start(&tag)
+                self.handle_block_start(&tag);
             }
 
             Tag::Strong | Tag::Emphasis | Tag::Strikethrough | Tag::Link { .. } => {
@@ -112,7 +112,7 @@ impl<'a> MarkdownRenderer<'a> {
     fn handle_end(&mut self, tag_end: TagEnd) {
         match tag_end {
             TagEnd::Paragraph | TagEnd::Heading(_) | TagEnd::BlockQuote(_) | TagEnd::List(_) | TagEnd::Item => {
-                self.handle_block_end(tag_end)
+                self.handle_block_end(tag_end);
             }
 
             TagEnd::Strong | TagEnd::Emphasis | TagEnd::Strikethrough | TagEnd::Link => {

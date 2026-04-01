@@ -99,7 +99,7 @@ fn emit_event(msg: &AgentMessage) {
         }
 
         AgentMessage::AutoContinue { attempt, max_attempts } => {
-            tracing::info!(target: "agent", "Continuing ({attempt}/{max_attempts})...")
+            tracing::info!(target: "agent", "Continuing ({attempt}/{max_attempts})...");
         }
 
         AgentMessage::ModelSwitched { previous, new } => {
