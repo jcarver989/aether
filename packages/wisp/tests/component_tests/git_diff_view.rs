@@ -129,7 +129,7 @@ fn patch_lines_have_syntax_highlighted_spans() {
     let doc = make_test_doc();
     let context = ViewContext::new((100, 24));
     let file = &doc.files[0];
-    let (patch_lines, _refs) = build_patch_lines(file, 100, &context);
+    let (patch_lines, _refs) = build_patch_lines(file, 100, &context, &[]);
 
     let term = render_lines(&patch_lines, 100, 24);
     let output = term.get_lines();

@@ -1,5 +1,5 @@
-use crate::components::app::git_diff_mode::PatchLineRef;
-use crate::components::patch_renderer::lang_hint_from_path;
+use crate::components::app::git_diff_mode::{PatchLineRef, QueuedComment};
+use crate::components::patch_renderer::{append_inline_comment_rows, build_comment_map, lang_hint_from_path};
 use crate::git_diff::{FileDiff, PatchLine, PatchLineKind};
 use similar::{DiffOp as SimilarDiffOp, TextDiff};
 use tui::{
@@ -11,9 +11,12 @@ pub fn build_split_patch_lines(
     file: &FileDiff,
     right_width: usize,
     context: &ViewContext,
+    comments: &[QueuedComment],
 ) -> (Vec<Line>, Vec<Option<PatchLineRef>>) {
     let theme = &context.theme;
     let lang_hint = lang_hint_from_path(&file.path);
+
+    let comment_map = build_comment_map(comments);
 
     let usable = right_width.saturating_sub(GUTTER_WIDTH * 2 + SEPARATOR_WIDTH);
     let left_content = usable / 2;
@@ -33,13 +36,23 @@ pub fn build_split_patch_lines(
         let rows = pair_hunk_lines(&hunk.lines);
 
         for row in &rows {
+            let anchor = match row {
+                PairedRow::Header { line_idx, .. } => {
+                    Some(PatchLineRef { hunk_index: hunk_idx, line_index: *line_idx })
+                }
+                PairedRow::Split { right, left } => right
+                    .as_ref()
+                    .map(|s| PatchLineRef { hunk_index: hunk_idx, line_index: s.line_idx })
+                    .or_else(|| left.as_ref().map(|s| PatchLineRef { hunk_index: hunk_idx, line_index: s.line_idx })),
+            };
+
             match row {
-                PairedRow::Header { line_idx, text } => {
+                PairedRow::Header { text, .. } => {
                     let mut line = Line::default();
                     line.push_with_style(*text, Style::fg(theme.info()).bold().bg_color(theme.code_bg()));
                     line.extend_bg_to_width(right_width);
                     patch_lines.push(line);
-                    patch_refs.push(Some(PatchLineRef { hunk_index: hunk_idx, line_index: *line_idx }));
+                    patch_refs.push(anchor);
                 }
                 PairedRow::Split { left, right } => {
                     let left_cell = left.as_ref().map(|s| SplitDiffCell {
@@ -64,11 +77,6 @@ pub fn build_split_patch_lines(
 
                     let height = left_rendered.len().max(right_rendered.len());
 
-                    let patch_ref =
-                        right.as_ref().map(|s| PatchLineRef { hunk_index: hunk_idx, line_index: s.line_idx }).or_else(
-                            || left.as_ref().map(|s| PatchLineRef { hunk_index: hunk_idx, line_index: s.line_idx }),
-                        );
-
                     for i in 0..height {
                         let l = left_rendered.get(i).cloned().unwrap_or_else(|| split_blank_panel(left_panel));
                         let r = right_rendered.get(i).cloned().unwrap_or_else(|| split_blank_panel(right_panel));
@@ -79,12 +87,18 @@ pub fn build_split_patch_lines(
                         patch_lines.push(line);
 
                         if i == 0 {
-                            patch_refs.push(patch_ref.clone());
+                            patch_refs.push(anchor);
                         } else {
                             patch_refs.push(None);
                         }
                     }
                 }
+            }
+
+            if let Some(ref_key) = anchor
+                && let Some(line_comments) = comment_map.get(&ref_key)
+            {
+                append_inline_comment_rows(&mut patch_lines, &mut patch_refs, line_comments, right_width, theme);
             }
         }
     }
@@ -246,7 +260,7 @@ mod tests {
             pl(PatchLineKind::Added, "new_a", None, Some(1)),
             pl(PatchLineKind::Added, "new_b", None, Some(2)),
         ])]);
-        let (lines, refs) = build_split_patch_lines(&file, 100, &ctx());
+        let (lines, refs) = build_split_patch_lines(&file, 100, &ctx(), &[]);
         // 1 header + 2 paired rows
         assert_eq!(lines.len(), 3);
         assert_eq!(refs.len(), 3);
@@ -264,7 +278,7 @@ mod tests {
             pl(PatchLineKind::Removed, "old_c", Some(3), None),
             pl(PatchLineKind::Added, "new_a", None, Some(1)),
         ])]);
-        let (lines, refs) = build_split_patch_lines(&file, 100, &ctx());
+        let (lines, refs) = build_split_patch_lines(&file, 100, &ctx(), &[]);
         // 1 header + 3 rows (first paired, last 2 have only left)
         assert_eq!(lines.len(), 4);
         // Verify the unpaired rows still have refs (pointing to left side)
@@ -278,7 +292,7 @@ mod tests {
             pl(PatchLineKind::HunkHeader, "@@ -1,1 +1,1 @@", None, None),
             pl(PatchLineKind::Context, "same line", Some(1), Some(1)),
         ])]);
-        let (lines, _refs) = build_split_patch_lines(&file, 100, &ctx());
+        let (lines, _refs) = build_split_patch_lines(&file, 100, &ctx(), &[]);
         // 1 header + 1 context
         assert_eq!(lines.len(), 2);
         let text = lines[1].plain_text();
@@ -293,7 +307,7 @@ mod tests {
             pl(PatchLineKind::HunkHeader, "@@ -1,1 +1,1 @@", None, None),
             pl(PatchLineKind::Context, "x", Some(1), Some(1)),
         ])]);
-        let (lines, refs) = build_split_patch_lines(&file, 100, &ctx());
+        let (lines, refs) = build_split_patch_lines(&file, 100, &ctx(), &[]);
         let header_text = lines[0].plain_text();
         assert!(header_text.contains("@@ -1,1 +1,1 @@"), "header missing: {header_text}");
         assert!(refs[0].is_some());
@@ -318,7 +332,7 @@ mod tests {
                 ],
             },
         ]);
-        let (_lines, refs) = build_split_patch_lines(&file, 100, &ctx());
+        let (_lines, refs) = build_split_patch_lines(&file, 100, &ctx(), &[]);
         // Layout: hunk1_header, context_a, spacer, hunk2_header, context_b
         assert_eq!(refs.len(), 5);
         assert!(refs[2].is_none(), "spacer between hunks should have None ref");
@@ -331,7 +345,7 @@ mod tests {
             pl(PatchLineKind::Removed, "old", Some(1), None),
             pl(PatchLineKind::Added, "new", None, Some(1)),
         ])]);
-        let (_lines, refs) = build_split_patch_lines(&file, 100, &ctx());
+        let (_lines, refs) = build_split_patch_lines(&file, 100, &ctx(), &[]);
         // The paired row ref should point to the Added line (index 2 in the hunk)
         let paired_ref = refs[1].as_ref().unwrap();
         assert_eq!(paired_ref.line_index, 2, "should reference the Added line");
@@ -346,7 +360,7 @@ mod tests {
             pl(PatchLineKind::Added, "shared_call();", None, Some(1)),
             pl(PatchLineKind::Added, "let after = new();", None, Some(2)),
         ])]);
-        let (lines, _refs) = build_split_patch_lines(&file, 100, &ctx());
+        let (lines, _refs) = build_split_patch_lines(&file, 100, &ctx(), &[]);
 
         let shared_row = lines.iter().skip(1).find(|line| line.plain_text().matches("shared_call();").count() == 2);
 
@@ -363,7 +377,7 @@ mod tests {
             pl(PatchLineKind::Added, "let new_value = bar();", None, Some(2)),
             pl(PatchLineKind::Added, "extra_call();", None, Some(3)),
         ])]);
-        let (lines, _refs) = build_split_patch_lines(&file, 100, &ctx());
+        let (lines, _refs) = build_split_patch_lines(&file, 100, &ctx(), &[]);
 
         let shared_row = lines.iter().skip(1).find(|line| line.plain_text().matches("shared_call();").count() == 2);
         assert!(shared_row.is_some(), "shared prefix line should stay aligned as an unchanged pair");
@@ -378,5 +392,70 @@ mod tests {
             1,
             "overflow added line should remain unpaired"
         );
+    }
+
+    #[test]
+    fn split_inline_comment_renders_below_correct_row() {
+        let file = test_file(vec![test_hunk(vec![
+            pl(PatchLineKind::HunkHeader, "@@ -1,1 +1,1 @@", None, None),
+            pl(PatchLineKind::Removed, "old", Some(1), None),
+            pl(PatchLineKind::Added, "new", None, Some(1)),
+        ])]);
+        let comments = vec![QueuedComment {
+            file_path: "test.rs".to_string(),
+            patch_ref: PatchLineRef { hunk_index: 0, line_index: 2 },
+            line_text: "new".to_string(),
+            line_number: Some(1),
+            line_kind: PatchLineKind::Added,
+            comment: "review comment".to_string(),
+        }];
+        let (lines, refs) = build_split_patch_lines(&file, 100, &ctx(), &comments);
+
+        // Layout: header, paired row, then comment box
+        assert!(lines.len() > 2, "should have comment rows, got {}", lines.len());
+
+        let paired_row_text = lines[1].plain_text();
+        assert!(paired_row_text.contains("old"), "paired row should contain 'old'");
+        assert!(paired_row_text.contains("new"), "paired row should contain 'new'");
+
+        let comment_content = lines[3].plain_text();
+        assert!(comment_content.contains("review comment"), "should contain comment text, got: {comment_content}");
+
+        // Comment rows should have None refs
+        assert!(refs[2].is_none(), "comment top border should have None ref");
+        assert!(refs[3].is_none(), "comment content should have None ref");
+        assert!(refs[4].is_none(), "comment bottom border should have None ref");
+    }
+
+    #[test]
+    fn split_multiple_comments_render_in_order() {
+        let file = test_file(vec![test_hunk(vec![
+            pl(PatchLineKind::HunkHeader, "@@ -1,1 +1,1 @@", None, None),
+            pl(PatchLineKind::Added, "code", None, Some(1)),
+        ])]);
+        let comments = vec![
+            QueuedComment {
+                file_path: "test.rs".to_string(),
+                patch_ref: PatchLineRef { hunk_index: 0, line_index: 1 },
+                line_text: "code".to_string(),
+                line_number: Some(1),
+                line_kind: PatchLineKind::Added,
+                comment: "alpha".to_string(),
+            },
+            QueuedComment {
+                file_path: "test.rs".to_string(),
+                patch_ref: PatchLineRef { hunk_index: 0, line_index: 1 },
+                line_text: "code".to_string(),
+                line_number: Some(1),
+                line_kind: PatchLineKind::Added,
+                comment: "beta".to_string(),
+            },
+        ];
+        let (lines, _refs) = build_split_patch_lines(&file, 100, &ctx(), &comments);
+
+        let text: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
+        let alpha_pos = text.iter().position(|t| t.contains("alpha")).expect("should find alpha");
+        let beta_pos = text.iter().position(|t| t.contains("beta")).expect("should find beta");
+        assert!(alpha_pos < beta_pos, "alpha should appear before beta");
     }
 }

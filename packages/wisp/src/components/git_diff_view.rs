@@ -147,6 +147,7 @@ impl GitDiffView<'_> {
             KeyCode::Char('s') => self.submit_review(),
             KeyCode::Char('u') => {
                 self.state.queued_comments.pop();
+                self.state.invalidate_patch_cache();
                 vec![]
             }
             KeyCode::Char('<') => {
@@ -225,12 +226,14 @@ impl GitDiffView<'_> {
         if cursor >= self.state.cached_patch_line_refs.len() {
             return;
         }
-        if self.state.cached_patch_line_refs[cursor].is_none() {
+        let Some(anchor) = self.state.cached_patch_line_refs[cursor] else {
             return;
-        }
+        };
+        self.state.draft_comment_anchor = Some(anchor);
         self.state.focus = PatchFocus::CommentInput;
         self.state.comment_buffer.clear();
         self.state.comment_cursor = 0;
+        self.state.invalidate_patch_cache();
     }
 
     fn submit_review(&mut self) -> Vec<GitDiffViewMessage> {
@@ -244,24 +247,23 @@ impl GitDiffView<'_> {
     fn on_comment_input(&mut self, code: KeyCode) -> Vec<GitDiffViewMessage> {
         match code {
             KeyCode::Esc => {
-                self.state.focus = PatchFocus::Patch;
-                self.state.comment_buffer.clear();
-                self.state.comment_cursor = 0;
+                self.state.exit_comment_mode();
                 vec![]
             }
             KeyCode::Enter => {
-                if let Some(comment) = build_queued_comment(self.state) {
+                if !self.state.comment_buffer.trim().is_empty()
+                    && let Some(comment) = build_queued_comment(self.state)
+                {
                     self.state.queued_comments.push(comment);
                 }
-                self.state.focus = PatchFocus::Patch;
-                self.state.comment_buffer.clear();
-                self.state.comment_cursor = 0;
+                self.state.exit_comment_mode();
                 vec![]
             }
             KeyCode::Char(c) => {
                 let byte_pos = char_to_byte_pos(&self.state.comment_buffer, self.state.comment_cursor);
                 self.state.comment_buffer.insert(byte_pos, c);
                 self.state.comment_cursor += 1;
+                self.state.invalidate_patch_cache();
                 vec![]
             }
             KeyCode::Backspace => {
@@ -269,6 +271,7 @@ impl GitDiffView<'_> {
                     self.state.comment_cursor -= 1;
                     let byte_pos = char_to_byte_pos(&self.state.comment_buffer, self.state.comment_cursor);
                     self.state.comment_buffer.remove(byte_pos);
+                    self.state.invalidate_patch_cache();
                 }
                 vec![]
             }
@@ -298,8 +301,7 @@ fn render_ready(
     let selected = state.selected_file.min(files.len().saturating_sub(1));
     let selected_file = &files[selected];
 
-    let show_comment_bar = state.focus == PatchFocus::CommentInput;
-    let content_height = if show_comment_bar { available_height.saturating_sub(1) } else { available_height };
+    let content_height = available_height;
 
     let visible_entries = state.file_tree.as_ref().map(FileTree::visible_entries).unwrap_or_default();
     let tree_selected = state.file_tree.as_ref().map_or(0, FileTree::selected_visible);
@@ -354,24 +356,7 @@ fn render_ready(
         rows.push(line);
     }
 
-    if show_comment_bar {
-        rows.push(render_comment_bar(&state.comment_buffer, left_width, right_width, theme));
-    }
-
     rows
-}
-
-fn render_comment_bar(comment_buffer: &str, left_width: usize, right_width: usize, theme: &tui::Theme) -> Line {
-    let mut bar = Line::default();
-    let label = format!("Comment: {comment_buffer}");
-    let total = left_width + 1 + right_width;
-    let truncated = truncate_text(&label, total);
-    bar.push_with_style(truncated.as_ref(), Style::fg(theme.text_primary()).bg_color(theme.highlight_bg()));
-    let bar_width = truncated.chars().count();
-    if bar_width < total {
-        bar.push_with_style(" ".repeat(total - bar_width), Style::default().bg_color(theme.highlight_bg()));
-    }
-    bar
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -456,8 +441,7 @@ fn char_to_byte_pos(s: &str, char_idx: usize) -> usize {
 }
 
 fn build_queued_comment(state: &GitDiffViewState) -> Option<QueuedComment> {
-    let cursor = state.cursor_line;
-    let patch_ref = state.cached_patch_line_refs.get(cursor)?.as_ref()?;
+    let patch_ref = state.draft_comment_anchor?;
 
     let GitDiffLoadState::Ready(doc) = &state.load_state else {
         return None;
@@ -470,6 +454,7 @@ fn build_queued_comment(state: &GitDiffViewState) -> Option<QueuedComment> {
 
     Some(QueuedComment {
         file_path: file.path.clone(),
+        patch_ref,
         line_text: patch_line.text.clone(),
         line_number,
         line_kind: patch_line.kind,
@@ -480,6 +465,7 @@ fn build_queued_comment(state: &GitDiffViewState) -> Option<QueuedComment> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::components::app::git_diff_mode::PatchLineRef;
     use crate::git_diff::{FileDiff, FileStatus, GitDiffDocument, Hunk, PatchLine, PatchLineKind};
     use std::path::PathBuf;
     use tui::{KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
@@ -574,6 +560,7 @@ mod tests {
     fn queued_comment(line_text: &str, comment: &str, kind: PatchLineKind) -> QueuedComment {
         QueuedComment {
             file_path: "a.rs".to_string(),
+            patch_ref: PatchLineRef { hunk_index: 0, line_index: 0 },
             line_text: line_text.to_string(),
             line_number: Some(1),
             line_kind: kind,
@@ -786,8 +773,9 @@ mod tests {
     #[test]
     fn build_queued_comment_extracts_data() {
         let mut state = make_state_with_cache();
-        state.focus = PatchFocus::Patch;
+        state.focus = PatchFocus::CommentInput;
         state.cursor_line = 3; // Added line "    new();"
+        state.draft_comment_anchor = state.cached_patch_line_refs[3];
         state.comment_buffer = "test review".to_string();
 
         let comment = build_queued_comment(&state).unwrap();
@@ -796,6 +784,7 @@ mod tests {
         assert_eq!(comment.line_kind, PatchLineKind::Added);
         assert_eq!(comment.line_number, Some(2));
         assert_eq!(comment.comment, "test review");
+        assert_eq!(comment.patch_ref, PatchLineRef { hunk_index: 0, line_index: 3 });
     }
 
     #[tokio::test]
@@ -971,5 +960,104 @@ mod tests {
         send_key(&mut view, KeyCode::Enter).await;
 
         assert_eq!(view.state.focus, PatchFocus::Patch);
+    }
+
+    #[tokio::test]
+    async fn enter_queues_comment_and_invalidates_cache() {
+        let mut state = make_state_with_cache();
+        state.focus = PatchFocus::Patch;
+        state.cursor_line = 3; // Added line "    new();"
+        let mut view = GitDiffView { state: &mut state };
+
+        // Queue a comment
+        send_key(&mut view, KeyCode::Char('c')).await;
+        for ch in "test comment".chars() {
+            send_key(&mut view, KeyCode::Char(ch)).await;
+        }
+        send_key(&mut view, KeyCode::Enter).await;
+
+        assert_eq!(view.state.queued_comments.len(), 1);
+        assert_eq!(view.state.queued_comments[0].comment, "test comment");
+
+        // Cache should have been invalidated (cached lines cleared)
+        assert!(view.state.cached_patch_lines.is_empty());
+    }
+
+    #[tokio::test]
+    async fn undo_removes_last_comment_and_invalidates_cache() {
+        let mut state = make_state_with_cache();
+        state.focus = PatchFocus::Patch;
+        state.queued_comments.push(queued_comment("line1", "first", PatchLineKind::Context));
+        state.queued_comments.push(queued_comment("line2", "second", PatchLineKind::Added));
+
+        let mut view = GitDiffView { state: &mut state };
+        send_key(&mut view, KeyCode::Char('u')).await;
+
+        assert_eq!(view.state.queued_comments.len(), 1);
+        assert_eq!(view.state.queued_comments[0].comment, "first");
+
+        // Cache should have been invalidated (cached lines cleared)
+        assert!(view.state.cached_patch_lines.is_empty());
+    }
+
+    #[test]
+    fn cursor_stays_on_logical_line_after_comment_insert() {
+        let mut state = make_state_with_cache();
+        state.focus = PatchFocus::Patch;
+        // cursor on the Added line (visual row 3)
+        state.cursor_line = 3;
+        let original_ref = state.cached_patch_line_refs[3];
+
+        // Add a comment targeting that line
+        state.queued_comments.push(QueuedComment {
+            file_path: "a.rs".to_string(),
+            patch_ref: original_ref.unwrap(),
+            line_text: "    new();".to_string(),
+            line_number: Some(2),
+            line_kind: PatchLineKind::Added,
+            comment: "review".to_string(),
+        });
+        state.invalidate_patch_cache();
+        state.ensure_patch_cache(&ViewContext::new((100, 24)));
+
+        // Cursor should still be on the Added line (though its visual row may have shifted)
+        let new_ref = state.cached_patch_line_refs[state.cursor_line];
+        assert_eq!(new_ref, original_ref, "cursor should stay on the same logical line");
+        let line_text = state.cached_patch_lines[state.cursor_line].plain_text();
+        assert!(line_text.contains("new();"), "cursor should be on the added line, got: {line_text}");
+    }
+
+    #[test]
+    fn cursor_on_comment_row_restores_to_anchored_line() {
+        let mut state = make_state_with_cache();
+        state.focus = PatchFocus::Patch;
+        // Add a comment targeting line 3 (the Added line)
+        let anchor = PatchLineRef { hunk_index: 0, line_index: 3 };
+        state.queued_comments.push(QueuedComment {
+            file_path: "a.rs".to_string(),
+            patch_ref: anchor,
+            line_text: "    new();".to_string(),
+            line_number: Some(2),
+            line_kind: PatchLineKind::Added,
+            comment: "review".to_string(),
+        });
+        state.invalidate_patch_cache();
+        state.ensure_patch_cache(&ViewContext::new((100, 24)));
+
+        // Find a comment row (one with None ref) and set cursor there
+        let comment_row =
+            state.cached_patch_line_refs.iter().position(|r| r.is_none()).expect("should have a comment row");
+        state.cursor_line = comment_row;
+
+        // Now rebuild cache again - should restore cursor to the anchored line
+        state.invalidate_patch_cache();
+        state.ensure_patch_cache(&ViewContext::new((100, 24)));
+
+        // Cursor should be restored to the added line, not the comment row
+        assert_eq!(
+            state.cached_patch_line_refs[state.cursor_line],
+            Some(anchor),
+            "cursor should be restored to the anchored diff line"
+        );
     }
 }
