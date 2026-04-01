@@ -84,7 +84,7 @@ impl WorkspaceSession {
     pub(crate) async fn ensure_document_open(&self, uri: &Uri) -> Option<u64> {
         match self.documents.prepare_request_document(uri).await {
             SyncPlan::Sync(notifications) => {
-                let version_before = self.diagnostics.current_version();
+                let version_before = self.diagnostics.current_uri_version(uri).await;
                 for notification in notifications {
                     self.transport.send_notification(notification).await;
                 }
@@ -114,7 +114,7 @@ impl WorkspaceSession {
         if let Some(uri) = uri {
             let version_before = self.ensure_document_open(uri).await;
             if let Some(version_before) = version_before {
-                self.diagnostics.wait_for_fresh(version_before, DIAGNOSTICS_TIMEOUT).await;
+                self.diagnostics.wait_for_uri_fresh(uri, version_before, DIAGNOSTICS_TIMEOUT).await;
             } else {
                 self.refresh.wait_for_current_generation(DIAGNOSTICS_TIMEOUT).await;
             }
@@ -281,7 +281,7 @@ async fn refresh_uri(
 ) {
     let version_before = match documents.prepare_request_document(uri).await {
         SyncPlan::Sync(notifications) => {
-            let version_before = diagnostics.current_version();
+            let version_before = diagnostics.current_uri_version(uri).await;
             for notification in notifications {
                 transport.send_notification(notification).await;
             }
@@ -296,7 +296,7 @@ async fn refresh_uri(
     };
 
     if let Some(version_before) = version_before {
-        diagnostics.wait_for_fresh(version_before, DIAGNOSTICS_TIMEOUT).await;
+        diagnostics.wait_for_uri_fresh(uri, version_before, DIAGNOSTICS_TIMEOUT).await;
     }
 
     if let Some(notification) = documents.release_request_document(uri).await {
