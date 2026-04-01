@@ -20,13 +20,13 @@ Binaries will be at `target/release/aether-acp` and `target/release/aether`.
 ### Run the CLI
 
 ```bash
-cargo run -p aether-agent-cli --bin aether -- -m anthropic:claude-sonnet-4-20250514 "Refactor auth module"
+cargo run -p aether-agent-cli --bin aether -- -m anthropic:claude-sonnet-4-5-20250929 "Refactor auth module"
 ```
 
 ### Run the ACP server
 
 ```bash
-cargo run -p aether-agent-cli --bin aether-acp -- --model anthropic:claude-sonnet-4-20250514 --mcp-config mcp.json
+cargo run -p aether-agent-cli --bin aether-acp -- --model anthropic:claude-sonnet-4-5-20250929 --mcp-config mcp.json
 ```
 
 ## Choosing a Model
@@ -84,7 +84,7 @@ The `mcp.json` file configures MCP tool servers:
     "coding": {
       "type": "in-memory"
     },
-    "plugins": {
+    "skills": {
       "type": "in-memory",
       "args": ["--dir", "$HOME/.aether"]
     }
@@ -93,7 +93,7 @@ The `mcp.json` file configures MCP tool servers:
 ```
 
 - **coding** — Filesystem tools (read, write, bash, etc.)
-- **plugins** — Custom slash commands from `~/.aether/commands/`
+- **skills** — Slash commands and reusable skill prompts from `~/.aether/`
 
 ## Slash Commands
 

@@ -2,28 +2,9 @@
 
 Aether Core is a Rust library for building AI agents (LLM + prompt + tools, running in a loop). 
 
-## What makes Aether unique?
+By default, agents have _no_ system prompt and _no_ tools — every token in the context window is yours to control. Tools come exclusively from [MCP](https://modelcontextprotocol.io/) servers, so you can extend agents in any language.
 
-Aether has the following design principles:
-
-- **A truly minimal harness**: By default, Aether agents have _no_ system prompt and _no_ tools. Thus every token in the context window is yours to control.
-- **Tools from MCP**: Aether takes the stance that "MCP is all you need". Agents get tools _exclusively_ from MCP servers. This makes it easy to extend agents using _any_ language. And if you're using Rust, this library provides a `in-memory` transport. 
-
-## Why Aether?
-
-AI agents are simple: just a LLM + prompt + tool, running in a loop. Yet many frameworks over-abstract this into oblivion.
-
-Aether aims to give you a great developer experience via a simple API that exposes a powerful set of composable primitives:
-
-- **Agents**: Aether agents run in dedicated [tokio tasks](https://tokio.rs) and communicate via async message passing (i.e. they're [actors](https://en.wikipedia.org/wiki/Actor_model)). Hardware permitting, you can run hundreds of agents in a single process.
-
-- **LLMs**: Aether supports models from Anthropic, `OpenAI`, `OpenRouter`, Llama.cpp and Ollama out of the box. You can implement your own provider via the `StreamableModelProvider` trait and combine multiple models from different providers into an "alloyed" model via `AlloyedModelProvider`.
-
-- **Prompts**: Are just strings. But Aether provides nice helpers to do things like recursively load `AGENTS.md` files into your agent's system prompt and compose prompts from multiple sources.
-
-- **Tools**: "MCP is all you need". Agents get tools _exclusively_ via MCP servers. You can easily configure your agent's MCP servers with a `mcp.json` file and run custom "in-memory" (Rust) MCP servers in dedicated tokio tasks.
-
-- **Tests**: Aether provides a built-in set of test helpers that make it trivial to write robust unit and integration tests for your agents.
+Agents run in dedicated [tokio tasks](https://tokio.rs) and communicate via async message passing. Hardware permitting, you can run hundreds of agents in a single process.
 
 ## Installation
 
@@ -61,39 +42,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 4. Stream the agent's response back
     loop {
-        use AgentMessage::*;
         match rx.recv().await {
-            Some(Text { chunk, is_complete, .. }) => {
-                if !is_complete {
-                    print!("{chunk}");
-                    io::stdout().flush().unwrap();
-                } else {
-                    println!("\n");
-                }
+            Some(AgentMessage::Text { chunk, is_complete, .. }) => {
+                if !is_complete { print!("{chunk}"); io::stdout().flush()?; }
             }
-            Some(ToolCall { .. }) => {
-                // Tool calls not used in this minimal example
-            }
-            Some(ToolResult { .. }) => {
-                // Tool results not used in this minimal example
-            }
-            Some(ToolError { .. }) => {
-                // Tool errors not used in this minimal example
-            }
-            Some(ToolProgress { .. }) => {
-                // Tool progress not used in this minimal example
-            }
-            Some(Done) => break,
-            Some(Error { message }) => {
-                eprintln!("Error: {message}");
-                break;
-            }
-            Some(Cancelled { .. }) => {
-                eprintln!("Agent cancelled");
-                break;
-            }
+            Some(AgentMessage::Done) => break,
+            Some(AgentMessage::Error { message }) => { eprintln!("Error: {message}"); break; }
             _ => {}
-            None => break,
         }
     }
 
@@ -107,7 +62,7 @@ Create a `mcp.json` file in the current working directory:
 
 ```json
 {
-  "mcpServers": {
+  "servers": {
     "filesystem": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/directory"]
