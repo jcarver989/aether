@@ -86,10 +86,8 @@ impl Component for ScreenRouter {
         let diff_context = ctx.with_size((ctx.size.width, diff_height));
         let lines = self.git_diff_mode.render_lines(&diff_context);
 
-        let cursor = if self.git_diff_mode.is_comment_input() {
-            let line_count = diff_height as usize;
-            let comment_cursor = self.git_diff_mode.comment_cursor_col();
-            Cursor::visible(line_count.saturating_sub(1), "Comment: ".len() + comment_cursor)
+        let cursor = if let Some((row, col)) = self.git_diff_mode.draft_cursor_position(diff_height) {
+            Cursor::visible(row, col)
         } else {
             Cursor::hidden()
         };

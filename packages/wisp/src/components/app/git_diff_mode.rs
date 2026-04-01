@@ -27,7 +27,7 @@ pub enum PatchFocus {
     CommentInput,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PatchLineRef {
     pub hunk_index: usize,
     pub line_index: usize,
@@ -36,6 +36,7 @@ pub struct PatchLineRef {
 #[derive(Debug, Clone)]
 pub struct QueuedComment {
     pub file_path: String,
+    pub patch_ref: PatchLineRef,
     pub line_text: String,
     pub line_number: Option<usize>,
     pub line_kind: PatchLineKind,
@@ -53,9 +54,12 @@ pub struct GitDiffViewState {
     pub(crate) comment_buffer: String,
     pub(crate) comment_cursor: usize,
     pub(crate) queued_comments: Vec<QueuedComment>,
+    pub(crate) draft_comment_anchor: Option<PatchLineRef>,
+    pub(crate) draft_comment_row: Option<usize>,
     pub(crate) file_tree: Option<FileTree>,
     pub(crate) file_list_scroll: usize,
     pub(crate) sidebar_width_delta: i16,
+    saved_cursor_anchor: Option<PatchLineRef>,
     cached_for_file: Option<usize>,
     cached_for_width: Option<u16>,
 }
@@ -73,19 +77,32 @@ impl GitDiffViewState {
             comment_buffer: String::new(),
             comment_cursor: 0,
             queued_comments: Vec::new(),
+            draft_comment_anchor: None,
+            draft_comment_row: None,
             file_tree: None,
             file_list_scroll: 0,
             sidebar_width_delta: 0,
+            saved_cursor_anchor: None,
             cached_for_file: None,
             cached_for_width: None,
         }
     }
 
+    pub(crate) fn exit_comment_mode(&mut self) {
+        self.focus = PatchFocus::Patch;
+        self.comment_buffer.clear();
+        self.comment_cursor = 0;
+        self.draft_comment_anchor = None;
+        self.invalidate_patch_cache();
+    }
+
     pub(crate) fn invalidate_patch_cache(&mut self) {
+        self.saved_cursor_anchor = self.current_cursor_anchor();
         self.cached_for_file = None;
         self.cached_for_width = None;
         self.cached_patch_lines.clear();
         self.cached_patch_line_refs.clear();
+        self.draft_comment_row = None;
     }
 
     pub(crate) fn selected_file(&self) -> Option<&FileDiff> {
@@ -285,8 +302,21 @@ impl GitDiffViewState {
             return;
         }
 
+        let cursor_anchor = self.saved_cursor_anchor.take();
+
         let Some(file) = self.selected_file() else {
             return;
+        };
+
+        let file_comments: Vec<QueuedComment> = {
+            let mut comments: Vec<QueuedComment> =
+                self.queued_comments.iter().filter(|c| c.file_path == file.path).cloned().collect();
+            if self.focus == PatchFocus::CommentInput
+                && let Some(draft) = self.build_draft_comment(file)
+            {
+                comments.push(draft);
+            }
+            comments
         };
 
         if file.binary {
@@ -297,20 +327,87 @@ impl GitDiffViewState {
             let (_left_width, right_width) = diff_layout(width as usize, self.sidebar_width_delta);
 
             if use_split_patch {
-                let (lines, refs) = build_split_patch_lines(file, right_width, context);
+                let (lines, refs) = build_split_patch_lines(file, right_width, context, &file_comments);
                 self.cached_patch_lines = lines;
                 self.cached_patch_line_refs = refs;
             } else {
-                let (lines, refs) = build_patch_lines(file, right_width, context);
+                let (lines, refs) = build_patch_lines(file, right_width, context, &file_comments);
                 self.cached_patch_lines = lines;
                 self.cached_patch_line_refs = refs;
             }
         }
         self.cached_for_file = Some(self.selected_file);
         self.cached_for_width = Some(width);
+
+        self.restore_cursor_to_anchor(cursor_anchor);
+        self.cursor_line = self.cursor_line.min(self.max_patch_scroll());
+        self.find_draft_content_row();
     }
 
-    #[allow(dead_code)]
+    fn current_cursor_anchor(&self) -> Option<PatchLineRef> {
+        if self.cursor_line < self.cached_patch_line_refs.len() {
+            if let Some(anchor) = self.cached_patch_line_refs[self.cursor_line] {
+                return Some(anchor);
+            }
+            // Scan backward for the nearest preceding anchor
+            for i in (0..self.cursor_line).rev() {
+                if let Some(anchor) = self.cached_patch_line_refs[i] {
+                    return Some(anchor);
+                }
+            }
+        }
+        None
+    }
+
+    fn restore_cursor_to_anchor(&mut self, anchor: Option<PatchLineRef>) {
+        if let Some(anchor) = anchor
+            && let Some(row) = self.cached_patch_line_refs.iter().position(|r| *r == Some(anchor))
+        {
+            self.cursor_line = row;
+            return;
+        }
+        self.cursor_line = self.cursor_line.min(self.max_patch_scroll());
+    }
+
+    fn build_draft_comment(&self, file: &FileDiff) -> Option<QueuedComment> {
+        let anchor = self.draft_comment_anchor?;
+        let hunk = file.hunks.get(anchor.hunk_index)?;
+        let patch_line = hunk.lines.get(anchor.line_index)?;
+        let line_number = patch_line.new_line_no.or(patch_line.old_line_no);
+        let comment = if self.comment_buffer.is_empty() { " ".to_string() } else { self.comment_buffer.clone() };
+        Some(QueuedComment {
+            file_path: file.path.clone(),
+            patch_ref: anchor,
+            line_text: patch_line.text.clone(),
+            line_number,
+            line_kind: patch_line.kind,
+            comment,
+        })
+    }
+
+    fn find_draft_content_row(&mut self) {
+        self.draft_comment_row = None;
+        let Some(anchor) = self.draft_comment_anchor else {
+            return;
+        };
+        let Some(anchor_pos) = self.cached_patch_line_refs.iter().position(|r| *r == Some(anchor)) else {
+            return;
+        };
+        let mut last_top_border = None;
+        for i in (anchor_pos + 1)..self.cached_patch_lines.len() {
+            if self.cached_patch_line_refs.get(i).is_some_and(Option::is_some) {
+                break;
+            }
+            let text = self.cached_patch_lines[i].plain_text();
+            if text.trim_start().starts_with('┌') {
+                last_top_border = Some(i);
+            }
+        }
+        if let Some(top) = last_top_border {
+            self.draft_comment_row = Some(top + 1);
+        }
+    }
+
     fn apply_loaded_document(&mut self, doc: GitDiffDocument, restore: Option<RefreshState>) {
         if doc.files.is_empty() {
             self.load_state = GitDiffLoadState::Empty;
@@ -335,13 +432,11 @@ impl GitDiffViewState {
     }
 }
 
-#[allow(dead_code)]
 struct RefreshState {
     selected_path: Option<String>,
     focus: PatchFocus,
 }
 
-#[allow(dead_code)]
 pub struct GitDiffMode {
     working_dir: PathBuf,
     cached_repo_root: Option<PathBuf>,
@@ -373,7 +468,6 @@ impl GitDiffMode {
         self.state.invalidate_patch_cache();
     }
 
-    #[allow(dead_code)]
     pub(crate) async fn complete_load(&mut self) {
         match crate::git_diff::load_git_diff(&self.working_dir, self.cached_repo_root.as_deref()).await {
             Ok(doc) => {
@@ -412,15 +506,26 @@ impl GitDiffMode {
         }
         let viewport_height = (context.size.height as usize).saturating_sub(2);
         self.state.ensure_cursor_visible(viewport_height);
+        if let Some(draft_row) = self.state.draft_comment_row {
+            let bottom = draft_row + 1;
+            if bottom >= self.state.patch_scroll + viewport_height {
+                self.state.patch_scroll = bottom.saturating_sub(viewport_height - 1);
+            }
+        }
         self.state.ensure_file_list_visible(viewport_height);
     }
 
-    pub(crate) fn is_comment_input(&self) -> bool {
-        self.state.focus == PatchFocus::CommentInput
-    }
+    pub(crate) fn draft_cursor_position(&self, diff_height: u16) -> Option<(usize, usize)> {
+        let draft_row = self.state.draft_comment_row?;
+        let width = self.state.cached_for_width? as usize;
+        let (left_width, _) = diff_layout(width, self.state.sidebar_width_delta);
 
-    pub(crate) fn comment_cursor_col(&self) -> usize {
-        self.state.comment_cursor
+        let screen_row = draft_row.checked_sub(self.state.patch_scroll)? + 2;
+        if screen_row >= diff_height as usize {
+            return None;
+        }
+        let screen_col = left_width + 1 + 2 + 2 + self.state.comment_cursor;
+        Some((screen_row, screen_col))
     }
 }
 
@@ -516,6 +621,7 @@ mod tests {
     fn comment(file: &str, line_text: &str, line_number: usize, kind: PatchLineKind, comment: &str) -> QueuedComment {
         QueuedComment {
             file_path: file.to_string(),
+            patch_ref: PatchLineRef { hunk_index: 0, line_index: 0 },
             line_text: line_text.to_string(),
             line_number: Some(line_number),
             line_kind: kind,
