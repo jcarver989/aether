@@ -41,6 +41,18 @@ pub fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
 
+pub fn pad(text: &str, width: usize) -> String {
+    format!("{text:<width$}")
+}
+
+pub fn cols(parts: &[(&str, usize)]) -> String {
+    let mut out = String::new();
+    for (text, width) in parts {
+        out.push_str(&format!("{text:<width$}"));
+    }
+    out.trim_end().to_string()
+}
+
 pub fn sample_options() -> Vec<SelectOption> {
     vec![
         SelectOption { value: "a".into(), title: "Alpha".into(), description: None },
