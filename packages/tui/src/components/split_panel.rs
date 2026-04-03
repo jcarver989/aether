@@ -3,6 +3,7 @@ use crate::focus::{FocusOutcome, FocusRing};
 use crate::rendering::frame::{Cursor, Frame};
 use crate::rendering::line::Line;
 use crate::rendering::render_context::ViewContext;
+use crate::rendering::soft_wrap::{soft_wrap_lines_with_map, truncate_line};
 use crate::style::Style;
 use crossterm::event::KeyCode;
 
@@ -167,14 +168,24 @@ impl<L: Component, R: Component> Component for SplitPanel<L, R> {
         let (left_lines, left_cursor) = self.left.render(&left_ctx).into_parts();
         let (right_lines, right_cursor) = self.right.render(&right_ctx).into_parts();
 
-        let max_rows = left_lines.len().max(right_lines.len());
+        let (mut right_visual_lines, right_row_starts) = if widths.right == 0 {
+            (Vec::new(), vec![0; right_lines.len()])
+        } else {
+            soft_wrap_lines_with_map(&right_lines, widths.right)
+        };
+
+        for line in &mut right_visual_lines {
+            line.extend_bg_to_width(widths.right.into());
+        }
+
+        let max_rows = usize::from(ctx.size.height);
         let sep_width = self.separator.as_ref().map_or(0, |(t, _)| t.len());
         let mut merged = Vec::with_capacity(max_rows);
 
         for i in 0..max_rows {
             let mut line = match left_lines.get(i) {
                 Some(l) => {
-                    let mut l = l.clone();
+                    let mut l = truncate_line(l, widths.left.into());
                     l.extend_bg_to_width(widths.left.into());
                     l
                 }
@@ -183,16 +194,30 @@ impl<L: Component, R: Component> Component for SplitPanel<L, R> {
             if let Some((text, style)) = &self.separator {
                 line.push_with_style(text, *style);
             }
-            if let Some(r) = right_lines.get(i) {
-                line.append_line(r);
+            if let Some(right) = right_visual_lines.get(i) {
+                line.append_line(right);
             }
             merged.push(line);
         }
 
         let cursor = if self.focus.is_focused(0) && left_cursor.is_visible {
-            left_cursor
-        } else if self.focus.is_focused(1) && right_cursor.is_visible {
-            Cursor::visible(right_cursor.row, right_cursor.col + usize::from(widths.left) + sep_width)
+            if left_cursor.row < max_rows { left_cursor } else { Cursor::hidden() }
+        } else if self.focus.is_focused(1) && right_cursor.is_visible && widths.right > 0 {
+            let mut row = right_row_starts
+                .get(right_cursor.row)
+                .copied()
+                .unwrap_or_else(|| right_visual_lines.len().saturating_sub(1));
+            let mut col = right_cursor.col;
+            let right_width = usize::from(widths.right);
+
+            row += col / right_width;
+            col %= right_width;
+
+            if row < max_rows {
+                Cursor::visible(row, col + usize::from(widths.left) + sep_width)
+            } else {
+                Cursor::hidden()
+            }
         } else {
             Cursor::hidden()
         };
