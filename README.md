@@ -183,6 +183,17 @@ Combine all the above for a "batteries-included" AI coding agent: [`wisp`](packa
 
 Standard cargo workflow: `cargo check`, `cargo test`, `cargo fmt`, `cargo clippy`.
 
+### Binary distribution (maintainers)
+
+Aether releases are built with [cargo-dist](https://github.com/axodotdev/cargo-dist) via GitHub Actions.
+
+- Preview release artifacts locally: `dist plan`
+- Build local distributable artifacts: `dist build`
+- Optional workflow smoke test with [act](https://github.com/nektos/act): `act pull_request -W .github/workflows/release.yml -j plan -P ubuntu-22.04=catthehacker/ubuntu:act-22.04`
+- Cutting a release is tag-driven (`vX.Y.Z`) and publishes GitHub Release artifacts.
+- Release artifacts include both `aether` and `aether-lspd` binaries (LSP tools depend on `aether-lspd`).
+- Homebrew publishing targets `contextbridge/homebrew-tap` and requires the `HOMEBREW_TAP_TOKEN` GitHub secret.
+
 ## License
 
 MIT

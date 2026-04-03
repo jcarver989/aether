@@ -36,6 +36,30 @@ lint:
 # Format + lint
 check-all: fmt-check lint
 
+# Initialize or update cargo-dist configuration and CI workflows
+dist-init:
+    dist init
+
+# Preview what cargo-dist will build in CI
+dist-plan:
+    dist plan
+
+# Build distributable artifacts for the current platform
+dist-build:
+    dist build
+
+# Smoke test dist release workflow locally with act (optional)
+act-dist-plan:
+    act pull_request -W .github/workflows/release.yml -j plan -P ubuntu-22.04=catthehacker/ubuntu:act-22.04
+
+# Preview unreleased changelog
+changelog:
+    git cliff --unreleased
+
+# Generate full CHANGELOG.md
+changelog-gen:
+    git cliff -o CHANGELOG.md
+
 # Update packages/llm/models.json from models.dev
 update-models:
     ./packages/llm/scripts/fetch-models.sh

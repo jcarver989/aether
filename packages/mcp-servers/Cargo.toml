@@ -18,6 +18,9 @@ path = "src/lib.rs"
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
+[package.metadata.dist]
+dist = false
+
 [lints]
 workspace = true
 
