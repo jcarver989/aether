@@ -1,6 +1,6 @@
 use super::*;
 use crossterm::event::KeyCode;
-use tui::{Cursor, Either, Frame, Line, SplitLayout, SplitPanel, Style};
+use tui::{Color, Cursor, Either, Frame, Line, SplitLayout, SplitPanel, Style};
 
 struct StubComponent {
     label: String,
@@ -39,6 +39,47 @@ impl Component for StubComponent {
 
 fn make_split() -> SplitPanel<StubComponent, StubComponent> {
     SplitPanel::new(StubComponent::new("LEFT"), StubComponent::new("RIGHT"), SplitLayout::fixed(15))
+}
+
+struct WideComponent {
+    text: &'static str,
+}
+
+impl Component for WideComponent {
+    type Message = ();
+
+    async fn on_event(&mut self, _: &Event) -> Option<Vec<()>> {
+        None
+    }
+
+    fn render(&mut self, ctx: &ViewContext) -> Frame {
+        let mut lines = vec![Line::new(self.text)];
+        while lines.len() < ctx.size.height as usize {
+            lines.push(Line::default());
+        }
+        Frame::new(lines)
+    }
+}
+
+struct StyledWideComponent {
+    text: &'static str,
+    style: Style,
+}
+
+impl Component for StyledWideComponent {
+    type Message = ();
+
+    async fn on_event(&mut self, _: &Event) -> Option<Vec<()>> {
+        None
+    }
+
+    fn render(&mut self, ctx: &ViewContext) -> Frame {
+        let mut lines = vec![Line::with_style(self.text, self.style)];
+        while lines.len() < ctx.size.height as usize {
+            lines.push(Line::default());
+        }
+        Frame::new(lines)
+    }
 }
 
 #[test]
@@ -162,6 +203,32 @@ fn cursor_from_right_panel_is_offset_by_left_width() {
 }
 
 #[test]
+fn cursor_from_wrapped_right_panel_accounts_for_wrap_row_and_offset() {
+    struct CursorComponent;
+    impl Component for CursorComponent {
+        type Message = ();
+        async fn on_event(&mut self, _: &Event) -> Option<Vec<()>> {
+            None
+        }
+        fn render(&mut self, _ctx: &ViewContext) -> Frame {
+            Frame::new(vec![Line::new("1234567890ABCDEFGHIJ")]).with_cursor(Cursor::visible(0, 19))
+        }
+    }
+
+    let mut split = SplitPanel::new(StubComponent::new("LEFT"), CursorComponent, SplitLayout::fixed(12))
+        .with_separator("|", Style::default());
+    split.focus_right();
+
+    let ctx = ViewContext::new((30, 3));
+    let frame = split.render(&ctx);
+    let cursor = frame.cursor();
+
+    assert!(cursor.is_visible);
+    assert_eq!(cursor.row, 1);
+    assert_eq!(cursor.col, 12 + 1 + 2);
+}
+
+#[test]
 fn cursor_from_left_panel_is_not_offset() {
     struct CursorComponent;
     impl Component for CursorComponent {
@@ -180,6 +247,37 @@ fn cursor_from_left_panel_is_not_offset() {
     let cursor = frame.cursor();
     assert!(cursor.is_visible);
     assert_eq!(cursor.col, 5);
+}
+
+#[test]
+fn soft_wraps_right_panel_to_its_allocated_width() {
+    let mut split = SplitPanel::new(
+        StubComponent::new("LEFT"),
+        WideComponent { text: "1234567890ABCDEFGHIJ" },
+        SplitLayout::fixed(12),
+    )
+    .with_separator("|", Style::default());
+
+    let term = render_component(|ctx| split.render(ctx), 30, 3);
+
+    assert_buffer_eq(&term, &["LEFT        |1234567890ABCDEFG", "            |HIJ", "            |"]);
+}
+
+#[test]
+fn soft_wrap_preserves_right_panel_background_style_on_wrapped_rows() {
+    let mut split = SplitPanel::new(
+        StubComponent::new("LEFT"),
+        StyledWideComponent { text: "1234567890ABCDEFGHIJ", style: Style::default().bg_color(Color::Blue) },
+        SplitLayout::fixed(12),
+    )
+    .with_separator("|", Style::default());
+
+    let term = render_component(|ctx| split.render(ctx), 30, 3);
+
+    // right panel starts at col 13 (left=12 + separator=1)
+    let expected_bg = term.get_style_at(0, 13).bg;
+    assert_eq!(term.get_style_at(1, 13).bg, expected_bg);
+    assert_eq!(term.get_style_at(1, 29).bg, expected_bg);
 }
 
 #[tokio::test]
