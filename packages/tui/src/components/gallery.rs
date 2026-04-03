@@ -1,32 +1,31 @@
 use crossterm::event::KeyCode;
-use crossterm::style::Color;
 
 use super::component::{Component, Event};
 use super::panel::Panel;
+use super::split_panel::{Either, SplitLayout, SplitPanel};
 use super::wrap_selection;
-use crate::focus::{FocusOutcome, FocusRing};
 use crate::line::Line;
-use crate::rendering::columns::side_by_side;
 use crate::rendering::frame::{Cursor, Frame};
 use crate::rendering::render_context::ViewContext;
 use crate::style::Style;
-
-const SIDEBAR_MIN: usize = 20;
-const SIDEBAR_MAX: usize = 30;
 
 pub enum GalleryMessage {
     Quit,
 }
 
 pub struct Gallery<T: Component> {
-    entries: Vec<(String, T)>,
-    selected: usize,
-    focus: FocusRing,
+    split: SplitPanel<GallerySidebar, GalleryPreview<T>>,
 }
 
 impl<T: Component> Gallery<T> {
     pub fn new(entries: Vec<(String, T)>) -> Self {
-        Self { entries, selected: 0, focus: FocusRing::new(2).without_wrap() }
+        let names: Vec<String> = entries.iter().map(|(n, _)| n.clone()).collect();
+        let longest = names.iter().map(String::len).max().unwrap_or(0);
+        let layout = SplitLayout::fixed((longest + 6).clamp(20, 30));
+        let sidebar = GallerySidebar { names, selected: 0, focused: true };
+        let preview = GalleryPreview { entries, active: 0, focused: false };
+
+        Self { split: SplitPanel::new(sidebar, preview, layout).with_separator("│", Style::default()) }
     }
 }
 
@@ -35,144 +34,145 @@ impl<T: Component> Component for Gallery<T> {
 
     async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         if let Event::Tick = event {
-            if let Some((_, component)) = self.entries.get_mut(self.selected) {
-                let _ = component.on_event(event).await;
-            }
+            let _ = self.split.right.on_event(event).await;
             return Some(vec![]);
         }
 
-        let Event::Key(key) = event else {
-            return None;
-        };
-
-        if key.code == KeyCode::Esc {
+        if let Event::Key(key) = event
+            && key.code == KeyCode::Esc
+        {
             return Some(vec![GalleryMessage::Quit]);
         }
 
-        let outcome = self.focus.handle_key(*key);
-        if matches!(outcome, FocusOutcome::FocusChanged) {
-            return Some(vec![]);
-        }
-
-        if self.focus.is_focused(0) {
-            match key.code {
-                KeyCode::Up => {
-                    wrap_selection(&mut self.selected, self.entries.len(), -1);
-                    Some(vec![])
+        match self.split.on_event(event).await {
+            Some(msgs) => {
+                for msg in &msgs {
+                    if let Either::Left(GallerySidebarMessage::Selected(idx)) = msg {
+                        self.split.right.active = *idx;
+                    }
                 }
-                KeyCode::Down => {
-                    wrap_selection(&mut self.selected, self.entries.len(), 1);
-                    Some(vec![])
-                }
-                _ => Some(vec![]),
+                Some(vec![])
             }
-        } else {
-            if let Some((_, component)) = self.entries.get_mut(self.selected) {
-                let _ = component.on_event(event).await;
-            }
-            Some(vec![])
+            None => None,
         }
     }
 
     fn render(&mut self, ctx: &ViewContext) -> Frame {
-        if self.entries.is_empty() {
+        if self.split.left.names.is_empty() {
             return Frame::new(vec![Line::new("No stories")]);
         }
 
-        let sidebar_focused = self.focus.is_focused(0);
-        let longest_name = self.entries.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
-        let sidebar_width = (longest_name + 6).clamp(SIDEBAR_MIN, SIDEBAR_MAX);
-        let preview_width = (ctx.size.width as usize).saturating_sub(sidebar_width + 1);
+        self.split.left.focused = self.split.is_left_focused();
+        self.split.right.focused = !self.split.is_left_focused();
+        self.split.set_separator_style(Style::fg(ctx.theme.muted()));
+
+        self.split.render(ctx)
+    }
+}
+
+enum GallerySidebarMessage {
+    Selected(usize),
+}
+
+struct GallerySidebar {
+    names: Vec<String>,
+    selected: usize,
+    focused: bool,
+}
+
+impl Component for GallerySidebar {
+    type Message = GallerySidebarMessage;
+
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+        if let Event::Key(key) = event {
+            match key.code {
+                KeyCode::Up => {
+                    wrap_selection(&mut self.selected, self.names.len(), -1);
+                    Some(vec![GallerySidebarMessage::Selected(self.selected)])
+                }
+                KeyCode::Down => {
+                    wrap_selection(&mut self.selected, self.names.len(), 1);
+                    Some(vec![GallerySidebarMessage::Selected(self.selected)])
+                }
+                _ => Some(vec![]),
+            }
+        } else {
+            None
+        }
+    }
+
+    fn render(&mut self, ctx: &ViewContext) -> Frame {
+        let width = ctx.size.width as usize;
         let height = ctx.size.height as usize;
+        let mut lines = Vec::with_capacity(height);
 
-        let sidebar_lines = render_sidebar(&self.entries, self.selected, sidebar_focused, sidebar_width, height, ctx);
+        lines.push(Line::with_style(" Gallery", Style::fg(ctx.theme.accent()).bold()));
+        lines.push(Line::default());
 
-        #[allow(clippy::cast_possible_truncation)]
-        let preview_ctx = ctx.with_size((preview_width as u16, ctx.size.height));
-        let (name, component) = &mut self.entries[self.selected];
-        let name = name.clone();
-        let preview_focused = self.focus.is_focused(1);
-        let (preview_lines, story_cursor) = render_preview(&name, component, preview_focused, &preview_ctx);
+        for (i, name) in self.names.iter().enumerate() {
+            let is_selected = i == self.selected;
+            let indicator = if is_selected { ">" } else { " " };
+            let style = if is_selected && self.focused {
+                ctx.theme.selected_row_style()
+            } else if is_selected {
+                Style::fg(ctx.theme.text_primary()).bold()
+            } else {
+                Style::fg(ctx.theme.text_secondary())
+            };
+            let mut line = Line::with_style(format!(" {indicator} {name}"), style);
+            line.extend_bg_to_width(width);
+            lines.push(line);
+        }
 
-        let sep_lines = prepend_separator(&preview_lines, ctx.theme.muted(), height);
-        let merged = side_by_side(&sidebar_lines, &sep_lines, sidebar_width);
+        while lines.len() < height {
+            lines.push(Line::default());
+        }
+        lines.truncate(height);
 
-        let cursor = if preview_focused && story_cursor.is_visible {
-            Cursor::visible(story_cursor.row + 2, story_cursor.col + sidebar_width + 1 + 2)
+        Frame::new(lines)
+    }
+}
+
+struct GalleryPreview<T: Component> {
+    entries: Vec<(String, T)>,
+    active: usize,
+    focused: bool,
+}
+
+impl<T: Component> Component for GalleryPreview<T> {
+    type Message = ();
+
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<()>> {
+        if let Some((_, component)) = self.entries.get_mut(self.active) {
+            let _ = component.on_event(event).await;
+        }
+        match event {
+            Event::Key(_) | Event::Tick => Some(vec![]),
+            _ => None,
+        }
+    }
+
+    fn render(&mut self, ctx: &ViewContext) -> Frame {
+        let (name, component) = &mut self.entries[self.active];
+        let border_color = if self.focused { ctx.theme.accent() } else { ctx.theme.muted() };
+
+        let inner_width = Panel::inner_width(ctx.size.width);
+        let inner_ctx = ctx.with_size((inner_width, ctx.size.height.saturating_sub(4)));
+        let frame = component.render(&inner_ctx);
+        let (content_lines, cursor) = frame.into_parts();
+
+        let footer = if self.focused { "[Shift+Tab] sidebar  [Esc] quit" } else { "[Tab] preview  [Esc] quit" };
+        let mut panel = Panel::new(border_color).title(format!(" {name} ")).footer(footer);
+        panel.push(content_lines);
+
+        let panel_cursor = if self.focused && cursor.is_visible {
+            Cursor::visible(cursor.row + 2, cursor.col + 2)
         } else {
             Cursor::hidden()
         };
 
-        Frame::new(merged).with_cursor(cursor)
+        Frame::new(panel.render(ctx)).with_cursor(panel_cursor)
     }
-}
-
-fn render_sidebar<T: Component>(
-    entries: &[(String, T)],
-    selected: usize,
-    focused: bool,
-    width: usize,
-    height: usize,
-    ctx: &ViewContext,
-) -> Vec<Line> {
-    let mut lines = Vec::with_capacity(height);
-    lines.push(Line::with_style(" Gallery", Style::fg(ctx.theme.accent()).bold()));
-    lines.push(Line::default());
-
-    for (i, (name, _)) in entries.iter().enumerate() {
-        let is_selected = i == selected;
-        let indicator = if is_selected { ">" } else { " " };
-        let style = if is_selected && focused {
-            ctx.theme.selected_row_style()
-        } else if is_selected {
-            Style::fg(ctx.theme.text_primary()).bold()
-        } else {
-            Style::fg(ctx.theme.text_secondary())
-        };
-        let mut line = Line::with_style(format!(" {indicator} {name}"), style);
-        line.extend_bg_to_width(width);
-        lines.push(line);
-    }
-
-    while lines.len() < height {
-        lines.push(Line::default());
-    }
-    lines.truncate(height);
-
-    lines
-}
-
-fn render_preview<T: Component>(
-    name: &str,
-    component: &mut T,
-    focused: bool,
-    ctx: &ViewContext,
-) -> (Vec<Line>, Cursor) {
-    let border_color = if focused { ctx.theme.accent() } else { ctx.theme.muted() };
-
-    let inner_width = Panel::inner_width(ctx.size.width);
-    let inner_ctx = ctx.with_size((inner_width, ctx.size.height.saturating_sub(4)));
-    let frame = component.render(&inner_ctx);
-    let (content_lines, cursor) = frame.into_parts();
-
-    let footer = if focused { "[Shift+Tab] sidebar  [Esc] quit" } else { "[Tab] preview  [Esc] quit" };
-
-    let mut panel = Panel::new(border_color).title(format!(" {name} ")).footer(footer);
-    panel.push(content_lines);
-
-    (panel.render(ctx), cursor)
-}
-
-fn prepend_separator(lines: &[Line], color: Color, height: usize) -> Vec<Line> {
-    let mut result = Vec::with_capacity(height);
-    for i in 0..height {
-        let mut sep = Line::styled("│", color);
-        if let Some(line) = lines.get(i) {
-            sep.append_line(line);
-        }
-        result.push(sep);
-    }
-    result
 }
 
 #[cfg(test)]
@@ -229,11 +229,11 @@ mod tests {
     #[tokio::test]
     async fn down_arrow_changes_selection() {
         let mut gallery = Gallery::new(vec![dummy("Alpha", "a"), dummy("Beta", "b")]);
-        assert_eq!(gallery.selected, 0);
+        assert_eq!(gallery.split.left.selected, 0);
 
         let down = Event::Key(crossterm::event::KeyEvent::new(KeyCode::Down, crossterm::event::KeyModifiers::NONE));
         gallery.on_event(&down).await;
-        assert_eq!(gallery.selected, 1);
+        assert_eq!(gallery.split.left.selected, 1);
     }
 
     #[tokio::test]
@@ -247,10 +247,10 @@ mod tests {
     #[tokio::test]
     async fn tab_switches_focus() {
         let mut gallery = Gallery::new(vec![dummy("A", "a")]);
-        assert!(gallery.focus.is_focused(0));
+        assert!(gallery.split.is_left_focused());
 
         let tab = Event::Key(crossterm::event::KeyEvent::new(KeyCode::Tab, crossterm::event::KeyModifiers::NONE));
         gallery.on_event(&tab).await;
-        assert!(gallery.focus.is_focused(1));
+        assert!(!gallery.split.is_left_focused());
     }
 }
