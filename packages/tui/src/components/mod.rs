@@ -10,6 +10,7 @@ pub mod radio_select;
 pub mod select_list;
 pub mod select_option;
 pub mod spinner;
+pub mod split_panel;
 pub mod text_field;
 
 pub use crate::rendering::frame::Cursor;
