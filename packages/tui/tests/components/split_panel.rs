@@ -132,7 +132,9 @@ async fn resize_keys_disabled_by_default() {
 
     let result = split.on_event(&Event::Key(key(KeyCode::Char('>')))).await.unwrap();
     assert!(matches!(&result[0], Either::Left(s) if s == "got_it"));
-    assert_eq!(split.delta(), 0);
+
+    let term = render_component(|ctx| split.render(ctx), 40, 1);
+    assert_buffer_eq(&term, &["L           R"]);
 }
 
 #[test]
