@@ -1,3 +1,10 @@
+---
+name: plan
+description: Create an implementation plan before writing code. Use for complex tasks.
+user-invocable: true
+agent-invocable: false
+---
+
 # Planner Instructions
 
 You are in "plan mode" right now. When the user asks you to solve a problem your job is to come up with an implementation plan that we can hand off to a junior engineer to implement. You are not to modify files, outside of writing and updating a markdown file that contains your plan. 
@@ -25,7 +32,3 @@ Output your plan as structured markdown, in this format:
 2. Solution -- a short summary of the proposed solution
 3. Technical details -- implementation details with code examples of structs, schemas etc
 4. Additional details -- this includes anything else a junior engineer would need, e.g. a list of files to modify to implement the solution
-
-
-
-
