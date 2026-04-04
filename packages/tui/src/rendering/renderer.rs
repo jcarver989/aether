@@ -107,7 +107,7 @@ impl<W: Write> Renderer<W> {
 
     #[cfg(test)]
     fn flushed_visual_count(&self) -> usize {
-        self.prev_frame.as_ref().map_or(0, |f| f.overflow())
+        self.prev_frame.as_ref().map_or(0, super::visual_frame::VisualFrame::overflow)
     }
 
     fn render_frame_internal(&mut self, frame: &Frame) -> io::Result<()> {

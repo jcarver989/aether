@@ -116,14 +116,14 @@ mod tests {
 
     #[test]
     fn parse_malformed_json_returns_error() {
-        let json = r#"not valid json"#;
+        let json = r"not valid json";
         assert!(serde_json::from_str::<OllamaTagsResponse>(json).is_err());
         assert!(serde_json::from_str::<OpenAiModelsResponse>(json).is_err());
     }
 
     #[test]
     fn parse_missing_models_field_defaults_to_empty() {
-        let json = r#"{}"#;
+        let json = r"{}";
         let resp: OllamaTagsResponse = serde_json::from_str(json).unwrap();
         assert!(resp.models.is_empty());
 

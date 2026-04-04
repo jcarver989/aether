@@ -22,7 +22,7 @@ async fn poll_workspace_diagnostics(
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
-    panic!("workspace diagnostics timed out after {timeout:?}. Last result: {:?}", last);
+    panic!("workspace diagnostics timed out after {timeout:?}. Last result: {last:?}");
 }
 
 fn workspace_error_count(diagnostics: &[PublishDiagnosticsParams]) -> usize {
