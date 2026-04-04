@@ -201,7 +201,7 @@ async fn test_settings_overlay_renders_after_large_overflow_scrollback() {
 
     for i in 0..50 {
         r.on_session_update(acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
-            acp::TextContent::new(&format!("Line {i:02} with enough content to wrap in 40 cols")),
+            acp::TextContent::new(format!("Line {i:02} with enough content to wrap in 40 cols")),
         ))))
         .unwrap();
     }
@@ -222,7 +222,7 @@ async fn test_settings_overlay_open_close_after_overflow_keeps_prompt_and_layout
 
     for i in 0..50 {
         r.on_session_update(acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
-            acp::TextContent::new(&format!("Line {i:02} with enough content to wrap in 40 cols")),
+            acp::TextContent::new(format!("Line {i:02} with enough content to wrap in 40 cols")),
         ))))
         .unwrap();
     }

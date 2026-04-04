@@ -600,7 +600,7 @@ mod tests {
 
     #[tool_router]
     impl TestServer {
-        fn as_dyn(self) -> Box<dyn DynService<RoleServer>> {
+        fn into_dyn(self) -> Box<dyn DynService<RoleServer>> {
             Box::new(self)
         }
 
@@ -630,7 +630,9 @@ mod tests {
         let (elicitation_sender, _elicitation_receiver) = mpsc::channel(1);
         let mut manager = McpManager::new(elicitation_sender, None);
         manager
-            .add_mcp(ServerConfig::InMemory { name: "test".to_string(), server: TestServer::default().as_dyn() }.into())
+            .add_mcp(
+                ServerConfig::InMemory { name: "test".to_string(), server: TestServer::default().into_dyn() }.into(),
+            )
             .await
             .unwrap();
 

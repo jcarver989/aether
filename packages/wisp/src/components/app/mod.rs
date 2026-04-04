@@ -527,6 +527,8 @@ fn current_config_selections(options: &[acp::SessionConfigOption]) -> Vec<(Strin
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use super::*;
+    use acp_utils::client::PromptCommand;
+    use tokio::sync::mpsc;
 
     pub fn make_app() -> App {
         App::new(
@@ -566,7 +568,7 @@ pub(crate) mod test_helpers {
 
     pub fn make_app_with_config_recording(
         config_options: &[acp::SessionConfigOption],
-    ) -> (App, tokio::sync::mpsc::UnboundedReceiver<acp_utils::client::PromptCommand>) {
+    ) -> (App, mpsc::UnboundedReceiver<PromptCommand>) {
         let (handle, rx) = AcpPromptHandle::recording();
         let app = App::new(
             SessionId::new("test"),
@@ -595,7 +597,7 @@ pub(crate) mod test_helpers {
     pub fn make_app_with_config_and_capabilities_recording(
         config_options: &[acp::SessionConfigOption],
         prompt_capabilities: acp::PromptCapabilities,
-    ) -> (App, tokio::sync::mpsc::UnboundedReceiver<acp_utils::client::PromptCommand>) {
+    ) -> (App, mpsc::UnboundedReceiver<PromptCommand>) {
         let (handle, rx) = AcpPromptHandle::recording();
         let app = App::new(
             SessionId::new("test"),
@@ -615,12 +617,15 @@ mod tests {
     use super::test_helpers::*;
     use super::*;
     use crate::components::command_picker::CommandEntry;
+    use crate::components::conversation_screen::Modal;
+    use crate::components::conversation_window::SegmentContent;
     use crate::components::elicitation_form::ElicitationForm;
     use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings, save_settings};
     use crate::test_helpers::with_wisp_home;
     use std::fs;
     use std::time::Duration;
     use tempfile::TempDir;
+    use tokio::sync::oneshot;
     use tui::testing::render_component;
     use tui::{Frame, KeyCode, KeyModifiers, Renderer, Theme, ViewContext};
 
@@ -655,12 +660,15 @@ mod tests {
         acp::PlanEntry::new(name, acp::PlanEntryPriority::Medium, status)
     }
 
-    fn mode_model_options(mode_val: impl Into<String>, model_val: impl Into<String>) -> Vec<acp::SessionConfigOption> {
+    fn mode_model_options(
+        current_mode: impl Into<String>,
+        current_model: impl Into<String>,
+    ) -> Vec<acp::SessionConfigOption> {
         vec![
             acp::SessionConfigOption::select(
                 "mode",
                 "Mode",
-                mode_val.into(),
+                current_mode.into(),
                 vec![
                     acp::SessionConfigSelectOption::new("Planner", "Planner"),
                     acp::SessionConfigSelectOption::new("Coder", "Coder"),
@@ -670,7 +678,7 @@ mod tests {
             acp::SessionConfigOption::select(
                 "model",
                 "Model",
-                model_val.into(),
+                current_model.into(),
                 vec![
                     acp::SessionConfigSelectOption::new("gpt-4o", "GPT-4o"),
                     acp::SessionConfigSelectOption::new("claude", "Claude"),
@@ -836,9 +844,8 @@ mod tests {
             ],
         });
 
-        let picker = match &mut app.conversation_screen.active_modal {
-            Some(crate::components::conversation_screen::Modal::SessionPicker(p)) => p,
-            _ => panic!("expected session picker modal"),
+        let Some(Modal::SessionPicker(picker)) = &mut app.conversation_screen.active_modal else {
+            panic!("expected session picker modal");
         };
         let lines = render_component(|ctx| picker.render(ctx), 60, 10).get_lines();
 
@@ -887,14 +894,13 @@ mod tests {
     #[tokio::test]
     async fn ctrl_g_blocked_during_elicitation() {
         let mut app = make_app();
-        app.conversation_screen.active_modal =
-            Some(crate::components::conversation_screen::Modal::Elicitation(ElicitationForm::from_params(
-                acp_utils::notifications::ElicitationParams {
-                    message: "test".to_string(),
-                    schema: acp_utils::ElicitationSchema::builder().build().unwrap(),
-                },
-                tokio::sync::oneshot::channel().0,
-            )));
+        app.conversation_screen.active_modal = Some(Modal::Elicitation(ElicitationForm::from_params(
+            acp_utils::notifications::ElicitationParams {
+                message: "test".to_string(),
+                schema: acp_utils::ElicitationSchema::builder().build().unwrap(),
+            },
+            oneshot::channel().0,
+        )));
 
         send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
         assert!(!app.screen_router.is_git_diff(), "git diff should not open during elicitation");
@@ -1012,7 +1018,7 @@ mod tests {
             .conversation
             .segments()
             .filter_map(|segment| match segment {
-                crate::components::conversation_window::SegmentContent::UserMessage(text) => Some(text.clone()),
+                SegmentContent::UserMessage(text) => Some(text.clone()),
                 _ => None,
             })
             .collect();

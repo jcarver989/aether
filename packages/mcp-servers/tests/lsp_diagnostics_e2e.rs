@@ -46,7 +46,7 @@ async fn poll_workspace_diagnostics(
 
     panic!(
         "workspace diagnostics timed out after {timeout:?}. Last result: {}",
-        last_result.as_ref().map(|result| result.to_string()).unwrap_or_else(|| "(no valid response)".to_string())
+        last_result.as_ref().map_or_else(|| "(no valid response)".to_string(), std::string::ToString::to_string)
     );
 }
 
@@ -67,7 +67,7 @@ fn canonical_path(path: &str) -> String {
     std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path)).to_string_lossy().to_string()
 }
 
-/// Test: MCP edit_file tool → rust-analyzer picks up change → diagnostics queryable
+/// Test: MCP `edit_file` tool → rust-analyzer picks up change → diagnostics queryable
 #[tokio::test]
 async fn test_mcp_edit_produces_diagnostics() {
     // 1. Create a Cargo project with a type error
@@ -129,7 +129,7 @@ async fn test_mcp_edit_produces_diagnostics() {
     assert!(errors > 0, "Expected type error after re-introducing bug");
 }
 
-/// Regression test: after edit_file, a SINGLE lsp_check_errors call (no polling)
+/// Regression test: after `edit_file`, a SINGLE `lsp_check_errors` call (no polling)
 /// should eventually return fresh diagnostics. This verifies the daemon waits for
 /// the LSP to re-publish diagnostics after syncing a changed document.
 #[tokio::test]
@@ -173,7 +173,7 @@ async fn test_diagnostics_available_after_edit_without_polling() {
     poll_diagnostics(&client, Some(&main_rs), has_errors).await;
 }
 
-/// Regression test: after edit_file, calling `lsp_check_errors` in workspace scope
+/// Regression test: after `edit_file`, calling `lsp_check_errors` in workspace scope
 /// should still return fresh diagnostics. This verifies the daemon syncs all open
 /// documents before returning the cache.
 #[tokio::test]
@@ -217,7 +217,7 @@ async fn test_diagnostics_all_files_after_edit() {
     poll_diagnostics(&client, None, has_errors).await;
 }
 
-/// Regression test: after edit_file, an immediate workspace-scoped
+/// Regression test: after `edit_file`, an immediate workspace-scoped
 /// `lsp_check_errors` call should report the new error even when no file-scoped
 /// diagnostics request has ever been made.
 #[tokio::test]
@@ -259,7 +259,7 @@ async fn test_workspace_diagnostics_after_edit_without_file_check() {
 }
 
 /// Regression test: once workspace diagnostics have recorded an error, fixing the
-/// file via edit_file should immediately clear the workspace result without any
+/// file via `edit_file` should immediately clear the workspace result without any
 /// file-scoped diagnostics request.
 #[tokio::test]
 async fn test_workspace_diagnostics_clear_after_fix_without_file_check() {
@@ -395,7 +395,7 @@ async fn test_diagnostics_all_files_after_external_edit_single_call() {
     poll_diagnostics(&client, None, has_errors).await;
 }
 
-/// Test: External fs::write → file watcher → diagnostics queryable
+/// Test: External `fs::write` → file watcher → diagnostics queryable
 #[tokio::test]
 async fn test_external_file_change_produces_diagnostics() {
     // 1. Create a Cargo project with a type error

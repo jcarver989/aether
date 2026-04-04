@@ -153,7 +153,7 @@ async fn test_parse_tool_proxy_config() {
             assert!(servers.iter().any(|s| matches!(s, ServerConfig::Stdio { .. })));
             assert!(servers.iter().any(|s| matches!(s, ServerConfig::Http { .. })));
         }
-        other => panic!("Expected ToolProxy config, got {other:?}"),
+        other @ McpServerConfig::Server(_) => panic!("Expected ToolProxy config, got {other:?}"),
     }
 }
 

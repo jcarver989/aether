@@ -179,6 +179,7 @@ impl<T: Component> Component for GalleryPreview<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rendering::line::Line;
 
     struct DummyComponent {
         label: String,
@@ -213,7 +214,7 @@ mod tests {
         let mut gallery = Gallery::new(vec![dummy("Alpha", "a"), dummy("Beta", "b")]);
         let ctx = ViewContext::new((80, 24));
         let frame = gallery.render(&ctx);
-        let text: String = frame.lines().iter().map(crate::rendering::line::Line::plain_text).collect::<Vec<_>>().join("\n");
+        let text: String = frame.lines().iter().map(Line::plain_text).collect::<Vec<_>>().join("\n");
         assert!(text.contains("Alpha"), "should contain Alpha: {text}");
         assert!(text.contains("Beta"), "should contain Beta: {text}");
     }
@@ -223,7 +224,7 @@ mod tests {
         let mut gallery = Gallery::new(vec![dummy("Alpha", "a"), dummy("Beta", "b")]);
         let ctx = ViewContext::new((80, 24));
         let frame = gallery.render(&ctx);
-        let all_text: Vec<String> = frame.lines().iter().map(crate::rendering::line::Line::plain_text).collect();
+        let all_text: Vec<String> = frame.lines().iter().map(Line::plain_text).collect();
         assert!(all_text.iter().any(|l| l.contains("> Alpha")), "should have > Alpha indicator: {all_text:?}");
     }
 

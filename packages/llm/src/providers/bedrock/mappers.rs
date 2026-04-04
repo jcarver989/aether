@@ -191,6 +191,7 @@ fn json_to_document(value: &Value) -> Document {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::AssistantReasoning;
     use crate::tools::{ToolCallError, ToolCallRequest, ToolCallResult};
     use crate::types::IsoString;
 
@@ -212,10 +213,7 @@ mod tests {
         let messages = vec![ChatMessage::User {
             content: vec![
                 ContentBlock::text("Look:"),
-                ContentBlock::Image {
-                    data: base64::engine::general_purpose::STANDARD.encode(b"fakepng"),
-                    mime_type: "image/png".to_string(),
-                },
+                ContentBlock::Image { data: BASE64.encode(b"fakepng"), mime_type: "image/png".to_string() },
             ],
             timestamp: IsoString::now(),
         }];
@@ -231,10 +229,7 @@ mod tests {
         let messages = vec![ChatMessage::User {
             content: vec![
                 ContentBlock::text("Listen:"),
-                ContentBlock::Audio {
-                    data: base64::engine::general_purpose::STANDARD.encode(b"fakewav"),
-                    mime_type: "audio/wav".to_string(),
-                },
+                ContentBlock::Audio { data: BASE64.encode(b"fakewav"), mime_type: "audio/wav".to_string() },
             ],
             timestamp: IsoString::now(),
         }];
@@ -259,7 +254,7 @@ mod tests {
     fn test_map_assistant_with_tool_calls() {
         let messages = vec![ChatMessage::Assistant {
             content: "I'll help".to_string(),
-            reasoning: Default::default(),
+            reasoning: AssistantReasoning::default(),
             timestamp: IsoString::now(),
             tool_calls: vec![ToolCallRequest {
                 id: "call_1".to_string(),
@@ -282,7 +277,7 @@ mod tests {
     fn test_map_assistant_tool_calls_without_text() {
         let messages = vec![ChatMessage::Assistant {
             content: String::new(),
-            reasoning: Default::default(),
+            reasoning: AssistantReasoning::default(),
             timestamp: IsoString::now(),
             tool_calls: vec![ToolCallRequest {
                 id: "call_1".to_string(),

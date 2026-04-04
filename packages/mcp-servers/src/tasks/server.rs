@@ -104,6 +104,18 @@ impl TasksMcp {
         self.roots = RwLock::new(roots);
         self
     }
+
+    #[cfg(test)]
+    #[allow(clippy::used_underscore_binding)]
+    fn is_session_scoped(&self) -> bool {
+        self._temp_dir.is_some()
+    }
+
+    #[cfg(test)]
+    #[allow(clippy::used_underscore_binding)]
+    fn temp_path(&self) -> Option<PathBuf> {
+        self._temp_dir.as_ref().map(|d| d.path().to_path_buf())
+    }
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -161,8 +173,8 @@ mod tests {
     #[test]
     fn test_new_is_session_scoped() {
         let server = TasksMcp::new();
-        assert!(server._temp_dir.is_some());
-        let temp_path = server._temp_dir.as_ref().unwrap().path().to_path_buf();
+        assert!(server.is_session_scoped());
+        let temp_path = server.temp_path().unwrap();
         assert!(temp_path.exists());
 
         drop(server);
@@ -173,13 +185,13 @@ mod tests {
     fn test_new_persistent_uses_provided_dir() {
         let temp = TempDir::new().unwrap();
         let server = TasksMcp::new_persistent(temp.path().to_path_buf());
-        assert!(server._temp_dir.is_none());
+        assert!(!server.is_session_scoped());
     }
 
     #[test]
     fn test_from_args_no_dir_is_session_scoped() {
         let server = TasksMcp::from_args(vec![]).unwrap();
-        assert!(server._temp_dir.is_some());
+        assert!(server.is_session_scoped());
     }
 
     #[test]
@@ -187,6 +199,6 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let dir = temp.path().to_str().unwrap().to_string();
         let server = TasksMcp::from_args(vec!["--dir".into(), dir]).unwrap();
-        assert!(server._temp_dir.is_none());
+        assert!(!server.is_session_scoped());
     }
 }

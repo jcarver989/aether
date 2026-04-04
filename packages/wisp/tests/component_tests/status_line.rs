@@ -159,10 +159,10 @@ fn renders_both_context_and_unhealthy() {
 #[test]
 fn renders_agent_mode_model_in_order() {
     let line = StatusBuilder::new("wisp").mode("planner", "Planner").model("gpt-4o").line();
-    let agent_pos = line.find("wisp").unwrap();
-    let mode_pos = line.find("Planner").unwrap();
-    let model_pos = line.find("gpt-4o").unwrap();
-    assert!(agent_pos < mode_pos && mode_pos < model_pos);
+    let agent_at = line.find("wisp").unwrap();
+    let mode_at = line.find("Planner").unwrap();
+    let llm_model_at = line.find("gpt-4o").unwrap();
+    assert!(agent_at < mode_at && mode_at < llm_model_at);
 }
 
 #[test]

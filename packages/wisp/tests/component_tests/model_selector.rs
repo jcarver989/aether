@@ -105,7 +105,7 @@ fn focused_provider_and_row(selector: &mut ModelSelector) -> (String, String) {
         .expect("should find provider header")
         .to_string();
 
-    (provider, lines[focused_idx].to_string())
+    (provider, lines[focused_idx].clone())
 }
 
 fn model_values_with_reasoning() -> Vec<ModelEntry> {

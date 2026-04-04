@@ -341,10 +341,11 @@ mod tests {
     use std::str::FromStr;
 
     fn make_uri(path: &str) -> Uri {
-        Uri::from_str(&format!("file://{}", path)).unwrap()
+        Uri::from_str(&format!("file://{path}")).unwrap()
     }
 
     #[test]
+    #[allow(clippy::mutable_key_type)]
     fn test_convert_simple_changes() {
         let mut changes = HashMap::new();
         changes.insert(
@@ -407,6 +408,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::mutable_key_type)]
     fn test_document_changes_take_precedence_over_changes() {
         let mut changes = HashMap::new();
         changes.insert(

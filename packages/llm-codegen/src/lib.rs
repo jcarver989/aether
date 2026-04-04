@@ -1082,7 +1082,7 @@ mod tests {
                     "name": "GPT-5.4 Codex",
                     "tool_call": true,
                     "reasoning": true,
-                    "limit": {"context": 200000, "output": 0}
+                    "limit": {"context": 200_000, "output": 0}
                 }
             }),
         );

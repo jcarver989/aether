@@ -1,3 +1,4 @@
+use async_openai::types::chat::{CreateChatCompletionStreamResponse, Role};
 use llm::providers::openai_compatible::ChatCompletionStreamResponse;
 
 /// Test that we can deserialize the actual Z.ai response format
@@ -35,7 +36,7 @@ fn test_deserialize_zai_response_missing_object_field() {
 
     let choice = &response.choices[0];
     assert_eq!(choice.index, 0);
-    assert_eq!(choice.delta.role, Some(async_openai::types::chat::Role::Assistant));
+    assert_eq!(choice.delta.role, Some(Role::Assistant));
     assert_eq!(choice.delta.content, Some("\n".to_string()));
 }
 
@@ -81,7 +82,7 @@ fn test_convert_to_openai_type() {
     let response: ChatCompletionStreamResponse = serde_json::from_str(json).unwrap();
 
     // Convert to standard OpenAI type
-    let openai_response: async_openai::types::chat::CreateChatCompletionStreamResponse = response.into();
+    let openai_response: CreateChatCompletionStreamResponse = response.into();
 
     assert_eq!(openai_response.id, "test123");
     assert_eq!(openai_response.model, "glm-4.6");

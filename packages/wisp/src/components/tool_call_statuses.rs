@@ -312,7 +312,7 @@ mod tests {
 
         let lines = statuses.render_tool("tool-1", &ctx());
         assert!(lines.len() > 1);
-        let all_text: String = lines.iter().map(|l| l.plain_text()).collect();
+        let all_text: String = lines.iter().map(tui::Line::plain_text).collect();
         assert!(all_text.contains("old line"), "Expected removed line: {all_text}");
         assert!(all_text.contains("new line"), "Expected added line: {all_text}");
     }

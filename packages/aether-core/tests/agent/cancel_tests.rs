@@ -64,7 +64,7 @@ async fn test_prompt_after_cancel_produces_response() {
             }
             Ok(Some(_)) => {}
             Ok(None) => panic!("Channel closed before second Done"),
-            Err(_) => panic!("Timed out waiting for second prompt response — agent is stuck"),
+            Err(elapsed) => panic!("Timed out waiting for second prompt response — agent is stuck: {elapsed}"),
         }
     }
 

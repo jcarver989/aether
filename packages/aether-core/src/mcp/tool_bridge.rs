@@ -269,11 +269,6 @@ mod tests {
     /// and that omitting the rename breaks extraction.
     #[test]
     fn test_meta_camel_case_serde_round_trip() {
-        let display_meta = json!({
-            "display": { "title": "Read file", "value": "file.rs, 50 lines" }
-        });
-
-        // With explicit rename: _meta key survives camelCase
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
         struct GoodResult {
@@ -282,6 +277,19 @@ mod tests {
             #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
             _meta: Option<serde_json::Value>,
         }
+
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct BrokenResult {
+            file_path: String,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            _meta: Option<serde_json::Value>,
+        }
+
+        let display_meta = json!({
+            "display": { "title": "Read file", "value": "file.rs, 50 lines" }
+        });
+
         let good = serde_json::to_value(&GoodResult {
             file_path: "/test/file.rs".into(),
             total_lines: 50,
@@ -295,14 +303,6 @@ mod tests {
         assert_eq!(rm.display.value, "file.rs, 50 lines");
         assert!(stripped.get("_meta").is_none());
 
-        // Without rename: camelCase mangles _meta to "meta", breaking extraction
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct BrokenResult {
-            file_path: String,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            _meta: Option<serde_json::Value>,
-        }
         let broken =
             serde_json::to_value(&BrokenResult { file_path: "/test/file.rs".into(), _meta: Some(display_meta) })
                 .unwrap();

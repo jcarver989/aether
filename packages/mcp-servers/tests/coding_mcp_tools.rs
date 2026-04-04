@@ -1,13 +1,13 @@
 use mcp_servers::coding::CodingMcp;
 use mcp_utils::testing::connect;
-use rmcp::model::{CallToolRequestParams, ClientInfo, Implementation};
+use rmcp::model::{CallToolRequestParams, ClientCapabilities, ClientInfo, Implementation};
 use std::fs;
 
 #[tokio::test]
 async fn test_read_file_tool() {
     // Create server and client
     let server_service = CodingMcp::new();
-    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
+    let client_info = ClientInfo::new(ClientCapabilities::default(), Implementation::new("test-client", "0.1.0"));
 
     let (_server_handle, client) =
         connect(server_service, client_info).await.expect("Failed to connect MCP server and client");
@@ -58,7 +58,7 @@ async fn test_read_file_tool() {
 async fn test_write_file_tool() {
     // Create server and client
     let server_service = CodingMcp::new();
-    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
+    let client_info = ClientInfo::new(ClientCapabilities::default(), Implementation::new("test-client", "0.1.0"));
 
     let (_server_handle, client) =
         connect(server_service, client_info).await.expect("Failed to connect MCP server and client");
@@ -109,7 +109,7 @@ async fn test_write_file_tool() {
 async fn test_bash_tool() {
     // Create server and client
     let server_service = CodingMcp::new();
-    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
+    let client_info = ClientInfo::new(ClientCapabilities::default(), Implementation::new("test-client", "0.1.0"));
 
     let (_server_handle, client) =
         connect(server_service, client_info).await.expect("Failed to connect MCP server and client");
@@ -149,7 +149,7 @@ async fn test_bash_tool() {
 async fn test_edit_file_tool() {
     // Create server and client
     let server_service = CodingMcp::new();
-    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
+    let client_info = ClientInfo::new(ClientCapabilities::default(), Implementation::new("test-client", "0.1.0"));
 
     let (_server_handle, client) =
         connect(server_service, client_info).await.expect("Failed to connect MCP server and client");
@@ -245,11 +245,9 @@ async fn test_edit_file_tool() {
         .await
         .expect("Failed to call edit_file tool with replace_all");
 
-    if let Some(content) = result.content.first() {
-        if let Some(text_content) = content.as_text() {
-            let parsed: serde_json::Value = serde_json::from_str(&text_content.text).expect("Invalid JSON response");
-            assert_eq!(parsed["replacementsMade"], 3);
-        }
+    if let Some(text_content) = result.content.first().and_then(|c| c.as_text()) {
+        let parsed: serde_json::Value = serde_json::from_str(&text_content.text).expect("Invalid JSON response");
+        assert_eq!(parsed["replacementsMade"], 3);
     }
 
     let file_content = tokio::fs::read_to_string(test_path).await.expect("Failed to read edited file");
@@ -263,7 +261,7 @@ async fn test_edit_file_tool() {
 async fn test_list_files_tool() {
     // Create server and client
     let server_service = CodingMcp::new();
-    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
+    let client_info = ClientInfo::new(ClientCapabilities::default(), Implementation::new("test-client", "0.1.0"));
 
     let (_server_handle, client) =
         connect(server_service, client_info).await.expect("Failed to connect MCP server and client");
@@ -332,11 +330,9 @@ async fn test_list_files_tool() {
         .await
         .expect("Failed to call list_files tool with hidden files");
 
-    if let Some(content) = result_with_hidden.content.first() {
-        if let Some(text_content) = content.as_text() {
-            let parsed: serde_json::Value = serde_json::from_str(&text_content.text).expect("Invalid JSON response");
-            assert_eq!(parsed["totalCount"], 4); // Should include hidden file now
-        }
+    if let Some(text_content) = result_with_hidden.content.first().and_then(|c| c.as_text()) {
+        let parsed: serde_json::Value = serde_json::from_str(&text_content.text).expect("Invalid JSON response");
+        assert_eq!(parsed["totalCount"], 4); // Should include hidden file now
     }
 
     // Clean up

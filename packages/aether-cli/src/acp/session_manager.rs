@@ -334,12 +334,12 @@ mod tests {
         active: &str,
         effort: Option<RE>,
         mode: Option<&str>,
-        setting: ConfigSetting,
+        setting: &ConfigSetting,
     ) -> (Result<(), acp::Error>, SessionConfigState) {
         let mut state = SessionConfigState::new(active.into());
         state.reasoning_effort = effort;
         state.selected_mode = mode.map(Into::into);
-        let result = state.apply_config_change(&validated_modes(), &available_models(), &setting);
+        let result = state.apply_config_change(&validated_modes(), &available_models(), setting);
         (result, state)
     }
 
@@ -351,7 +351,7 @@ mod tests {
 
     #[test]
     fn mode_selection_updates_pending_model_and_reasoning() {
-        let (res, s) = apply(DEEPSEEK, None, None, ConfigSetting::Mode("Planner".into()));
+        let (res, s) = apply(DEEPSEEK, None, None, &ConfigSetting::Mode("Planner".into()));
         assert!(res.is_ok());
         assert_eq!(s.pending_model.as_deref(), Some(SONNET));
         assert_eq!(s.reasoning_effort, Some(RE::High));
@@ -360,20 +360,20 @@ mod tests {
 
     #[test]
     fn unknown_mode_is_rejected() {
-        let (res, _) = apply(DEEPSEEK, None, None, ConfigSetting::Mode("Unknown".into()));
+        let (res, _) = apply(DEEPSEEK, None, None, &ConfigSetting::Mode("Unknown".into()));
         assert!(res.is_err());
     }
 
     #[test]
     fn effort_change_preserves_mode_and_model_change_clears_it() {
         // Changing reasoning effort keeps the selected mode.
-        let (res, s) = apply(SONNET, Some(RE::High), Some("Planner"), ConfigSetting::ReasoningEffort(Some(RE::Low)));
+        let (res, s) = apply(SONNET, Some(RE::High), Some("Planner"), &ConfigSetting::ReasoningEffort(Some(RE::Low)));
         assert!(res.is_ok());
         assert_eq!(s.reasoning_effort, Some(RE::Low));
         assert_eq!(s.selected_mode.as_deref(), Some("Planner"));
 
         // Changing the model to one that doesn't match any mode clears the mode.
-        let (res, s) = apply(SONNET, Some(RE::Medium), Some("Planner"), ConfigSetting::Model(DEEPSEEK.into()));
+        let (res, s) = apply(SONNET, Some(RE::Medium), Some("Planner"), &ConfigSetting::Model(DEEPSEEK.into()));
         assert!(res.is_ok());
         assert_eq!(s.pending_model.as_deref(), Some(DEEPSEEK));
         assert!(s.selected_mode.is_none());

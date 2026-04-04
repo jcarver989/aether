@@ -84,7 +84,7 @@ async fn test_command_timeout() {
 async fn test_timeout_validation() {
     let args = BashInput {
         command: "echo test".to_string(),
-        timeout: Some(700000), // Exceeds max of 600000
+        timeout: Some(700_000), // Exceeds max of 600000
         description: None,
         run_in_background: None,
     };

@@ -301,6 +301,18 @@ fn render_agent_header(agent: &SubAgentState, tick: u16, context: &ViewContext) 
     line
 }
 
+fn format_arguments(arguments: &str) -> String {
+    let mut formatted = format!(" {arguments}");
+    if formatted.len() > MAX_TOOL_ARG_LENGTH {
+        let mut new_len = MAX_TOOL_ARG_LENGTH;
+        while !formatted.is_char_boundary(new_len) {
+            new_len -= 1;
+        }
+        formatted.truncate(new_len);
+    }
+    formatted
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,16 +427,4 @@ mod tests {
         assert!(has_line_change, "lines should contain changes");
         assert!(has_row_change, "rows should contain changes");
     }
-}
-
-fn format_arguments(arguments: &str) -> String {
-    let mut formatted = format!(" {arguments}");
-    if formatted.len() > MAX_TOOL_ARG_LENGTH {
-        let mut new_len = MAX_TOOL_ARG_LENGTH;
-        while !formatted.is_char_boundary(new_len) {
-            new_len -= 1;
-        }
-        formatted.truncate(new_len);
-    }
-    formatted
 }

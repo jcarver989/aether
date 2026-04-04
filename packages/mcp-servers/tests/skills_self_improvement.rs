@@ -1,7 +1,7 @@
 use mcp_servers::skills::SkillsMcp;
 use mcp_utils::testing::connect;
 use rmcp::ServerHandler;
-use rmcp::model::{CallToolRequestParams, ClientInfo, Implementation};
+use rmcp::model::{CallToolRequestParams, ClientCapabilities, ClientInfo, Implementation};
 use std::path::Path;
 use tempfile::TempDir;
 
@@ -12,12 +12,12 @@ async fn create_test_client(
     rmcp::service::RunningService<rmcp::RoleClient, ClientInfo>,
 ) {
     let server_service = SkillsMcp::new(test_dir.to_path_buf());
-    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
+    let client_info = ClientInfo::new(ClientCapabilities::default(), Implementation::new("test-client", "0.1.0"));
 
     connect(server_service, client_info).await.expect("Failed to connect MCP server and client")
 }
 
-fn call_tool_params(name: &str, args: serde_json::Value) -> CallToolRequestParams {
+fn call_tool_params(name: &str, args: &serde_json::Value) -> CallToolRequestParams {
     CallToolRequestParams::new(name.to_string()).with_arguments(args.as_object().unwrap().clone())
 }
 
@@ -36,7 +36,7 @@ async fn test_save_note_creates_new() {
     let result = client
         .call_tool(call_tool_params(
             "save_note",
-            serde_json::json!({
+            &serde_json::json!({
                 "topic": "agent-spec",
                 "content": "Core owns AgentSpec type; CLI owns settings.json parsing.",
                 "tags": ["aether", "architecture"]
@@ -69,7 +69,7 @@ async fn test_save_note_appends_to_existing() {
     client
         .call_tool(call_tool_params(
             "save_note",
-            serde_json::json!({
+            &serde_json::json!({
                 "topic": "agent-spec",
                 "content": "First learning.",
                 "tags": ["aether"]
@@ -82,7 +82,7 @@ async fn test_save_note_appends_to_existing() {
     let result = client
         .call_tool(call_tool_params(
             "save_note",
-            serde_json::json!({
+            &serde_json::json!({
                 "topic": "agent-spec",
                 "content": "Second learning.",
                 "tags": ["architecture"]
@@ -112,7 +112,7 @@ async fn test_save_note_rejects_empty_content() {
     let result = client
         .call_tool(call_tool_params(
             "save_note",
-            serde_json::json!({
+            &serde_json::json!({
                 "topic": "test",
                 "content": "   "
             }),
@@ -133,7 +133,7 @@ async fn test_search_notes_by_topic() {
     client
         .call_tool(call_tool_params(
             "save_note",
-            serde_json::json!({
+            &serde_json::json!({
                 "topic": "agent-spec",
                 "content": "AgentSpec learning.",
                 "tags": ["aether"]
@@ -145,7 +145,7 @@ async fn test_search_notes_by_topic() {
     client
         .call_tool(call_tool_params(
             "save_note",
-            serde_json::json!({
+            &serde_json::json!({
                 "topic": "testing-conventions",
                 "content": "Use Fake prefix.",
                 "tags": ["testing"]
@@ -158,7 +158,7 @@ async fn test_search_notes_by_topic() {
     let result = client
         .call_tool(call_tool_params(
             "search_notes",
-            serde_json::json!({
+            &serde_json::json!({
                 "query": "agent"
             }),
         ))
@@ -180,7 +180,7 @@ async fn test_search_notes_by_tag() {
     client
         .call_tool(call_tool_params(
             "save_note",
-            serde_json::json!({
+            &serde_json::json!({
                 "topic": "agent-spec",
                 "content": "Learning 1.",
                 "tags": ["aether"]
@@ -192,7 +192,7 @@ async fn test_search_notes_by_tag() {
     client
         .call_tool(call_tool_params(
             "save_note",
-            serde_json::json!({
+            &serde_json::json!({
                 "topic": "mcp-setup",
                 "content": "Learning 2.",
                 "tags": ["aether"]
@@ -204,7 +204,7 @@ async fn test_search_notes_by_tag() {
     let result = client
         .call_tool(call_tool_params(
             "search_notes",
-            serde_json::json!({
+            &serde_json::json!({
                 "query": "aether"
             }),
         ))
@@ -225,7 +225,7 @@ async fn test_search_notes_empty_results() {
     let result = client
         .call_tool(call_tool_params(
             "search_notes",
-            serde_json::json!({
+            &serde_json::json!({
                 "query": "nonexistent"
             }),
         ))
@@ -279,7 +279,7 @@ async fn test_full_lifecycle() {
     let result = client
         .call_tool(call_tool_params(
             "save_note",
-            serde_json::json!({
+            &serde_json::json!({
                 "topic": "lifecycle-topic",
                 "content": "First insight.",
                 "tags": ["test"]
@@ -294,7 +294,7 @@ async fn test_full_lifecycle() {
     let result = client
         .call_tool(call_tool_params(
             "save_note",
-            serde_json::json!({
+            &serde_json::json!({
                 "topic": "lifecycle-topic",
                 "content": "Second insight.",
                 "tags": ["lifecycle"]
@@ -312,7 +312,7 @@ async fn test_full_lifecycle() {
     let result = client
         .call_tool(call_tool_params(
             "search_notes",
-            serde_json::json!({
+            &serde_json::json!({
                 "query": "lifecycle"
             }),
         ))
@@ -337,7 +337,7 @@ async fn test_full_lifecycle() {
     let result = client
         .call_tool(call_tool_params(
             "get_skills",
-            serde_json::json!({
+            &serde_json::json!({
                 "requests": [{ "name": "curated" }]
             }),
         ))

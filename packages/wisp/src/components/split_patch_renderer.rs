@@ -453,7 +453,7 @@ mod tests {
         ];
         let (lines, _refs) = build_split_patch_lines(&file, 100, &ctx(), &comments);
 
-        let text: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
+        let text: Vec<String> = lines.iter().map(tui::Line::plain_text).collect();
         let alpha_pos = text.iter().position(|t| t.contains("alpha")).expect("should find alpha");
         let beta_pos = text.iter().position(|t| t.contains("beta")).expect("should find beta");
         assert!(alpha_pos < beta_pos, "alpha should appear before beta");

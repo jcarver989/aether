@@ -136,6 +136,7 @@ pub fn map_tools(tools: &[ToolDefinition]) -> Result<Vec<Tool>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::AssistantReasoning;
     use crate::tools::ToolCallRequest;
     use crate::types::IsoString;
 
@@ -224,7 +225,7 @@ mod tests {
     fn test_map_assistant_with_tool_calls() {
         let messages = vec![ChatMessage::Assistant {
             content: "I'll help you with that".to_string(),
-            reasoning: Default::default(),
+            reasoning: AssistantReasoning::default(),
             timestamp: IsoString::now(),
             tool_calls: vec![ToolCallRequest {
                 id: "call_1".to_string(),

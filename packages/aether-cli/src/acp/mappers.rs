@@ -401,9 +401,11 @@ fn try_parse_sub_agent_progress(message: &str, request: &llm::ToolCallRequest) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use acp_utils::notifications::SubAgentEvent;
     use acp_utils::server::AcpRequest;
     use aether_core::events::SUB_AGENT_PROGRESS_METHOD;
     use llm::ToolCallRequest;
+    use tokio::sync::mpsc;
 
     #[test]
     fn test_tool_progress_with_sub_agent_payload_emits_ext_notification() {
@@ -443,12 +445,12 @@ mod tests {
         assert_eq!(parsed.parent_tool_id, "call_123");
         assert_eq!(parsed.task_id, "task_1");
         assert_eq!(parsed.agent_name, "sub-agent");
-        assert!(matches!(parsed.event, acp_utils::notifications::SubAgentEvent::Other));
+        assert!(matches!(parsed.event, SubAgentEvent::Other));
     }
 
     #[tokio::test]
     async fn replay_emits_user_media_chunks_in_order() {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let actor = AcpActorHandle::new(tx);
         let session_id = acp::SessionId::new("test-session");
         let events = vec![SessionEvent::User(UserEvent::Message {

@@ -53,7 +53,7 @@ mod tests {
             client_id: "client_1".to_string(),
             access_token: "tok_abc".to_string(),
             refresh_token: Some("ref_xyz".to_string()),
-            expires_at: Some(9999999999999),
+            expires_at: Some(9_999_999_999_999),
         };
 
         store.save_credential("my-server", cred.clone()).await.unwrap();

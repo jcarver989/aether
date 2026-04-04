@@ -127,7 +127,7 @@ mod tests {
             ChatMessage::User { content: vec![ContentBlock::text("Read foo.rs")], timestamp: IsoString::now() },
             ChatMessage::Assistant {
                 content: "I'll read that file.".to_string(),
-                reasoning: Default::default(),
+                reasoning: AssistantReasoning::default(),
                 timestamp: IsoString::now(),
                 tool_calls: vec![ToolCallRequest {
                     id: "call_1".to_string(),
@@ -143,7 +143,7 @@ mod tests {
             })),
             ChatMessage::Assistant {
                 content: "Here's the file content.".to_string(),
-                reasoning: Default::default(),
+                reasoning: AssistantReasoning::default(),
                 timestamp: IsoString::now(),
                 tool_calls: vec![],
             },
@@ -220,7 +220,7 @@ mod tests {
             ChatMessage::User { content: vec![ContentBlock::text("Hello")], timestamp: IsoString::now() },
             ChatMessage::Assistant {
                 content: "Hi".to_string(),
-                reasoning: Default::default(),
+                reasoning: AssistantReasoning::default(),
                 timestamp: IsoString::now(),
                 tool_calls: vec![ToolCallRequest {
                     id: "tc_1".to_string(),

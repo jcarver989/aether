@@ -163,15 +163,13 @@ async fn test_openrouter_usage_in_separate_final_chunk() {
 /// Test that the `OpenRouterChatRequest` serializes the usage parameter correctly
 #[test]
 fn test_openrouter_request_serialization() {
-    use llm::providers::openai_compatible::types::CompatibleChatMessage;
+    use llm::providers::openai_compatible::types::{CompatibleChatMessage, UserContent};
     use llm::providers::openrouter::{CacheControl, OpenRouterChatRequest, OpenRouterUsage};
     use serde_json;
 
     let request = OpenRouterChatRequest {
         model: "openai/gpt-3.5-turbo".to_string(),
-        messages: vec![CompatibleChatMessage::User {
-            content: llm::providers::openai_compatible::types::UserContent::Text("Hello".to_string()),
-        }],
+        messages: vec![CompatibleChatMessage::User { content: UserContent::Text("Hello".to_string()) }],
         stream: Some(true),
         tools: None,
         tool_choice: None,
@@ -218,16 +216,14 @@ fn test_openrouter_cache_control_serialization() {
 #[test]
 fn test_openrouter_from_compatible_request_includes_cache_control() {
     use llm::providers::openai_compatible::CompatibleChatRequest;
-    use llm::providers::openai_compatible::types::CompatibleChatMessage;
+    use llm::providers::openai_compatible::types::{CompatibleChatMessage, UserContent};
     use llm::providers::openrouter::OpenRouterChatRequest;
 
     let compatible = CompatibleChatRequest {
         model: "zhipu/glm-5".to_string(),
         messages: vec![
             CompatibleChatMessage::System { content: "You are helpful.".to_string() },
-            CompatibleChatMessage::User {
-                content: llm::providers::openai_compatible::types::UserContent::Text("Hello".to_string()),
-            },
+            CompatibleChatMessage::User { content: UserContent::Text("Hello".to_string()) },
         ],
         stream: Some(true),
         tools: None,

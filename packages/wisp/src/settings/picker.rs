@@ -174,6 +174,7 @@ impl Component for SettingsPicker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::types::SettingsMenuEntryKind;
     use acp_utils::config_meta::SelectOptionMeta;
     use tui::test_picker::{rendered_lines_from, type_query};
     use tui::{KeyCode, KeyEvent, KeyModifiers};
@@ -213,7 +214,7 @@ mod tests {
             ],
             current_value_index: 0,
             current_raw_value: "openrouter:openai/gpt-4o".to_string(),
-            entry_kind: crate::settings::types::SettingsMenuEntryKind::Select,
+            entry_kind: SettingsMenuEntryKind::Select,
         }
     }
 

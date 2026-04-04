@@ -381,7 +381,7 @@ mod tests {
         let model_change = changes.iter().find(|c| c.config_id == "model").unwrap();
         let parts: HashSet<&str> = model_change.new_value.split(',').collect();
         for val in expected {
-            assert!(parts.contains(val), "expected {val} in {:?}", parts);
+            assert!(parts.contains(val), "expected {val} in {parts:?}");
         }
         assert_eq!(parts.len(), expected.len());
     }
@@ -626,7 +626,7 @@ mod tests {
             assert!(
                 lines.iter().any(|l| l.spans().iter().any(|span| span.style().bg == Some(highlight_bg))),
                 "focused item must be visible after scrolling down, got: {:?}",
-                lines.iter().map(|l| l.plain_text()).collect::<Vec<_>>()
+                lines.iter().map(tui::Line::plain_text).collect::<Vec<_>>()
             );
         }
     }
@@ -663,7 +663,7 @@ mod tests {
         let mut s = sel(items, None, None);
         let ctx = ViewContext::new((80, 10));
         let frame = s.render(&ctx);
-        let text: String = frame.lines().iter().map(|l| l.plain_text()).collect();
+        let text: String = frame.lines().iter().map(tui::Line::plain_text).collect();
         assert!(text.contains("img"), "focused row should show img indicator");
         assert!(text.contains("audio"), "focused row should show audio indicator");
     }

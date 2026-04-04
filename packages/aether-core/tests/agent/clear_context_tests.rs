@@ -5,6 +5,7 @@ use aether_core::events::{AgentMessage, UserMessage};
 use llm::LlmResponse;
 use llm::testing::FakeLlmProvider;
 use llm::{ChatMessage, ContentBlock};
+use tokio::sync::mpsc;
 
 #[tokio::test]
 async fn test_clear_context_resets_history_and_preserves_system_prompt() {
@@ -59,7 +60,7 @@ async fn test_clear_context_resets_history_and_preserves_system_prompt() {
     assert!(has_second_question, "new prompt should be present after clear");
 }
 
-async fn drain_until_done(rx: &mut tokio::sync::mpsc::Receiver<AgentMessage>) {
+async fn drain_until_done(rx: &mut mpsc::Receiver<AgentMessage>) {
     loop {
         let msg = tokio::time::timeout(Duration::from_secs(5), rx.recv())
             .await

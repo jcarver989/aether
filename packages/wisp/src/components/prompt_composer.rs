@@ -643,7 +643,7 @@ mod tests {
 
         let context = ViewContext::new((80, 24));
         let output = composer.render(&context);
-        let text: String = output.lines().iter().map(|l| l.plain_text()).collect::<Vec<_>>().join("\n");
+        let text: String = output.lines().iter().map(tui::Line::plain_text).collect::<Vec<_>>().join("\n");
         assert!(text.contains("attached image: photo.png"));
     }
 
@@ -659,7 +659,7 @@ mod tests {
 
         let context = ViewContext::new((80, 24));
         let output = composer.render(&context);
-        let text: String = output.lines().iter().map(|l| l.plain_text()).collect::<Vec<_>>().join("\n");
+        let text: String = output.lines().iter().map(tui::Line::plain_text).collect::<Vec<_>>().join("\n");
         assert!(text.contains("attached image: photo.png"));
         assert!(text.contains("attached audio: note.wav"));
     }

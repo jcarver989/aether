@@ -125,7 +125,7 @@ async fn test_ts_document_symbols() {
     project
         .add_file(
             "src/index.ts",
-            r#"interface Point {
+            r"interface Point {
     x: number;
     y: number;
 }
@@ -141,7 +141,7 @@ function main(): void {
 }
 
 main();
-"#,
+",
         )
         .expect("Failed to add file");
 

@@ -1,6 +1,7 @@
 use aether_core::mcp::{McpSpawnResult, mcp};
 use aether_core::testing::{FakeMcpServer, fake_mcp};
 use mcp_utils::client::{McpServerConfig, ServerConfig};
+use tokio::sync::mpsc;
 
 /// Build a `ToolProxy` config wrapping one or more fake in-memory servers.
 fn tool_proxy_with_fakes(proxy_name: &str, servers: Vec<(&str, FakeMcpServer)>) -> McpServerConfig {
@@ -186,7 +187,7 @@ async fn test_tool_proxy_call_tool_routes_to_nested_server() {
     let request =
         llm::ToolCallRequest { id: "test_call_1".to_string(), name: "routing__call_tool".to_string(), arguments };
 
-    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(10);
+    let (event_tx, mut event_rx) = mpsc::channel(10);
     command_tx.send(McpCommand::ExecuteTool { request, timeout: Duration::from_secs(10), tx: event_tx }).await.unwrap();
 
     // Collect events until we get Complete
@@ -234,7 +235,7 @@ async fn test_tool_proxy_call_tool_unknown_server_returns_error() {
     let request =
         llm::ToolCallRequest { id: "test_call_2".to_string(), name: "unknown-srv__call_tool".to_string(), arguments };
 
-    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(10);
+    let (event_tx, mut event_rx) = mpsc::channel(10);
     command_tx.send(McpCommand::ExecuteTool { request, timeout: Duration::from_secs(10), tx: event_tx }).await.unwrap();
 
     while let Some(event) = event_rx.recv().await {

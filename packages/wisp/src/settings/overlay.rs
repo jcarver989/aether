@@ -315,6 +315,7 @@ impl Component for SettingsOverlay {
 mod tests {
     use super::*;
     use crate::components::provider_login::ProviderLoginStatus;
+    use crate::settings::types::SettingsMenuEntryKind;
     use acp_utils::config_option_id::THEME_CONFIG_ID;
     use acp_utils::notifications::McpServerStatus;
     use agent_client_protocol::SessionConfigSelectOption;
@@ -416,7 +417,7 @@ mod tests {
         assert!(footer.contains(needle), "expected footer to contain '{needle}'; got: {footer}");
     }
 
-    fn has_entry_kind(overlay: &SettingsOverlay, kind: crate::settings::types::SettingsMenuEntryKind) -> bool {
+    fn has_entry_kind(overlay: &SettingsOverlay, kind: SettingsMenuEntryKind) -> bool {
         overlay.menu.options().iter().any(|e| e.entry_kind == kind)
     }
 

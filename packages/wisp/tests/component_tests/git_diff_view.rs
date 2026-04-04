@@ -93,15 +93,16 @@ fn make_mode(doc: GitDiffDocument) -> GitDiffMode {
 
 fn make_long_header_doc() -> GitDiffDocument {
     let mut doc = make_test_doc();
-    doc.files[0].path = "src/components/git_diff_mode/this_is_a_deliberately_long_filename_that_should_be_clipped_in_the_patch_header.rs".to_string();
-    doc.files[0].old_path = Some(doc.files[0].path.clone());
+    let long_path = "src/components/git_diff_mode/this_is_a_deliberately_long_filename_that_should_be_clipped_in_the_patch_header.rs".to_string();
+    doc.files[0].old_path = Some(long_path.clone());
+    doc.files[0].path = long_path;
     doc
 }
 
 fn make_long_split_hunk_header_doc() -> GitDiffDocument {
     let mut doc = make_test_doc();
     let long_header = format!("@@ -1,3 +1,3 @@ {}", "WRAPME_".repeat(30));
-    doc.files[0].hunks[0].header = long_header.clone();
+    doc.files[0].hunks[0].header.clone_from(&long_header);
     doc.files[0].hunks[0].lines[0].text = long_header;
     doc
 }

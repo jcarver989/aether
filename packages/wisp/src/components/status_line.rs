@@ -174,6 +174,7 @@ pub(crate) fn extract_reasoning_effort(config_options: &[SessionConfigOption]) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::DEFAULT_CONTENT_PADDING;
 
     fn model_option() -> SessionConfigOption {
         acp::SessionConfigOption::select(

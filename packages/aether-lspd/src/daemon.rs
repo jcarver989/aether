@@ -260,7 +260,7 @@ mod tests {
     fn all_roots_deleted_after_tempdir_drop() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_path_buf();
-        assert!(!all_roots_deleted(&[root.clone()]));
+        assert!(!all_roots_deleted(std::slice::from_ref(&root)));
         drop(dir);
         assert!(all_roots_deleted(&[root]));
     }
