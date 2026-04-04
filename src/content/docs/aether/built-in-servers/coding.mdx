@@ -1,9 +1,9 @@
 ---
 title: Coding Tools
-description: File operations, bash, search, web, and LSP tools.
+description: File operations, bash, search, and web tools.
 ---
 
-The `coding` server provides tools for reading and writing files, running shell commands, searching codebases, fetching web content, and interacting with language servers. See [Tools](/aether/configuration/mcp-servers/) for configuration.
+The `coding` server provides tools for reading and writing files, running shell commands, searching codebases, and fetching web content. See [Tools](/aether/configuration/mcp-servers/) for configuration.
 
 ## File operations
 
@@ -87,6 +87,8 @@ Output modes: `Content` (matching lines), `FilesWithMatches` (file paths only), 
 `web_search` requires the `BRAVE_SEARCH_API_KEY` environment variable.
 
 ## LSP (Language Server Protocol)
+
+The `coding` server includes LSP tools by default. These same tools are also available as a standalone [LSP server](/aether/built-in-servers/lsp/) for agents that only need code intelligence.
 
 | Tool | Description |
 |------|-------------|

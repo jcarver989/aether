@@ -19,6 +19,9 @@ Agents get their tools exclusively from MCP (Model Context Protocol) servers. Yo
         "coding": {
           "type": "in-memory"
         },
+        "lsp": {
+          "type": "in-memory"
+        },
         "skills": {
           "type": "in-memory",
           "args": ["--dir", ".aether"]
@@ -37,17 +40,20 @@ Agents get their tools exclusively from MCP (Model Context Protocol) servers. Yo
 
     | Server | Purpose | Args |
     |--------|---------|------|
-    | `coding` | File I/O, bash, search, web, LSP | `--root-dir <path>` (default: cwd) |
+    | `coding` | File I/O, bash, search, web | `--root-dir <path>` (default: cwd) |
+    | `lsp` | Language-aware symbol lookup, diagnostics, rename | `--root-dir <path>` (default: cwd) |
     | `skills` | Slash commands and skill prompts | `--dir <path>` (base for `commands/` and `skills/`) |
     | `tasks` | Hierarchical task management | `--dir <path>` (creates `.aether-tasks/` inside) |
     | `subagents` | Spawn child agents | `--project-root <path>` (for `.aether/settings.json` discovery) |
     | `survey` | Human-in-the-loop questions | — |
 
     <CardGrid>
-      <LinkCard title="Coding" description="File ops, bash, search, web, LSP" href="/aether/built-in-servers/coding/" />
+      <LinkCard title="Coding" description="File ops, bash, search, web" href="/aether/built-in-servers/coding/" />
+      <LinkCard title="LSP" description="Language-aware symbol lookup, diagnostics, rename" href="/aether/built-in-servers/lsp/" />
       <LinkCard title="Skills & Commands" description="Slash commands and skill prompts" href="/aether/built-in-servers/skills-commands/" />
       <LinkCard title="Tasks" description="Hierarchical task management" href="/aether/built-in-servers/tasks/" />
       <LinkCard title="Sub-Agents" description="Spawn child agents in parallel" href="/aether/built-in-servers/subagents/" />
+      <LinkCard title="Survey" description="Human-in-the-loop structured questions" href="/aether/built-in-servers/survey/" />
     </CardGrid>
   </TabItem>
   <TabItem label="Stdio">

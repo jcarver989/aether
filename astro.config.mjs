@@ -28,8 +28,8 @@ export default defineConfig({
         {
           label: "Getting Started",
           items: [
-            { label: "Introduction", slug: "getting-started/overview" },
-            { label: "Getting Started", slug: "getting-started/introduction" },
+            { label: "Introduction", slug: "getting-started/introduction" },
+            { label: "Getting Started", slug: "getting-started/overview" },
           ],
         },
         {
@@ -48,9 +48,11 @@ export default defineConfig({
               label: "Built-in MCP Servers",
               items: [
                 { label: "Coding", slug: "aether/built-in-servers/coding" },
+                { label: "LSP", slug: "aether/built-in-servers/lsp" },
                 { label: "Skills & Commands", slug: "aether/built-in-servers/skills-commands" },
                 { label: "Tasks", slug: "aether/built-in-servers/tasks" },
                 { label: "Sub-Agents", slug: "aether/built-in-servers/subagents" },
+                { label: "Survey", slug: "aether/built-in-servers/survey" },
               ],
             },
             {

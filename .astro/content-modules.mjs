@@ -1,8 +1,10 @@
 
 export default new Map([
 ["src/content/docs/aether/built-in-servers/coding.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Faether%2Fbuilt-in-servers%2Fcoding.mdx&astroContentModuleFlag=true")],
+["src/content/docs/aether/built-in-servers/lsp.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Faether%2Fbuilt-in-servers%2Flsp.mdx&astroContentModuleFlag=true")],
 ["src/content/docs/aether/built-in-servers/skills-commands.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Faether%2Fbuilt-in-servers%2Fskills-commands.mdx&astroContentModuleFlag=true")],
 ["src/content/docs/aether/built-in-servers/subagents.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Faether%2Fbuilt-in-servers%2Fsubagents.mdx&astroContentModuleFlag=true")],
+["src/content/docs/aether/built-in-servers/survey.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Faether%2Fbuilt-in-servers%2Fsurvey.mdx&astroContentModuleFlag=true")],
 ["src/content/docs/aether/built-in-servers/tasks.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Faether%2Fbuilt-in-servers%2Ftasks.mdx&astroContentModuleFlag=true")],
 ["src/content/docs/aether/configuration/agent-settings.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Faether%2Fconfiguration%2Fagent-settings.mdx&astroContentModuleFlag=true")],
 ["src/content/docs/aether/configuration/llm-providers.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Faether%2Fconfiguration%2Fllm-providers.mdx&astroContentModuleFlag=true")],

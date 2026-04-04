@@ -1,0 +1,77 @@
+---
+title: LSP
+description: Language-aware code intelligence tools powered by LSP.
+---
+
+The `lsp` server provides language-aware code intelligence — symbol lookup, diagnostics, document structure, workspace search, and rename — powered by Language Server Protocol servers.
+
+:::note
+The `coding` server also includes these LSP tools when enabled. Use the standalone `lsp` server when you want code intelligence without file I/O, bash, or search tools.
+:::
+
+## Tools
+
+| Tool | Description |
+|------|-------------|
+| `lsp_symbol` | Go to definition, find references, hover info, implementations, call hierarchy |
+| `lsp_document` | List all symbols in a file (functions, structs, modules) |
+| `lsp_check_errors` | Get compiler errors and warnings without running a build |
+| `lsp_workspace_search` | Search for symbols across the entire workspace by name |
+| `lsp_rename` | Rename a symbol across the entire workspace |
+
+### lsp_symbol
+
+Navigate code by looking up definitions, references, implementations, hover docs, and call hierarchy.
+
+**`lsp_symbol(operation, file_path, symbol, line?, include_declaration?, limit?, context_lines?)`**
+
+- `operation` — One of: `definition`, `implementation`, `references`, `hover`, `incoming_calls`, `outgoing_calls`
+- `file_path` — Absolute path to the file
+- `symbol` — Exact symbol name
+- `line` — 1-indexed line number (optional; skips auto-resolution if provided)
+- `include_declaration` — Include the declaration site in references results (default: true)
+- `limit` — Cap the number of results
+- `context_lines` — Include N lines of source around each result
+
+### lsp_document
+
+Get the full symbol map of a file — functions, structs, traits, modules, etc. — with hierarchical structure.
+
+**`lsp_document(file_path)`**
+
+- `file_path` — Absolute path to the file
+
+Use this before reading large files to identify which sections are relevant.
+
+### lsp_check_errors
+
+Get instant compiler errors and warnings without running a build. Prefer this over `cargo check`, `tsc`, `go build`, etc.
+
+**`lsp_check_errors(file_path?)`**
+
+- `file_path` — Absolute path to a file for single-file diagnostics. Omit for workspace-wide diagnostics.
+
+Returns error/warning counts and formatted diagnostics with file paths and line numbers.
+
+### lsp_workspace_search
+
+Search for symbols across the entire workspace when you don't know which file they live in. Supports fuzzy and substring matching.
+
+**`lsp_workspace_search(query, limit?, context_lines?)`**
+
+- `query` — Symbol name to search for
+- `limit` — Cap the number of results
+- `context_lines` — Include N lines of source around each result
+
+### lsp_rename
+
+Rename a symbol across the entire workspace. All references are updated in a single operation.
+
+**`lsp_rename(file_path, symbol, new_name, line?)`**
+
+- `file_path` — Absolute path to the file containing the symbol
+- `symbol` — Current symbol name
+- `new_name` — New symbol name
+- `line` — 1-indexed line number (optional; skips auto-resolution if provided)
+
+Returns the list of files affected and total edits applied.

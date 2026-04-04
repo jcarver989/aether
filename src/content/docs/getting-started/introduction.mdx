@@ -1,93 +1,14 @@
 ---
-title: Getting Started
-description: Install Aether and run your first prompt.
+title: Introduction
+description: What Aether is and why it exists.
 ---
 
-import { Tabs, TabItem, Steps, FileTree } from '@astrojs/starlight/components';
+Aether is a modular, open-source AI coding agent toolkit written in Rust.
 
-## Install
 
-<Tabs>
-  <TabItem label="cargo install">
-    ```bash
-    cargo install aether-cli
-    ```
-  </TabItem>
-  <TabItem label="Build from source">
-    ```bash
-    git clone https://github.com/joshka/aether.git
-    cd aether
-    cargo build --release
-    ```
+### Design principles
 
-    Binaries are written to `target/release/aether` and `target/release/wisp`.
-  </TabItem>
-</Tabs>
-
-Requires **Rust 1.80+** — install via [rustup](https://rustup.rs) if you don't have it.
-
-## Set up your API key
-
-<Tabs>
-  <TabItem label="Anthropic">
-    ```bash
-    export ANTHROPIC_API_KEY=sk-ant-...
-    ```
-  </TabItem>
-  <TabItem label="OpenRouter">
-    ```bash
-    export OPENROUTER_API_KEY=sk-or-...
-    ```
-  </TabItem>
-  <TabItem label="OpenAI">
-    ```bash
-    export OPENAI_API_KEY=sk-...
-    ```
-  </TabItem>
-  <TabItem label="Ollama">
-    No API key needed — just make sure [Ollama](https://ollama.com) is running locally.
-  </TabItem>
-</Tabs>
-
-## Initialize and run
-
-<Steps>
-
-1. **Initialize your project**
-
-   ```bash
-   cd your-project
-   aether init
-   ```
-
-   This creates the following structure:
-
-   <FileTree>
-     - .aether/
-       - settings.json — [Agent definitions](/aether/configuration/agent-settings/)
-       - mcp.json — [MCP server config](/aether/configuration/mcp-servers/)
-       - SYSTEM.md — Base system prompt
-     - AGENTS.md — [Project instructions](/aether/configuration/system-prompts/)
-   </FileTree>
-
-2. **Run it**
-
-   Launch the interactive TUI:
-
-   ```bash
-   aether
-   ```
-
-   Or run a single prompt headlessly:
-
-   ```bash
-   aether headless "Explain the main function in this project"
-   ```
-
-</Steps>
-
-## Next steps
-
-- [Agent Settings](/aether/configuration/agent-settings/) — Define agents, models, and tool access
-- [MCP Servers](/aether/configuration/mcp-servers/) — Configure which tools are available
-- [LLM Providers](/aether/configuration/llm-providers/) — All supported models and providers
+- **Empty by default** — Agents have no default system prompt or tools. You add what you need.
+- **Any model** — Use any LLM you want, local or remote. Anthropic, OpenAI, OpenRouter, DeepSeek, Gemini, Z, Moonshot, LlamaCpp, Ollama, and more are supported out of the box.
+- **Any tools** — Agents get tools via [MCP](https://modelcontextprotocol.io/) servers. You can author tools in any language.
+- **Any surface** — Run your agent in a TUI, IDE/editor (via ACP) or headless.

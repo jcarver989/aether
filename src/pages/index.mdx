@@ -11,10 +11,11 @@ import CallToAction from "../components/CallToAction.astro";
 import TerminalDemo from "../components/TerminalDemo.astro";
 
 
-export const installCode = `$ cargo install aether-cli`;
-export const initCode = `$ aether init
+export const installCode = `$ cargo install aether-agent-cli`;
+export const initCode = `$ aether agent new
 ✓ Created .aether/settings.json
-✓ Created mcp.json
+✓ Created .aether/mcp.json
+✓ Created .aether/SYSTEM.md
 ✓ Created AGENTS.md`;
 
 export const showPromptCode = `$ aether show-prompt -a Build
@@ -219,14 +220,14 @@ export const runAcpCode = `$ aether acp`;
                 <Code code={toolsWireCode} lang="json" title=".aether/settings.json" meta="ins={7}" />
                 <Code code={toolsBuiltinCode} lang="json" title="mcp.json" meta="ins={3-9}" />
             </ToolShowcaseItem>
-            <ToolShowcaseItem title="Any MCP server" description="Plug in any external MCP server via stdio, SSE, or streamable HTTP. Remote server OAuth credentials are stored securley in your keychain." border={false}>
+            <ToolShowcaseItem title="Any MCP server" description="Plug in any external MCP server via stdio, SSE, or streamable HTTP. Remote server OAuth credentials are stored securely in your keychain." border={false}>
                 <Code code={toolsExternalCode} lang="json" title="mcp.json" meta="ins={4-8}" />
             </ToolShowcaseItem>
         </div>
     </div>
 </section>
 
-<CallToAction title="Ready to build?" description="Use the full CLI or pick individual crates &mdash; aether-core, aether-llm, aether-mcp-servers, aether-wisp, aether-crucible &mdash; to compose your own agent.">
+<CallToAction title="Ready to build?" description="Use the full CLI or pick individual crates &mdash; aether-core, llm, mcp-servers, wisp, crucible &mdash; to compose your own agent.">
     <a href="/getting-started/introduction/" class="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium bg-accent-600 text-white hover:bg-accent-500 transition-all duration-200 shadow-lg shadow-accent-900/30">Read the docs <span aria-hidden="true">&rarr;</span></a>
     <a href="https://github.com/joshka/aether" class="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium border border-gray-500 text-gray-200 hover:border-accent-400 hover:text-accent-400 transition-all duration-200"><span>View on GitHub</span><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg></a>
 </CallToAction>

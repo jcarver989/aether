@@ -1,14 +1,93 @@
 ---
-title: Introduction
-description: What Aether is and why it exists.
+title: Getting Started
+description: Install Aether and run your first prompt.
 ---
 
-Aether is a modular, open-source AI coding agent toolkit written in Rust.
+import { Tabs, TabItem, Steps, FileTree, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
+<Steps>
 
-### Design principles
+1. **Install**
 
-- **Empty by default** — Agents have no default system prompt or tools. You add what you need.
-- **Any model** — Use any LLM you want, local or remote. Anthropic, OpenAI, OpenRouter, DeepSeek, Gemini, Z, Moonshot, LammaCpp, Ollama, and more are supported out of the box.
-- **Any tools**— Agents get tools via [MCP](https://modelcontextprotocol.io/) severs. You can author tools in any language.
-- **Any surface** — Run your agent in a TUI, IDE/editor (via ACP) or headless.
+   <Tabs>
+     <TabItem label="cargo install">
+       ```bash
+       cargo install aether-agent-cli
+       ```
+     </TabItem>
+     <TabItem label="Build from source">
+       ```bash
+       git clone https://github.com/joshka/aether.git
+       cd aether
+       cargo build --release
+       ```
+
+       Binaries are written to `target/release/aether` and `target/release/wisp`.
+     </TabItem>
+   </Tabs>
+
+   Requires **Rust 1.85+** — install via [rustup](https://rustup.rs) if you don't have it.
+
+2. **Create your first agent**
+
+   ```bash
+   cd your-project
+   aether agent new
+   ```
+
+   ```
+   ✓ Created .aether/settings.json
+   ✓ Created .aether/mcp.json
+   ✓ Created .aether/SYSTEM.md
+   ✓ Created AGENTS.md
+   ```
+
+   <FileTree>
+     - .aether/
+       - settings.json — [Agent definitions](/aether/configuration/agent-settings/)
+       - mcp.json — [MCP server config](/aether/configuration/mcp-servers/)
+       - SYSTEM.md — Base system prompt
+     - AGENTS.md — [Project instructions](/aether/configuration/system-prompts/)
+   </FileTree>
+
+   :::note[Set up your LLM credentials]
+   Most providers need an API key (e.g. `export ANTHROPIC_API_KEY=sk-ant-...`).
+   See [LLM Providers](/aether/configuration/llm-providers/) for all supported providers and credential setup.
+   :::
+
+3. **Run it**
+
+   **Interactive TUI**
+
+   ```bash
+   aether
+   ```
+
+   The default experience — a terminal interface for conversations with your agent.
+
+   **IDE / editor (via ACP)**
+
+   ```bash
+   aether acp
+   ```
+
+   Exposes agents over [ACP](https://agentclientprotocol.org/) for [editor integration](/aether/running/editor-integration/).
+
+   **Headless**
+
+   ```bash
+   aether headless "Explain the main function in this project"
+   ```
+
+   Run a single prompt and exit — ideal for scripts and CI. See [Headless CLI](/aether/running/headless/) for all flags and output formats.
+
+</Steps>
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Agent Settings" description="Define agents, models, and tool access" href="/aether/configuration/agent-settings/" />
+  <LinkCard title="MCP Servers" description="Configure which tools are available" href="/aether/configuration/mcp-servers/" />
+  <LinkCard title="LLM Providers" description="All supported models and credentials" href="/aether/configuration/llm-providers/" />
+  <LinkCard title="System Prompts" description="Customize agent instructions with markdown" href="/aether/configuration/system-prompts/" />
+</CardGrid>
