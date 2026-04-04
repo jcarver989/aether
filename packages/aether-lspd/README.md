@@ -1,19 +1,19 @@
-<!-- START doctoc generated TOC please keep comment here to allow auto update -->
-<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
-
-- [aether-lspd](#aether-lspd)
-  - [Quick start](#quick-start)
-  - [Documentation](#documentation)
-  - [Key Types](#key-types)
-  - [Feature Flags](#feature-flags)
-  - [License](#license)
-
-<!-- END doctoc generated TOC please keep comment here to allow auto update -->
-
 # aether-lspd
 
 An LSP daemon that manages language server processes and shares them across multiple Aether agents. Communicates over Unix domain sockets.
+
+## Table of Contents
+
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+
+- [Quick start](#quick-start)
+- [Documentation](#documentation)
+- [Key Types](#key-types)
+- [Feature Flags](#feature-flags)
+- [License](#license)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
 ## Quick start
 

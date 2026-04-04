@@ -1,16 +1,3 @@
-<!-- START doctoc generated TOC please keep comment here to allow auto update -->
-<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
-
-- [mcp-servers](#mcp-servers)
-  - [Documentation](#documentation)
-  - [Using with Aether (mcp.json)](#using-with-aether-mcpjson)
-  - [Programmatic Usage](#programmatic-usage)
-  - [Server Documentation](#server-documentation)
-  - [Feature Flags](#feature-flags)
-
-<!-- END doctoc generated TOC please keep comment here to allow auto update -->
-
 # mcp-servers
 
 Pre-built [MCP](https://modelcontextprotocol.io/) tool servers for Aether agents. Each server runs in-process and is gated behind a feature flag so you only compile what you need.
@@ -22,6 +9,19 @@ Pre-built [MCP](https://modelcontextprotocol.io/) tool servers for Aether agents
 | `tasks` | [`TasksMcp`](src/tasks/README.md) | Hierarchical task management with dependencies |
 | `subagents` | [`SubAgentsMcp`](src/subagents/README.md) | Spawn and orchestrate sub-agents |
 | `survey` | [`SurveyMcp`](src/survey/README.md) | Human-in-the-loop elicitation (ask the user questions) |
+
+## Table of Contents
+
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+
+- [Documentation](#documentation)
+- [Using with Aether (mcp.json)](#using-with-aether-mcpjson)
+- [Programmatic Usage](#programmatic-usage)
+- [Server Documentation](#server-documentation)
+- [Feature Flags](#feature-flags)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
 ## Documentation
 

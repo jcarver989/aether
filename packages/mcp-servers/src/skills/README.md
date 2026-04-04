@@ -1,24 +1,24 @@
-<!-- START doctoc generated TOC please keep comment here to allow auto update -->
-<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
-
-- [SkillsMcp](#skillsmcp)
-  - [Directory Structure](#directory-structure)
-  - [Tools](#tools)
-  - [get_skills API](#get_skills-api)
-    - [Examples](#examples)
-    - [Response Fields](#response-fields)
-    - [Security](#security)
-  - [Writing a Command](#writing-a-command)
-  - [Writing a Skill](#writing-a-skill)
-
-<!-- END doctoc generated TOC please keep comment here to allow auto update -->
-
 # SkillsMcp
 
 Slash commands and reusable skill prompts. Skills teach the agent domain-specific knowledge; commands trigger multi-step workflows.
 
 **Flag:** `--dir <path>` (base directory containing `commands/` and `skills/` subdirectories)
+
+## Table of Contents
+
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+
+- [Directory Structure](#directory-structure)
+- [Tools](#tools)
+- [get_skills API](#get_skills-api)
+  - [Examples](#examples)
+  - [Response Fields](#response-fields)
+  - [Security](#security)
+- [Writing a Command](#writing-a-command)
+- [Writing a Skill](#writing-a-skill)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
 ## Directory Structure
 
