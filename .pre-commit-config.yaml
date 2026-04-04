@@ -1,6 +1,14 @@
 repos:
   - repo: local
     hooks:
+      - id: doctoc
+        name: doctoc README
+        entry: bash -c 'find . -name "README.md" -not -path "*/node_modules/*" -not -path "*/.git/*" -exec npx doctoc {} --github \; && git add -u "**/README.md"'
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [pre-commit]
+
       - id: cargo-fmt
         name: cargo fmt
         entry: bash -c 'PKG_FLAGS=$(scripts/changed-packages "$@") && [ -n "$PKG_FLAGS" ] && cargo fmt --check $PKG_FLAGS || true' --

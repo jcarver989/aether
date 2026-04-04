@@ -1,3 +1,22 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+- [aether-llm](#aether-llm)
+  - [Quick start](#quick-start)
+  - [Examples](#examples)
+    - [Conversation with a system prompt](#conversation-with-a-system-prompt)
+    - [Tool use](#tool-use)
+    - [Switching providers](#switching-providers)
+    - [Direct provider construction](#direct-provider-construction)
+  - [Providers](#providers)
+  - [Documentation](#documentation)
+  - [Key Types](#key-types)
+  - [Feature Flags](#feature-flags)
+  - [License](#license)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # aether-llm
 
 Multi-provider LLM abstraction layer for Rust. Write your code once, then swap between Anthropic, `OpenAI`, `OpenRouter`, Ollama, and more by changing a single string.

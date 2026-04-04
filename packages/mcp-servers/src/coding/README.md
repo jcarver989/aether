@@ -1,3 +1,18 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+- [CodingMcp](#codingmcp)
+  - [Tools](#tools)
+    - [File Operations](#file-operations)
+    - [Search](#search)
+    - [Bash](#bash)
+    - [Web](#web)
+    - [LSP (Language Server Protocol)](#lsp-language-server-protocol)
+  - [Read-Before-Edit Safety](#read-before-edit-safety)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # CodingMcp
 
 File operations, code search, bash execution, LSP integration, and web tools. This is the workhorse server for coding tasks.

@@ -1,3 +1,16 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+- [Aether Core](#aether-core)
+  - [Installation](#installation)
+  - [Examples](#examples)
+    - [Minimal Agent (No Tools)](#minimal-agent-no-tools)
+    - [Agent with Tools and AGENTS.md system prompt](#agent-with-tools-and-agentsmd-system-prompt)
+  - [License](#license)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # Aether Core
 
 Aether Core is a Rust library for building AI agents (LLM + prompt + tools, running in a loop). 

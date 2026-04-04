@@ -1,3 +1,23 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+- [aether-agent-cli](#aether-agent-cli)
+  - [Quick Start](#quick-start)
+    - [Build](#build)
+    - [Run the CLI](#run-the-cli)
+    - [Run the ACP server](#run-the-acp-server)
+  - [Choosing a Model](#choosing-a-model)
+  - [Editor Integration (ACP)](#editor-integration-acp)
+    - [Zed](#zed)
+  - [MCP Configuration](#mcp-configuration)
+  - [Slash Commands](#slash-commands)
+  - [Settings](#settings)
+    - [Agents (Modes and Sub-agents)](#agents-modes-and-sub-agents)
+  - [Logs](#logs)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # aether-agent-cli
 
 Binary package containing Aether's two runnable entrypoints:

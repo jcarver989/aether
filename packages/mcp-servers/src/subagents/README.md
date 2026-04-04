@@ -1,3 +1,15 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+- [SubAgentsMcp](#subagentsmcp)
+  - [Project Configuration](#project-configuration)
+  - [Tools](#tools)
+  - [Spawning Agents](#spawning-agents)
+  - [Structured Output](#structured-output)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # SubAgentsMcp
 
 Spawn and orchestrate sub-agents authored in project `.aether/settings.json`.

@@ -1,3 +1,16 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+- [mcp-servers](#mcp-servers)
+  - [Documentation](#documentation)
+  - [Using with Aether (mcp.json)](#using-with-aether-mcpjson)
+  - [Programmatic Usage](#programmatic-usage)
+  - [Server Documentation](#server-documentation)
+  - [Feature Flags](#feature-flags)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # mcp-servers
 
 Pre-built [MCP](https://modelcontextprotocol.io/) tool servers for Aether agents. Each server runs in-process and is gated behind a feature flag so you only compile what you need.
