@@ -2,8 +2,9 @@
   "prompts": [".aether/SYSTEM.md", "AGENTS.md"],
   "agents": [
     {
-      "name": "Frontier",
+      "name": "Planner",
       "description": "Codex GPT-5.4 with high reasoning",
+      "prompts": [".aether/SYSTEM.md", ".aether/agents/planner/AGENTS.md", "AGENTS.md"],
       "model": "codex:gpt-5.4",
       "reasoningEffort": "high",
       "userInvocable": true,
