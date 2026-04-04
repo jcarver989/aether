@@ -345,7 +345,7 @@ mod tests {
         let json = r#"{"agents": [{"name": "alloy", "description": "Alloy agent", "model": "anthropic:claude-sonnet-4-5,deepseek:deepseek-chat", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#;
         let (_, catalog) = setup_and_load_ok(json);
         assert_eq!(
-            catalog.get("alloy").unwrap().model.to_string(),
+            catalog.get("alloy").unwrap().model.clone(),
             "anthropic:claude-sonnet-4-5,deepseek:deepseek-chat"
         );
     }

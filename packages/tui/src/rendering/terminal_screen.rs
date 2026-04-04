@@ -173,13 +173,13 @@ mod tests {
 
     fn assert_no_move_up(content: &str) {
         for n in 1..=10 {
-            assert!(!content.contains(&format!("\x1b[{}A", n)), "unexpected MoveUp({}) in: {:?}", n, content);
+            assert!(!content.contains(&format!("\x1b[{n}A")), "unexpected MoveUp({n}) in: {content:?}");
         }
     }
 
     fn assert_has_all(content: &str, substrings: &[&str]) {
         for s in substrings {
-            assert!(content.contains(s), "missing {:?} in: {:?}", s, content);
+            assert!(content.contains(s), "missing {s:?} in: {content:?}");
         }
     }
 
@@ -258,7 +258,7 @@ mod tests {
         let lines = vec![Line::new("appended")];
         let content =
             run_one(TerminalCommand::RewriteVisibleLines { rows_up: 0, append_after_existing: true, lines: &lines });
-        assert!(content.starts_with("\r\n\x1b[Jappended"), "expected newline before clear, got: {:?}", content);
+        assert!(content.starts_with("\r\n\x1b[Jappended"), "expected newline before clear, got: {content:?}");
     }
 
     #[test]

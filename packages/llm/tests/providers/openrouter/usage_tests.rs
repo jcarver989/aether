@@ -203,7 +203,7 @@ fn test_openrouter_request_serialization() {
     );
 }
 
-/// Test that cache_control serializes as `{"type": "ephemeral"}` at the request root
+/// Test that `cache_control` serializes as `{"type": "ephemeral"}` at the request root
 #[test]
 fn test_openrouter_cache_control_serialization() {
     use llm::providers::openrouter::CacheControl;
@@ -214,7 +214,7 @@ fn test_openrouter_cache_control_serialization() {
     assert_eq!(json["type"], "ephemeral");
 }
 
-/// Test that `From<CompatibleChatRequest>` sets cache_control for prompt caching
+/// Test that `From<CompatibleChatRequest>` sets `cache_control` for prompt caching
 #[test]
 fn test_openrouter_from_compatible_request_includes_cache_control() {
     use llm::providers::openai_compatible::CompatibleChatRequest;

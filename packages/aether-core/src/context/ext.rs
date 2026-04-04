@@ -133,7 +133,7 @@ mod tests {
         SessionEvent::Agent(msg)
     }
 
-    /// Runs a sequence of agent events against a system_context and returns the context.
+    /// Runs a sequence of agent events against a `system_context` and returns the context.
     fn run_agent_events(events: &[AgentMessage]) -> Context {
         let mut ctx = system_context();
         let mut acc = TurnAccumulator::default();
