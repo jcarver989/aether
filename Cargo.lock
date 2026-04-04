@@ -21,7 +21,7 @@ dependencies = [
 
 [[package]]
 name = "aether-acp-utils"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aether-mcp-utils",
  "aether-utils",
@@ -39,7 +39,7 @@ dependencies = [
 
 [[package]]
 name = "aether-agent-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aether-acp-utils",
  "aether-agent-core",
@@ -68,7 +68,7 @@ dependencies = [
 
 [[package]]
 name = "aether-agent-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aether-acp-utils",
  "aether-agent-core",
@@ -97,7 +97,7 @@ dependencies = [
 
 [[package]]
 name = "aether-llm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aether-llm-codegen",
  "aether-utils",
@@ -129,7 +129,7 @@ dependencies = [
 
 [[package]]
 name = "aether-llm-codegen"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aether-utils",
  "serde",
@@ -139,7 +139,7 @@ dependencies = [
 
 [[package]]
 name = "aether-lspd"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aether-lspd",
  "clap",
@@ -163,7 +163,7 @@ dependencies = [
 
 [[package]]
 name = "aether-mcp-servers"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aether-agent-core",
  "aether-llm",
@@ -199,7 +199,7 @@ dependencies = [
 
 [[package]]
 name = "aether-mcp-utils"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aether-llm",
  "aether-utils",
@@ -219,7 +219,7 @@ dependencies = [
 
 [[package]]
 name = "aether-project"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aether-agent-core",
  "aether-llm",
@@ -237,7 +237,7 @@ dependencies = [
 
 [[package]]
 name = "aether-tui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aether-tui",
  "crossterm",
@@ -254,7 +254,7 @@ dependencies = [
 
 [[package]]
 name = "aether-utils"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "futures",
  "regex",
@@ -268,7 +268,7 @@ dependencies = [
 
 [[package]]
 name = "aether-wisp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aether-acp-utils",
  "aether-tui",
@@ -1435,7 +1435,7 @@ dependencies = [
 
 [[package]]
 name = "crucible"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aether-agent-core",
  "aether-llm",
