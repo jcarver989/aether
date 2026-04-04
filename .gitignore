@@ -2,6 +2,7 @@ target/
 .data/*.log
 node_modules/
 dist/
+.astro/
 gen/
 eval-results/
 packages/llm/src/catalog/generated.rs
