@@ -18,15 +18,16 @@ repos:
 
       - id: cargo-clippy
         name: cargo clippy
-        entry: bash -c 'PKG_FLAGS=$(scripts/changed-packages "$@") && [ -n "$PKG_FLAGS" ] && cargo clippy $PKG_FLAGS -- -D warnings || true' --
+        entry: bash -c 'PKG_FLAGS=$(scripts/changed-packages "$@") && [ -n "$PKG_FLAGS" ] && cargo clippy --all-targets --all-features $PKG_FLAGS -- -D warnings || true' --
         language: system
         types: [rust]
         pass_filenames: true
+        stages: [pre-push]
 
       - id: cargo-test
         name: cargo nextest run
-        entry: bash -c 'PKG_FLAGS=$(scripts/changed-packages "$@") && [ -n "$PKG_FLAGS" ] && cargo nextest run $PKG_FLAGS || true' --
+        entry: bash -c 'PKG_FLAGS=$(scripts/changed-packages "$@") && [ -n "$PKG_FLAGS" ] && cargo nextest run --all-features $PKG_FLAGS || true' --
         language: system
         types: [rust]
         pass_filenames: true
-        stages: [pre-commit]
+        stages: [pre-push]
