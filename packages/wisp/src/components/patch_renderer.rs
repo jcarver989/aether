@@ -273,8 +273,8 @@ mod tests {
 
         // First wrapped line gets the ref, continuations get None
         assert!(refs[1].is_some(), "first wrapped line should have a ref");
-        for i in 2..lines.len() {
-            assert!(refs[i].is_none(), "continuation line {i} should have None ref");
+        for (i, r) in refs.iter().enumerate().skip(2) {
+            assert!(r.is_none(), "continuation line {i} should have None ref");
         }
     }
 
@@ -386,8 +386,8 @@ mod tests {
         assert!(bottom_border.contains('└'), "comment bottom border should have └, got: {bottom_border}");
 
         // Comment rows should have None in refs
-        for i in comment_start..=comment_start + 2 {
-            assert!(refs[i].is_none(), "comment row {i} should have None ref");
+        for (i, r) in refs.iter().enumerate().take(comment_start + 3).skip(comment_start) {
+            assert!(r.is_none(), "comment row {i} should have None ref");
         }
     }
 
@@ -422,8 +422,8 @@ mod tests {
         assert!(refs[1].is_some(), "first wrapped row should have ref");
 
         // Comment rows should all be None
-        for i in comment_top..lines.len() {
-            assert!(refs[i].is_none(), "comment row {i} should have None ref");
+        for (i, r) in refs.iter().enumerate().skip(comment_top) {
+            assert!(r.is_none(), "comment row {i} should have None ref");
         }
     }
 
@@ -464,7 +464,7 @@ mod tests {
         let context = ViewContext::new((120, 24));
         let (lines, _refs) = build_patch_lines(&file, 80, &context, &comments);
 
-        let text: Vec<String> = lines.iter().map(|l| l.plain_text()).collect();
+        let text: Vec<String> = lines.iter().map(tui::Line::plain_text).collect();
         let first_pos = text.iter().position(|t| t.contains("first")).expect("should find 'first' comment");
         let second_pos = text.iter().position(|t| t.contains("second")).expect("should find 'second' comment");
         assert!(first_pos < second_pos, "first comment should appear before second");

@@ -245,6 +245,7 @@ fn extend_with_vertical_margin(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::DEFAULT_CONTENT_PADDING;
 
     #[test]
     fn buffer_closes_thought_block_when_text_arrives() {

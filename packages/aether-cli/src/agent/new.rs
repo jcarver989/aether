@@ -579,7 +579,7 @@ mod tests {
         let input = WizardInput { servers: vec!["coding".to_string(), "lsp".to_string()], ..default_input() };
         scaffold(dir.path(), &input).unwrap();
 
-        let raw = RawMcpConfig::from_json_file(&dir.path().join(".aether/mcp.json")).unwrap();
+        let raw = RawMcpConfig::from_json_file(dir.path().join(".aether/mcp.json")).unwrap();
         assert_eq!(raw.servers.len(), 2);
         assert!(raw.servers.contains_key("coding"));
         assert!(raw.servers.contains_key("lsp"));
@@ -716,7 +716,7 @@ mod tests {
         let theme = Theme::default();
         let statuses = detect_providers(&[]);
         let lines = format_provider_lines(&statuses, &theme);
-        let text: String = lines.iter().map(|l| l.plain_text()).collect::<Vec<_>>().join("\n");
+        let text: String = lines.iter().map(tui::Line::plain_text).collect::<Vec<_>>().join("\n");
         assert!(text.contains("Not Configured"));
         assert!(text.contains("Anthropic"));
     }

@@ -6,7 +6,7 @@ use aether_lspd::testing::TestProject;
 use mcp_servers::coding::CodingMcp;
 use mcp_utils::testing::connect;
 use rmcp::RoleClient;
-use rmcp::model::{CallToolRequestParams, ClientInfo, Implementation};
+use rmcp::model::{CallToolRequestParams, ClientCapabilities, ClientInfo, Implementation};
 use rmcp::service::RunningService;
 use std::time::{Duration, Instant};
 
@@ -15,7 +15,7 @@ const POLL_TIMEOUT: Duration = Duration::from_secs(60);
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 pub fn test_client_info() -> ClientInfo {
-    ClientInfo::new(Default::default(), Implementation::new("lsp-e2e-test", "0.1.0"))
+    ClientInfo::new(ClientCapabilities::default(), Implementation::new("lsp-e2e-test", "0.1.0"))
 }
 
 /// Connect a `CodingMcp` server to a test project with LSP enabled.
@@ -57,20 +57,16 @@ pub async fn try_call_tool(
         }
     };
 
-    let text = match result.content.first().and_then(|c| c.as_text()) {
-        Some(t) => t,
-        None => {
-            eprintln!("[try_call_tool] {name} no text content in response");
-            return None;
-        }
+    let Some(text) = result.content.first().and_then(|c| c.as_text()) else {
+        eprintln!("[try_call_tool] {name} no text content in response");
+        return None;
     };
 
-    match serde_json::from_str(&text.text) {
-        Ok(v) => Some(v),
-        Err(_) => {
-            eprintln!("[try_call_tool] {name} non-JSON response: {}", text.text);
-            None
-        }
+    if let Ok(v) = serde_json::from_str(&text.text) {
+        Some(v)
+    } else {
+        eprintln!("[try_call_tool] {name} non-JSON response: {}", text.text);
+        None
     }
 }
 
@@ -115,7 +111,7 @@ pub async fn poll_lsp_tool(
 
     panic!(
         "poll_lsp_tool({tool_name}) timed out after {POLL_TIMEOUT:?}. Last result: {}",
-        last_result.as_ref().map(|r| r.to_string()).unwrap_or_else(|| "(no valid response)".to_string())
+        last_result.as_ref().map_or_else(|| "(no valid response)".to_string(), ToString::to_string)
     );
 }
 

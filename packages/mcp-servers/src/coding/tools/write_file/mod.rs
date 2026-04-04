@@ -108,7 +108,7 @@ mod tests {
 
         let result = write_file_contents(WriteFileArgs {
             file_path: file_path.to_string_lossy().to_string(),
-            content: "".to_string(),
+            content: String::new(),
         })
         .await
         .unwrap();

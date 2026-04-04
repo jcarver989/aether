@@ -63,11 +63,12 @@ impl AgentRunner for FakeAgentRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::sync::mpsc;
 
     #[tokio::test]
     async fn test_fake_runner_success() {
         let runner = FakeAgentRunner::success();
-        let (tx, mut rx) = tokio::sync::mpsc::channel(10);
+        let (tx, mut rx) = mpsc::channel(10);
 
         let config = AgentConfig {
             working_directory: std::path::Path::new("/tmp"),
@@ -89,7 +90,7 @@ mod tests {
     #[tokio::test]
     async fn test_fake_runner_with_tool_call() {
         let runner = FakeAgentRunner::with_tool_call("bash", "success");
-        let (tx, mut rx) = tokio::sync::mpsc::channel(10);
+        let (tx, mut rx) = mpsc::channel(10);
 
         let config = AgentConfig {
             working_directory: std::path::Path::new("/tmp"),

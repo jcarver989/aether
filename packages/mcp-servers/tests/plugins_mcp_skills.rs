@@ -1,6 +1,6 @@
 use mcp_servers::skills::SkillsMcp;
 use mcp_utils::testing::connect;
-use rmcp::model::{CallToolRequestParams, ClientInfo, Implementation};
+use rmcp::model::{CallToolRequestParams, ClientCapabilities, ClientInfo, Implementation};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -34,7 +34,7 @@ async fn create_test_client(
     rmcp::service::RunningService<rmcp::RoleClient, rmcp::model::ClientInfo>,
 ) {
     let server_service = SkillsMcp::new(test_dir.to_path_buf());
-    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
+    let client_info = ClientInfo::new(ClientCapabilities::default(), Implementation::new("test-client", "0.1.0"));
 
     let (server_handle, client) =
         connect(server_service, client_info).await.expect("Failed to connect MCP server and client");

@@ -280,6 +280,7 @@ impl Component for Form {
 mod tests {
     use super::super::select_option::SelectOption;
     use super::*;
+    use crate::rendering::line::Line;
     use crossterm::event::{KeyEvent, KeyModifiers};
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -362,7 +363,7 @@ mod tests {
 
         // Focus is on field 0 (Language / RadioSelect)
         let frame = form.render(&context);
-        let text: String = frame.lines().iter().map(crate::rendering::line::Line::plain_text).collect::<Vec<_>>().join("\n");
+        let text: String = frame.lines().iter().map(Line::plain_text).collect::<Vec<_>>().join("\n");
         // The active field's options should be visible
         assert!(text.contains("Rust"), "active field options not visible");
         assert!(text.contains("TypeScript"), "active field options not visible");
@@ -479,7 +480,7 @@ mod tests {
         form.focus.focus(3); // Submit tab
         let context = ViewContext::new((80, 24));
         let frame = form.render(&context);
-        let text: String = frame.lines().iter().map(crate::rendering::line::Line::plain_text).collect::<Vec<_>>().join("\n");
+        let text: String = frame.lines().iter().map(Line::plain_text).collect::<Vec<_>>().join("\n");
         assert!(text.contains("Review & Submit"));
         assert!(text.contains("Language:"));
         assert!(text.contains("Name:"));

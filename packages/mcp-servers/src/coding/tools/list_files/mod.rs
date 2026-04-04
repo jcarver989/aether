@@ -180,7 +180,7 @@ mod tests {
         let original_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(temp_dir.path()).unwrap();
 
-        let result = list_files(ListFilesArgs { path: Some("".to_string()), include_hidden: None }).await.unwrap();
+        let result = list_files(ListFilesArgs { path: Some(String::new()), include_hidden: None }).await.unwrap();
 
         std::env::set_current_dir(original_dir).unwrap();
 

@@ -58,7 +58,7 @@ fn main() {
             assert!(symbols.iter().any(|symbol| symbol.name == "ExampleStruct"));
             assert!(symbols.iter().any(|symbol| symbol.name == "example_fn"));
         }
-        other => panic!("Expected flat document symbols, got {other:?}"),
+        other @ DocumentSymbolResponse::Nested(_) => panic!("Expected flat document symbols, got {other:?}"),
     }
 
     let workspace_symbols = client.workspace_symbol("example".to_string()).await.expect("Workspace symbol failed");
@@ -81,6 +81,7 @@ fn main() {
         .await
         .expect("Rename failed")
         .expect("Rename should return a workspace edit");
+    #[allow(clippy::mutable_key_type)]
     let changes = rename.changes.expect("Rename should contain changes");
     let edits = changes.get(&uri).expect("Rename changes should include the file");
     assert_eq!(edits.len(), 1);

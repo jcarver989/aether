@@ -421,7 +421,7 @@ mod tests {
             FileTreeEntryKind::Directory { name, .. } => {
                 assert_eq!(name, "src/deep/nested");
             }
-            _ => panic!("expected directory"),
+            FileTreeEntryKind::File { .. } => panic!("expected directory"),
         }
     }
 

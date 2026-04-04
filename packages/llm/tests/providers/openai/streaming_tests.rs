@@ -9,14 +9,12 @@ use tokio_stream::StreamExt;
 use llm::providers::openai::streaming::process_completion_stream;
 use llm::{LlmResponse, StopReason};
 
-type StreamItem = Result<CreateChatCompletionStreamResponse, std::io::Error>;
-
 fn chunk(
     tool_calls: Option<Vec<ChatCompletionMessageToolCallChunk>>,
     content: Option<&str>,
     finish_reason: Option<FinishReason>,
-) -> StreamItem {
-    Ok(CreateChatCompletionStreamResponse {
+) -> CreateChatCompletionStreamResponse {
+    CreateChatCompletionStreamResponse {
         choices: vec![ChatChoiceStream {
             delta: ChatCompletionStreamResponseDelta {
                 content: content.map(String::from),
@@ -37,7 +35,7 @@ fn chunk(
         system_fingerprint: None,
         usage: None,
         service_tier: None,
-    })
+    }
 }
 
 fn tool_start(index: u32, id: &str, name: &str) -> ChatCompletionMessageToolCallChunk {
@@ -58,8 +56,8 @@ fn tool_args(index: u32, args: &str) -> ChatCompletionMessageToolCallChunk {
     }
 }
 
-async fn collect_events(items: Vec<StreamItem>) -> Vec<LlmResponse> {
-    let stream = tokio_stream::iter(items);
+async fn collect_events(items: Vec<CreateChatCompletionStreamResponse>) -> Vec<LlmResponse> {
+    let stream = tokio_stream::iter(items.into_iter().map(Ok::<_, std::io::Error>));
     let mut processed = Box::pin(process_completion_stream(stream));
     let mut events = Vec::new();
     while let Some(event) = processed.next().await {

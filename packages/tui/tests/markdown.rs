@@ -69,7 +69,8 @@ fn heading_renders_with_prefix_and_style() {
 
 #[test]
 fn inline_formatting_styles() {
-    let cases: &[(&str, &str, &str, fn(&tui::Style) -> bool)] = &[
+    type StyleCase = (&'static str, &'static str, &'static str, fn(&tui::Style) -> bool);
+    let cases: &[StyleCase] = &[
         ("some **bold** text", "some bold text", "bold", |s| s.bold),
         ("some *italic* text", "some italic text", "italic", |s| s.italic),
         ("some ~~struck~~ text", "some struck text", "struck", |s| s.strikethrough),

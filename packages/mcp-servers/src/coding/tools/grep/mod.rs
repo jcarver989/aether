@@ -644,7 +644,7 @@ mod tests {
         let _guard = std::env::set_current_dir(temp_dir.path());
 
         let mut args = input("hello");
-        args.path = Some("".to_string());
+        args.path = Some(String::new());
         args.output_mode = Some(OutputMode::Content);
         args.case_insensitive = Some(true);
 

@@ -307,6 +307,7 @@ fn map_reasoning_effort(effort: ReasoningEffort) -> OaiReasoningEffort {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::AssistantReasoning;
     use crate::ToolCallRequest;
     use crate::types::IsoString;
 
@@ -354,7 +355,7 @@ mod tests {
                 ChatMessage::User { content: vec![ContentBlock::text("Search for rust")], timestamp: IsoString::now() },
                 ChatMessage::Assistant {
                     content: String::new(),
-                    reasoning: Default::default(),
+                    reasoning: AssistantReasoning::default(),
                     timestamp: IsoString::now(),
                     tool_calls: vec![ToolCallRequest {
                         id: "call_1".to_string(),

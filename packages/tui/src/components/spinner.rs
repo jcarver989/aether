@@ -90,8 +90,7 @@ mod tests {
 
     #[test]
     fn visible_renders_one_line() {
-        let mut spinner = Spinner::default();
-        spinner.visible = true;
+        let mut spinner = Spinner { visible: true, ..Spinner::default() };
         let ctx = ViewContext::new((80, 24));
         let frame = spinner.render(&ctx);
         assert_eq!(frame.lines().len(), 1);
@@ -101,11 +100,9 @@ mod tests {
     fn different_ticks_produce_different_output() {
         let ctx = ViewContext::new((80, 24));
 
-        let mut spinner_a = Spinner::default();
-        spinner_a.visible = true;
+        let mut spinner_a = Spinner { visible: true, ..Spinner::default() };
 
-        let mut spinner_b = Spinner::default();
-        spinner_b.visible = true;
+        let mut spinner_b = Spinner { visible: true, ..Spinner::default() };
         spinner_b.set_tick(1);
 
         let a = spinner_a.render(&ctx).lines()[0].plain_text();
@@ -118,11 +115,9 @@ mod tests {
     fn cycles_after_full_rotation() {
         let ctx = ViewContext::new((80, 24));
 
-        let mut spinner_a = Spinner::default();
-        spinner_a.visible = true;
+        let mut spinner_a = Spinner { visible: true, ..Spinner::default() };
 
-        let mut spinner_b = Spinner::default();
-        spinner_b.visible = true;
+        let mut spinner_b = Spinner { visible: true, ..Spinner::default() };
         #[allow(clippy::cast_possible_truncation)]
         spinner_b.set_tick(BRAILLE_FRAMES.len() as u16);
 
@@ -143,8 +138,7 @@ mod tests {
 
     #[test]
     fn on_tick_advances_when_visible() {
-        let mut spinner = Spinner::default();
-        spinner.visible = true;
+        let mut spinner = Spinner { visible: true, ..Spinner::default() };
         spinner.on_tick();
         assert_eq!(spinner.current_frame(), BRAILLE_FRAMES[1]);
     }

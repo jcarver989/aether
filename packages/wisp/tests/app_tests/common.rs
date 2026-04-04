@@ -188,8 +188,8 @@ pub(super) fn has_settings_picker(terminal: &TestTerminal) -> bool {
 #[allow(dead_code)]
 pub(super) fn settings_menu_selected_label(terminal: &TestTerminal) -> Option<String> {
     let theme = Theme::default();
-    let highlight_bg = theme.highlight_bg();
-    let highlight_fg = theme.highlight_fg();
+    let bg_color = theme.highlight_bg();
+    let fg_color = theme.highlight_fg();
     let lines = terminal.get_lines();
     let width = terminal.get_lines().first().map_or(80, |l| l.len().max(80));
     // Scan each row for any cell with highlight_bg to find the selected row.
@@ -197,7 +197,7 @@ pub(super) fn settings_menu_selected_label(terminal: &TestTerminal) -> Option<St
     for (row, line) in lines.iter().enumerate() {
         let has_highlight = (0..width).any(|col| {
             let style = terminal.get_style_at(row, col);
-            style.bg == Some(highlight_bg) || style.fg == Some(highlight_fg)
+            style.bg == Some(bg_color) || style.fg == Some(fg_color)
         });
         if has_highlight {
             let label = line.trim().to_string();
@@ -215,10 +215,10 @@ pub(super) fn command_picker_visible_names(terminal: &TestTerminal) -> Vec<Strin
     for line in &lines {
         // Match lines like "  /name  description"
         let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix('/') {
-            if let Some(name) = rest.split_whitespace().next() {
-                names.push(name.to_string());
-            }
+        if let Some(rest) = trimmed.strip_prefix('/')
+            && let Some(name) = rest.split_whitespace().next()
+        {
+            names.push(name.to_string());
         }
     }
     names

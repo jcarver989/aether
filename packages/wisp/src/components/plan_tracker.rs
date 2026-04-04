@@ -247,7 +247,7 @@ mod tests {
         // Query visibility at a time BEFORE completed_at
         // This should not panic and should treat the entry as still within grace period
         // (saturating_duration_since returns 0 when now < completed_at)
-        let now_before = completed_at - Duration::from_secs(1);
+        let now_before = completed_at.checked_sub(Duration::from_secs(1)).unwrap();
         let visible = tracker.visible_entries(now_before, GRACE_PERIOD);
         assert_eq!(visible.len(), 1, "completed entry should still be visible");
     }

@@ -453,7 +453,7 @@ mod tests {
 
     fn render_diff_text(mode: &mut GitDiffMode, width: u16) -> Vec<String> {
         let ctx = ViewContext::new((width, 24));
-        mode.render_frame(&ctx).into_parts().0.iter().map(|l| l.plain_text()).collect()
+        mode.render_frame(&ctx).into_parts().0.iter().map(tui::Line::plain_text).collect()
     }
 
     fn make_doc(paths: &[&str]) -> GitDiffDocument {
@@ -586,13 +586,14 @@ mod tests {
         assert!(
             mode.split.right().cached_lines.iter().all(|line| line.display_width() <= resized_right_width),
             "expected all cached lines to fit resized right width {resized_right_width}, got widths: {:?}",
-            mode.split.right().cached_lines.iter().map(|line| line.display_width()).collect::<Vec<_>>()
+            mode.split.right().cached_lines.iter().map(tui::Line::display_width).collect::<Vec<_>>()
         );
     }
 
     #[tokio::test]
     async fn key_emits_expected_message() {
-        let cases: Vec<(KeyCode, fn(&GitDiffViewMessage) -> bool)> = vec![
+        type KeyCase = (KeyCode, fn(&GitDiffViewMessage) -> bool);
+        let cases: Vec<KeyCase> = vec![
             (KeyCode::Esc, |m| matches!(m, GitDiffViewMessage::Close)),
             (KeyCode::Char('r'), |m| matches!(m, GitDiffViewMessage::Refresh)),
         ];

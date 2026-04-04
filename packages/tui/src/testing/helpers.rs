@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::rendering::frame::Cursor;
@@ -48,7 +50,7 @@ pub fn pad(text: &str, width: usize) -> String {
 pub fn cols(parts: &[(&str, usize)]) -> String {
     let mut out = String::new();
     for (text, width) in parts {
-        out.push_str(&format!("{text:<width$}"));
+        let _ = write!(out, "{text:<width$}");
     }
     out.trim_end().to_string()
 }

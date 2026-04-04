@@ -167,7 +167,7 @@ async fn test_completed_content_re_renders_at_new_width_after_resize() {
 
 /// Bug repro: the prompt box must not garble after resizing when there is
 /// completed conversation content above it. Previously, stale overflow
-/// counts caused the VisualFrame visible/scrollback split to break,
+/// counts caused the `VisualFrame` visible/scrollback split to break,
 /// producing duplicated or corrupted prompt lines.
 #[tokio::test]
 async fn test_prompt_not_garbled_after_resize_with_completed_content() {

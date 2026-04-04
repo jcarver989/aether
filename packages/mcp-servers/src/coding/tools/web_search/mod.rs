@@ -191,7 +191,7 @@ mod tests {
     }
 
     fn strs(vals: &[&str]) -> Vec<String> {
-        vals.iter().map(|s| s.to_string()).collect()
+        vals.iter().map(std::string::ToString::to_string).collect()
     }
 
     fn searcher_with(query: &str, results: Vec<RawSearchResult>) -> WebSearcher<FakeSearchClient> {

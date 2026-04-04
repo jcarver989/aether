@@ -126,7 +126,7 @@ mod tests {
     fn selected_text(picker: &mut FilePicker) -> Option<String> {
         let context = ViewContext::new(DEFAULT_SIZE);
         let frame = picker.render(&context);
-        frame.lines().iter().find(|line| line.plain_text().starts_with("  ")).map(|line| line.plain_text())
+        frame.lines().iter().find(|line| line.plain_text().starts_with("  ")).map(tui::Line::plain_text)
     }
 
     #[test]

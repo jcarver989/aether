@@ -324,8 +324,8 @@ mod tests {
     }
 
     fn config_opts(model: &str, effort: Option<ReasoningEffort>) -> Vec<SessionConfigOption> {
-        let modes = test_validated_modes();
-        build_config_options_from_modes(&modes, &test_models(), None, model, effort, LlmModel::all(), &fake_store())
+        let validated = test_validated_modes();
+        build_config_options_from_modes(&validated, &test_models(), None, model, effort, LlmModel::all(), &fake_store())
     }
 
     #[test]

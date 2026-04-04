@@ -157,9 +157,9 @@ mod tests {
 
     #[test]
     fn from_matches_populates_directly() {
-        let matches = vec![FakeItem::new("pre-populated")];
-        let matcher = FuzzyMatcher::from_matches(matches);
-        assert_eq!(matcher.matches().len(), 1);
+        let items = vec![FakeItem::new("pre-populated")];
+        let fuzzy = FuzzyMatcher::from_matches(items);
+        assert_eq!(fuzzy.matches().len(), 1);
     }
 
     #[test]

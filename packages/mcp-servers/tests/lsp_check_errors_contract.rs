@@ -6,14 +6,14 @@ use rmcp::RoleClient;
 use rmcp::model::{CallToolRequestParams, ClientInfo};
 use rmcp::service::RunningService;
 
-fn call_tool_params(name: &str, args: serde_json::Value) -> CallToolRequestParams {
+fn call_tool_params(name: &str, args: &serde_json::Value) -> CallToolRequestParams {
     CallToolRequestParams::new(name.to_string()).with_arguments(args.as_object().unwrap().clone())
 }
 
 async fn call_tool_error(
     client: &RunningService<RoleClient, ClientInfo>,
     name: &str,
-    args: serde_json::Value,
+    args: &serde_json::Value,
 ) -> String {
     match client.call_tool(call_tool_params(name, args)).await {
         Ok(result) => {
@@ -35,7 +35,7 @@ async fn lsp_check_errors_rejects_unwrapped_arguments() {
     let error = call_tool_error(
         &client,
         "lsp_check_errors",
-        serde_json::json!({
+        &serde_json::json!({
             "scope": "workspace"
         }),
     )
@@ -87,7 +87,7 @@ async fn lsp_check_errors_accepts_stringified_workspace_input() {
     let result = client
         .call_tool(call_tool_params(
             "lsp_check_errors",
-            serde_json::json!({
+            &serde_json::json!({
                 "input": "{\"scope\":\"workspace\"}"
             }),
         ))
@@ -106,7 +106,7 @@ async fn lsp_check_errors_rejects_workspace_scope_with_file_path() {
     let error = call_tool_error(
         &client,
         "lsp_check_errors",
-        serde_json::json!({
+        &serde_json::json!({
             "input": {
                 "scope": "workspace",
                 "filePath": project.file_path_str("src/main.rs")
@@ -127,7 +127,7 @@ async fn lsp_check_errors_rejects_file_scope_directory_path() {
     let error = call_tool_error(
         &client,
         "lsp_check_errors",
-        serde_json::json!({
+        &serde_json::json!({
             "input": {
                 "scope": "file",
                 "filePath": project.root().to_string_lossy().to_string()

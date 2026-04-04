@@ -1,6 +1,6 @@
 use mcp_servers::subagents::SubAgentsMcp;
 use mcp_utils::testing::connect;
-use rmcp::model::{CallToolRequestParams, ClientInfo, Implementation};
+use rmcp::model::{CallToolRequestParams, ClientCapabilities, ClientInfo, Implementation};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
@@ -27,7 +27,7 @@ async fn create_test_client(
 ) {
     let server_service = SubAgentsMcp::from_project_root(test_dir.to_path_buf())
         .expect("Failed to create SubAgentsMcp from project root");
-    let client_info = ClientInfo::new(Default::default(), Implementation::new("test-client", "0.1.0"));
+    let client_info = ClientInfo::new(ClientCapabilities::default(), Implementation::new("test-client", "0.1.0"));
 
     let (server_handle, client) =
         connect(server_service, client_info).await.expect("Failed to connect MCP server and client");

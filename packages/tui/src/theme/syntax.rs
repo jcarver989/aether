@@ -350,6 +350,7 @@ mod tests {
         let theme = Theme::from(&syntect);
 
         // blend(0x4F, 0x1A) = (0x4F*0x90 + 0x1A*(255-0x90)) / 255
+        #[allow(clippy::cast_possible_truncation)]
         let blend = |f: u16, b: u16| -> u8 { ((f * 0x90 + b * (255 - 0x90)) / 255) as u8 };
         let expected = Color::Rgb { r: blend(0x4F, 0x1A), g: blend(0x4F, 0x1A), b: blend(0x5E, 0x2E) };
         assert_eq!(theme.muted(), expected);

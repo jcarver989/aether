@@ -162,6 +162,7 @@ pub fn render_cell(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rendering::line::Line;
     use crate::{DiffLine, SplitDiffCell, SplitDiffRow};
 
     fn test_context_with_width(width: u16) -> ViewContext {
@@ -209,7 +210,7 @@ mod tests {
             assert!(width <= 100, "line width {width} should not exceed terminal width 100");
         }
         // Full content should be present across all wrapped lines
-        let all_text: String = lines.iter().map(crate::rendering::line::Line::plain_text).collect();
+        let all_text: String = lines.iter().map(Line::plain_text).collect();
         let x_count = all_text.chars().filter(|&c| c == 'x').count();
         // Both left and right panels contain 200 x's each
         assert_eq!(x_count, 400, "all content should be present across wrapped lines");

@@ -132,7 +132,7 @@ fn main() {
     assert!(locations.len() >= 2, "Expected at least 2 references to greet, got {}", locations.len());
 }
 
-/// Test: lsp_rename applies workspace edits for a Rust symbol
+/// Test: `lsp_rename` applies workspace edits for a Rust symbol
 #[tokio::test]
 async fn test_lsp_rename_applies_workspace_edits() {
     let project = CargoProject::new("rename_test").expect("Failed to create project");

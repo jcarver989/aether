@@ -90,7 +90,7 @@ fn make_auth_methods() -> Vec<acp::AuthMethod> {
     ]
 }
 
-/// Helper to create a ConfigOverlay with the server status overlay open.
+/// Helper to create a `ConfigOverlay` with the server status overlay open.
 /// Replaces the old `with_server_overlay()` test-only method.
 async fn open_server_overlay(mut menu: SettingsMenu, statuses: Vec<McpServerStatusEntry>) -> SettingsOverlay {
     menu.add_mcp_servers_entry("1 connected, 1 needs auth");
@@ -262,7 +262,7 @@ fn very_small_terminal_shows_fallback() {
     // MIN_WIDTH=6, MIN_HEIGHT=3, height = rows-1, so rows=3 gives height=2 < 3
     let term = render_component(|ctx| overlay.render(ctx), 30, 3);
     let output = term.get_lines();
-    assert!(output[0].contains("too small"), "got: {:?}", output);
+    assert!(output[0].contains("too small"), "got: {output:?}");
 }
 
 #[test]
@@ -296,7 +296,7 @@ fn update_settings_options_never_renders_reasoning_row() {
     // Rendered lines do not contain Reasoning Effort
     let term = render_component(|ctx| overlay.render(ctx), 80, 24);
     let text = term.get_lines().join("\n");
-    assert!(!text.contains("Reasoning Effort"), "Reasoning Effort should NOT appear initially; got:\n{}", text);
+    assert!(!text.contains("Reasoning Effort"), "Reasoning Effort should NOT appear initially; got:\n{text}");
 
     // After update to model-only options, still no Reasoning Effort
     let updated_options = vec![agent_client_protocol::SessionConfigOption::select(
@@ -312,7 +312,7 @@ fn update_settings_options_never_renders_reasoning_row() {
 
     let term = render_component(|ctx| overlay.render(ctx), 80, 24);
     let text = term.get_lines().join("\n");
-    assert!(!text.contains("Reasoning Effort"), "Reasoning Effort should NOT appear after update; got:\n{}", text);
+    assert!(!text.contains("Reasoning Effort"), "Reasoning Effort should NOT appear after update; got:\n{text}");
 }
 
 #[tokio::test]

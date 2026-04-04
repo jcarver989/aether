@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use mcp_utils::client::ServerConfig;
 
 pub fn fake_mcp(name: &str, server: FakeMcpServer) -> ServerConfig {
-    ServerConfig::InMemory { name: name.to_string(), server: server.as_dyn() }
+    ServerConfig::InMemory { name: name.to_string(), server: server.into_dyn() }
 }
 
 /// A fake MCP server for testing
@@ -135,7 +135,7 @@ impl FakeMcpServer {
         Self::default()
     }
 
-    pub fn as_dyn(self) -> Box<dyn DynService<RoleServer>> {
+    pub fn into_dyn(self) -> Box<dyn DynService<RoleServer>> {
         Box::new(self)
     }
 

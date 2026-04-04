@@ -268,6 +268,7 @@ fn view_truncates_utf8_arguments_without_panicking() {
     assert_eq!(lines.len(), 1);
     let expected = format!("✓ TestTool {}", "a".repeat(MAX_TOOL_ARG_LENGTH - 2));
     let width = expected.len() + 10;
+    #[allow(clippy::cast_possible_truncation)]
     let term = render_lines(&lines, width as u16, 24);
     let output = term.get_lines();
     assert_eq!(output[0], expected);

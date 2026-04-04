@@ -15,7 +15,7 @@ mod common;
 use aether_lspd::testing::{NodeProject, TestProject};
 use common::{call_tool, connect_lsp, has_errors, has_no_errors, poll_diagnostics};
 
-/// Test: MCP edit_file tool → typescript-language-server picks up change → diagnostics queryable
+/// Test: MCP `edit_file` tool → `typescript-language-server` picks up change → diagnostics queryable
 #[tokio::test]
 async fn test_ts_mcp_edit_produces_diagnostics() {
     // 1. Create a Node project with a type error
@@ -71,7 +71,7 @@ async fn test_ts_mcp_edit_produces_diagnostics() {
     assert!(errors > 0, "Expected type error after re-introducing bug");
 }
 
-/// Test: External fs::write → file watcher → diagnostics queryable (TypeScript)
+/// Test: External `fs::write` → file watcher → diagnostics queryable (TypeScript)
 #[tokio::test]
 async fn test_ts_external_file_change_produces_diagnostics() {
     // 1. Create a Node project with a type error
@@ -106,7 +106,7 @@ async fn test_ts_external_file_change_produces_diagnostics() {
     assert!(errors > 0, "Expected type error after external write");
 }
 
-/// Regression test: after edit_file, a SINGLE lsp_check_errors call (no polling)
+/// Regression test: after `edit_file`, a SINGLE `lsp_check_errors` call (no polling)
 /// should return fresh diagnostics for TypeScript files.
 #[tokio::test]
 async fn test_ts_diagnostics_after_edit_without_polling() {

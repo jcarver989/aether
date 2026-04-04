@@ -151,7 +151,7 @@ mod tests {
                     ChatCompletionRequestUserMessageContentPart::Text(t) if t.text == "Hello"
                 ));
             }
-            other => panic!("Expected Array, got {other:?}"),
+            other @ ChatCompletionRequestUserMessageContent::Text(_) => panic!("Expected Array, got {other:?}"),
         }
     }
 
@@ -173,7 +173,7 @@ mod tests {
                     other => panic!("Expected ImageUrl, got {other:?}"),
                 }
             }
-            other => panic!("Expected Array, got {other:?}"),
+            other @ ChatCompletionRequestUserMessageContent::Text(_) => panic!("Expected Array, got {other:?}"),
         }
     }
 
@@ -194,7 +194,7 @@ mod tests {
                     other => panic!("Expected InputAudio, got {other:?}"),
                 }
             }
-            other => panic!("Expected Array, got {other:?}"),
+            other @ ChatCompletionRequestUserMessageContent::Text(_) => panic!("Expected Array, got {other:?}"),
         }
     }
 
@@ -212,7 +212,7 @@ mod tests {
                 }
                 other => panic!("Expected InputAudio, got {other:?}"),
             },
-            other => panic!("Expected Array, got {other:?}"),
+            other @ ChatCompletionRequestUserMessageContent::Text(_) => panic!("Expected Array, got {other:?}"),
         }
     }
 
@@ -230,7 +230,7 @@ mod tests {
                 }
                 other => panic!("Expected InputAudio, got {other:?}"),
             },
-            other => panic!("Expected Array, got {other:?}"),
+            other @ ChatCompletionRequestUserMessageContent::Text(_) => panic!("Expected Array, got {other:?}"),
         }
     }
 

@@ -82,7 +82,7 @@ impl TestTerminal {
     pub fn resize_preserving_transcript(&mut self, columns: u16, rows: u16) {
         let transcript = self.get_transcript_lines();
         let wrapped = Self::reflow_lines(&transcript, columns);
-        self.apply_reflowed_lines(columns, rows, wrapped);
+        self.apply_reflowed_lines(columns, rows, &wrapped);
     }
 
     fn reflow_lines(lines: &[String], columns: u16) -> Vec<String> {
@@ -108,7 +108,7 @@ impl TestTerminal {
         wrapped
     }
 
-    fn apply_reflowed_lines(&mut self, columns: u16, rows: u16, wrapped: Vec<String>) {
+    fn apply_reflowed_lines(&mut self, columns: u16, rows: u16, wrapped: &[String]) {
         let rows_usize = rows.max(1) as usize;
         let split_at = wrapped.len().saturating_sub(rows_usize);
         let (scrollback, visible) = wrapped.split_at(split_at);
@@ -405,6 +405,7 @@ impl TestTerminal {
     }
 
     /// Apply SGR (Select Graphic Rendition) parameters to update `current_style`.
+    #[allow(clippy::cast_possible_truncation)]
     fn apply_sgr(&mut self, params: &str) {
         if params.is_empty() {
             self.current_style = Style::default();
