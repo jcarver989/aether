@@ -3,7 +3,6 @@ use std::mem::{Discriminant, discriminant};
 use crate::components::input_prompt::prompt_text_start_col;
 use crate::components::thought_message::ThoughtMessage;
 use crate::components::tool_call_statuses::ToolCallStatuses;
-use crate::settings::DEFAULT_CONTENT_PADDING;
 use tui::{Line, Style, ViewContext, render_markdown};
 
 #[derive(Debug, Clone)]
@@ -191,15 +190,15 @@ fn render_user_message_lines(content: &str, left_padding: usize, block_width: us
 
     let content_width = block_width.saturating_sub(left_padding).max(1);
     Line::with_style(content.to_string(), block_style)
-        .soft_wrap(content_width as u16)
+        .soft_wrap(u16::try_from(content_width).unwrap_or(u16::MAX))
         .into_iter()
-        .map(|line| pad_user_message_line(line, left_padding, block_width, block_style))
+        .map(|line| pad_user_message_line(&line, left_padding, block_width, block_style))
         .collect()
 }
 
-fn pad_user_message_line(line: Line, left_padding: usize, block_width: usize, block_style: Style) -> Line {
+fn pad_user_message_line(line: &Line, left_padding: usize, block_width: usize, block_style: Style) -> Line {
     let mut padded_line = Line::with_style(" ".repeat(left_padding), block_style);
-    padded_line.append_line(&line);
+    padded_line.append_line(line);
 
     let trailing_padding = block_width.saturating_sub(padded_line.display_width());
     if trailing_padding > 0 {

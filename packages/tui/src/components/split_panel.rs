@@ -50,7 +50,10 @@ impl SplitLayout {
         };
         let left = base.saturating_add_signed(delta.into()).clamp(self.min_left, total / 2);
         let right = total.saturating_sub(left + 1);
-        SplitWidths { left: left as u16, right: right as u16 }
+        SplitWidths {
+            left: u16::try_from(left).unwrap_or(u16::MAX),
+            right: u16::try_from(right).unwrap_or(u16::MAX),
+        }
     }
 
     fn step(&self) -> i16 {

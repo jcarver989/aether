@@ -13,9 +13,15 @@ pub enum FileListMessage {
     FileOpened(usize),
 }
 
+impl Default for FileListPanel {
+    fn default() -> Self {
+        Self { tree: FileTree::empty(), scroll: 0, queued_comment_count: 0 }
+    }
+}
+
 impl FileListPanel {
     pub fn new() -> Self {
-        Self { tree: FileTree::empty(), scroll: 0, queued_comment_count: 0 }
+        Self::default()
     }
 
     pub fn rebuild_from_files(&mut self, files: &[FileDiff]) {
