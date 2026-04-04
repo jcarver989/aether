@@ -1,6 +1,5 @@
 use crate::components::context_bar::{context_bar, context_color};
 use crate::components::reasoning_bar::{reasoning_bar, reasoning_color};
-use crate::settings::DEFAULT_CONTENT_PADDING;
 use acp_utils::config_option_id::ConfigOptionId;
 use agent_client_protocol::{
     self as acp, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOptions,
