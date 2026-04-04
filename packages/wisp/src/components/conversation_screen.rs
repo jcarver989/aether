@@ -1,6 +1,6 @@
 use crate::components::app::PromptAttachment;
 use crate::components::command_picker::CommandEntry;
-use crate::components::conversation_window::{ConversationBuffer, ConversationWindow};
+use crate::components::conversation_window::{ConversationBuffer, ConversationWindow, pad_lines};
 use crate::components::elicitation_form::{ElicitationForm, ElicitationMessage};
 use crate::components::plan_tracker::PlanTracker;
 use crate::components::plan_view::PlanView;
@@ -39,10 +39,11 @@ pub struct ConversationScreen {
     pub(crate) progress_indicator: ProgressIndicator,
     pub(crate) waiting_for_response: bool,
     pub(crate) active_modal: Option<Modal>,
+    pub(crate) content_padding: usize,
 }
 
 impl ConversationScreen {
-    pub fn new(keybindings: Keybindings) -> Self {
+    pub fn new(keybindings: Keybindings, content_padding: usize) -> Self {
         Self {
             conversation: ConversationBuffer::new(),
             tool_call_statuses: ToolCallStatuses::new(),
@@ -51,6 +52,7 @@ impl ConversationScreen {
             progress_indicator: ProgressIndicator::default(),
             waiting_for_response: false,
             active_modal: None,
+            content_padding,
         }
     }
 
@@ -276,14 +278,21 @@ impl Component for ConversationScreen {
     }
 
     fn render(&mut self, ctx: &ViewContext) -> Frame {
-        let conversation_window =
-            ConversationWindow { conversation: &self.conversation, tool_call_statuses: &self.tool_call_statuses };
+        let conversation_window = ConversationWindow {
+            conversation: &self.conversation,
+            tool_call_statuses: &self.tool_call_statuses,
+            content_padding: self.content_padding,
+        };
         let plan_view = PlanView { entries: self.plan_tracker.cached_entries() };
 
         let mut layout = Layout::new();
         layout.section(conversation_window.render(ctx));
-        layout.section(plan_view.render(ctx));
-        layout.section(self.progress_indicator.render(ctx));
+        let mut plan_lines = plan_view.render(ctx);
+        pad_lines(&mut plan_lines, self.content_padding);
+        layout.section(plan_lines);
+        let mut progress_lines = self.progress_indicator.render(ctx);
+        pad_lines(&mut progress_lines, self.content_padding);
+        layout.section(progress_lines);
         let prompt_frame = self.prompt_composer.render(ctx);
         layout.section_with_cursor(prompt_frame.lines().to_vec(), prompt_frame.cursor());
         match &mut self.active_modal {

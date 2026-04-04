@@ -23,6 +23,14 @@ pub(crate) static WISP_HOME_ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::
 pub struct WispSettings {
     #[serde(default)]
     pub theme: ThemeSettings,
+    #[serde(default)]
+    pub content_padding: Option<u16>,
+}
+
+pub const DEFAULT_CONTENT_PADDING: usize = 4;
+
+pub fn resolve_content_padding(settings: &WispSettings) -> usize {
+    settings.content_padding.map_or(DEFAULT_CONTENT_PADDING, |v| v.max(2) as usize)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -266,7 +274,8 @@ mod tests {
     fn round_trip_serde() {
         let temp_dir = TempDir::new().unwrap();
         let store = SettingsStore::from_path(temp_dir.path());
-        let settings = WispSettings { theme: ThemeSettings { file: Some("my-theme.json".to_string()) } };
+        let settings =
+            WispSettings { theme: ThemeSettings { file: Some("my-theme.json".to_string()) }, content_padding: None };
         store.save(&settings).unwrap();
         assert_eq!(store.load_or_create::<WispSettings>(), settings);
     }
@@ -340,7 +349,11 @@ mod tests {
     fn process_theme_change_persists_default_as_none() {
         let temp_dir = TempDir::new().unwrap();
         with_wisp_home(temp_dir.path(), || {
-            save_settings(&WispSettings { theme: ThemeSettings { file: Some("old.tmTheme".to_string()) } }).unwrap();
+            save_settings(&WispSettings {
+                theme: ThemeSettings { file: Some("old.tmTheme".to_string()) },
+                content_padding: None,
+            })
+            .unwrap();
             let _ = process_config_changes(vec![change(THEME_CONFIG_ID, "   ")]);
             assert_eq!(load_or_create_settings().theme.file, None);
         });

@@ -45,6 +45,7 @@ pub struct App {
     session_id: SessionId,
     prompt_handle: AcpPromptHandle,
     working_dir: PathBuf,
+    content_padding: usize,
 }
 
 impl App {
@@ -58,11 +59,13 @@ impl App {
         prompt_handle: AcpPromptHandle,
     ) -> Self {
         let keybindings = Keybindings::default();
+        let wisp_settings = settings::load_or_create_settings();
+        let content_padding = settings::resolve_content_padding(&wisp_settings);
         Self {
             agent_name,
             context_usage_pct: None,
             exit_requested: false,
-            conversation_screen: ConversationScreen::new(keybindings.clone()),
+            conversation_screen: ConversationScreen::new(keybindings.clone(), content_padding),
             prompt_capabilities,
             config_options: config_options.to_vec(),
             server_statuses: Vec::new(),
@@ -73,6 +76,7 @@ impl App {
             session_id,
             prompt_handle,
             working_dir,
+            content_padding,
         }
     }
 
@@ -708,7 +712,10 @@ mod tests {
 
         let temp_dir = setup_themes_dir(&["catppuccin.tmTheme", "nord.tmTheme"]);
         with_wisp_home(temp_dir.path(), || {
-            let settings = WispSettings { theme: WispThemeSettings { file: Some("nord.tmTheme".to_string()) } };
+            let settings = WispSettings {
+                theme: WispThemeSettings { file: Some("nord.tmTheme".to_string()) },
+                content_padding: None,
+            };
             save_settings(&settings).unwrap();
             let mut app = make_app();
             app.open_settings_overlay();

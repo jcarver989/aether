@@ -3,6 +3,7 @@ use agent_client_protocol::{self as acp, SessionConfigOption, SessionConfigOptio
 use tui::ViewContext;
 use tui::testing::render_lines;
 use wisp::components::status_line::StatusLine;
+use wisp::settings::DEFAULT_CONTENT_PADDING;
 
 fn mode_option(value: impl Into<String>, name: impl Into<String>) -> SessionConfigOption {
     let value = value.into();
@@ -83,6 +84,7 @@ impl<'a> StatusBuilder<'a> {
             context_pct_left: self.ctx_pct,
             waiting_for_response: self.waiting,
             unhealthy_server_count: self.unhealthy,
+            content_padding: DEFAULT_CONTENT_PADDING,
         };
         let ctx = ViewContext::new((self.width, 24));
         let term = render_lines(&status.render(&ctx), self.width, 24);
@@ -98,7 +100,7 @@ impl<'a> StatusBuilder<'a> {
 #[test]
 fn renders_agent_name_and_indentation() {
     let line = StatusBuilder::new("test-agent").line();
-    assert!(line.contains("  test-agent"));
+    assert!(line.contains("    test-agent"));
 }
 
 #[test]

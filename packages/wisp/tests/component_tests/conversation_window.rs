@@ -2,13 +2,18 @@ use tui::ViewContext;
 use tui::testing::render_lines;
 use wisp::components::conversation_window::{ConversationBuffer, ConversationWindow};
 use wisp::components::tool_call_statuses::ToolCallStatuses;
+use wisp::settings::DEFAULT_CONTENT_PADDING;
 
 #[test]
 fn renders_empty_when_no_segments() {
     let conversation = ConversationBuffer::new();
     let statuses = ToolCallStatuses::new();
     let context = ViewContext::new((80, 24));
-    let view = ConversationWindow { conversation: &conversation, tool_call_statuses: &statuses };
+    let view = ConversationWindow {
+        conversation: &conversation,
+        tool_call_statuses: &statuses,
+        content_padding: DEFAULT_CONTENT_PADDING,
+    };
 
     let lines = view.render(&context);
     assert!(lines.is_empty());
@@ -22,17 +27,23 @@ fn inserts_vertical_margin_between_different_segment_kinds() {
     conversation.append_text_chunk("three");
     let statuses = ToolCallStatuses::new();
     let context = ViewContext::new((80, 24));
-    let view = ConversationWindow { conversation: &conversation, tool_call_statuses: &statuses };
+    let view = ConversationWindow {
+        conversation: &conversation,
+        tool_call_statuses: &statuses,
+        content_padding: DEFAULT_CONTENT_PADDING,
+    };
 
     let lines = view.render(&context);
     assert_eq!(lines.len(), 5);
     let term = render_lines(&lines, 80, 24);
     let output = term.get_lines();
+    assert!(output[0].starts_with("    "), "text should be padded: {}", output[0]);
     assert!(output[0].contains("one"));
     assert_eq!(output[1], "");
-    assert!(output[2].starts_with("\u{2502} "));
+    assert!(output[2].starts_with("    "), "thought should be padded: {}", output[2]);
     assert!(output[2].contains("two"));
     assert_eq!(output[3], "");
+    assert!(output[4].starts_with("    "), "text should be padded: {}", output[4]);
     assert!(output[4].contains("three"));
 }
 
@@ -43,13 +54,18 @@ fn consecutive_text_chunks_render_without_margin() {
     conversation.append_text_chunk("second");
     let statuses = ToolCallStatuses::new();
     let context = ViewContext::new((80, 24));
-    let view = ConversationWindow { conversation: &conversation, tool_call_statuses: &statuses };
+    let view = ConversationWindow {
+        conversation: &conversation,
+        tool_call_statuses: &statuses,
+        content_padding: DEFAULT_CONTENT_PADDING,
+    };
 
     let lines = view.render(&context);
     // Consecutive text chunks are coalesced, so there should be one line with no margin
     assert_eq!(lines.len(), 1);
     let term = render_lines(&lines, 80, 24);
     let output = term.get_lines();
+    assert!(output[0].starts_with("    "), "text should be padded: {}", output[0]);
     assert!(output[0].contains("first"), "text: {}", output[0]);
     assert!(output[0].contains("second"), "text: {}", output[0]);
 }

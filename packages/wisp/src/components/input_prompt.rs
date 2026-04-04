@@ -5,6 +5,10 @@ pub fn prompt_content_width(terminal_width: usize) -> usize {
     if terminal_width >= 4 { (terminal_width - 2).saturating_sub(3).max(1) } else { terminal_width.max(1) }
 }
 
+pub fn prompt_text_start_col(terminal_width: usize) -> usize {
+    if terminal_width >= 4 { 4 } else { 2.min(terminal_width) }
+}
+
 pub struct InputPrompt<'a> {
     pub input: &'a str,
     pub cursor_index: usize,
@@ -72,8 +76,7 @@ impl InputPrompt<'_> {
         InputPromptLayout {
             lines,
             cursor_row: 1 + cursor_content_row,
-            // "│ > " (or "│   ") takes 4 visual columns.
-            cursor_col: u16::try_from(4 + cursor_content_col).unwrap_or(u16::MAX),
+            cursor_col: u16::try_from(prompt_text_start_col(width) + cursor_content_col).unwrap_or(u16::MAX),
         }
     }
 }

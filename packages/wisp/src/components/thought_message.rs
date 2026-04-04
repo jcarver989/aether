@@ -6,10 +6,7 @@ pub struct ThoughtMessage<'a> {
 
 impl ThoughtMessage<'_> {
     fn format_line(text: &str, theme: &Theme) -> Line {
-        let mut line = Line::default();
-        line.push_styled("│ ", theme.muted());
-        line.push_with_style(text, Style::fg(theme.muted()));
-        line
+        Line::with_style(text, Style::fg(theme.muted()).italic())
     }
 
     fn format_lines(text: &str, theme: &Theme) -> Vec<Line> {
@@ -32,29 +29,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn renders_border_prefixed_thought_line() {
+    fn renders_italic_muted_thought_line() {
         let component = ThoughtMessage { text: "check plan" };
         let context = ViewContext::new((80, 24));
         let lines = component.render(&context);
         assert_eq!(lines.len(), 1);
-        assert!(lines[0].plain_text().starts_with("│ "));
-        assert!(lines[0].plain_text().contains("check plan"));
+        assert_eq!(lines[0].plain_text(), "check plan");
+        let style = lines[0].spans()[0].style();
+        assert_eq!(style.fg, Some(context.theme.muted()));
+        assert!(style.italic);
     }
 
     #[test]
-    fn prefixes_all_lines_with_border() {
+    fn renders_all_lines_as_italic_muted() {
         let component = ThoughtMessage { text: "line one\nline two" };
         let context = ViewContext::new((80, 24));
         let lines = component.render(&context);
         assert_eq!(lines.len(), 2);
-        assert!(lines[0].plain_text().starts_with("│ "));
-        assert!(lines[0].plain_text().contains("line one"));
-        assert!(lines[1].plain_text().starts_with("│ "));
-        assert!(lines[1].plain_text().contains("line two"));
+        assert_eq!(lines[0].plain_text(), "line one");
+        assert_eq!(lines[1].plain_text(), "line two");
+        for line in &lines {
+            let style = line.spans()[0].style();
+            assert_eq!(style.fg, Some(context.theme.muted()));
+            assert!(style.italic);
+        }
     }
 
     #[test]
-    fn wrapped_continuation_rows_remain_muted() {
+    fn wrapped_continuation_rows_remain_italic_muted() {
         let component = ThoughtMessage { text: "abcdefghijklmnopqrstuvwxyz" };
         let context = ViewContext::new((80, 24));
         let lines = component.render(&context);
@@ -63,7 +65,11 @@ mod tests {
 
         for row in wrapped.iter().skip(1) {
             assert!(!row.spans().is_empty());
-            assert!(row.spans().iter().all(|span| span.style().fg == Some(context.theme.muted())));
+            assert!(
+                row.spans()
+                    .iter()
+                    .all(|span| { span.style().fg == Some(context.theme.muted()) && span.style().italic })
+            );
         }
     }
 }
