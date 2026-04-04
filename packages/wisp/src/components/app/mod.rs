@@ -3,7 +3,7 @@ pub mod git_diff_mode;
 mod screen_router;
 mod view;
 
-pub use git_diff_mode::{GitDiffLoadState, GitDiffMode, GitDiffViewState, PatchFocus};
+pub use git_diff_mode::{GitDiffLoadState, GitDiffMode, GitDiffViewMessage};
 use screen_router::ScreenRouter;
 use screen_router::ScreenRouterMessage;
 
@@ -496,7 +496,6 @@ impl Component for App {
 
     fn render(&mut self, ctx: &ViewContext) -> Frame {
         self.conversation_screen.refresh_caches(ctx);
-        self.screen_router.refresh_caches(ctx);
 
         let height = (ctx.size.height.saturating_sub(1)) as usize;
         if let Some(ref mut overlay) = self.settings_overlay

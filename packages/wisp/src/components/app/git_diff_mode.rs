@@ -1,16 +1,13 @@
-use crate::components::file_tree::FileTree;
-use crate::components::git_diff_view::{
-    GitDiffView, GitDiffViewMessage, build_patch_lines, diff_layout, should_use_split_patch,
-};
-use crate::components::split_patch_renderer::build_split_patch_lines;
-use crate::git_diff::{FileDiff, GitDiffDocument, PatchLineKind};
+use crate::components::file_list_panel::{FileListMessage, FileListPanel};
+use crate::components::git_diff_panel::{GitDiffPanel, GitDiffPanelMessage};
+use crate::git_diff::{GitDiffDocument, PatchLineKind, load_git_diff};
 use std::path::PathBuf;
-use tui::{Component, Event, Line, ViewContext};
+use tui::{Component, Either, Event, Frame, KeyCode, Line, SplitLayout, SplitPanel, Style, ViewContext};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScreenMode {
-    Conversation,
-    GitDiff,
+pub enum GitDiffViewMessage {
+    Close,
+    Refresh,
+    SubmitPrompt(String),
 }
 
 pub enum GitDiffLoadState {
@@ -18,13 +15,6 @@ pub enum GitDiffLoadState {
     Ready(GitDiffDocument),
     Empty,
     Error { message: String },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PatchFocus {
-    FileList,
-    Patch,
-    CommentInput,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -43,404 +33,12 @@ pub struct QueuedComment {
     pub comment: String,
 }
 
-pub struct GitDiffViewState {
-    pub(crate) load_state: GitDiffLoadState,
-    pub(crate) focus: PatchFocus,
-    pub(crate) selected_file: usize,
-    pub(crate) patch_scroll: usize,
-    pub(crate) cached_patch_lines: Vec<Line>,
-    pub(crate) cached_patch_line_refs: Vec<Option<PatchLineRef>>,
-    pub(crate) cursor_line: usize,
-    pub(crate) comment_buffer: String,
-    pub(crate) comment_cursor: usize,
-    pub(crate) queued_comments: Vec<QueuedComment>,
-    pub(crate) draft_comment_anchor: Option<PatchLineRef>,
-    pub(crate) draft_comment_row: Option<usize>,
-    pub(crate) file_tree: Option<FileTree>,
-    pub(crate) file_list_scroll: usize,
-    pub(crate) sidebar_width_delta: i16,
-    saved_cursor_anchor: Option<PatchLineRef>,
-    cached_for_file: Option<usize>,
-    cached_for_width: Option<u16>,
-}
-
-impl GitDiffViewState {
-    pub fn new(load_state: GitDiffLoadState) -> Self {
-        Self {
-            load_state,
-            focus: PatchFocus::FileList,
-            selected_file: 0,
-            patch_scroll: 0,
-            cached_patch_lines: Vec::new(),
-            cached_patch_line_refs: Vec::new(),
-            cursor_line: 0,
-            comment_buffer: String::new(),
-            comment_cursor: 0,
-            queued_comments: Vec::new(),
-            draft_comment_anchor: None,
-            draft_comment_row: None,
-            file_tree: None,
-            file_list_scroll: 0,
-            sidebar_width_delta: 0,
-            saved_cursor_anchor: None,
-            cached_for_file: None,
-            cached_for_width: None,
-        }
-    }
-
-    pub(crate) fn exit_comment_mode(&mut self) {
-        self.focus = PatchFocus::Patch;
-        self.comment_buffer.clear();
-        self.comment_cursor = 0;
-        self.draft_comment_anchor = None;
-        self.invalidate_patch_cache();
-    }
-
-    pub(crate) fn invalidate_patch_cache(&mut self) {
-        self.saved_cursor_anchor = self.current_cursor_anchor();
-        self.cached_for_file = None;
-        self.cached_for_width = None;
-        self.cached_patch_lines.clear();
-        self.cached_patch_line_refs.clear();
-        self.draft_comment_row = None;
-    }
-
-    pub(crate) fn selected_file(&self) -> Option<&FileDiff> {
-        let GitDiffLoadState::Ready(doc) = &self.load_state else {
-            return None;
-        };
-        doc.files.get(self.selected_file.min(doc.files.len().saturating_sub(1)))
-    }
-
-    pub(crate) fn selected_file_path(&self) -> Option<&str> {
-        self.selected_file().map(|file| file.path.as_str())
-    }
-
-    pub(crate) fn file_count(&self) -> usize {
-        match &self.load_state {
-            GitDiffLoadState::Ready(doc) => doc.files.len(),
-            _ => 0,
-        }
-    }
-
-    pub(crate) fn max_patch_scroll(&self) -> usize {
-        self.cached_patch_lines.len().saturating_sub(1)
-    }
-
-    pub(crate) fn selected_hunk_offsets(&self) -> Vec<usize> {
-        let mut offsets = Vec::new();
-        let mut last_hunk: Option<usize> = None;
-        for (i, r) in self.cached_patch_line_refs.iter().enumerate() {
-            if let Some(pl_ref) = r
-                && last_hunk != Some(pl_ref.hunk_index)
-            {
-                offsets.push(i);
-                last_hunk = Some(pl_ref.hunk_index);
-            }
-        }
-        offsets
-    }
-
-    pub(crate) fn set_focus(&mut self, focus: PatchFocus) -> bool {
-        if self.focus == focus {
-            return false;
-        }
-        self.focus = focus;
-        if focus == PatchFocus::Patch {
-            self.cursor_line = 0;
-            self.patch_scroll = 0;
-        }
-        true
-    }
-
-    pub(crate) fn select_relative(&mut self, delta: isize) -> bool {
-        if self.focus != PatchFocus::FileList {
-            return false;
-        }
-
-        if let Some(tree) = &mut self.file_tree {
-            let prev_file = tree.selected_file_index();
-            tree.navigate(delta);
-            let new_file = tree.selected_file_index();
-            if let Some(idx) = new_file
-                && Some(idx) != prev_file.or(Some(self.selected_file))
-            {
-                self.selected_file = idx;
-                self.cursor_line = 0;
-                self.patch_scroll = 0;
-                self.invalidate_patch_cache();
-                return true;
-            }
-            return prev_file != new_file;
-        }
-
-        let file_count = self.file_count();
-        if file_count == 0 {
-            return false;
-        }
-
-        let previous = self.selected_file;
-        crate::components::wrap_selection(&mut self.selected_file, file_count, delta);
-        let changed = self.selected_file != previous;
-        if changed {
-            self.cursor_line = 0;
-            self.patch_scroll = 0;
-        }
-        changed
-    }
-
-    pub(crate) fn tree_collapse_or_parent(&mut self) {
-        if let Some(tree) = &mut self.file_tree {
-            tree.collapse_or_parent();
-        }
-    }
-
-    pub(crate) fn tree_expand_or_enter(&mut self) -> bool {
-        let Some(tree) = &mut self.file_tree else {
-            return true;
-        };
-        let is_file = tree.expand_or_enter();
-        if is_file
-            && let Some(idx) = tree.selected_file_index()
-            && idx != self.selected_file
-        {
-            self.selected_file = idx;
-            self.cursor_line = 0;
-            self.patch_scroll = 0;
-            self.invalidate_patch_cache();
-        }
-        is_file
-    }
-
-    pub(crate) fn ensure_file_list_visible(&mut self, viewport_height: usize) {
-        let Some(tree) = &self.file_tree else {
-            return;
-        };
-        let selected = tree.selected_visible();
-        if selected < self.file_list_scroll {
-            self.file_list_scroll = selected;
-        } else if selected >= self.file_list_scroll + viewport_height {
-            self.file_list_scroll = selected.saturating_sub(viewport_height - 1);
-        }
-    }
-
-    pub(crate) fn move_cursor(&mut self, delta: isize) -> bool {
-        if self.focus != PatchFocus::Patch {
-            return false;
-        }
-        let max = self.max_patch_scroll();
-        let next = if delta.is_negative() {
-            self.cursor_line.saturating_sub(delta.unsigned_abs())
-        } else {
-            (self.cursor_line + delta.unsigned_abs()).min(max)
-        };
-        let changed = next != self.cursor_line;
-        self.cursor_line = next;
-        changed
-    }
-
-    pub(crate) fn move_cursor_to_start(&mut self) -> bool {
-        if self.focus != PatchFocus::Patch {
-            return false;
-        }
-        let changed = self.cursor_line != 0;
-        self.cursor_line = 0;
-        changed
-    }
-
-    pub(crate) fn move_cursor_to_end(&mut self) -> bool {
-        if self.focus != PatchFocus::Patch {
-            return false;
-        }
-        let next = self.max_patch_scroll();
-        let changed = next != self.cursor_line;
-        self.cursor_line = next;
-        changed
-    }
-
-    pub(crate) fn jump_next_hunk(&mut self) -> bool {
-        if self.focus != PatchFocus::Patch {
-            return false;
-        }
-        let current = self.cursor_line;
-        if let Some(&next) = self.selected_hunk_offsets().iter().find(|&&o| o > current) {
-            let next = next.min(self.max_patch_scroll());
-            let changed = next != self.cursor_line;
-            self.cursor_line = next;
-            return changed;
-        }
-        false
-    }
-
-    pub(crate) fn jump_prev_hunk(&mut self) -> bool {
-        if self.focus != PatchFocus::Patch {
-            return false;
-        }
-        let current = self.cursor_line;
-        if let Some(&prev) = self.selected_hunk_offsets().iter().rev().find(|&&o| o < current) {
-            let changed = prev != self.cursor_line;
-            self.cursor_line = prev;
-            return changed;
-        }
-        false
-    }
-
-    pub(crate) fn ensure_cursor_visible(&mut self, viewport_height: usize) {
-        if viewport_height == 0 {
-            return;
-        }
-        if self.cursor_line < self.patch_scroll {
-            self.patch_scroll = self.cursor_line;
-        } else if self.cursor_line >= self.patch_scroll + viewport_height {
-            self.patch_scroll = self.cursor_line.saturating_sub(viewport_height - 1);
-        }
-    }
-
-    pub(crate) fn ensure_patch_cache(&mut self, context: &ViewContext) {
-        let width = context.size.width;
-        if self.cached_for_file == Some(self.selected_file) && self.cached_for_width == Some(width) {
-            return;
-        }
-
-        let cursor_anchor = self.saved_cursor_anchor.take();
-
-        let Some(file) = self.selected_file() else {
-            return;
-        };
-
-        let file_comments: Vec<QueuedComment> = {
-            let mut comments: Vec<QueuedComment> =
-                self.queued_comments.iter().filter(|c| c.file_path == file.path).cloned().collect();
-            if self.focus == PatchFocus::CommentInput
-                && let Some(draft) = self.build_draft_comment(file)
-            {
-                comments.push(draft);
-            }
-            comments
-        };
-
-        if file.binary {
-            self.cached_patch_lines = Vec::new();
-            self.cached_patch_line_refs = Vec::new();
-        } else {
-            let use_split_patch = should_use_split_patch(width as usize, self.sidebar_width_delta, file);
-            let (_left_width, right_width) = diff_layout(width as usize, self.sidebar_width_delta);
-
-            if use_split_patch {
-                let (lines, refs) = build_split_patch_lines(file, right_width, context, &file_comments);
-                self.cached_patch_lines = lines;
-                self.cached_patch_line_refs = refs;
-            } else {
-                let (lines, refs) = build_patch_lines(file, right_width, context, &file_comments);
-                self.cached_patch_lines = lines;
-                self.cached_patch_line_refs = refs;
-            }
-        }
-        self.cached_for_file = Some(self.selected_file);
-        self.cached_for_width = Some(width);
-
-        self.restore_cursor_to_anchor(cursor_anchor);
-        self.cursor_line = self.cursor_line.min(self.max_patch_scroll());
-        self.find_draft_content_row();
-    }
-
-    fn current_cursor_anchor(&self) -> Option<PatchLineRef> {
-        if self.cursor_line < self.cached_patch_line_refs.len() {
-            if let Some(anchor) = self.cached_patch_line_refs[self.cursor_line] {
-                return Some(anchor);
-            }
-            // Scan backward for the nearest preceding anchor
-            for i in (0..self.cursor_line).rev() {
-                if let Some(anchor) = self.cached_patch_line_refs[i] {
-                    return Some(anchor);
-                }
-            }
-        }
-        None
-    }
-
-    fn restore_cursor_to_anchor(&mut self, anchor: Option<PatchLineRef>) {
-        if let Some(anchor) = anchor
-            && let Some(row) = self.cached_patch_line_refs.iter().position(|r| *r == Some(anchor))
-        {
-            self.cursor_line = row;
-            return;
-        }
-        self.cursor_line = self.cursor_line.min(self.max_patch_scroll());
-    }
-
-    fn build_draft_comment(&self, file: &FileDiff) -> Option<QueuedComment> {
-        let anchor = self.draft_comment_anchor?;
-        let hunk = file.hunks.get(anchor.hunk_index)?;
-        let patch_line = hunk.lines.get(anchor.line_index)?;
-        let line_number = patch_line.new_line_no.or(patch_line.old_line_no);
-        let comment = if self.comment_buffer.is_empty() { " ".to_string() } else { self.comment_buffer.clone() };
-        Some(QueuedComment {
-            file_path: file.path.clone(),
-            patch_ref: anchor,
-            line_text: patch_line.text.clone(),
-            line_number,
-            line_kind: patch_line.kind,
-            comment,
-        })
-    }
-
-    fn find_draft_content_row(&mut self) {
-        self.draft_comment_row = None;
-        let Some(anchor) = self.draft_comment_anchor else {
-            return;
-        };
-        let Some(anchor_pos) = self.cached_patch_line_refs.iter().position(|r| *r == Some(anchor)) else {
-            return;
-        };
-        let mut last_top_border = None;
-        for i in (anchor_pos + 1)..self.cached_patch_lines.len() {
-            if self.cached_patch_line_refs.get(i).is_some_and(Option::is_some) {
-                break;
-            }
-            let text = self.cached_patch_lines[i].plain_text();
-            if text.trim_start().starts_with('┌') {
-                last_top_border = Some(i);
-            }
-        }
-        if let Some(top) = last_top_border {
-            self.draft_comment_row = Some(top + 1);
-        }
-    }
-
-    fn apply_loaded_document(&mut self, doc: GitDiffDocument, restore: Option<RefreshState>) {
-        if doc.files.is_empty() {
-            self.load_state = GitDiffLoadState::Empty;
-            self.invalidate_patch_cache();
-            return;
-        }
-
-        let file_count = doc.files.len();
-        self.file_tree = Some(FileTree::from_files(&doc.files));
-        self.file_list_scroll = 0;
-        self.load_state = GitDiffLoadState::Ready(doc);
-        self.selected_file = self.selected_file.min(file_count.saturating_sub(1));
-        self.invalidate_patch_cache();
-
-        if let Some(restore) = restore {
-            self.focus = restore.focus;
-            self.patch_scroll = 0;
-            if let (Some(path), GitDiffLoadState::Ready(doc)) = (&restore.selected_path, &self.load_state) {
-                self.selected_file = doc.files.iter().position(|file| file.path == *path).unwrap_or(0);
-            }
-        }
-    }
-}
-
-struct RefreshState {
-    selected_path: Option<String>,
-    focus: PatchFocus,
-}
-
 pub struct GitDiffMode {
     working_dir: PathBuf,
     cached_repo_root: Option<PathBuf>,
-    state: GitDiffViewState,
+    pub load_state: GitDiffLoadState,
+    pub(crate) split: SplitPanel<FileListPanel, GitDiffPanel>,
+    pub(crate) queued_comments: Vec<QueuedComment>,
     pending_restore: Option<RefreshState>,
 }
 
@@ -449,84 +47,267 @@ impl GitDiffMode {
         Self {
             working_dir,
             cached_repo_root: None,
-            state: GitDiffViewState::new(GitDiffLoadState::Empty),
+            load_state: GitDiffLoadState::Empty,
+            split: SplitPanel::new(FileListPanel::new(), GitDiffPanel::new(), SplitLayout::fraction(1, 3, 20, 28))
+                .with_separator(" ", Style::default())
+                .with_resize_keys(),
+            queued_comments: Vec::new(),
             pending_restore: None,
         }
     }
 
     pub(crate) fn begin_open(&mut self) {
-        self.pending_restore = None;
-        self.state = GitDiffViewState::new(GitDiffLoadState::Loading);
+        self.reset(GitDiffLoadState::Loading);
     }
 
     pub(crate) fn begin_refresh(&mut self) {
         self.pending_restore = Some(RefreshState {
-            selected_path: self.state.selected_file_path().map(ToOwned::to_owned),
-            focus: self.state.focus,
+            selected_path: self.selected_file_path().map(ToOwned::to_owned),
+            was_right_focused: !self.split.is_left_focused(),
         });
-        self.state.load_state = GitDiffLoadState::Loading;
-        self.state.invalidate_patch_cache();
+        self.load_state = GitDiffLoadState::Loading;
+        self.split.right_mut().invalidate_cache();
     }
 
     pub(crate) async fn complete_load(&mut self) {
-        match crate::git_diff::load_git_diff(&self.working_dir, self.cached_repo_root.as_deref()).await {
+        match load_git_diff(&self.working_dir, self.cached_repo_root.as_deref()).await {
             Ok(doc) => {
                 if self.cached_repo_root.is_none() {
                     self.cached_repo_root = Some(doc.repo_root.clone());
                 }
-                self.state.apply_loaded_document(doc, self.pending_restore.take());
+                let restore = self.pending_restore.take();
+                self.apply_loaded_document(doc, restore);
             }
             Err(error) => {
                 self.pending_restore = None;
-                self.state.load_state = GitDiffLoadState::Error { message: error.to_string() };
-                self.state.invalidate_patch_cache();
+                self.load_state = GitDiffLoadState::Error { message: error.to_string() };
+                self.split.right_mut().invalidate_cache();
             }
         }
     }
 
     pub(crate) fn close(&mut self) {
+        self.reset(GitDiffLoadState::Empty);
+    }
+
+    fn reset(&mut self, load_state: GitDiffLoadState) {
         self.pending_restore = None;
-        self.state = GitDiffViewState::new(GitDiffLoadState::Empty);
+        self.load_state = load_state;
+        *self.split.left_mut() = FileListPanel::new();
+        *self.split.right_mut() = GitDiffPanel::new();
+        self.queued_comments.clear();
+        self.split.focus_left();
     }
 
     pub(crate) async fn on_key_event(&mut self, event: &Event) -> Vec<GitDiffViewMessage> {
-        let mut view = GitDiffView { state: &mut self.state };
-        let outcome = view.on_event(event).await;
-        outcome.unwrap_or_default()
-    }
-
-    pub(crate) fn render_lines(&self, context: &ViewContext) -> Vec<Line> {
-        GitDiffView::render_from_state(&self.state, context)
-    }
-
-    pub(crate) fn refresh_caches(&mut self, context: &ViewContext) {
-        self.state.ensure_patch_cache(context);
-        if let Some(tree) = &mut self.state.file_tree {
-            tree.ensure_cache();
+        if self.split.right().is_in_comment_mode() {
+            return self.on_comment_mode_event(event).await;
         }
-        let viewport_height = (context.size.height as usize).saturating_sub(2);
-        self.state.ensure_cursor_visible(viewport_height);
-        if let Some(draft_row) = self.state.draft_comment_row {
-            let bottom = draft_row + 1;
-            if bottom >= self.state.patch_scroll + viewport_height {
-                self.state.patch_scroll = bottom.saturating_sub(viewport_height - 1);
+
+        if let Event::Key(key) = event {
+            match key.code {
+                KeyCode::Esc => return vec![GitDiffViewMessage::Close],
+                KeyCode::Char('r') => return vec![GitDiffViewMessage::Refresh],
+                KeyCode::Char('u') => {
+                    self.queued_comments.pop();
+                    self.split.left_mut().set_queued_comment_count(self.queued_comments.len());
+                    self.split.right_mut().invalidate_cache();
+                    return vec![];
+                }
+                KeyCode::Char('s') if !self.split.is_left_focused() => {
+                    return self.submit_review();
+                }
+                KeyCode::Char('h') | KeyCode::Left if !self.split.is_left_focused() => {
+                    self.split.focus_left();
+                    return vec![];
+                }
+                _ => {}
             }
         }
-        self.state.ensure_file_list_visible(viewport_height);
-    }
 
-    pub(crate) fn draft_cursor_position(&self, diff_height: u16) -> Option<(usize, usize)> {
-        let draft_row = self.state.draft_comment_row?;
-        let width = self.state.cached_for_width? as usize;
-        let (left_width, _) = diff_layout(width, self.state.sidebar_width_delta);
-
-        let screen_row = draft_row.checked_sub(self.state.patch_scroll)? + 2;
-        if screen_row >= diff_height as usize {
-            return None;
+        if let Some(msgs) = self.split.on_event(event).await {
+            return self.handle_split_messages(msgs);
         }
-        let screen_col = left_width + 1 + 2 + 2 + self.state.comment_cursor;
-        Some((screen_row, screen_col))
+
+        vec![]
     }
+
+    pub fn render_frame(&mut self, context: &ViewContext) -> Frame {
+        let theme = &context.theme;
+        if context.size.width < 10 {
+            return Frame::new(vec![Line::new("Too narrow")]);
+        }
+
+        let status_msg = match &self.load_state {
+            GitDiffLoadState::Loading => Some("Loading...".to_string()),
+            GitDiffLoadState::Empty => Some("No changes in working tree relative to HEAD".to_string()),
+            GitDiffLoadState::Ready(doc) if doc.files.is_empty() => {
+                Some("No changes in working tree relative to HEAD".to_string())
+            }
+            GitDiffLoadState::Error { message } => Some(format!("Git diff unavailable: {message}")),
+            GitDiffLoadState::Ready(_) => None,
+        };
+
+        if let Some(msg) = status_msg {
+            let height = context.size.height as usize;
+            let widths = self.split.widths(context.size.width);
+            let left_width = widths.left as usize;
+            let mut rows = Vec::with_capacity(height);
+            for i in 0..height {
+                let mut line = Line::default();
+                line.push_with_style(" ".repeat(left_width), Style::default().bg_color(theme.sidebar_bg()));
+                line.push_with_style(" ", Style::default().bg_color(theme.code_bg()));
+                if i == 0 {
+                    line.push_with_style(&msg, Style::fg(theme.text_secondary()));
+                }
+                rows.push(line);
+            }
+            return Frame::new(rows);
+        }
+
+        self.prepare_right_panel_cache(context);
+        self.split.set_separator_style(Style::default().bg_color(theme.code_bg()));
+        self.split.render(context)
+    }
+
+    fn prepare_right_panel_cache(&mut self, context: &ViewContext) {
+        let GitDiffLoadState::Ready(doc) = &self.load_state else {
+            return;
+        };
+
+        let selected = self.split.left().selected_file_index().unwrap_or(0).min(doc.files.len().saturating_sub(1));
+        let file = &doc.files[selected];
+
+        let mut file_comments: Vec<QueuedComment> =
+            self.queued_comments.iter().filter(|c| c.file_path == file.path).cloned().collect();
+        if self.split.right().is_in_comment_mode()
+            && let Some(draft) = self.split.right().build_draft_comment(file)
+        {
+            file_comments.push(draft);
+        }
+
+        let right_width = self.split.widths(context.size.width).right;
+        self.split.right_mut().ensure_cache(file, &file_comments, right_width);
+    }
+
+    fn on_file_selected(&mut self, idx: usize) {
+        self.split.left_mut().select_file_index(idx);
+        self.split.right_mut().reset_for_new_file();
+    }
+
+    async fn on_comment_mode_event(&mut self, event: &Event) -> Vec<GitDiffViewMessage> {
+        if let Some(msgs) = self.split.right_mut().on_event(event).await {
+            return self.handle_right_panel_messages(msgs);
+        }
+        vec![]
+    }
+
+    fn handle_split_messages(
+        &mut self,
+        msgs: Vec<Either<FileListMessage, GitDiffPanelMessage>>,
+    ) -> Vec<GitDiffViewMessage> {
+        let mut right_msgs = Vec::new();
+        for msg in msgs {
+            match msg {
+                Either::Left(FileListMessage::Selected(idx)) => {
+                    self.on_file_selected(idx);
+                }
+                Either::Left(FileListMessage::FileOpened(idx)) => {
+                    self.on_file_selected(idx);
+                    self.split.focus_right();
+                }
+                Either::Right(panel_msg) => right_msgs.push(panel_msg),
+            }
+        }
+        self.handle_right_panel_messages(right_msgs)
+    }
+
+    fn handle_right_panel_messages(&mut self, msgs: Vec<GitDiffPanelMessage>) -> Vec<GitDiffViewMessage> {
+        for msg in msgs {
+            let GitDiffPanelMessage::CommentSubmitted { anchor, text } = msg;
+            self.queue_comment(anchor, &text);
+        }
+        vec![]
+    }
+
+    fn queue_comment(&mut self, anchor: PatchLineRef, text: &str) {
+        let GitDiffLoadState::Ready(doc) = &self.load_state else {
+            return;
+        };
+        let selected = self.split.left().selected_file_index().unwrap_or(0);
+        let Some(file) = doc.files.get(selected) else {
+            return;
+        };
+        let Some(hunk) = file.hunks.get(anchor.hunk_index) else {
+            return;
+        };
+        let Some(patch_line) = hunk.lines.get(anchor.line_index) else {
+            return;
+        };
+
+        self.queued_comments.push(QueuedComment {
+            file_path: file.path.clone(),
+            patch_ref: anchor,
+            line_text: patch_line.text.clone(),
+            line_number: patch_line.new_line_no.or(patch_line.old_line_no),
+            line_kind: patch_line.kind,
+            comment: text.to_string(),
+        });
+        self.split.left_mut().set_queued_comment_count(self.queued_comments.len());
+        self.split.right_mut().invalidate_cache();
+    }
+
+    fn submit_review(&self) -> Vec<GitDiffViewMessage> {
+        if self.queued_comments.is_empty() {
+            return vec![];
+        }
+        let prompt = format_review_prompt(&self.queued_comments);
+        vec![GitDiffViewMessage::SubmitPrompt(prompt)]
+    }
+
+    fn selected_file_path(&self) -> Option<&str> {
+        let GitDiffLoadState::Ready(doc) = &self.load_state else {
+            return None;
+        };
+        let idx = self.split.left().selected_file_index()?;
+        doc.files.get(idx).map(|f| f.path.as_str())
+    }
+
+    pub fn load_document(&mut self, doc: GitDiffDocument) {
+        self.apply_loaded_document(doc, None);
+    }
+
+    fn apply_loaded_document(&mut self, doc: GitDiffDocument, restore: Option<RefreshState>) {
+        if doc.files.is_empty() {
+            self.load_state = GitDiffLoadState::Empty;
+            self.split.right_mut().invalidate_cache();
+            return;
+        }
+
+        self.split.left_mut().rebuild_from_files(&doc.files);
+        self.split.right_mut().invalidate_cache();
+
+        if let Some(restore) = restore {
+            if restore.was_right_focused {
+                self.split.focus_right();
+            } else {
+                self.split.focus_left();
+            }
+            self.split.right_mut().reset_scroll();
+            if let Some(path) = &restore.selected_path
+                && let Some(idx) = doc.files.iter().position(|file| file.path == *path)
+            {
+                self.split.left_mut().select_file_index(idx);
+            }
+        }
+
+        self.load_state = GitDiffLoadState::Ready(doc);
+    }
+}
+
+struct RefreshState {
+    selected_path: Option<String>,
+    was_right_focused: bool,
 }
 
 pub(crate) fn format_review_prompt(comments: &[QueuedComment]) -> String {
@@ -568,7 +349,112 @@ pub(crate) fn format_review_prompt(comments: &[QueuedComment]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::git_diff::{FileStatus, Hunk, PatchLine, PatchLineKind};
+    use crate::git_diff::{FileDiff, FileStatus, GitDiffDocument, Hunk, PatchLine, PatchLineKind};
+    use tui::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind, ViewContext};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn patch_line(kind: PatchLineKind, text: &str, old: Option<usize>, new: Option<usize>) -> PatchLine {
+        PatchLine { kind, text: text.to_string(), old_line_no: old, new_line_no: new }
+    }
+
+    fn hunk(header: &str, old: (usize, usize), new: (usize, usize), lines: Vec<PatchLine>) -> Hunk {
+        Hunk {
+            header: header.to_string(),
+            old_start: old.0,
+            old_count: old.1,
+            new_start: new.0,
+            new_count: new.1,
+            lines,
+        }
+    }
+
+    fn file_diff(path: &str, old_path: Option<&str>, status: FileStatus, hunks: Vec<Hunk>) -> FileDiff {
+        FileDiff { old_path: old_path.map(str::to_string), path: path.to_string(), status, hunks, binary: false }
+    }
+
+    fn make_test_doc() -> GitDiffDocument {
+        use PatchLineKind::*;
+        let h = "@@ -1,3 +1,3 @@";
+        GitDiffDocument {
+            repo_root: PathBuf::from("/tmp/test"),
+            files: vec![
+                file_diff(
+                    "a.rs",
+                    Some("a.rs"),
+                    FileStatus::Modified,
+                    vec![hunk(
+                        h,
+                        (1, 3),
+                        (1, 3),
+                        vec![
+                            patch_line(HunkHeader, h, None, None),
+                            patch_line(Context, "fn main() {", Some(1), Some(1)),
+                            patch_line(Removed, "    old();", Some(2), None),
+                            patch_line(Added, "    new();", None, Some(2)),
+                            patch_line(Context, "}", Some(3), Some(3)),
+                        ],
+                    )],
+                ),
+                file_diff(
+                    "b.rs",
+                    None,
+                    FileStatus::Added,
+                    vec![hunk(
+                        "@@ -0,0 +1,1 @@",
+                        (0, 0),
+                        (1, 1),
+                        vec![
+                            patch_line(HunkHeader, "@@ -0,0 +1,1 @@", None, None),
+                            patch_line(Added, "new_content", None, Some(1)),
+                        ],
+                    )],
+                ),
+            ],
+        }
+    }
+
+    fn make_mode(doc: GitDiffDocument) -> GitDiffMode {
+        let mut mode = GitDiffMode::new(PathBuf::from("."));
+        mode.apply_loaded_document(doc, None);
+        mode
+    }
+
+    fn make_mode_with_cache() -> GitDiffMode {
+        let mut mode = make_mode(make_test_doc());
+        mode.render_frame(&ViewContext::new((100, 24)));
+        mode
+    }
+
+    async fn send_key(mode: &mut GitDiffMode, code: KeyCode) -> Vec<GitDiffViewMessage> {
+        mode.on_key_event(&Event::Key(key(code))).await
+    }
+
+    async fn send_mouse(mode: &mut GitDiffMode, kind: MouseEventKind) -> Vec<GitDiffViewMessage> {
+        mode.on_key_event(&Event::Mouse(MouseEvent { kind, column: 0, row: 0, modifiers: KeyModifiers::NONE })).await
+    }
+
+    fn has_msg(msgs: &[GitDiffViewMessage], pred: fn(&GitDiffViewMessage) -> bool) -> bool {
+        msgs.iter().any(pred)
+    }
+
+    fn queued_comment(line_text: &str, comment: &str, kind: PatchLineKind) -> QueuedComment {
+        QueuedComment {
+            file_path: "a.rs".to_string(),
+            patch_ref: PatchLineRef { hunk_index: 0, line_index: 0 },
+            line_text: line_text.to_string(),
+            line_number: Some(1),
+            line_kind: kind,
+            comment: comment.to_string(),
+        }
+    }
+
+    fn render_diff_text(mode: &mut GitDiffMode, width: u16) -> Vec<String> {
+        let ctx = ViewContext::new((width, 24));
+        mode.render_frame(&ctx).into_parts().0.iter().map(|l| l.plain_text()).collect()
+    }
 
     fn make_doc(paths: &[&str]) -> GitDiffDocument {
         GitDiffDocument {
@@ -614,7 +500,8 @@ mod tests {
 
     fn mode_with(paths: &[&str]) -> GitDiffMode {
         let mut mode = GitDiffMode::new(PathBuf::from("."));
-        mode.state.load_state = GitDiffLoadState::Ready(make_doc(paths));
+        let doc = make_doc(paths);
+        mode.apply_loaded_document(doc, None);
         mode
     }
 
@@ -632,15 +519,16 @@ mod tests {
     #[test]
     fn begin_refresh_preserves_selected_path_and_focus_after_load() {
         let mut mode = mode_with(&["a.rs", "b.rs"]);
-        mode.state.selected_file = 1;
-        mode.state.focus = PatchFocus::Patch;
+        mode.split.left_mut().select_file_index(1);
+        mode.split.focus_right();
         mode.begin_refresh();
 
-        mode.state.apply_loaded_document(make_doc(&["c.rs", "b.rs"]), mode.pending_restore.take());
+        let restore = mode.pending_restore.take();
+        mode.apply_loaded_document(make_doc(&["c.rs", "b.rs"]), restore);
 
-        assert_eq!(mode.state.selected_file_path(), Some("b.rs"));
-        assert_eq!(mode.state.focus, PatchFocus::Patch);
-        assert_eq!(mode.state.patch_scroll, 0);
+        assert_eq!(mode.selected_file_path(), Some("b.rs"));
+        assert!(!mode.split.is_left_focused());
+        assert_eq!(mode.split.right().scroll, 0);
     }
 
     #[test]
@@ -660,5 +548,464 @@ mod tests {
         {
             assert!(prompt.contains(expected), "missing: {expected}");
         }
+    }
+
+    #[test]
+    fn narrow_terminal_renders_unified_diff() {
+        let mut mode = make_mode(make_test_doc());
+        let lines = render_diff_text(&mut mode, 108);
+        assert!(lines.iter().any(|l| l.contains("old()")), "should contain removed line");
+        assert!(lines.iter().any(|l| l.contains("new()")), "should contain added line");
+        assert!(
+            !lines.iter().any(|l| l.contains("old()") && l.contains("new()")),
+            "unified mode: old and new should be on separate rows"
+        );
+    }
+
+    #[test]
+    fn wide_terminal_renders_split_diff() {
+        let mut mode = make_mode(make_test_doc());
+        let lines = render_diff_text(&mut mode, 109);
+        assert!(
+            lines.iter().any(|l| l.contains("old()") && l.contains("new()")),
+            "split mode: old and new should appear on the same row"
+        );
+    }
+
+    #[tokio::test]
+    async fn resizing_split_panel_rebuilds_right_cache_for_new_width() {
+        let mut mode = make_mode(make_test_doc());
+        let ctx = ViewContext::new((130, 24));
+
+        mode.render_frame(&ctx);
+        send_key(&mut mode, KeyCode::Char('>')).await;
+
+        let resized_right_width = usize::from(mode.split.widths(ctx.size.width).right);
+        mode.render_frame(&ctx);
+
+        assert!(
+            mode.split.right().cached_lines.iter().all(|line| line.display_width() <= resized_right_width),
+            "expected all cached lines to fit resized right width {resized_right_width}, got widths: {:?}",
+            mode.split.right().cached_lines.iter().map(|line| line.display_width()).collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn key_emits_expected_message() {
+        let cases: Vec<(KeyCode, fn(&GitDiffViewMessage) -> bool)> = vec![
+            (KeyCode::Esc, |m| matches!(m, GitDiffViewMessage::Close)),
+            (KeyCode::Char('r'), |m| matches!(m, GitDiffViewMessage::Refresh)),
+        ];
+        for (code, pred) in cases {
+            let mut mode = make_mode(make_test_doc());
+            let msgs = send_key(&mut mode, code).await;
+            assert!(has_msg(&msgs, pred), "failed for key: {code:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn j_and_k_move_file_selection() {
+        let mut mode = make_mode(make_test_doc());
+        assert_eq!(mode.split.left().selected_file_index(), Some(0));
+
+        send_key(&mut mode, KeyCode::Char('j')).await;
+        assert_eq!(mode.split.left().selected_file_index(), Some(1));
+
+        let mut mode2 = make_mode(make_test_doc());
+        send_key(&mut mode2, KeyCode::Char('k')).await;
+        assert_eq!(mode2.split.left().selected_file_index(), Some(1));
+    }
+
+    #[tokio::test]
+    async fn focus_switching() {
+        let mut mode = make_mode(make_test_doc());
+        assert!(mode.split.is_left_focused());
+        send_key(&mut mode, KeyCode::Enter).await;
+        assert!(!mode.split.is_left_focused());
+
+        let mut mode2 = make_mode(make_test_doc());
+        mode2.split.focus_right();
+        send_key(&mut mode2, KeyCode::Char('h')).await;
+        assert!(mode2.split.is_left_focused());
+    }
+
+    #[tokio::test]
+    async fn file_selection_resets_patch_scroll() {
+        let mut mode = make_mode(make_test_doc());
+        mode.split.right_mut().scroll = 5;
+        send_key(&mut mode, KeyCode::Char('j')).await;
+        assert_eq!(mode.split.right().scroll, 0);
+    }
+
+    #[tokio::test]
+    async fn c_enters_comment_mode() {
+        let mut mode = make_mode_with_cache();
+        mode.split.focus_right();
+        mode.split.right_mut().cursor_line = 1;
+        send_key(&mut mode, KeyCode::Char('c')).await;
+        assert!(mode.split.right().is_in_comment_mode());
+    }
+
+    #[tokio::test]
+    async fn c_on_spacer_is_noop() {
+        use PatchLineKind::HunkHeader;
+        let h1 = "@@ -1,1 +1,1 @@";
+        let h2 = "@@ -5,1 +5,1 @@";
+        let doc = GitDiffDocument {
+            repo_root: PathBuf::from("/tmp/test"),
+            files: vec![file_diff(
+                "a.rs",
+                None,
+                FileStatus::Modified,
+                vec![
+                    hunk(h1, (1, 1), (1, 1), vec![patch_line(HunkHeader, h1, None, None)]),
+                    hunk(h2, (5, 1), (5, 1), vec![patch_line(HunkHeader, h2, None, None)]),
+                ],
+            )],
+        };
+        let mut mode = make_mode(doc);
+        mode.render_frame(&ViewContext::new((100, 24)));
+        mode.split.focus_right();
+        mode.split.right_mut().cursor_line = 1;
+
+        send_key(&mut mode, KeyCode::Char('c')).await;
+        assert!(!mode.split.right().is_in_comment_mode());
+    }
+
+    #[tokio::test]
+    async fn esc_exits_comment_mode() {
+        let mut mode = make_mode_with_cache();
+        mode.split.focus_right();
+        mode.split.right_mut().in_comment_mode = true;
+        mode.split.right_mut().comment_buffer = "partial".to_string();
+        send_key(&mut mode, KeyCode::Esc).await;
+        assert!(!mode.split.right().is_in_comment_mode());
+        assert!(mode.split.right().comment_buffer.is_empty());
+    }
+
+    #[tokio::test]
+    async fn enter_queues_comment() {
+        let mut mode = make_mode_with_cache();
+        mode.split.focus_right();
+        mode.split.right_mut().cursor_line = 1;
+        send_key(&mut mode, KeyCode::Char('c')).await;
+        assert!(mode.split.right().is_in_comment_mode());
+
+        for ch in "test comment".chars() {
+            send_key(&mut mode, KeyCode::Char(ch)).await;
+        }
+        assert_eq!(mode.split.right().comment_buffer, "test comment");
+
+        send_key(&mut mode, KeyCode::Enter).await;
+        assert!(!mode.split.right().is_in_comment_mode());
+        assert_eq!(mode.queued_comments.len(), 1);
+        assert_eq!(mode.queued_comments[0].comment, "test comment");
+        assert!(mode.split.right().comment_buffer.is_empty());
+    }
+
+    #[tokio::test]
+    async fn s_submits_review() {
+        let mut mode = make_mode_with_cache();
+        mode.split.focus_right();
+        mode.queued_comments.push(queued_comment("line", "looks good", PatchLineKind::Context));
+        let msgs = send_key(&mut mode, KeyCode::Char('s')).await;
+        assert!(has_msg(&msgs, |m| matches!(m, GitDiffViewMessage::SubmitPrompt(_))));
+        assert_eq!(mode.queued_comments.len(), 1, "submit should not clear queued comments before send is accepted");
+    }
+
+    #[tokio::test]
+    async fn s_without_comments_is_noop() {
+        let mut mode = make_mode_with_cache();
+        mode.split.focus_right();
+        let msgs = send_key(&mut mode, KeyCode::Char('s')).await;
+        assert!(msgs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn u_removes_last_comment() {
+        let mut mode = make_mode_with_cache();
+        mode.split.focus_right();
+        mode.queued_comments.push(queued_comment("line1", "first", PatchLineKind::Context));
+        mode.queued_comments.push(queued_comment("line2", "second", PatchLineKind::Added));
+        send_key(&mut mode, KeyCode::Char('u')).await;
+        assert_eq!(mode.queued_comments.len(), 1);
+        assert_eq!(mode.queued_comments[0].comment, "first");
+    }
+
+    #[test]
+    fn cursor_navigation_clamps() {
+        let mut mode = make_mode_with_cache();
+        mode.split.focus_right();
+        mode.split.right_mut().cursor_line = 0;
+
+        mode.split.right_mut().move_cursor(-1);
+        assert_eq!(mode.split.right().cursor_line, 0);
+
+        let max = mode.split.right().max_scroll();
+        mode.split.right_mut().cursor_line = max;
+        mode.split.right_mut().move_cursor(1);
+        assert_eq!(mode.split.right().cursor_line, max);
+    }
+
+    #[tokio::test]
+    async fn cursor_replaces_scroll() {
+        let mut mode = make_mode_with_cache();
+        mode.split.focus_right();
+        mode.split.right_mut().cursor_line = 0;
+        send_key(&mut mode, KeyCode::Char('j')).await;
+        assert_eq!(mode.split.right().cursor_line, 1);
+        send_key(&mut mode, KeyCode::Char('k')).await;
+        assert_eq!(mode.split.right().cursor_line, 0);
+    }
+
+    #[tokio::test]
+    async fn mouse_scroll_down_in_file_list_selects_next() {
+        let mut mode = make_mode(make_test_doc());
+        assert_eq!(mode.split.left().selected_file_index(), Some(0));
+        send_mouse(&mut mode, MouseEventKind::ScrollDown).await;
+        assert_eq!(mode.split.left().selected_file_index(), Some(1));
+    }
+
+    #[tokio::test]
+    async fn mouse_scroll_up_in_patch_moves_cursor() {
+        let mut mode = make_mode_with_cache();
+        mode.split.focus_right();
+        mode.split.right_mut().cursor_line = 4;
+        send_mouse(&mut mode, MouseEventKind::ScrollUp).await;
+        assert_eq!(mode.split.right().cursor_line, 1);
+    }
+
+    #[tokio::test]
+    async fn mouse_scroll_during_comment_input_is_noop() {
+        let mut mode = make_mode_with_cache();
+        mode.split.focus_right();
+        mode.split.right_mut().in_comment_mode = true;
+        mode.split.right_mut().cursor_line = 2;
+        let original_cursor = mode.split.right().cursor_line;
+        let original_file = mode.split.left().selected_file_index();
+        send_mouse(&mut mode, MouseEventKind::ScrollDown).await;
+        assert_eq!(mode.split.right().cursor_line, original_cursor);
+        assert_eq!(mode.split.left().selected_file_index(), original_file);
+        assert!(mode.split.right().is_in_comment_mode());
+    }
+
+    #[test]
+    fn hunk_offsets_account_for_soft_wrapped_lines() {
+        use PatchLineKind::*;
+
+        let long_line = "x".repeat(200);
+        let h1 = "@@ -1,2 +1,2 @@";
+        let h2 = "@@ -10,1 +10,1 @@";
+        let doc = GitDiffDocument {
+            repo_root: PathBuf::from("/tmp/test"),
+            files: vec![file_diff(
+                "a.rs",
+                None,
+                FileStatus::Modified,
+                vec![
+                    hunk(
+                        h1,
+                        (1, 2),
+                        (1, 2),
+                        vec![
+                            patch_line(HunkHeader, h1, None, None),
+                            patch_line(Added, &long_line, None, Some(1)),
+                            patch_line(Context, "short", Some(2), Some(2)),
+                        ],
+                    ),
+                    hunk(
+                        h2,
+                        (10, 1),
+                        (10, 1),
+                        vec![patch_line(HunkHeader, h2, None, None), patch_line(Context, "end", Some(10), Some(10))],
+                    ),
+                ],
+            )],
+        };
+
+        let mut mode = make_mode(doc);
+        mode.render_frame(&ViewContext::new((60, 24)));
+
+        let offsets = mode.split.right().hunk_offsets();
+        assert_eq!(offsets.len(), 2, "should find two hunks");
+
+        let second_hunk_ref_pos = mode
+            .split
+            .right()
+            .line_refs
+            .iter()
+            .position(|r| matches!(r, Some(r) if r.hunk_index == 1))
+            .expect("hunk 1 should exist in refs");
+        assert_eq!(offsets[1], second_hunk_ref_pos);
+
+        assert!(
+            offsets[1] > 4,
+            "second hunk offset {} should exceed unwrapped count (4) due to soft-wrapping",
+            offsets[1]
+        );
+
+        mode.split.focus_right();
+        mode.split.right_mut().cursor_line = 0;
+        assert!(mode.split.right_mut().jump_next_hunk());
+        assert_eq!(mode.split.right().cursor_line, second_hunk_ref_pos);
+
+        assert!(mode.split.right_mut().jump_prev_hunk());
+        assert_eq!(mode.split.right().cursor_line, 0);
+    }
+
+    fn simple_hunks() -> Vec<Hunk> {
+        use PatchLineKind::*;
+        let h = "@@ -1,1 +1,1 @@";
+        vec![hunk(
+            h,
+            (1, 1),
+            (1, 1),
+            vec![patch_line(HunkHeader, h, None, None), patch_line(Context, "line", Some(1), Some(1))],
+        )]
+    }
+
+    fn make_tree_doc() -> GitDiffDocument {
+        GitDiffDocument {
+            repo_root: PathBuf::from("/tmp/test"),
+            files: vec![
+                file_diff("src/a.rs", None, FileStatus::Modified, simple_hunks()),
+                file_diff("src/b.rs", None, FileStatus::Added, simple_hunks()),
+                file_diff("lib/c.rs", None, FileStatus::Modified, simple_hunks()),
+            ],
+        }
+    }
+
+    fn make_tree_mode() -> GitDiffMode {
+        make_mode(make_tree_doc())
+    }
+
+    #[tokio::test]
+    async fn h_in_file_list_collapses_directory() {
+        let mut mode = make_tree_mode();
+        mode.split.left_mut().tree_mut().navigate(2);
+        let entries_before = mode.split.left_mut().tree_mut().visible_entries().len();
+        assert_eq!(entries_before, 5);
+
+        send_key(&mut mode, KeyCode::Char('h')).await;
+
+        let entries_after = mode.split.left_mut().tree_mut().visible_entries().len();
+        assert_eq!(entries_after, 3);
+    }
+
+    #[tokio::test]
+    async fn enter_on_directory_expands_it() {
+        let mut mode = make_tree_mode();
+        mode.split.left_mut().tree_mut().navigate(2);
+        mode.split.left_mut().tree_collapse_or_parent();
+        assert_eq!(mode.split.left_mut().tree_mut().visible_entries().len(), 3);
+
+        send_key(&mut mode, KeyCode::Enter).await;
+
+        assert!(mode.split.is_left_focused());
+        assert_eq!(mode.split.left_mut().tree_mut().visible_entries().len(), 5);
+    }
+
+    #[tokio::test]
+    async fn enter_on_file_switches_to_patch() {
+        let mut mode = make_tree_mode();
+        mode.split.left_mut().tree_mut().navigate(1);
+
+        send_key(&mut mode, KeyCode::Enter).await;
+
+        assert!(!mode.split.is_left_focused());
+    }
+
+    #[tokio::test]
+    async fn enter_queues_comment_and_invalidates_cache() {
+        let mut mode = make_mode_with_cache();
+        mode.split.focus_right();
+        mode.split.right_mut().cursor_line = 3;
+
+        send_key(&mut mode, KeyCode::Char('c')).await;
+        for ch in "test comment".chars() {
+            send_key(&mut mode, KeyCode::Char(ch)).await;
+        }
+        send_key(&mut mode, KeyCode::Enter).await;
+
+        assert_eq!(mode.queued_comments.len(), 1);
+        assert_eq!(mode.queued_comments[0].comment, "test comment");
+
+        assert!(mode.split.right().cached_lines.is_empty());
+    }
+
+    #[tokio::test]
+    async fn undo_removes_last_comment_and_invalidates_cache() {
+        let mut mode = make_mode_with_cache();
+        mode.split.focus_right();
+        mode.queued_comments.push(queued_comment("line1", "first", PatchLineKind::Context));
+        mode.queued_comments.push(queued_comment("line2", "second", PatchLineKind::Added));
+
+        send_key(&mut mode, KeyCode::Char('u')).await;
+
+        assert_eq!(mode.queued_comments.len(), 1);
+        assert_eq!(mode.queued_comments[0].comment, "first");
+
+        assert!(mode.split.right().cached_lines.is_empty());
+    }
+
+    #[test]
+    fn cursor_stays_on_logical_line_after_comment_insert() {
+        let mut mode = make_mode_with_cache();
+        mode.split.focus_right();
+        mode.split.right_mut().cursor_line = 3;
+        let original_ref = mode.split.right().line_refs[3];
+
+        mode.queued_comments.push(QueuedComment {
+            file_path: "a.rs".to_string(),
+            patch_ref: original_ref.unwrap(),
+            line_text: "    new();".to_string(),
+            line_number: Some(2),
+            line_kind: PatchLineKind::Added,
+            comment: "review".to_string(),
+        });
+        mode.split.right_mut().invalidate_cache();
+        mode.render_frame(&ViewContext::new((100, 24)));
+
+        let cursor = mode.split.right().cursor_line;
+        let new_ref = mode.split.right().line_refs[cursor];
+        assert_eq!(new_ref, original_ref, "cursor should stay on the same logical line");
+        let line_text = mode.split.right().cached_lines[cursor].plain_text();
+        assert!(line_text.contains("new();"), "cursor should be on the added line, got: {line_text}");
+    }
+
+    #[test]
+    fn cursor_on_comment_row_restores_to_anchored_line() {
+        let mut mode = make_mode_with_cache();
+        mode.split.focus_right();
+        let anchor = PatchLineRef { hunk_index: 0, line_index: 3 };
+        mode.queued_comments.push(QueuedComment {
+            file_path: "a.rs".to_string(),
+            patch_ref: anchor,
+            line_text: "    new();".to_string(),
+            line_number: Some(2),
+            line_kind: PatchLineKind::Added,
+            comment: "review".to_string(),
+        });
+        mode.split.right_mut().invalidate_cache();
+        mode.render_frame(&ViewContext::new((100, 24)));
+
+        let comment_row = mode
+            .split
+            .right()
+            .line_refs
+            .iter()
+            .position(|r: &Option<PatchLineRef>| r.is_none())
+            .expect("should have a comment row");
+        mode.split.right_mut().cursor_line = comment_row;
+
+        mode.split.right_mut().invalidate_cache();
+        mode.render_frame(&ViewContext::new((100, 24)));
+
+        let cursor = mode.split.right().cursor_line;
+        assert_eq!(
+            mode.split.right().line_refs[cursor],
+            Some(anchor),
+            "cursor should be restored to the anchored diff line"
+        );
     }
 }
