@@ -20,3 +20,8 @@ packages = ["aether-agent-cli", "aether-lspd"]
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = false
+# Skip checking whether the specified configuration files are up to date
+allow-dirty = ["ci"]
+
+[dist.dependencies.apt]
+libdbus-1-dev = "*"
