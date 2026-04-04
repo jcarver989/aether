@@ -1,90 +1,72 @@
 use crate::components::file_tree::{FileTree, FileTreeEntry, FileTreeEntryKind};
-use crate::git_diff::FileStatus;
-use tui::{Component, Event, Frame, KeyCode, Line, Style, ViewContext, truncate_text, wrap_selection};
+use crate::git_diff::{FileDiff, FileStatus};
+use tui::{Component, Event, Frame, KeyCode, Line, MouseEventKind, Style, ViewContext, truncate_text};
 
 pub struct FileListPanel {
-    pub(crate) file_count: usize,
-    pub(crate) selected: usize,
-    pub(crate) scroll: usize,
-    pub(crate) tree: Option<FileTree>,
-    pub(crate) queued_comment_count: usize,
+    tree: FileTree,
+    scroll: usize,
+    queued_comment_count: usize,
 }
 
 pub enum FileListMessage {
     Selected(usize),
+    FileOpened(usize),
 }
 
 impl FileListPanel {
     pub fn new() -> Self {
-        Self { file_count: 0, selected: 0, scroll: 0, tree: None, queued_comment_count: 0 }
+        Self { tree: FileTree::empty(), scroll: 0, queued_comment_count: 0 }
     }
 
-    pub fn with_tree(mut self, tree: FileTree) -> Self {
-        self.tree = Some(tree);
-        self
+    pub fn rebuild_from_files(&mut self, files: &[FileDiff]) {
+        self.tree = FileTree::from_files(files);
+        self.scroll = 0;
     }
 
-    pub fn with_queued_comment_count(mut self, count: usize) -> Self {
+    pub fn selected_file_index(&self) -> Option<usize> {
+        self.tree.selected_file_index()
+    }
+
+    pub fn select_file_index(&mut self, file_index: usize) {
+        self.tree.select_file_index(file_index);
+    }
+
+    pub fn set_queued_comment_count(&mut self, count: usize) {
         self.queued_comment_count = count;
-        self
     }
 
     pub(crate) fn select_relative(&mut self, delta: isize) -> Option<usize> {
-        if let Some(tree) = &mut self.tree {
-            let prev_file = tree.selected_file_index();
-            tree.navigate(delta);
-            let new_file = tree.selected_file_index();
-            if let Some(idx) = new_file
-                && Some(idx) != prev_file.or(Some(self.selected))
-            {
-                self.selected = idx;
-                return Some(idx);
-            }
-            return None;
+        let prev_file = self.tree.selected_file_index();
+        self.tree.navigate(delta);
+        let new_file = self.tree.selected_file_index();
+        if let Some(idx) = new_file
+            && Some(idx) != prev_file
+        {
+            return Some(idx);
         }
-
-        if self.file_count == 0 {
-            return None;
-        }
-
-        let previous = self.selected;
-        wrap_selection(&mut self.selected, self.file_count, delta);
-        if self.selected == previous { None } else { Some(self.selected) }
+        None
     }
 
     pub(crate) fn tree_collapse_or_parent(&mut self) {
-        if let Some(tree) = &mut self.tree {
-            tree.collapse_or_parent();
-        }
+        self.tree.collapse_or_parent();
     }
 
     pub(crate) fn tree_expand_or_enter(&mut self) -> Option<usize> {
-        let Some(tree) = &mut self.tree else {
-            return Some(self.selected);
-        };
-        let is_file = tree.expand_or_enter();
-        if is_file {
-            if let Some(idx) = tree.selected_file_index()
-                && idx != self.selected
-            {
-                self.selected = idx;
-            }
-            Some(self.selected)
-        } else {
-            None
-        }
+        let is_file = self.tree.expand_or_enter();
+        if is_file { self.tree.selected_file_index() } else { None }
     }
 
-    pub(crate) fn ensure_visible(&mut self, viewport_height: usize) {
-        let Some(tree) = &self.tree else {
-            return;
-        };
-        let selected = tree.selected_visible();
+    fn ensure_visible(&mut self, viewport_height: usize) {
+        let selected = self.tree.selected_visible();
         if selected < self.scroll {
             self.scroll = selected;
         } else if selected >= self.scroll + viewport_height {
             self.scroll = selected.saturating_sub(viewport_height - 1);
         }
+    }
+
+    pub fn tree_mut(&mut self) -> &mut FileTree {
+        &mut self.tree
     }
 }
 
@@ -92,17 +74,27 @@ impl Component for FileListPanel {
     type Message = FileListMessage;
 
     async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
+        if let Event::Mouse(mouse) = event {
+            return match mouse.kind {
+                MouseEventKind::ScrollUp => {
+                    Some(self.select_relative(-1).map(|idx| vec![FileListMessage::Selected(idx)]).unwrap_or_default())
+                }
+                MouseEventKind::ScrollDown => {
+                    Some(self.select_relative(1).map(|idx| vec![FileListMessage::Selected(idx)]).unwrap_or_default())
+                }
+                _ => None,
+            };
+        }
+
         let Event::Key(key) = event else {
             return None;
         };
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
-                let msgs = self.select_relative(1).map(|idx| vec![FileListMessage::Selected(idx)]).unwrap_or_default();
-                Some(msgs)
+                Some(self.select_relative(1).map(|idx| vec![FileListMessage::Selected(idx)]).unwrap_or_default())
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                let msgs = self.select_relative(-1).map(|idx| vec![FileListMessage::Selected(idx)]).unwrap_or_default();
-                Some(msgs)
+                Some(self.select_relative(-1).map(|idx| vec![FileListMessage::Selected(idx)]).unwrap_or_default())
             }
             KeyCode::Char('h') | KeyCode::Left => {
                 self.tree_collapse_or_parent();
@@ -110,7 +102,7 @@ impl Component for FileListPanel {
             }
             KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
                 if let Some(idx) = self.tree_expand_or_enter() {
-                    Some(vec![FileListMessage::Selected(idx)])
+                    Some(vec![FileListMessage::FileOpened(idx)])
                 } else {
                     Some(vec![])
                 }
@@ -124,15 +116,14 @@ impl Component for FileListPanel {
         let width = ctx.size.width as usize;
         let height = ctx.size.height as usize;
 
-        if let Some(tree) = &mut self.tree {
-            tree.ensure_cache();
-        }
+        self.ensure_visible(height);
 
-        let visible_entries = self.tree.as_ref().map(FileTree::visible_entries).unwrap_or_default();
-        let tree_selected = self.tree.as_ref().map_or(0, FileTree::selected_visible);
+        self.tree.ensure_cache();
 
-        let entry_count = if visible_entries.is_empty() { self.file_count } else { visible_entries.len() };
-        let row_count = height.max(entry_count);
+        let visible_entries = self.tree.visible_entries();
+        let tree_selected = self.tree.selected_visible();
+
+        let row_count = height.max(visible_entries.len());
         let mut lines = Vec::with_capacity(height);
 
         for i in 0..row_count {
@@ -150,15 +141,13 @@ impl Component for FileListPanel {
                 if pad > 0 {
                     line.push_with_style(" ".repeat(pad), Style::default().bg_color(theme.sidebar_bg()));
                 }
-            } else if !visible_entries.is_empty() {
+            } else {
                 let scrolled_i = i + self.scroll;
                 if let Some(entry) = visible_entries.get(scrolled_i) {
                     render_file_tree_cell(&mut line, entry, scrolled_i == tree_selected, width, theme);
                 } else {
                     line.push_with_style(" ".repeat(width), Style::default().bg_color(theme.sidebar_bg()));
                 }
-            } else {
-                line.push_with_style(" ".repeat(width), Style::default().bg_color(theme.sidebar_bg()));
             }
 
             lines.push(line);

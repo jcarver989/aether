@@ -1,8 +1,13 @@
-use super::git_diff_mode::{GitDiffMode, ScreenMode};
-use crate::components::git_diff_view::GitDiffViewMessage;
-use tui::{Component, Cursor, Event, Frame, ViewContext};
+use super::git_diff_mode::{GitDiffMode, GitDiffViewMessage};
+use tui::{Component, Event, Frame, ViewContext};
 
 const STATUS_LINE_HEIGHT: u16 = 1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScreenMode {
+    Conversation,
+    GitDiff,
+}
 
 pub enum ScreenRouterMessage {
     LoadGitDiff,
@@ -42,12 +47,6 @@ impl ScreenRouter {
         }
     }
 
-    pub fn refresh_caches(&mut self, context: &ViewContext) {
-        if self.is_git_diff() {
-            self.git_diff_mode.refresh_caches(context);
-        }
-    }
-
     pub fn git_diff_mode_mut(&mut self) -> &mut GitDiffMode {
         &mut self.git_diff_mode
     }
@@ -84,14 +83,6 @@ impl Component for ScreenRouter {
     fn render(&mut self, ctx: &ViewContext) -> Frame {
         let diff_height = ctx.size.height.saturating_sub(STATUS_LINE_HEIGHT);
         let diff_context = ctx.with_size((ctx.size.width, diff_height));
-        let lines = self.git_diff_mode.render_lines(&diff_context);
-
-        let cursor = if let Some((row, col)) = self.git_diff_mode.draft_cursor_position(diff_height) {
-            Cursor::visible(row, col)
-        } else {
-            Cursor::hidden()
-        };
-
-        Frame::new(lines).with_cursor(cursor)
+        self.git_diff_mode.render_frame(&diff_context)
     }
 }

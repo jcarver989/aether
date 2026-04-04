@@ -24,6 +24,10 @@ pub struct FileTree {
 }
 
 impl FileTree {
+    pub fn empty() -> Self {
+        Self { roots: Vec::new(), selected_visible: 0, cached_entries: Some(Vec::new()) }
+    }
+
     pub fn from_files(files: &[FileDiff]) -> Self {
         let mut roots: Vec<FileTreeNode> = Vec::new();
 
@@ -38,6 +42,17 @@ impl FileTree {
         let mut tree = Self { roots, selected_visible: 0, cached_entries: None };
         tree.ensure_cache();
         tree
+    }
+
+    pub fn select_file_index(&mut self, file_index: usize) {
+        self.ensure_cache();
+        let entries = self.cached_entries.as_ref().unwrap();
+        if let Some(pos) = entries
+            .iter()
+            .position(|e| matches!(&e.kind, FileTreeEntryKind::File { file_index: fi, .. } if *fi == file_index))
+        {
+            self.selected_visible = pos;
+        }
     }
 
     pub fn visible_entries(&self) -> Vec<FileTreeEntry> {

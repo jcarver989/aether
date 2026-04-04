@@ -64,8 +64,8 @@ pub enum Either<L, R> {
 }
 
 pub struct SplitPanel<L: Component, R: Component> {
-    pub left: L,
-    pub right: R,
+    left: L,
+    right: R,
     layout: SplitLayout,
     delta: i16,
     focus: FocusRing,
@@ -94,6 +94,22 @@ impl<L: Component, R: Component> SplitPanel<L, R> {
     pub fn with_resize_keys(mut self) -> Self {
         self.resize_keys = true;
         self
+    }
+
+    pub fn left(&self) -> &L {
+        &self.left
+    }
+
+    pub fn left_mut(&mut self) -> &mut L {
+        &mut self.left
+    }
+
+    pub fn right(&self) -> &R {
+        &self.right
+    }
+
+    pub fn right_mut(&mut self) -> &mut R {
+        &mut self.right
     }
 
     pub fn focus_left(&mut self) {

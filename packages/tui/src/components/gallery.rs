@@ -34,7 +34,7 @@ impl<T: Component> Component for Gallery<T> {
 
     async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         if let Event::Tick = event {
-            let _ = self.split.right.on_event(event).await;
+            let _ = self.split.right_mut().on_event(event).await;
             return Some(vec![]);
         }
 
@@ -48,7 +48,7 @@ impl<T: Component> Component for Gallery<T> {
             Some(msgs) => {
                 for msg in &msgs {
                     if let Either::Left(GallerySidebarMessage::Selected(idx)) = msg {
-                        self.split.right.active = *idx;
+                        self.split.right_mut().active = *idx;
                     }
                 }
                 Some(vec![])
@@ -58,12 +58,13 @@ impl<T: Component> Component for Gallery<T> {
     }
 
     fn render(&mut self, ctx: &ViewContext) -> Frame {
-        if self.split.left.names.is_empty() {
+        if self.split.left().names.is_empty() {
             return Frame::new(vec![Line::new("No stories")]);
         }
 
-        self.split.left.focused = self.split.is_left_focused();
-        self.split.right.focused = !self.split.is_left_focused();
+        let left_focused = self.split.is_left_focused();
+        self.split.left_mut().focused = left_focused;
+        self.split.right_mut().focused = !left_focused;
         self.split.set_separator_style(Style::fg(ctx.theme.muted()));
 
         self.split.render(ctx)
@@ -229,11 +230,11 @@ mod tests {
     #[tokio::test]
     async fn down_arrow_changes_selection() {
         let mut gallery = Gallery::new(vec![dummy("Alpha", "a"), dummy("Beta", "b")]);
-        assert_eq!(gallery.split.left.selected, 0);
+        assert_eq!(gallery.split.left().selected, 0);
 
         let down = Event::Key(crossterm::event::KeyEvent::new(KeyCode::Down, crossterm::event::KeyModifiers::NONE));
         gallery.on_event(&down).await;
-        assert_eq!(gallery.split.left.selected, 1);
+        assert_eq!(gallery.split.left().selected, 1);
     }
 
     #[tokio::test]

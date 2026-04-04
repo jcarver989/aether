@@ -4,7 +4,7 @@ use agent_client_protocol as acp;
 use tui::Renderer as FrameRenderer;
 use tui::RendererCommand;
 use tui::Theme;
-use tui::testing::TestTerminal;
+use tui::testing::{TestTerminal, pad};
 use tui::{Component, Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use wisp::components::app::App;
 
@@ -147,13 +147,9 @@ pub(super) enum TestEvent {
 /// Build the expected bordered prompt lines for a given terminal width.
 /// Returns `[top_border, input_line, bottom_border, status_line]`.
 pub(super) fn expected_prompt(width: u16, input: &str, agent_name: &str) -> Vec<String> {
-    let w = width as usize;
-    let inner = w - 2;
+    let inner = width as usize - 2;
     let top = format!("╭{}╮", "─".repeat(inner));
-    // Middle: │ > input + padding + │
-    let prefix_len = 1 + 2 + input.len(); // space + "> " + input
-    let pad = inner.saturating_sub(prefix_len);
-    let middle = format!("│ > {}{:pad$}│", input, "");
+    let middle = format!("│{}│", pad(&format!(" > {input}"), inner));
     let bottom = format!("╰{}╯", "─".repeat(inner));
     let status = format!("  {agent_name}");
     vec![top, middle, bottom, status]
