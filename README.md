@@ -1,25 +1,3 @@
-<!-- START doctoc generated TOC please keep comment here to allow auto update -->
-<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
-
-- [Aether](#aether)
-  - [Why Aether?](#why-aether)
-  - [Quick Start](#quick-start)
-    - [1. Run a custom agent](#1-run-a-custom-agent)
-    - [2. Build a custom agent as a Rust library](#2-build-a-custom-agent-as-a-rust-library)
-  - [Use Cases](#use-cases)
-    - [Talk to local and remote LLMs](#talk-to-local-and-remote-llms)
-    - [Build a custom agent](#build-a-custom-agent)
-    - [Run your agent in an interactive terminal](#run-your-agent-in-an-interactive-terminal)
-    - [Connect your agent to an IDE or UI](#connect-your-agent-to-an-ide-or-ui)
-    - [Run a fully-fledged, open source coding agent](#run-a-fully-fledged-open-source-coding-agent)
-  - [Packages](#packages)
-  - [Development](#development)
-    - [Binary distribution (maintainers)](#binary-distribution-maintainers)
-  - [License](#license)
-
-<!-- END doctoc generated TOC please keep comment here to allow auto update -->
-
 # Aether
 
 A modular toolkit for building AI agents (LLM + prompt + tools + loop), written in Rust. 
@@ -27,6 +5,26 @@ A modular toolkit for building AI agents (LLM + prompt + tools + loop), written 
 Use Aether as a library and select components a la carte, or use it to run a fully batteries-included agent that has filesystem tools, LSP server integration, sub-agents, skills and more.
 
 ![Aether demo](demo.gif)
+
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+
+- [Why Aether?](#why-aether)
+- [Quick Start](#quick-start)
+  - [1. Run a custom agent](#1-run-a-custom-agent)
+  - [2. Build a custom agent as a Rust library](#2-build-a-custom-agent-as-a-rust-library)
+- [Use Cases](#use-cases)
+  - [Talk to local and remote LLMs](#talk-to-local-and-remote-llms)
+  - [Build a custom agent](#build-a-custom-agent)
+  - [Run your agent in an interactive terminal](#run-your-agent-in-an-interactive-terminal)
+  - [Connect your agent to an IDE or UI](#connect-your-agent-to-an-ide-or-ui)
+  - [Run a fully-fledged, open source coding agent](#run-a-fully-fledged-open-source-coding-agent)
+- [Packages](#packages)
+- [Development](#development)
+  - [Binary distribution (maintainers)](#binary-distribution-maintainers)
+- [License](#license)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
 ## Why Aether?
 
