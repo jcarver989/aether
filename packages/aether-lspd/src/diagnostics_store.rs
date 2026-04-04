@@ -41,17 +41,9 @@ impl DiagnosticsStore {
         }
     }
 
-    pub(crate) async fn forget(&self, uris: &[Uri]) {
-        if uris.is_empty() {
-            return;
-        }
-
-        let mut state = self.state.write().await;
-        let mut uri_versions = self.uri_versions.write().await;
-        for uri in uris {
-            state.remove(uri);
-            uri_versions.remove(uri);
-        }
+    pub(crate) async fn forget_uri(&self, uri: &Uri) {
+        self.state.write().await.remove(uri);
+        self.uri_versions.write().await.remove(uri);
     }
 
     pub(crate) async fn wait_for_uri_fresh(&self, uri: &Uri, version_before: u64, timeout: Duration) {
@@ -171,7 +163,7 @@ mod tests {
         let store = DiagnosticsStore::new();
         let uri: Uri = "file:///test.rs".parse().unwrap();
         store.publish(diagnostics(uri.as_str(), "error")).await;
-        store.forget(std::slice::from_ref(&uri)).await;
+        store.forget_uri(&uri).await;
         assert!(store.get(Some(&uri)).await.is_empty());
     }
 }

@@ -5,11 +5,12 @@ pub mod testing;
 
 mod client_connection;
 mod diagnostics_store;
-mod document_coordinator;
+mod document_lifecycle;
 mod file_watcher;
 pub mod language_catalog;
 mod pid_lockfile;
 mod process_transport;
+mod refresh_queue;
 mod workspace_registry;
 mod workspace_session;
 
