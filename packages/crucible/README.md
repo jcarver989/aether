@@ -1,24 +1,24 @@
-<!-- START doctoc generated TOC please keep comment here to allow auto update -->
-<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
-
-- [Crucible](#crucible)
-  - [Quick Start](#quick-start)
-  - [Directory Structure](#directory-structure)
-  - [Eval Configuration](#eval-configuration)
-    - [Basic Eval (with local files)](#basic-eval-with-local-files)
-    - [Git Repository Eval](#git-repository-eval)
-  - [Assertion Types](#assertion-types)
-    - [ToolCall Options](#toolcall-options)
-  - [Configuration](#configuration)
-  - [Output](#output)
-  - [Development](#development)
-
-<!-- END doctoc generated TOC please keep comment here to allow auto update -->
-
 # Crucible
 
 A Rust library for writing automated tests (evals) for LLM-powered agents.
+
+## Table of Contents
+
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+
+- [Quick Start](#quick-start)
+- [Directory Structure](#directory-structure)
+- [Eval Configuration](#eval-configuration)
+  - [Basic Eval (with local files)](#basic-eval-with-local-files)
+  - [Git Repository Eval](#git-repository-eval)
+- [Assertion Types](#assertion-types)
+  - [ToolCall Options](#toolcall-options)
+- [Configuration](#configuration)
+- [Output](#output)
+- [Development](#development)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
 ## Quick Start
 

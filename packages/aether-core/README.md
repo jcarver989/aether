@@ -1,16 +1,3 @@
-<!-- START doctoc generated TOC please keep comment here to allow auto update -->
-<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
-
-- [Aether Core](#aether-core)
-  - [Installation](#installation)
-  - [Examples](#examples)
-    - [Minimal Agent (No Tools)](#minimal-agent-no-tools)
-    - [Agent with Tools and AGENTS.md system prompt](#agent-with-tools-and-agentsmd-system-prompt)
-  - [License](#license)
-
-<!-- END doctoc generated TOC please keep comment here to allow auto update -->
-
 # Aether Core
 
 Aether Core is a Rust library for building AI agents (LLM + prompt + tools, running in a loop). 
@@ -18,6 +5,19 @@ Aether Core is a Rust library for building AI agents (LLM + prompt + tools, runn
 By default, agents have _no_ system prompt and _no_ tools — every token in the context window is yours to control. Tools come exclusively from [MCP](https://modelcontextprotocol.io/) servers, so you can extend agents in any language.
 
 Agents run in dedicated [tokio tasks](https://tokio.rs) and communicate via async message passing. Hardware permitting, you can run hundreds of agents in a single process.
+
+## Table of Contents
+
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+
+- [Installation](#installation)
+- [Examples](#examples)
+  - [Minimal Agent (No Tools)](#minimal-agent-no-tools)
+  - [Agent with Tools and AGENTS.md system prompt](#agent-with-tools-and-agentsmd-system-prompt)
+- [License](#license)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
 ## Installation
 
