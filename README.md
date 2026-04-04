@@ -4,6 +4,8 @@ A modular toolkit for building AI agents (LLM + prompt + tools + loop), written 
 
 Use Aether as a library and select components a la carte, or use it to run a fully batteries-included agent that has filesystem tools, LSP server integration, sub-agents, skills and more.
 
+![Aether demo](demo.gif)
+
 ## Why Aether?
 
 1. **Your context** — Agents default to an empty system prompt with no tools, so _you_ control _every_ token in the agent's context window.
