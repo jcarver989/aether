@@ -3,10 +3,10 @@ repos:
     hooks:
       - id: doctoc
         name: doctoc README
-        entry: bash -c 'find . -name "README.md" -not -path "*/node_modules/*" -not -path "*/.git/*" -exec npx doctoc {} --github --notitle \; && git add -u "**/README.md"'
+        entry: bash -c 'npx doctoc "$@" --github --notitle && git add -u "**/README.md"' --
         language: system
-        always_run: true
-        pass_filenames: false
+        files: README\.md$
+        pass_filenames: true
         stages: [pre-commit]
 
       - id: cargo-fmt
