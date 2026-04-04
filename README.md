@@ -1,8 +1,11 @@
 # Aether
 
-Aether is a modular toolkit for building AI agents (LLM + prompt + tools + loop), written in Rust. It gives you _full control_ over every token in your context window -- no injected prompts, tools or telemetry.
+Aether is a modular toolkit for building AI agents (LLM + prompt + tools + loop), written in Rust. It's gives _you_ full control over every token in context -- no injected prompts, tools or telemetry.
 
-You can use Aether as a fully batteries-included agent that runs in a TUI, IDE/Editor (via [ACP](https://zed.dev/acp)) or headless. Or, you can use Aether as a library and assemble the components you want a la carte. 
+You can use Aether as: 
+
+1. A batteries-included coding agent that runs in a TUI, IDE/Editor (via [ACP](https://zed.dev/acp)) or headless. 
+2. As a library, wherer you can assemble the components you want a la carte. 
 
 ![Aether demo](demo.gif)
 
