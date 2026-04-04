@@ -1,5 +1,6 @@
 use crate::components::context_bar::{context_bar, context_color};
 use crate::components::reasoning_bar::{reasoning_bar, reasoning_color};
+use crate::settings::DEFAULT_CONTENT_PADDING;
 use acp_utils::config_option_id::ConfigOptionId;
 use agent_client_protocol::{
     self as acp, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOptions,
@@ -14,6 +15,7 @@ pub struct StatusLine<'a> {
     pub context_pct_left: Option<u8>,
     pub waiting_for_response: bool,
     pub unhealthy_server_count: usize,
+    pub content_padding: usize,
 }
 
 impl StatusLine<'_> {
@@ -26,7 +28,7 @@ impl StatusLine<'_> {
         let mut left_line = Line::default();
         let sep = context.theme.text_secondary();
 
-        left_line.push_text("  ");
+        left_line.push_text(" ".repeat(self.content_padding));
         left_line.push_styled(self.agent_name, context.theme.info());
 
         if let Some(ref mode) = mode_display {
@@ -205,6 +207,7 @@ mod tests {
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
+            content_padding: DEFAULT_CONTENT_PADDING,
         };
 
         let context = ViewContext::new((120, 40));
@@ -225,6 +228,7 @@ mod tests {
             context_pct_left: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
+            content_padding: DEFAULT_CONTENT_PADDING,
         };
 
         let context = ViewContext::new((120, 40));

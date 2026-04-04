@@ -151,7 +151,7 @@ pub(super) fn expected_prompt(width: u16, input: &str, agent_name: &str) -> Vec<
     let top = format!("╭{}╮", "─".repeat(inner));
     let middle = format!("│{}│", pad(&format!(" > {input}"), inner));
     let bottom = format!("╰{}╯", "─".repeat(inner));
-    let status = format!("  {agent_name}");
+    let status = format!("    {agent_name}");
     vec![top, middle, bottom, status]
 }
 

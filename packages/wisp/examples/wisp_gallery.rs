@@ -171,6 +171,7 @@ impl Component for StatusLineStory {
             context_pct_left: Some(72),
             waiting_for_response: false,
             unhealthy_server_count: 0,
+            content_padding: wisp::settings::DEFAULT_CONTENT_PADDING,
         };
         Frame::new(status.render(ctx))
     }

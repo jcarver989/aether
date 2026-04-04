@@ -16,7 +16,7 @@ async fn test_user_message_submission() {
     // Simulate the agent finishing so the grid loader clears
     renderer.on_prompt_done().unwrap();
 
-    let expected = expected_with_prompt(&["", "Hello world"], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&["", "    Hello world", ""], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
