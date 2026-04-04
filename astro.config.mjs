@@ -2,6 +2,7 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import tailwindcss from "@tailwindcss/vite";
+import { GITHUB_URL } from "./src/consts.ts";
 
 export default defineConfig({
   integrations: [
@@ -20,7 +21,7 @@ export default defineConfig({
         {
           icon: "github",
           label: "GitHub",
-          href: "https://github.com/joshka/aether",
+          href: GITHUB_URL,
         },
       ],
       /* EC config in ec.config.mjs (themeCssSelector isn't JSON-serializable) */

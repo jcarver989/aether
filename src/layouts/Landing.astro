@@ -2,6 +2,7 @@
 import "../styles/global.css";
 import "../styles/themes.css";
 import ThemeSwitcher from "../components/ThemeSwitcher.astro";
+import { GITHUB_URL } from "../consts";
 
 const { title, description } = Astro.props.frontmatter;
 ---
@@ -39,7 +40,7 @@ const { title, description } = Astro.props.frontmatter;
                 >
                 <ThemeSwitcher />
                 <a
-                    href="https://github.com/joshka/aether"
+                    href={GITHUB_URL}
                     class="flex items-center text-gray-300 no-underline transition-colors hover:text-gray-50"
                     aria-label="GitHub"
                 >
