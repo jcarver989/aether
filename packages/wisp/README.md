@@ -1,3 +1,19 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+- [wisp](#wisp)
+  - [Quick start](#quick-start)
+  - [How it works](#how-it-works)
+  - [Keybindings](#keybindings)
+  - [Slash commands](#slash-commands)
+  - [Settings](#settings)
+    - [Themes](#themes)
+  - [Logs](#logs)
+  - [Documentation](#documentation)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # wisp
 
 A terminal interface for AI coding agents, built on the Agent Client Protocol (ACP).

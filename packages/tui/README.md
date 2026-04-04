@@ -1,3 +1,17 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+- [tui](#tui)
+  - [Minimal app](#minimal-app)
+  - [How it works](#how-it-works)
+  - [Composing components](#composing-components)
+  - [Built-in widgets](#built-in-widgets)
+  - [Feature flags](#feature-flags)
+  - [License](#license)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # tui
 
 A lightweight, composable terminal UI library for building full-screen CLI apps in Rust.
