@@ -198,12 +198,7 @@ async fn test_prompt_not_garbled_after_resize_with_completed_content() {
 
     let rule = "─".repeat(60);
     let rule_count = lines.iter().filter(|l| **l == rule).count();
-    assert_eq!(
-        rule_count,
-        2,
-        "Prompt rules should appear exactly twice after resize.\nBuffer:\n{}",
-        lines.join("\n")
-    );
+    assert_eq!(rule_count, 2, "Prompt rules should appear exactly twice after resize.\nBuffer:\n{}", lines.join("\n"));
 
     // Both turns' content should appear exactly once — no duplication from
     // stale overflow counts causing content to appear in both scrollback and

@@ -88,7 +88,12 @@ async fn test_resize_after_terminal_reflow_keeps_single_prompt() {
     let rule_count = lines.iter().filter(|l| **l == rule).count();
     let content_rows = lines.iter().filter(|l| l.starts_with('>') || l.starts_with("  ")).count();
 
-    assert_eq!(rule_count, 2, "Expected exactly two horizontal rules after resize reflow.\nBuffer:\n{}", lines.join("\n"));
+    assert_eq!(
+        rule_count,
+        2,
+        "Expected exactly two horizontal rules after resize reflow.\nBuffer:\n{}",
+        lines.join("\n")
+    );
     assert!(
         content_rows >= 2,
         "Expected wrapped prompt content rows after resize reflow.\nBuffer:\n{}",
