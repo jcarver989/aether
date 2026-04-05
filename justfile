@@ -85,39 +85,13 @@ install:
     cargo install --path packages/aether-cli --force
     cargo install --path packages/wisp --force
 
-# Publish all crates to crates.io in dependency order
-release:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    # Leaf crates (no internal deps)
-    cargo publish -p aether-utils
-    cargo publish -p aether-llm-codegen
-    cargo publish -p aether-tui
-    cargo publish -p aether-lspd
-    # Mid-tier
-    cargo publish -p aether-llm
-    cargo publish -p aether-mcp-utils
-    cargo publish -p aether-acp-utils
-    # Core
-    cargo publish -p aether-agent-core
-    # Upper-tier
-    cargo publish -p aether-project
-    cargo publish -p aether-wisp
-    cargo publish -p aether-mcp-servers
-    # Top-level
-    cargo publish -p aether-agent-cli
+# Bump version, tag, publish all crates to crates.io (e.g. just release patch)
+release LEVEL:
+    cargo release {{LEVEL}} --execute
 
-# Dry-run publish all crates (validates packaging, skips dep resolution)
-release-dry-run:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    for pkg in aether-utils aether-llm-codegen aether-tui aether-lspd \
-               aether-llm aether-mcp-utils aether-acp-utils \
-               aether-agent-core aether-project aether-wisp aether-mcp-servers \
-               aether-agent-cli; do
-        echo "--- dry-run: $pkg ---"
-        cargo publish -p "$pkg" --dry-run --allow-dirty --no-verify
-    done
+# Dry-run release (no commits, tags, or publishing)
+release-dry-run LEVEL="patch":
+    cargo release {{LEVEL}}
 
 # Clean everything
 clean:

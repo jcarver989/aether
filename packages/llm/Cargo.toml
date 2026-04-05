@@ -52,7 +52,7 @@ serde_json = { workspace = true }
 
 tracing = { workspace = true }
 
-utils = { package = "aether-utils", path = "../utils", version = "*" }
+utils = { package = "aether-utils", path = "../utils", version = "0.1.1" }
 
 # OAuth/Codex deps
 rmcp = { workspace = true, optional = true }
@@ -62,7 +62,7 @@ keyring = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
 
 [build-dependencies]
-llm-codegen = { package = "aether-llm-codegen", path = "../llm-codegen", version = "*" }
+llm-codegen = { package = "aether-llm-codegen", path = "../llm-codegen", version = "0.1.1" }
 
 [dev-dependencies]
 tempfile = { workspace = true }

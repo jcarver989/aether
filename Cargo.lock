@@ -55,8 +55,6 @@ dependencies = [
  "clap",
  "dirs",
  "futures",
- "libc",
- "nix 0.31.1",
  "rmcp",
  "serde",
  "serde_json",

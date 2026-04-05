@@ -41,10 +41,10 @@ serde = { workspace = true }
 tokio = { workspace = true }
 rmcp = { workspace = true }
 tracing = { workspace = true }
-utils = { package = "aether-utils", path = "../utils", version = "*" }
+utils = { package = "aether-utils", path = "../utils", version = "0.1.1" }
 
 # client-only deps
-llm = { package = "aether-llm", path = "../llm", optional = true, version = "*" }
+llm = { package = "aether-llm", path = "../llm", optional = true, version = "0.1.1" }
 serde_json = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, optional = true }
