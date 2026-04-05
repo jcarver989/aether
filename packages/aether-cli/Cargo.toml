@@ -4,8 +4,8 @@ version = "0.1.1"
 edition = "2024"
 description = "CLI and ACP server for the Aether AI coding agent"
 license = "MIT"
-repository = "https://github.com/contextbridge/aether"
-homepage = "https://github.com/contextbridge/aether"
+repository = "https://github.com/jcarver989/aether"
+homepage = "https://github.com/jcarver989/aether"
 readme = "README.md"
 keywords = ["ai", "agent", "cli", "acp", "coding"]
 categories = ["command-line-utilities", "development-tools"]
@@ -54,4 +54,3 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-
