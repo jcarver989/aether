@@ -7,7 +7,7 @@ use super::common::*;
 async fn test_agent_message_text_chunks() {
     let renderer = render(vec![text_chunk("Hello"), text_chunk(" World"), prompt_done()]);
 
-    let expected = expected_with_prompt(&["    Hello World"], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p("Hello World")], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -15,7 +15,7 @@ async fn test_agent_message_text_chunks() {
 async fn test_agent_thought_chunks() {
     let renderer = render(vec![thought_chunk("Plan"), thought_chunk(" this"), prompt_done()]);
 
-    let expected = expected_with_prompt(&["    Plan this"], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p("Plan this")], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -36,7 +36,7 @@ async fn test_agent_message_chunks_stream_before_prompt_done() {
         ))))
         .unwrap();
 
-    let expected = expected_with_prompt(&["    Hello World"], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p("Hello World")], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -57,7 +57,7 @@ async fn test_thought_and_text_chunks_stream_before_prompt_done() {
         ))))
         .unwrap();
 
-    let expected = expected_with_prompt(&["    Thinking", "", "    Done"], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p("Thinking"), "", &p("Done")], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -83,7 +83,7 @@ async fn test_text_and_thought_chunks_stream_in_arrival_order() {
         ))))
         .unwrap();
 
-    let expected = expected_with_prompt(&["    A", "", "    B", "", "    C"], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p("A"), "", &p("B"), "", &p("C")], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -91,7 +91,7 @@ async fn test_text_and_thought_chunks_stream_in_arrival_order() {
 async fn test_thought_prefix_resets_after_non_thought_boundary() {
     let renderer = render(vec![thought_chunk("Plan"), text_chunk("Answer"), thought_chunk("Refine"), prompt_done()]);
 
-    let expected = expected_with_prompt(&["    Plan", "", "    Answer", "", "    Refine"], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p("Plan"), "", &p("Answer"), "", &p("Refine")], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -99,6 +99,6 @@ async fn test_thought_prefix_resets_after_non_thought_boundary() {
 async fn test_multiline_thought_prefixes_only_first_line() {
     let renderer = render(vec![thought_chunk("line one\nline two"), prompt_done()]);
 
-    let expected = expected_with_prompt(&["    line one", "    line two"], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p("line one"), &p("line two")], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }

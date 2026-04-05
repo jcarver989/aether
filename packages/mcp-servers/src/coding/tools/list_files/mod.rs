@@ -174,8 +174,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_files_handles_empty_path_as_current_directory() {
-        let result =
-            list_files(ListFilesArgs { path: Some(String::new()), include_hidden: None }).await.unwrap();
+        let result = list_files(ListFilesArgs { path: Some(String::new()), include_hidden: None }).await.unwrap();
         assert_eq!(result.directory, ".");
     }
 }

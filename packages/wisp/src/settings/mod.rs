@@ -27,7 +27,7 @@ pub struct WispSettings {
     pub content_padding: Option<u16>,
 }
 
-pub const DEFAULT_CONTENT_PADDING: usize = 4;
+pub const DEFAULT_CONTENT_PADDING: usize = 2;
 
 pub fn resolve_content_padding(settings: &WispSettings) -> usize {
     settings.content_padding.map_or(DEFAULT_CONTENT_PADDING, |v| v.max(2) as usize)

@@ -1,6 +1,6 @@
 use crate::components::app::PromptAttachment;
 use crate::components::command_picker::CommandEntry;
-use crate::components::conversation_window::{ConversationBuffer, ConversationWindow, pad_lines};
+use crate::components::conversation_window::{ConversationBuffer, ConversationWindow, wrap_and_pad_lines};
 use crate::components::elicitation_form::{ElicitationForm, ElicitationMessage};
 use crate::components::plan_tracker::PlanTracker;
 use crate::components::plan_view::PlanView;
@@ -287,11 +287,10 @@ impl Component for ConversationScreen {
 
         let mut layout = Layout::new();
         layout.section(conversation_window.render(ctx));
-        let mut plan_lines = plan_view.render(ctx);
-        pad_lines(&mut plan_lines, self.content_padding);
+        let plan_lines = wrap_and_pad_lines(plan_view.render(ctx), self.content_padding, ctx.size.width);
         layout.section(plan_lines);
-        let mut progress_lines = self.progress_indicator.render(ctx);
-        pad_lines(&mut progress_lines, self.content_padding);
+        let progress_lines =
+            wrap_and_pad_lines(self.progress_indicator.render(ctx), self.content_padding, ctx.size.width);
         layout.section(progress_lines);
         let prompt_frame = self.prompt_composer.render(ctx);
         layout.section_with_cursor(prompt_frame.lines().to_vec(), prompt_frame.cursor());

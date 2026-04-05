@@ -236,7 +236,7 @@ async fn test_settings_overlay_open_close_after_overflow_keeps_prompt_and_layout
     assert!(!has_settings_menu(r.writer()));
 
     let lines = r.writer().get_lines();
-    assert!(lines.iter().any(|l| l.contains('╭') || l.contains('╰')), "Prompt border should be visible");
+    assert!(lines.iter().any(|l| l.chars().all(|c| c == '─') && !l.is_empty()), "Prompt rule should be visible");
     assert!(lines.iter().any(|l| !l.trim().is_empty()), "Frame should not be empty");
 }
 

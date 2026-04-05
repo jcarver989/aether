@@ -98,7 +98,7 @@ async fn test_in_progress_tool_call_visible_after_initial_render() {
         ))
         .unwrap();
 
-    let expected = expected_with_prompt(&["    ⠒ Read", &format!("    {PROGRESS_LINE}")], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p("⠒ Read"), &p(PROGRESS_LINE)], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -117,7 +117,7 @@ async fn test_in_progress_tool_call_renders_correctly_after_resize() {
     // Terminal resize triggers full re-render at new width
     renderer.on_resize_event(100, 30).await.unwrap();
 
-    let expected = expected_with_prompt(&["    ⠒ Read", &format!("    {PROGRESS_LINE}")], 100, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p("⠒ Read"), &p(PROGRESS_LINE)], 100, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -161,7 +161,7 @@ async fn test_completed_content_re_renders_at_new_width_after_resize() {
         lines_after.join("\n")
     );
 
-    let expected = expected_with_prompt(&["    First answer"], new_width, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p("First answer")], new_width, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -196,19 +196,12 @@ async fn test_prompt_not_garbled_after_resize_with_completed_content() {
 
     let lines = renderer.writer().get_lines();
 
-    // The prompt border characters should each appear exactly once
-    let top_borders = lines.iter().filter(|l| l.starts_with('╭')).count();
-    let bottom_borders = lines.iter().filter(|l| l.starts_with('╰')).count();
+    let rule = "─".repeat(60);
+    let rule_count = lines.iter().filter(|l| **l == rule).count();
     assert_eq!(
-        top_borders,
-        1,
-        "Prompt top border should appear exactly once after resize.\nBuffer:\n{}",
-        lines.join("\n")
-    );
-    assert_eq!(
-        bottom_borders,
-        1,
-        "Prompt bottom border should appear exactly once after resize.\nBuffer:\n{}",
+        rule_count,
+        2,
+        "Prompt rules should appear exactly twice after resize.\nBuffer:\n{}",
         lines.join("\n")
     );
 

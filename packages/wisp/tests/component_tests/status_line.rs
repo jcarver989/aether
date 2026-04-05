@@ -100,7 +100,8 @@ impl<'a> StatusBuilder<'a> {
 #[test]
 fn renders_agent_name_and_indentation() {
     let line = StatusBuilder::new("test-agent").line();
-    assert!(line.contains("    test-agent"));
+    let padding = " ".repeat(DEFAULT_CONTENT_PADDING);
+    assert!(line.contains(&format!("{padding}test-agent")));
 }
 
 #[test]

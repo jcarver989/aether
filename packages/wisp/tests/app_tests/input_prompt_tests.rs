@@ -16,7 +16,7 @@ async fn test_user_message_submission() {
     // Simulate the agent finishing so the grid loader clears
     renderer.on_prompt_done().unwrap();
 
-    let expected = expected_with_prompt(&["", "    Hello world", ""], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&["", &p("Hello world"), ""], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -48,7 +48,7 @@ async fn test_backspace_updates_within_border() {
 }
 
 #[tokio::test]
-async fn test_wrapped_input_prompt_rerender_has_single_box() {
+async fn test_wrapped_input_prompt_rerender_has_single_prompt() {
     let terminal = TestTerminal::new(32, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (32, 24));
 
@@ -58,27 +58,21 @@ async fn test_wrapped_input_prompt_rerender_has_single_box() {
     press_backspace(&mut renderer).await;
 
     let lines = renderer.writer().get_lines();
-    let top_count = lines.iter().filter(|l| l.contains('╭')).count();
-    let bottom_count = lines.iter().filter(|l| l.contains('╰')).count();
-    let content_rows = lines.iter().filter(|l| l.starts_with('│')).count();
+    let rule = "─".repeat(32);
+    let rule_count = lines.iter().filter(|l| **l == rule).count();
+    let content_rows = lines.iter().filter(|l| l.starts_with('>') || l.starts_with("  ")).count();
 
     assert_eq!(
-        top_count,
-        1,
-        "Expected a single prompt top border after wrapped rerender.\nBuffer:\n{}",
-        lines.join("\n")
-    );
-    assert_eq!(
-        bottom_count,
-        1,
-        "Expected a single prompt bottom border after wrapped rerender.\nBuffer:\n{}",
+        rule_count,
+        2,
+        "Expected exactly two horizontal rules after wrapped rerender.\nBuffer:\n{}",
         lines.join("\n")
     );
     assert!(content_rows >= 2, "Expected wrapped prompt content rows.\nBuffer:\n{}", lines.join("\n"));
 }
 
 #[tokio::test]
-async fn test_resize_after_terminal_reflow_keeps_single_prompt_box() {
+async fn test_resize_after_terminal_reflow_keeps_single_prompt() {
     let terminal = TestTerminal::new(80, 24);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (80, 24));
     renderer.initial_render().unwrap();
@@ -90,25 +84,14 @@ async fn test_resize_after_terminal_reflow_keeps_single_prompt_box() {
     renderer.on_resize_event(32, 24).await.unwrap();
 
     let lines = renderer.writer().get_lines();
-    let top_count = lines.iter().filter(|l| l.contains('╭')).count();
-    let bottom_count = lines.iter().filter(|l| l.contains('╰')).count();
-    let content_rows = lines.iter().filter(|l| l.starts_with('│')).count();
+    let rule = "─".repeat(32);
+    let rule_count = lines.iter().filter(|l| **l == rule).count();
+    let content_rows = lines.iter().filter(|l| l.starts_with('>') || l.starts_with("  ")).count();
 
-    assert_eq!(top_count, 1, "Expected a single prompt top border after resize reflow.\nBuffer:\n{}", lines.join("\n"));
-    assert_eq!(
-        bottom_count,
-        1,
-        "Expected a single prompt bottom border after resize reflow.\nBuffer:\n{}",
-        lines.join("\n")
-    );
+    assert_eq!(rule_count, 2, "Expected exactly two horizontal rules after resize reflow.\nBuffer:\n{}", lines.join("\n"));
     assert!(
         content_rows >= 2,
         "Expected wrapped prompt content rows after resize reflow.\nBuffer:\n{}",
-        lines.join("\n")
-    );
-    assert!(
-        !lines.iter().any(|l| l == &"─".repeat(32)),
-        "Should not leave behind stale reflowed border fragments.\nBuffer:\n{}",
         lines.join("\n")
     );
 }

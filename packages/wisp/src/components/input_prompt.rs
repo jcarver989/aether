@@ -2,11 +2,11 @@ use tui::{Line, ViewContext};
 use unicode_width::UnicodeWidthChar;
 
 pub fn prompt_content_width(terminal_width: usize) -> usize {
-    if terminal_width >= 4 { (terminal_width - 2).saturating_sub(3).max(1) } else { terminal_width.max(1) }
+    terminal_width.saturating_sub(2).max(1)
 }
 
-pub fn prompt_text_start_col(terminal_width: usize) -> usize {
-    if terminal_width >= 4 { 4 } else { 2.min(terminal_width) }
+pub fn prompt_text_start_col(_terminal_width: usize) -> usize {
+    2
 }
 
 pub struct InputPrompt<'a> {
@@ -29,49 +29,30 @@ impl InputPrompt<'_> {
         let cursor_display_width = plain_display_width(&self.input[..cursor_index]);
         let styled_input = style_input(self.input, context);
 
-        if width < 4 {
-            let mut line = Line::new("> ");
-            line.append_line(&styled_input);
-            let total_col = 2 + cursor_display_width;
-            let (cursor_row, cursor_col) = if width == 0 {
-                (0, 0)
-            } else {
-                (total_col / width, u16::try_from(total_col % width).unwrap_or(u16::MAX))
-            };
-            return InputPromptLayout { lines: vec![line], cursor_row, cursor_col };
-        }
-
-        let inner_width = width - 2; // space between │ and │
         let content_width = prompt_content_width(width);
         let wrapped_chunks = styled_input.soft_wrap(u16::try_from(content_width).unwrap_or(u16::MAX));
 
         let cursor_content_row = cursor_display_width / content_width;
         let cursor_content_col = cursor_display_width % content_width;
 
-        // Ensure we always render enough rows to place the cursor safely.
         let content_rows = wrapped_chunks.len().max(cursor_content_row + 1);
 
         let mut lines = Vec::with_capacity(content_rows + 2);
-        lines.push(Line::styled(format!("╭{}╮", "─".repeat(inner_width)), context.theme.muted()));
+        lines.push(Line::styled("─".repeat(width), context.theme.muted()));
 
         for row in 0..content_rows {
             let chunk = wrapped_chunks.get(row).cloned().unwrap_or_default();
-            let pad_len = content_width.saturating_sub(chunk.display_width());
             let mut middle = Line::default();
-            middle.push_styled("│", context.theme.muted());
-            middle.push_text(" ");
             if row == 0 {
                 middle.push_styled("> ", context.theme.primary());
             } else {
                 middle.push_styled("  ", context.theme.muted());
             }
             middle.append_line(&chunk);
-            middle.push_text(" ".repeat(pad_len));
-            middle.push_styled("│", context.theme.muted());
             lines.push(middle);
         }
 
-        lines.push(Line::styled(format!("╰{}╯", "─".repeat(inner_width)), context.theme.muted()));
+        lines.push(Line::styled("─".repeat(width), context.theme.muted()));
 
         InputPromptLayout {
             lines,
@@ -143,21 +124,20 @@ mod tests {
     }
 
     #[test]
-    fn top_border_contains_box_chars() {
+    fn top_rule_is_horizontal_line() {
         let prompt = InputPrompt { input: "", cursor_index: 0 };
         let ctx = ViewContext::new((80, 24));
         let lines = prompt.render(&ctx);
-        assert!(lines[0].plain_text().contains("╭"));
-        assert!(lines[0].plain_text().contains("╮"));
+        assert!(lines[0].plain_text().chars().all(|c| c == '─'));
+        assert_eq!(lines[0].display_width(), 80);
     }
 
     #[test]
-    fn bottom_border_contains_box_chars() {
+    fn bottom_rule_is_horizontal_line() {
         let prompt = InputPrompt { input: "", cursor_index: 0 };
         let ctx = ViewContext::new((80, 24));
         let lines = prompt.render(&ctx);
-        assert!(lines[2].plain_text().contains("╰"));
-        assert!(lines[2].plain_text().contains("╯"));
+        assert!(lines[2].plain_text().chars().all(|c| c == '─'));
     }
 
     #[test]
@@ -165,8 +145,7 @@ mod tests {
         let prompt = InputPrompt { input: "", cursor_index: 0 };
         let ctx = ViewContext::new((80, 24));
         let lines = prompt.render(&ctx);
-        assert!(lines[1].plain_text().contains("> "));
-        assert!(lines[1].plain_text().contains("│"));
+        assert!(lines[1].plain_text().starts_with("> "));
     }
 
     #[test]
@@ -201,14 +180,11 @@ mod tests {
     }
 
     #[test]
-    fn wraps_long_input_inside_box() {
+    fn wraps_long_input() {
         let prompt = InputPrompt { input: "this is a very long input that should wrap", cursor_index: 41 };
         let ctx = ViewContext::new((20, 24));
         let lines = prompt.render(&ctx);
         assert!(lines.len() > 3);
-        assert!(lines.iter().all(|line| line.plain_text().contains("│")
-            || line.plain_text().contains("╭")
-            || line.plain_text().contains("╰")));
     }
 
     #[test]

@@ -1,6 +1,5 @@
 use std::mem::{Discriminant, discriminant};
 
-use crate::components::input_prompt::prompt_text_start_col;
 use crate::components::thought_message::ThoughtMessage;
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use tui::{Line, Style, ViewContext, render_markdown};
@@ -140,9 +139,10 @@ impl ConversationWindow<'_> {
 
         for segment in &self.conversation.segments {
             let kind = discriminant(&segment.content);
-            let mut rendered = render_stream_segment(&segment.content, self.tool_call_statuses, context);
+            let mut rendered =
+                render_stream_segment(&segment.content, self.tool_call_statuses, self.content_padding, context);
             if !matches!(segment.content, SegmentContent::UserMessage(_)) {
-                pad_lines(&mut rendered, self.content_padding);
+                rendered = wrap_and_pad_lines(rendered, self.content_padding, context.size.width);
             }
             extend_with_vertical_margin(&mut lines, &mut last_segment_kind, kind, &rendered);
         }
@@ -154,24 +154,25 @@ impl ConversationWindow<'_> {
 fn render_stream_segment(
     segment: &SegmentContent,
     tool_call_statuses: &ToolCallStatuses,
+    content_padding: usize,
     context: &ViewContext,
 ) -> Vec<Line> {
     match segment {
-        SegmentContent::UserMessage(text) => render_user_message_block(text, context),
+        SegmentContent::UserMessage(text) => render_user_message_block(text, content_padding, context),
         SegmentContent::Thought(text) => ThoughtMessage { text }.render(context),
         SegmentContent::Text(text) => render_markdown(text, context),
         SegmentContent::ToolCall(id) => tool_call_statuses.render_tool(id, context),
     }
 }
 
-fn render_user_message_block(text: &str, context: &ViewContext) -> Vec<Line> {
+fn render_user_message_block(text: &str, content_padding: usize, context: &ViewContext) -> Vec<Line> {
     if text.is_empty() {
         return vec![];
     }
 
     let block_style = Style::fg(context.theme.text_primary()).bg_color(context.theme.sidebar_bg());
     let block_width = usize::from(context.size.width).max(1);
-    let left_padding = prompt_text_start_col(block_width).min(block_width.saturating_sub(1));
+    let left_padding = content_padding.min(block_width.saturating_sub(1));
     let mut rendered_lines = Vec::new();
     rendered_lines.push(padded_background_line(block_width, block_style));
 
@@ -212,14 +213,14 @@ fn padded_background_line(width: usize, style: Style) -> Line {
     Line::with_style(" ".repeat(width.max(1)), style)
 }
 
-pub(crate) fn pad_lines(lines: &mut [Line], padding: usize) {
+pub(crate) fn wrap_and_pad_lines(lines: Vec<Line>, padding: usize, width: u16) -> Vec<Line> {
     if padding == 0 {
-        return;
+        return lines;
     }
+    let content_width = (width as usize).saturating_sub(padding * 2).max(1);
+    let wrap_width = u16::try_from(content_width).unwrap_or(u16::MAX);
     let prefix = " ".repeat(padding);
-    for line in lines.iter_mut() {
-        *line = std::mem::take(line).prepend(&prefix);
-    }
+    lines.into_iter().flat_map(|line| line.soft_wrap(wrap_width)).map(|line| line.prepend(&prefix)).collect()
 }
 
 fn extend_with_vertical_margin(
@@ -305,7 +306,7 @@ mod tests {
         let lines = window.render(&context);
 
         assert_eq!(lines.len(), 3);
-        let left_padding = " ".repeat(prompt_text_start_col(usize::from(context.size.width)));
+        let left_padding = " ".repeat(DEFAULT_CONTENT_PADDING);
         assert_eq!(lines[1].plain_text().trim_end(), format!("{left_padding}hello"));
         assert!(lines[0].plain_text().trim().is_empty());
         assert!(lines[2].plain_text().trim().is_empty());
@@ -331,7 +332,7 @@ mod tests {
         let lines = window.render(&context);
 
         assert_eq!(lines.len(), 5);
-        let left_padding = " ".repeat(prompt_text_start_col(usize::from(context.size.width)));
+        let left_padding = " ".repeat(DEFAULT_CONTENT_PADDING);
         assert_eq!(lines[1].plain_text().trim_end(), format!("{left_padding}line one"));
         assert!(lines[2].plain_text().trim().is_empty());
         assert_eq!(lines[3].plain_text().trim_end(), format!("{left_padding}line three"));
@@ -360,10 +361,13 @@ mod tests {
 
         let lines = window.render(&context);
 
-        assert_eq!(lines.len(), 5);
-        assert_eq!(lines[1].plain_text().trim_end(), "    0123");
-        assert_eq!(lines[2].plain_text().trim_end(), "    4567");
-        assert_eq!(lines[3].plain_text().trim_end(), "    89");
+        let pad = " ".repeat(DEFAULT_CONTENT_PADDING);
+        let content_width = 8 - DEFAULT_CONTENT_PADDING;
+        let expected_lines = 2 + "0123456789".len().div_ceil(content_width);
+        assert_eq!(lines.len(), expected_lines);
+        for line in &lines[1..lines.len() - 1] {
+            assert!(line.plain_text().starts_with(&pad), "line should start with padding: '{}'", line.plain_text());
+        }
         assert!(lines.iter().all(|line| line.display_width() == usize::from(context.size.width)));
         for line in &lines {
             assert_user_message_style(line, &context);
@@ -418,6 +422,34 @@ mod tests {
             segments[0],
             SegmentContent::ToolCall(id) if id == "tool-1"
         ));
+    }
+
+    #[test]
+    fn agent_text_continuation_lines_have_padding() {
+        let mut buffer = ConversationBuffer::new();
+        buffer.append_text_chunk("abcdefghijklmnopqrstuvwx");
+
+        let tool_call_statuses = ToolCallStatuses::new();
+        let window = ConversationWindow {
+            conversation: &buffer,
+            tool_call_statuses: &tool_call_statuses,
+            content_padding: DEFAULT_CONTENT_PADDING,
+        };
+        let context = ViewContext::new((20, 24));
+
+        let lines = window.render(&context);
+        let padding_prefix = " ".repeat(DEFAULT_CONTENT_PADDING);
+        assert!(lines.len() >= 2, "text should wrap into at least 2 lines, got {}", lines.len());
+        for (i, line) in lines.iter().enumerate() {
+            let text = line.plain_text();
+            assert!(text.starts_with(&padding_prefix), "line {i} should start with padding: '{text}'");
+            assert!(
+                line.display_width() <= usize::from(context.size.width),
+                "line {i} should not exceed terminal width: width={}, max={}",
+                line.display_width(),
+                context.size.width
+            );
+        }
     }
 
     fn assert_user_message_style(line: &Line, context: &ViewContext) {

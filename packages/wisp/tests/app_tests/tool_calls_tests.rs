@@ -7,7 +7,7 @@ async fn test_tool_calls_interleave_with_thought_and_text_in_arrival_order() {
     let renderer = render(vec![thought_chunk("Thinking"), tool_call("search", r#"{"q":"rust"}"#), text_chunk("Done")]);
 
     let expected = expected_with_prompt(
-        &["    Thinking", "", "    ⠒ search", "", "    Done", &format!("    {PROGRESS_LINE}")],
+        &[&p("Thinking"), "", &p("⠒ search"), "", &p("Done"), &p(PROGRESS_LINE)],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -19,8 +19,7 @@ async fn test_tool_calls_interleave_with_thought_and_text_in_arrival_order() {
 async fn test_agent_message_tool_call() {
     let renderer = render(vec![tool_call("test_tool", r#"{"arg1": "value1"}"#)]);
 
-    let expected =
-        expected_with_prompt(&["    ⠒ test_tool", &format!("    {PROGRESS_LINE}")], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p("⠒ test_tool"), &p(PROGRESS_LINE)], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -29,7 +28,7 @@ async fn test_agent_message_tool_result() {
     let args = r#"{"arg1": "value1"}"#;
     let renderer = render(vec![tool_call("test_tool", args), tool_complete("call_test_tool")]);
 
-    let expected = expected_with_prompt(&[r#"    ✓ test_tool {"arg1":"value1"}"#], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p(r#"✓ test_tool {"arg1":"value1"}"#)], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -46,7 +45,7 @@ async fn test_multiple_messages_sequence() {
     ]);
 
     let expected = expected_with_prompt(
-        &["    Processing your request", "", r#"    ✓ search {"query":"test"}"#, "", "    Found results"],
+        &[&p("Processing your request"), "", &p(r#"✓ search {"query":"test"}"#), "", &p("Found results")],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -62,7 +61,7 @@ async fn test_streaming_tool_call_arguments() {
         tool_complete("call_1"),
     ]);
 
-    let expected = expected_with_prompt(&[r#"    ✓ Read {"file":"test.rs"}"#], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p(r#"✓ Read {"file":"test.rs"}"#)], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -71,7 +70,7 @@ async fn test_in_progress_tool_call_updates_from_duplicate_requests() {
     let renderer =
         render(vec![tool_call_with_id("Read", "call_1", ""), tool_call_with_id("", "call_1", r#"{"file":"test.rs"}"#)]);
 
-    let expected = expected_with_prompt(&["    ⠒ Read", &format!("    {PROGRESS_LINE}")], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p("⠒ Read"), &p(PROGRESS_LINE)], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -79,7 +78,7 @@ async fn test_in_progress_tool_call_updates_from_duplicate_requests() {
 async fn test_tool_progress_renders_running_tool() {
     let renderer = render(vec![tool_call_with_id("Read", "call_1", r#"{"file":"test.rs"}"#)]);
 
-    let expected = expected_with_prompt(&["    ⠒ Read", &format!("    {PROGRESS_LINE}")], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p("⠒ Read"), &p(PROGRESS_LINE)], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -99,7 +98,7 @@ async fn test_multiple_parallel_tool_calls() {
     ]);
 
     let expected = expected_with_prompt(
-        &[r#"    ✓ Read {"file":"test.rs"}"#, r#"    ✓ Grep {"pattern":"foo"}"#, r#"    ✓ Glob {"path":"src/"}"#],
+        &[&p(r#"✓ Read {"file":"test.rs"}"#), &p(r#"✓ Grep {"pattern":"foo"}"#), &p(r#"✓ Glob {"path":"src/"}"#)],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -118,7 +117,7 @@ async fn test_prompt_done_finalizes_running_tool_calls() {
     ]);
 
     let expected = expected_with_prompt(
-        &[r#"    ✓ Read {"file":"a.rs"}"#, r#"    ✓ Write {"file":"b.rs"}"#, "", "    Done reading"],
+        &[&p(r#"✓ Read {"file":"a.rs"}"#), &p(r#"✓ Write {"file":"b.rs"}"#), "", &p("Done reading")],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -138,7 +137,7 @@ async fn test_late_result_after_prompt_done() {
     ]);
 
     let expected = expected_with_prompt(
-        &[r#"    ✓ Read {"file":"a.rs"}"#, r#"    ✓ Write {"file":"b.rs"}"#, "", "    Done reading"],
+        &[&p(r#"✓ Read {"file":"a.rs"}"#), &p(r#"✓ Write {"file":"b.rs"}"#), "", &p("Done reading")],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -159,7 +158,7 @@ async fn test_tool_complete_with_display_meta_shows_display_value() {
         ),
     ]);
 
-    let expected = expected_with_prompt(&["    ✓ Read file (Cargo.toml, 156 lines)"], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p("✓ Read file (Cargo.toml, 156 lines)")], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -169,7 +168,7 @@ async fn test_tool_complete_without_display_meta_shows_raw_args() {
     let renderer = render(vec![tool_call_with_id("read_file", "call_1", args), tool_complete("call_1")]);
 
     let expected = expected_with_prompt(
-        &[r#"    ✓ read_file {"filePath":"/Users/josh/code/aether/Cargo.toml"}"#],
+        &[&p(r#"✓ read_file {"filePath":"/Users/josh/code/aether/Cargo.toml"}"#)],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -222,7 +221,7 @@ async fn test_multiple_tools_with_mixed_display_meta() {
     ]);
 
     let expected = expected_with_prompt(
-        &["    ✓ Read file (Cargo.toml, 156 lines)", r#"    ✓ external_tool {"key":"value"}"#],
+        &[&p("✓ Read file (Cargo.toml, 156 lines)"), &p(r#"✓ external_tool {"key":"value"}"#)],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -243,6 +242,6 @@ async fn test_command_display_meta_shows_exit_code() {
         ),
     ]);
 
-    let expected = expected_with_prompt(&["    ✓ Run command (cargo test (exit 0))"], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p("✓ Run command (cargo test (exit 0))")], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }

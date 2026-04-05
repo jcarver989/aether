@@ -7,9 +7,14 @@ use tui::Theme;
 use tui::testing::{TestTerminal, pad};
 use tui::{Component, Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use wisp::components::app::App;
+use wisp::settings::DEFAULT_CONTENT_PADDING;
 
 pub(super) const TEST_AGENT: &str = "test-agent";
 pub(super) const TEST_WIDTH: u16 = 200;
+
+pub(super) fn p(s: &str) -> String {
+    format!("{}{s}", " ".repeat(DEFAULT_CONTENT_PADDING))
+}
 /// Expected progress-indicator line for the first inactive→active transition.
 pub(super) const PROGRESS_LINE: &str =
     "⠒ Tip: Hit Tab to adjust reasoning level (off → low → medium → high)  (esc to interrupt)";
@@ -144,14 +149,14 @@ pub(super) enum TestEvent {
     PromptDone,
 }
 
-/// Build the expected bordered prompt lines for a given terminal width.
-/// Returns `[top_border, input_line, bottom_border, status_line]`.
+/// Build the expected prompt lines for a given terminal width.
+/// Returns `[top_rule, input_line, bottom_rule, status_line]`.
 pub(super) fn expected_prompt(width: u16, input: &str, agent_name: &str) -> Vec<String> {
-    let inner = width as usize - 2;
-    let top = format!("╭{}╮", "─".repeat(inner));
-    let middle = format!("│{}│", pad(&format!(" > {input}"), inner));
-    let bottom = format!("╰{}╯", "─".repeat(inner));
-    let status = format!("    {agent_name}");
+    let w = width as usize;
+    let top = "─".repeat(w);
+    let middle = format!("> {input}").trim_end().to_string();
+    let bottom = "─".repeat(w);
+    let status = p(agent_name);
     vec![top, middle, bottom, status]
 }
 
