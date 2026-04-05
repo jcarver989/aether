@@ -1,5 +1,10 @@
 # Aether
 
+[![CI](https://github.com/jcarver989/aether/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jcarver989/aether/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Crates.io](https://img.shields.io/crates/v/aether-agent-cli.svg)](https://crates.io/crates/aether-agent-cli)
+[![Rust](https://img.shields.io/badge/Made_with-Rust-orange.svg)](https://www.rust-lang.org)
+
 Aether is a modular toolkit for building AI agents (LLM + prompt + tools + loop), written in Rust. It gives _you_ full control over every token in context -- no injected prompts, tools or telemetry.
 
 You can use Aether as:
