@@ -30,6 +30,9 @@ enum Command {
     /// Manage agents
     #[command(subcommand)]
     Agent(AgentCommand),
+    /// Start the LSP daemon (used internally)
+    #[command(hide = true)]
+    Lspd(aether_lspd::LspdArgs),
 }
 
 fn main() -> ExitCode {
@@ -52,6 +55,8 @@ fn main() -> ExitCode {
         Some(Command::Agent(AgentCommand::New(args))) => {
             rt.block_on(run_new(args)).map(|()| ExitCode::SUCCESS).map_err(|e| e.to_string())
         }
+
+        Some(Command::Lspd(args)) => aether_lspd::run_lspd(args).map(|()| ExitCode::SUCCESS),
 
         None => rt.block_on(wisp::run_tui("aether acp")).map(|()| ExitCode::SUCCESS).map_err(|e| e.to_string()),
     };

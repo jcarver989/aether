@@ -15,7 +15,7 @@ installers = ["shell", "homebrew"]
 tap = "jcarver989/homebrew-tap"
 # Publish jobs to run in CI
 publish-jobs = ["homebrew"]
-packages = ["aether-agent-cli", "aether-lspd"]
+packages = ["aether-agent-cli"]
 # Path that installers should place binaries in
 install-path = "CARGO_HOME"
 # Whether to install an updater program

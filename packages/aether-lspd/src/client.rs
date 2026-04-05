@@ -358,11 +358,14 @@ async fn run_reader(
 }
 
 async fn spawn_daemon(socket_path: &Path) -> ClientResult<()> {
-    let daemon_path = find_daemon_binary()?;
+    let (binary, subcommand) = find_daemon_binary()?;
     let log_file = log_file_path(socket_path);
 
-    let mut child = Command::new(&daemon_path)
-        .arg("--socket")
+    let mut cmd = Command::new(&binary);
+    if let Some(sub) = subcommand {
+        cmd.arg(sub);
+    }
+    cmd.arg("--socket")
         .arg(socket_path)
         .arg("--log-file")
         .arg(&log_file)
@@ -370,9 +373,9 @@ async fn spawn_daemon(socket_path: &Path) -> ClientResult<()> {
         .arg("debug")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(ClientError::SpawnFailed)?;
+        .stderr(Stdio::null());
+
+    let mut child = cmd.spawn().map_err(ClientError::SpawnFailed)?;
 
     for _ in 0..50 {
         match child.try_wait() {
@@ -394,12 +397,13 @@ async fn spawn_daemon(socket_path: &Path) -> ClientResult<()> {
     Err(ClientError::SpawnTimeout)
 }
 
-fn find_daemon_binary() -> ClientResult<PathBuf> {
-    let candidates = [
-        std::env::current_exe().ok().and_then(|path| path.parent().map(|dir| dir.join("aether-lspd"))),
-        std::env::current_exe()
-            .ok()
-            .and_then(|path| path.parent().and_then(|dir| dir.parent()).map(|dir| dir.join("aether-lspd"))),
+fn find_daemon_binary() -> ClientResult<(PathBuf, Option<&'static str>)> {
+    let exe = std::env::current_exe().ok();
+    let exe_dir = exe.as_deref().and_then(|p| p.parent());
+
+    let standalone_candidates = [
+        exe_dir.map(|dir| dir.join("aether-lspd")),
+        exe_dir.and_then(|dir| dir.parent()).map(|dir| dir.join("aether-lspd")),
         which_aether_lspd(),
         Some(PathBuf::from("target/debug/aether-lspd")),
         Some(PathBuf::from("target/release/aether-lspd")),
@@ -407,10 +411,14 @@ fn find_daemon_binary() -> ClientResult<PathBuf> {
         Some(PathBuf::from("../../target/release/aether-lspd")),
     ];
 
-    for candidate in candidates.into_iter().flatten() {
+    for candidate in standalone_candidates.into_iter().flatten() {
         if candidate.exists() {
-            return Ok(candidate);
+            return Ok((candidate, None));
         }
+    }
+
+    if let Some(exe) = exe {
+        return Ok((exe, Some("lspd")));
     }
 
     Err(ClientError::DaemonBinaryNotFound("aether-lspd not found".into()))
