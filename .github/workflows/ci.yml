@@ -20,6 +20,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rust-analyzer
+      - name: Install TypeScript language server
+        run: npm install -g typescript typescript-language-server
       - uses: Swatinem/rust-cache@v2
       - name: Build aether-lspd
         run: cargo build -p aether-lspd
