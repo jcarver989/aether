@@ -7,10 +7,17 @@ Skills are reusable prompt files stored in the project's `.aether/skills/` direc
 ```rust,ignore
 use mcp_servers::SkillsMcp;
 
-let server = SkillsMcp::new("/my/project/.aether".into());
+let server = SkillsMcp::new(vec!["/my/project/.aether".into()]);
 
 // From CLI args (e.g. --dir ~/.aether)
 let server = SkillsMcp::from_args(vec!["--dir".into(), "/home/user/.aether".into()]).unwrap();
+
+// Multiple directories (last wins on name collision)
+let server = SkillsMcp::new(vec!["/shared/skills".into(), "/my/project/.aether".into()]);
+let server = SkillsMcp::from_args(vec![
+    "--dir".into(), "/shared/skills".into(),
+    "--dir".into(), "/my/project/.aether".into(),
+]).unwrap();
 ```
 
 # Tools provided

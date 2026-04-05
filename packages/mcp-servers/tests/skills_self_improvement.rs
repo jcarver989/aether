@@ -11,7 +11,7 @@ async fn create_test_client(
     rmcp::service::RunningService<rmcp::RoleServer, SkillsMcp>,
     rmcp::service::RunningService<rmcp::RoleClient, ClientInfo>,
 ) {
-    let server_service = SkillsMcp::new(test_dir.to_path_buf());
+    let server_service = SkillsMcp::new(vec![test_dir.to_path_buf()]);
     let client_info = ClientInfo::new(ClientCapabilities::default(), Implementation::new("test-client", "0.1.0"));
 
     connect(server_service, client_info).await.expect("Failed to connect MCP server and client")
@@ -258,7 +258,7 @@ async fn test_toc_excludes_agent_authored_skills() {
     std::fs::write(human_dir.join("SKILL.md"), "---\ndescription: Human skill\nagent-invocable: true\n---\nContent.\n")
         .unwrap();
 
-    let server = SkillsMcp::new(temp_dir.path().to_path_buf());
+    let server = SkillsMcp::new(vec![temp_dir.path().to_path_buf()]);
     let info = server.get_info();
     let instructions = info.instructions.unwrap();
 
