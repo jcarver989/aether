@@ -1,11 +1,13 @@
 # Aether
 
-Aether is a modular toolkit for building AI agents (LLM + prompt + tools + loop), written in Rust. It's gives _you_ full control over every token in context -- no injected prompts, tools or telemetry.
+Aether is a modular toolkit for building AI agents (LLM + prompt + tools + loop), written in Rust. It gives _you_ full control over every token in context -- no injected prompts, tools or telemetry.
 
-You can use Aether as: 
+You can use Aether as:
 
-1. A batteries-included coding agent that runs in a TUI, IDE/Editor (via [ACP](https://zed.dev/acp)) or headless. 
-2. As a library, wherer you can assemble the components you want a la carte. 
+1. A batteries-included coding agent that runs in a TUI, IDE/Editor (via [ACP](https://zed.dev/acp)) or headless.
+2. As a library, where you can assemble the components you want a la carte.
+
+**[Documentation](https://aether-agent.io)** · **[GitHub](https://github.com/jcarver989/aether)**
 
 ![Aether demo](demo.gif)
 
@@ -16,16 +18,11 @@ You can use Aether as:
 
 - [Why Aether?](#why-aether)
 - [Quick Start](#quick-start)
-  - [1. Run a custom agent](#1-run-a-custom-agent)
-  - [2. Build a custom agent as a Rust library](#2-build-a-custom-agent-as-a-rust-library)
-- [Use Cases](#use-cases)
-  - [Talk to local and remote LLMs](#talk-to-local-and-remote-llms)
-  - [Build a custom agent](#build-a-custom-agent)
-  - [Run your agent in an interactive terminal](#run-your-agent-in-an-interactive-terminal)
-  - [Connect your agent to an IDE or UI](#connect-your-agent-to-an-ide-or-ui)
-  - [Run a fully-fledged, open source coding agent](#run-a-fully-fledged-open-source-coding-agent)
+  - [1. **Install**](#1-install)
+  - [2. **Create your first agent**](#2-create-your-first-agent)
+  - [3. **Run it**](#3-run-it)
+- [Using Aether as a library](#using-aether-as-a-library)
 - [Packages](#packages)
-- [Development](#development)
   - [Binary distribution (maintainers)](#binary-distribution-maintainers)
 - [License](#license)
 
@@ -33,87 +30,87 @@ You can use Aether as:
 
 ## Why Aether?
 
-1. **Your context** — Agents default to an empty system prompt with no tools, so _you_ control _every_ token in the agent's context window.
-2. **Your model** — Use any LLM you want -- OpenAI, OpenRouter, Google, DeepSeek, Moonshot, Zai, Llama.cpp, and Ollama providers are supported out of the box. And you can implement your own provider via the `StreamableModelProvider` trait.
+1. **Your context** — Agents default to an empty system prompt with no tools, so _you_ control _every_ token in the agent's context window. Inspect the fully-rendered prompt anytime with `aether show-prompt`.
+2. **Your model** — Use any LLM you want -- Anthropic, OpenAI, OpenRouter, DeepSeek, Gemini, Moonshot, ZAI, Llama.cpp, and Ollama are [supported out of the box](https://aether-agent.io/aether/configuration/llm-providers/). Implement your own via the `StreamingModelProvider` trait, or [alloy models together](https://aether-agent.io/aether/configuration/llm-providers/#alloying) to combine their strenghts.
 3. **Your tools** — Aether agents get tools exclusively via [MCP](https://modelcontextprotocol.io/) servers. Thus you can extend them using _any_ language, configure them using standard `mcp.json` files, and swap toolsets without touching agent code.
 4. **Your interface** — Aether agents come out of the box ready to run wherever you need them to -- headlessly, in the terminal (via a TUI), in an editor (via ACP integration), or as a Rust library.
 
 ## Quick Start
-Create a custom agent in ~10 minutes, no Rust code required.
+Create a custom agent in ~5 minutes, no Rust code required.
 
-### 1. Run a custom agent
 
-1. **Pick a model** — Anthropic, OpenAI, OpenRouter, Google, DeepSeek, Moonshot, Zai, Llama.cpp, and Ollama are supported out of the box. Set the relevant API key:
+### 1. **Install**
+
+   **macOS** (Apple Silicon):
 
    ```bash
-   export ANTHROPIC_API_KEY=sk-ant-...
-   # or OPENROUTER_API_KEY, OPENAI_API_KEY, etc. — or use Ollama for fully local
+   brew install jcarver989/tap/aether
    ```
 
-2. **Add a system prompt** — create an `AGENTS.md` file in your project root. Aether loads it automatically.
+   **macOS / Linux** (x64, ARM64):
 
-3. **Add tools** — agents get tools exclusively via [MCP](https://modelcontextprotocol.io/) servers. Create an `mcp.json` in your project root. These built-in servers are available:
-
-   - **Coding** — file ops, bash, grep, LSP, web fetch/search
-   - **Skills** — load reusable skill files from `skills/`
-   - **Tasks** — structured task management for multi-step work
-   - **Sub-agents** — spawn child agents defined in `.aether/settings.json`
-   - **Survey** — human-in-the-loop elicitation (ask the user questions)
-
-   ```json
-   {
-     "servers": {
-       "coding": { "type": "in-memory" },
-       "skills": { "type": "in-memory" },
-       "tasks": { "type": "in-memory" },
-       "subagents": { "type": "in-memory" },
-       "survey": { "type": "in-memory" }
-     }
-   }
+   ```bash
+   curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jcarver989/aether/releases/latest/download/aether-agent-cli-installer.sh | sh
    ```
 
-   You can add external MCP servers alongside the built-ins:
+   **Any platform** (requires **Rust 1.85+**):
 
-   ```json
-   {
-     "servers": {
-       "coding": { "type": "in-memory" },
-       "skills": { "type": "in-memory" },
-       "tasks": { "type": "in-memory" },
-       "subagents": { "type": "in-memory" },
-       "survey": { "type": "in-memory" },
-       "playwright": {
-         "type": "stdio",
-         "command": "npx",
-         "args": ["@playwright/mcp@latest"]
-       }
-     }
-   }
+   ```bash
+   cargo install aether-agent-cli
    ```
 
-4. **Run it**
+### 2. **Create your first agent**
 
-   - **TUI** — interactive terminal UI (model selected inside the TUI):
+   ```bash
+   cd your-project
+   aether agent new
+   ```
+
+   ```
+   ✓ Created .aether/settings.json   — agent definitions (model, prompts, tools)
+   ✓ Created .aether/mcp.json        — MCP server config
+   ✓ Created .aether/SYSTEM.md       — base system prompt
+   ✓ Created AGENTS.md               — project-level instructions
+   ```
+   
+   The tui will walk you through:
+   
+   1. Choosing an LLM. See [LLM Providers](https://aether-agent.io/aether/configuration/llm-providers/) for all supported providers and credential setup.
+   2. Adding tools. Aether ships with several optional [MCP](https://modelcontextprotocol.io/) servers:
+      - **Coding** — file ops, bash, grep, web fetch/search
+      - **LSP** — language-aware symbol lookup, diagnostics, rename
+      - **Skills** — load reusable skill files from `skills/`
+      - **Tasks** — structured task management for multi-step work
+      - **Sub-agents** — spawn child agents defined in `.aether/settings.json`
+      - **Survey** — human-in-the-loop elicitation (ask the user questions)
+  
+   You can also plug in any external MCP server (stdio, SSE, or streamable HTTP). See [MCP Servers](https://aether-agent.io/aether/configuration/mcp-servers/).
+
+### 3. **Run it**
+
+   - In a **TUI** — interactive terminal UI:
 
      ```bash
-     cargo run -p wisp
+     aether
      ```
-
-   - **Headless CLI** — single prompt in, text out:
+   
+  - In an **editor/IDE** via [ACP](https://agentclientprotocol.com/get-started/introduction):
 
      ```bash
-     cargo run -p aether-agent-cli --bin aether -- -m anthropic:claude-sonnet-4-5-20250929 "Refactor auth module"
+     aether acp
      ```
 
-   - **ACP server** — for editor/IDE integration via [ACP](https://agentclientprotocol.com/get-started/introduction):
+   - As a **headless** agent:
 
      ```bash
-     cargo run -p aether-agent-cli --bin aether-acp -- --model anthropic:claude-sonnet-4-5-20250929 --mcp-config mcp.json
+     aether headless "Refactor auth module"
      ```
 
-### 2. Build a custom agent as a Rust library
 
-Use `aether-agent-core` as a Rust library to build your own agent in ~25 lines. Bring your own model via the `StreamableModelProvider` trait, or alloy models together to round-robin across providers per turn.
+
+## Using Aether as a library
+
+Use `aether-agent-core` as a Rust library to build your own agent in ~25 lines. Bring your own model via the `StreamingModelProvider` trait, or alloy models together to round-robin across providers per turn.
 
 1. **Add dependencies**
 
@@ -165,50 +162,19 @@ Use `aether-agent-core` as a Rust library to build your own agent in ~25 lines. 
    }
    ```
 
-See [`examples/`](packages/aether-core/examples) for more complete examples.
-
-## Use Cases
-
-### Talk to local and remote LLMs
-
-The [`llm`](packages/llm) provides a unified streaming interface for LLM providers. Anthropic, OpenRouter, OpenAI, DeepSeek, Gemini, ZAI, Ollama, and Llama.cpp are supported out of the box. If something isn't supported, you can add your own via the `StreamableModelProvider` trait. You can also alloy models together — round-robin across providers per turn to combine their strengths.
-
-### Build a custom agent
-
-[`aether-agent-core`](packages/aether-core) is the core crate. Create a custom agent in ~10 lines of Rust and tailor it to your domain. Aether agents start as a blank slate with no system prompt or tools, so you control every token in your agent's context window.
-
-Agents get their tools from [MCP](https://modelcontextprotocol.io/) servers — write tool servers in any language and connect them via a standard `mcp.json` file. This repo includes several pre-built servers to get you started:
-
-- [`mcp-servers`](packages/mcp-servers) — file operations, bash, LSP, sub-agents, tasks, and slash commands (feature-flagged)
-
-### Run your agent in an interactive terminal
-
-[`wisp`](packages/wisp) is a TUI (terminal UI) for Aether agents (it also works with any [ACP](https://agentclientprotocol.com/get-started/introduction) compatible agent).
-
-### Connect your agent to an IDE or UI
-
-[`aether-agent-cli`](packages/aether-cli) Connect your agent to any [ACP](https://agentclientprotocol.com/get-started/introduction) compatible client ([see list](https://agentclientprotocol.com/get-started/clients)).
-
-### Run a fully-fledged, open source coding agent
-
-Combine all the above for a "batteries-included" AI coding agent: [`wisp`](packages/wisp) (TUI) + [`aether-agent-cli`](packages/aether-cli) (ACP server) + the pre-built [MCP tool servers](packages/mcp-servers).
-
 ## Packages
 
 | Package | Description |
 |---------|-------------|
-| [`aether-agent-core`](packages/aether-core) | Core agent library — LLM + prompt + tools in a loop |
-| [`llm`](packages/llm) | Multi-provider LLM abstraction (Anthropic, OpenAI, OpenRouter, Ollama, etc.) |
-| [`wisp`](packages/wisp) | Terminal UI for AI agents, built on ACP |
-| [`aether-agent-cli`](packages/aether-cli) | Headless CLI and ACP server for editor integration |
-| [`mcp-servers`](packages/mcp-servers) | Pre-built MCP tool servers (coding, skills, tasks, sub-agents, survey) |
-| [`crucible`](packages/crucible) | Automated testing (evals) for LLM agents |
+| [`aether-agent-core`](packages/aether-core) | Core agent library — LLM + prompt + tools in a loop ([docs](https://aether-agent.io/libraries/aether-core/agent-builder/)) |
+| [`llm`](packages/llm) | Multi-provider LLM abstraction ([docs](https://aether-agent.io/libraries/llm/provider-interface/)) |
+| [`wisp`](packages/wisp) | Terminal UI for AI agents, built on ACP ([docs](https://aether-agent.io/aether/terminal/overview/)) |
+| [`aether-agent-cli`](packages/aether-cli) | Headless CLI and ACP server for editor integration ([docs](https://aether-agent.io/aether/running/headless/)) |
+| [`mcp-servers`](packages/mcp-servers) | Pre-built MCP tool servers (coding, LSP, skills, tasks, sub-agents, survey) ([docs](https://aether-agent.io/aether/built-in-servers/coding/)) |
+| [`crucible`](packages/crucible) | Automated testing (evals) for LLM agents ([docs](https://aether-agent.io/libraries/crucible/evals/)) |
 | [`aether-lspd`](packages/aether-lspd) | LSP daemon — shares language servers across agents |
 | [`aether-project`](packages/aether-project) | Project configuration and agent catalog from `.aether/settings.json` |
 
-## Development
-
-Standard cargo workflow: `cargo check`, `cargo test`, `cargo fmt`, `cargo clippy`.
 
 ### Binary distribution (maintainers)
 
@@ -216,10 +182,7 @@ Aether releases are built with [cargo-dist](https://github.com/axodotdev/cargo-d
 
 - Preview release artifacts locally: `dist plan`
 - Build local distributable artifacts: `dist build`
-- Optional workflow smoke test with [act](https://github.com/nektos/act): `act pull_request -W .github/workflows/release.yml -j plan -P ubuntu-22.04=catthehacker/ubuntu:act-22.04`
 - Cutting a release is tag-driven (`vX.Y.Z`) and publishes GitHub Release artifacts.
-- Release artifacts include both `aether` and `aether-lspd` binaries (LSP tools depend on `aether-lspd`).
-- Homebrew publishing targets `contextbridge/homebrew-tap` and requires the `HOMEBREW_TAP_TOKEN` GitHub secret.
 
 ## License
 
