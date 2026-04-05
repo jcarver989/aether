@@ -10,6 +10,7 @@ use aether_cli::show_prompt::{PromptArgs, run_prompt};
 #[derive(Parser)]
 #[command(name = "aether")]
 #[command(about = "Aether AI coding agent")]
+#[command(version)]
 struct Cli {
     /// Run inside a Docker sandbox using the given image
     #[arg(long, global = true)]
