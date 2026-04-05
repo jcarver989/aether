@@ -18,7 +18,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rust-analyzer
       - uses: Swatinem/rust-cache@v2
+      - name: Build aether-lspd
+        run: cargo build -p aether-lspd
       - name: Run tests
         run: cargo test --locked --all-features --workspace
 
