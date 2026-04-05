@@ -21,10 +21,22 @@ Aether is a modular, open-source AI coding agent toolkit written in Rust.
 1. **Install**
 
    <Tabs>
-     <TabItem label="cargo install">
+     <TabItem label="Homebrew">
+       ```bash
+       brew install jcarver989/tap/aether
+       ```
+     </TabItem>
+     <TabItem label="Shell installer">
+       ```bash
+       curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jcarver989/aether/releases/latest/download/aether-agent-cli-installer.sh | sh
+       ```
+     </TabItem>
+     <TabItem label="Cargo">
        ```bash
        cargo install aether-agent-cli
        ```
+
+       Requires **Rust 1.85+** — install via [rustup](https://rustup.rs) if you don't have it.
      </TabItem>
      <TabItem label="Build from source">
        ```bash
@@ -36,8 +48,6 @@ Aether is a modular, open-source AI coding agent toolkit written in Rust.
        Binaries are written to `target/release/aether` and `target/release/wisp`.
      </TabItem>
    </Tabs>
-
-   Requires **Rust 1.85+** — install via [rustup](https://rustup.rs) if you don't have it.
 
 2. **Create your first agent**
 
