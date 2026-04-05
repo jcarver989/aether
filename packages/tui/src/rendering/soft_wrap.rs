@@ -111,11 +111,13 @@ pub fn soft_wrap_line(line: &Line, width: u16) -> Vec<Line> {
     let mut rows = Vec::new();
     let mut current = Line::default();
     let mut current_width = 0usize;
+    let mut last_ws: Option<(usize, usize, usize)>; // (byte offset, byte offset after ws, width after ws)
 
     for span in line.spans() {
         let text = span.text();
         let style = span.style();
         let mut start = 0;
+        last_ws = None;
 
         for (i, ch) in text.char_indices() {
             if ch == '\n' {
@@ -125,21 +127,35 @@ pub fn soft_wrap_line(line: &Line, width: u16) -> Vec<Line> {
                 rows.push(current);
                 current = Line::default();
                 current_width = 0;
+                last_ws = None;
                 start = i + ch.len_utf8();
                 continue;
             }
 
             let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
             if ch_width > 0 && current_width + ch_width > max_width && current_width > 0 {
-                if start < i {
-                    current.push_with_style(&text[start..i], style);
+                let (break_at, skip_to, new_width) =
+                    if let Some((ws_pos, ws_end, width_after_ws)) = last_ws.take() {
+                        (ws_pos, ws_end, current_width - width_after_ws)
+                    } else {
+                        (i, i, 0)
+                    };
+
+                if start < break_at {
+                    current.push_with_style(&text[start..break_at], style);
                 }
                 rows.push(current);
                 current = Line::default();
-                current_width = 0;
+                current_width = new_width;
+                if skip_to < i {
+                    current.push_with_style(&text[skip_to..i], style);
+                }
                 start = i;
             }
             current_width += ch_width;
+            if ch.is_whitespace() {
+                last_ws = Some((i, i + ch.len_utf8(), current_width));
+            }
         }
 
         if start < text.len() {
@@ -148,9 +164,6 @@ pub fn soft_wrap_line(line: &Line, width: u16) -> Vec<Line> {
     }
 
     rows.push(current);
-    if rows.is_empty() {
-        rows.push(Line::new(""));
-    }
     rows
 }
 
@@ -355,5 +368,52 @@ mod tests {
         let line = Line::new("hello");
         let result = truncate_line(&line, 0);
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn wraps_at_word_boundary() {
+        let rows = soft_wrap_line(&Line::new("hello world"), 7);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].plain_text(), "hello");
+        assert_eq!(rows[1].plain_text(), "world");
+    }
+
+    #[test]
+    fn wraps_multiple_words() {
+        let rows = soft_wrap_line(&Line::new("hello world foo"), 12);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].plain_text(), "hello world");
+        assert_eq!(rows[1].plain_text(), "foo");
+    }
+
+    #[test]
+    fn falls_back_to_char_break_without_whitespace() {
+        let rows = soft_wrap_line(&Line::new("superlongword next"), 5);
+        assert_eq!(rows[0].plain_text(), "super");
+        assert_eq!(rows[1].plain_text(), "longw");
+        assert_eq!(rows[2].plain_text(), "ord");
+        assert_eq!(rows[3].plain_text(), "next");
+    }
+
+    #[test]
+    fn wraps_at_word_boundary_with_styled_spans() {
+        let line = Line::styled("hello world", Color::Red);
+        let rows = soft_wrap_line(&line, 7);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].plain_text(), "hello");
+        assert_eq!(rows[1].plain_text(), "world");
+        assert_eq!(rows[0].spans()[0].style().fg, Some(Color::Red));
+        assert_eq!(rows[1].spans()[0].style().fg, Some(Color::Red));
+    }
+
+    #[test]
+    fn wraps_across_spans_without_panic() {
+        let mut line = Line::default();
+        line.push_styled("hello ", Color::Red);
+        line.push_styled("world this is long", Color::Blue);
+        let rows = soft_wrap_line(&line, 10);
+        assert_eq!(rows[0].plain_text(), "hello worl");
+        assert_eq!(rows[1].plain_text(), "d this is");
+        assert_eq!(rows[2].plain_text(), "long");
     }
 }
