@@ -18,11 +18,13 @@ Register additional providers with [`with_provider`](ModelProviderParser::with_p
 # Example
 
 ```rust,no_run
+# async fn example() {
 use llm::parser::ModelProviderParser;
 use llm::StreamingModelProvider;
 
 let parser = ModelProviderParser::default();
-let (provider, model) = parser.parse("ollama:llama3.2").unwrap();
+let (provider, model) = parser.parse("ollama:llama3.2").await.unwrap();
 println!("Provider: {}", provider.display_name());
 println!("Model: {model}");
+# }
 ```

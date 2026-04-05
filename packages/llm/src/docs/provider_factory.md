@@ -11,6 +11,7 @@ This trait is separate from [`StreamingModelProvider`] because construction meth
 # Example
 
 ```rust,no_run
+# async fn example() {
 use llm::{ProviderFactory, StreamingModelProvider};
 use llm::providers::anthropic::AnthropicProvider;
 
@@ -19,4 +20,5 @@ let provider = AnthropicProvider::from_env().await
     .with_model("claude-sonnet-4-5-20250929");
 
 println!("Using: {}", provider.display_name());
+# }
 ```

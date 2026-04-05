@@ -34,7 +34,7 @@ use tokio_stream::StreamExt;
 #[tokio::main]
 async fn main() -> llm::Result<()> {
     let parser = ModelProviderParser::default();
-    let (provider, _model) = parser.parse("anthropic:claude-sonnet-4-5-20250929")?;
+    let (provider, _model) = parser.parse("anthropic:claude-sonnet-4-5-20250929").await?;
 
     let context = Context::new(
         vec![ChatMessage::User {
@@ -122,18 +122,20 @@ context.push_assistant_turn(
 `ModelProviderParser` accepts any supported `"provider:model"` string, so switching is a one-line change:
 
 ```rust,no_run
+# async fn example() {
 use llm::parser::ModelProviderParser;
 
 let parser = ModelProviderParser::default();
 
 // Cloud providers (need API keys in env)
-let (provider, _) = parser.parse("anthropic:claude-sonnet-4-5-20250929").unwrap();
-let (provider, _) = parser.parse("openai:gpt-4o").unwrap();
-let (provider, _) = parser.parse("openrouter:moonshotai/kimi-k2").unwrap();
+let (provider, _) = parser.parse("anthropic:claude-sonnet-4-5-20250929").await.unwrap();
+let (provider, _) = parser.parse("openai:gpt-4o").await.unwrap();
+let (provider, _) = parser.parse("openrouter:moonshotai/kimi-k2").await.unwrap();
 
 // Local models (no API key needed)
-let (provider, _) = parser.parse("ollama:llama3.2").unwrap();
-let (provider, _) = parser.parse("llamacpp").unwrap();
+let (provider, _) = parser.parse("ollama:llama3.2").await.unwrap();
+let (provider, _) = parser.parse("llamacpp").await.unwrap();
+# }
 ```
 
 ### Direct provider construction
@@ -141,14 +143,16 @@ let (provider, _) = parser.parse("llamacpp").unwrap();
 When you need fine-grained control (temperature, max tokens), construct the provider directly:
 
 ```rust,no_run
+# async fn example() {
 use llm::providers::anthropic::AnthropicProvider;
 use llm::ProviderFactory;
 
-let provider = AnthropicProvider::from_env()
+let provider = AnthropicProvider::from_env().await
     .unwrap()
     .with_model("claude-sonnet-4-5-20250929")
     .with_temperature(0.7)
     .with_max_tokens(4096);
+# }
 ```
 
 ## Providers
