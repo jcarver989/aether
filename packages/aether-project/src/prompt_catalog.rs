@@ -8,9 +8,9 @@
 
 use crate::error::SettingsError;
 use crate::prompt_file::{PromptFile, SKILL_FILENAME};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::read_dir;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// A catalog of prompt artifacts discovered from `.aether/skills/`.
 #[derive(Debug, Clone)]
@@ -40,6 +40,37 @@ impl PromptCatalog {
         validate_catalog(&prompts)?;
 
         Ok(Self { specs: prompts })
+    }
+
+    /// Discover and merge prompt artifacts from multiple skill directories.
+    ///
+    /// On name collision, the last directory wins. Directories that don't exist are skipped.
+    pub fn from_dirs(skills_dirs: &[PathBuf]) -> Self {
+        let mut seen: HashMap<String, PromptFile> = HashMap::new();
+
+        for dir in skills_dirs {
+            let Ok(entries) = read_dir(dir) else {
+                tracing::warn!("Skills directory does not exist, skipping: {}", dir.display());
+                continue;
+            };
+
+            for entry in entries
+                .filter_map(Result::ok)
+                .filter(|e| e.path().is_dir() && !e.file_name().to_string_lossy().starts_with('.'))
+                .filter(|e| e.path().join(SKILL_FILENAME).is_file())
+            {
+                match PromptFile::parse(&entry.path().join(SKILL_FILENAME)) {
+                    Ok(spec) => {
+                        seen.insert(spec.name.clone(), spec);
+                    }
+                    Err(err) => {
+                        tracing::warn!("Skipping invalid skill at {}: {err}", entry.path().display());
+                    }
+                }
+            }
+        }
+
+        Self { specs: seen.into_values().collect() }
     }
 
     /// Create an empty catalog.
@@ -300,5 +331,47 @@ mod tests {
         assert!(spec.agent_authored);
         assert_eq!(spec.helpful, 5);
         assert_eq!(spec.harmful, 1);
+    }
+
+    #[test]
+    fn from_dirs_last_wins() {
+        let dir_a = create_temp_project();
+        let dir_b = create_temp_project();
+        write_skill(dir_a.path(), "rust", "---\ndescription: Rust A\nagent-invocable: true\n---\nFrom dir A.");
+        write_skill(dir_b.path(), "rust", "---\ndescription: Rust B\nagent-invocable: true\n---\nFrom dir B.");
+
+        let catalog = PromptCatalog::from_dirs(&[dir_a.path().to_path_buf(), dir_b.path().to_path_buf()]);
+        assert_eq!(catalog.all().len(), 1);
+
+        let spec = &catalog.all()[0];
+        assert_eq!(spec.name, "rust");
+        assert_eq!(spec.description, "Rust B");
+        assert!(spec.body.contains("From dir B."));
+    }
+
+    #[test]
+    fn from_dirs_union() {
+        let dir_a = create_temp_project();
+        let dir_b = create_temp_project();
+        write_skill(dir_a.path(), "rust", "---\ndescription: Rust\nagent-invocable: true\n---\nRust content.");
+        write_skill(dir_b.path(), "python", "---\ndescription: Python\nagent-invocable: true\n---\nPython content.");
+
+        let catalog = PromptCatalog::from_dirs(&[dir_a.path().to_path_buf(), dir_b.path().to_path_buf()]);
+        assert_eq!(catalog.all().len(), 2);
+
+        let names: Vec<&str> = catalog.all().iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"rust"));
+        assert!(names.contains(&"python"));
+    }
+
+    #[test]
+    fn from_dirs_skips_missing() {
+        let dir_a = create_temp_project();
+        let missing = PathBuf::from("/tmp/nonexistent-skills-dir-12345");
+        write_skill(dir_a.path(), "rust", "---\ndescription: Rust\nagent-invocable: true\n---\nRust content.");
+
+        let catalog = PromptCatalog::from_dirs(&[missing, dir_a.path().to_path_buf()]);
+        assert_eq!(catalog.all().len(), 1);
+        assert_eq!(catalog.all()[0].name, "rust");
     }
 }

@@ -142,7 +142,8 @@ impl SkillsMcp {
     }
 
     fn resolve_skill_file(&self, request: &SkillRequest) -> Result<(PathBuf, String), SkillFileError> {
-        let skill_dir = self.find_skill_dir(&request.name).ok_or_else(|| SkillFileError::SkillNotFound(request.name.clone()))?;
+        let skill_dir =
+            self.find_skill_dir(&request.name).ok_or_else(|| SkillFileError::SkillNotFound(request.name.clone()))?;
 
         let relative_path = request.path.as_deref().unwrap_or(SKILL_FILENAME);
         let resolved_path = Self::validate_path(&skill_dir, relative_path)?;
@@ -568,18 +569,8 @@ mod tests {
     fn test_multi_dir_last_wins() {
         let dir_a = TempDir::new().unwrap();
         let dir_b = TempDir::new().unwrap();
-        create_skill(
-            &dir_a,
-            "rust",
-            "---\ndescription: Rust A\nagent-invocable: true\n---\n# From A",
-            &[],
-        );
-        create_skill(
-            &dir_b,
-            "rust",
-            "---\ndescription: Rust B\nagent-invocable: true\n---\n# From B",
-            &[],
-        );
+        create_skill(&dir_a, "rust", "---\ndescription: Rust A\nagent-invocable: true\n---\n# From A", &[]);
+        create_skill(&dir_b, "rust", "---\ndescription: Rust B\nagent-invocable: true\n---\n# From B", &[]);
 
         let server = SkillsMcp::new(vec![dir_a.path().to_path_buf(), dir_b.path().to_path_buf()]);
         let result = server.load_skill_file(&SkillRequest { name: "rust".to_string(), path: None });

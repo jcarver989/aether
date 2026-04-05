@@ -134,12 +134,11 @@ pub fn soft_wrap_line(line: &Line, width: u16) -> Vec<Line> {
 
             let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
             if ch_width > 0 && current_width + ch_width > max_width && current_width > 0 {
-                let (break_at, skip_to, new_width) =
-                    if let Some((ws_pos, ws_end, width_after_ws)) = last_ws.take() {
-                        (ws_pos, ws_end, current_width - width_after_ws)
-                    } else {
-                        (i, i, 0)
-                    };
+                let (break_at, skip_to, new_width) = if let Some((ws_pos, ws_end, width_after_ws)) = last_ws.take() {
+                    (ws_pos, ws_end, current_width - width_after_ws)
+                } else {
+                    (i, i, 0)
+                };
 
                 if start < break_at {
                     current.push_with_style(&text[start..break_at], style);
