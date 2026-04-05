@@ -1088,7 +1088,7 @@ mod tests {
         let prog_after = app.conversation_screen.progress_indicator.render(&ctx);
 
         assert_ne!(tool_before[0].plain_text(), tool_after[0].plain_text(), "tick should advance tool spinner");
-        assert_ne!(prog_before[0].plain_text(), prog_after[0].plain_text(), "tick should advance progress spinner");
+        assert_ne!(prog_before[1].plain_text(), prog_after[1].plain_text(), "tick should advance progress spinner");
     }
 
     #[test]

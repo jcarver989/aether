@@ -73,7 +73,7 @@ impl ProgressIndicator {
         line.push_styled(format!(" {}", self.current_message()), context.theme.text_secondary());
         line.push_with_style("  (esc to interrupt)".to_string(), Style::fg(context.theme.muted()).italic());
 
-        vec![line]
+        vec![Line::default(), line, Line::default()]
     }
 }
 
@@ -103,8 +103,8 @@ mod tests {
         let mut indicator = ProgressIndicator::default();
         indicator.update(1, 3, false);
         let lines = indicator.render(&ctx());
-        assert_eq!(lines.len(), 1);
-        let text = lines[0].plain_text();
+        assert_eq!(lines.len(), 3);
+        let text = lines[1].plain_text();
         assert!(text.contains("esc to interrupt"));
     }
 
@@ -113,8 +113,8 @@ mod tests {
         let mut indicator = ProgressIndicator::default();
         indicator.update(0, 0, true);
         let lines = indicator.render(&ctx());
-        assert_eq!(lines.len(), 1);
-        let text = lines[0].plain_text();
+        assert_eq!(lines.len(), 3);
+        let text = lines[1].plain_text();
         assert!(text.contains("esc to interrupt"));
     }
 
@@ -125,8 +125,8 @@ mod tests {
         let mut b = ProgressIndicator::default();
         b.update(0, 1, false);
         b.set_tick(1);
-        let text_a = a.render(&ctx())[0].plain_text();
-        let text_b = b.render(&ctx())[0].plain_text();
+        let text_a = a.render(&ctx())[1].plain_text();
+        let text_b = b.render(&ctx())[1].plain_text();
         assert_ne!(text_a, text_b);
     }
 
@@ -162,7 +162,7 @@ mod tests {
         indicator.update(0, 0, true);
         indicator.set_turn_count(1);
         let lines = indicator.render(&ctx());
-        let text = lines[0].plain_text();
+        let text = lines[1].plain_text();
         assert!(text.contains(MESSAGES[0]));
     }
 
@@ -172,7 +172,7 @@ mod tests {
         // First turn: inactive → active
         indicator.update(0, 0, true);
         assert_eq!(indicator.turn_count, 1);
-        let tip_0 = indicator.render(&ctx())[0].plain_text();
+        let tip_0 = indicator.render(&ctx())[1].plain_text();
 
         // Go inactive
         indicator.update(0, 0, false);
@@ -180,7 +180,7 @@ mod tests {
         // Second turn: inactive → active
         indicator.update(0, 0, true);
         assert_eq!(indicator.turn_count, 2);
-        let tip_1 = indicator.render(&ctx())[0].plain_text();
+        let tip_1 = indicator.render(&ctx())[1].plain_text();
 
         assert_ne!(tip_0, tip_1);
         assert!(tip_0.contains(MESSAGES[0]));
@@ -192,7 +192,7 @@ mod tests {
         let mut indicator = ProgressIndicator::default();
         indicator.update(0, 0, true);
         indicator.set_turn_count(MESSAGES.len() + 1);
-        let text = indicator.render(&ctx())[0].plain_text();
+        let text = indicator.render(&ctx())[1].plain_text();
         assert!(text.contains("Working..."));
     }
 

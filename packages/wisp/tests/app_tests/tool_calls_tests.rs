@@ -7,7 +7,7 @@ async fn test_tool_calls_interleave_with_thought_and_text_in_arrival_order() {
     let renderer = render(vec![thought_chunk("Thinking"), tool_call("search", r#"{"q":"rust"}"#), text_chunk("Done")]);
 
     let expected = expected_with_prompt(
-        &[&p("Thinking"), "", &p("⠒ search"), "", &p("Done"), &p(PROGRESS_LINE)],
+        &[&p("Thinking"), "", &p("⠒ search"), "", &p("Done"), "", &p(PROGRESS_LINE), ""],
         TEST_WIDTH,
         "",
         TEST_AGENT,
@@ -19,7 +19,7 @@ async fn test_tool_calls_interleave_with_thought_and_text_in_arrival_order() {
 async fn test_agent_message_tool_call() {
     let renderer = render(vec![tool_call("test_tool", r#"{"arg1": "value1"}"#)]);
 
-    let expected = expected_with_prompt(&[&p("⠒ test_tool"), &p(PROGRESS_LINE)], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p("⠒ test_tool"), "", &p(PROGRESS_LINE), ""], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -70,7 +70,7 @@ async fn test_in_progress_tool_call_updates_from_duplicate_requests() {
     let renderer =
         render(vec![tool_call_with_id("Read", "call_1", ""), tool_call_with_id("", "call_1", r#"{"file":"test.rs"}"#)]);
 
-    let expected = expected_with_prompt(&[&p("⠒ Read"), &p(PROGRESS_LINE)], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p("⠒ Read"), "", &p(PROGRESS_LINE), ""], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
@@ -78,7 +78,7 @@ async fn test_in_progress_tool_call_updates_from_duplicate_requests() {
 async fn test_tool_progress_renders_running_tool() {
     let renderer = render(vec![tool_call_with_id("Read", "call_1", r#"{"file":"test.rs"}"#)]);
 
-    let expected = expected_with_prompt(&[&p("⠒ Read"), &p(PROGRESS_LINE)], TEST_WIDTH, "", TEST_AGENT);
+    let expected = expected_with_prompt(&[&p("⠒ Read"), "", &p(PROGRESS_LINE), ""], TEST_WIDTH, "", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
 
