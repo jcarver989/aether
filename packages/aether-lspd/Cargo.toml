@@ -10,6 +10,9 @@ readme = "README.md"
 keywords = ["lsp", "language-server", "aether", "agent"]
 categories = ["development-tools"]
 
+[package.metadata.dist]
+dist = false
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]

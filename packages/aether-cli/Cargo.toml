@@ -29,15 +29,16 @@ name = "aether"
 path = "src/main.rs"
 
 [dependencies]
-aether-core = { package = "aether-agent-core", path = "../aether-core", version = "0.1.0" }
-aether-project = { path = "../aether-project", version = "0.1.0" }
-llm = { package = "aether-llm", path = "../llm", features = ["bedrock", "codex"], version = "0.1.0" }
-mcp_utils = { package = "aether-mcp-utils", path = "../mcp-utils", version = "0.1.0" }
-mcp-servers = { package = "aether-mcp-servers", path = "../mcp-servers", features = ["all"], version = "0.1.0" }
-wisp = { package = "aether-wisp", path = "../wisp", version = "0.1.0" }
-tui = { package = "aether-tui", path = "../tui", default-features = false, version = "0.1.0" }
-acp_utils = { package = "aether-acp-utils", path = "../acp-utils", features = ["server"], version = "0.1.0" }
+aether-core = { package = "aether-agent-core", path = "../aether-core", version = "*" }
+aether-project = { path = "../aether-project", version = "*" }
+llm = { package = "aether-llm", path = "../llm", features = ["bedrock", "codex"], version = "*" }
+mcp_utils = { package = "aether-mcp-utils", path = "../mcp-utils", version = "*" }
+mcp-servers = { package = "aether-mcp-servers", path = "../mcp-servers", features = ["all"], version = "*" }
+wisp = { package = "aether-wisp", path = "../wisp", version = "*" }
+tui = { package = "aether-tui", path = "../tui", default-features = false, version = "*" }
+acp_utils = { package = "aether-acp-utils", path = "../acp-utils", features = ["server"], version = "*" }
 agent-client-protocol = { workspace = true }
+aether-lspd = { path = "../aether-lspd", version = "*" }
 rmcp = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true, features = ["compat"] }
@@ -51,6 +52,10 @@ tracing-appender = { workspace = true }
 futures = { workspace = true }
 dirs = { workspace = true }
 uuid = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["signal", "process", "fs"] }
+libc = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

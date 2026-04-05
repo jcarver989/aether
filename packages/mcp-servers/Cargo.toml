@@ -81,9 +81,9 @@ tokio = { workspace = true }
 rmcp = { workspace = true }
 schemars = { workspace = true }
 clap = { workspace = true, features = ["env"] }
-mcp_utils = { package = "aether-mcp-utils", path = "../mcp-utils", version = "0.1.0" }
-utils = { package = "aether-utils", path = "../utils", version = "0.1.0" }
-aether-lspd = { path = "../aether-lspd", optional = true, version = "0.1.0" }
+mcp_utils = { package = "aether-mcp-utils", path = "../mcp-utils", version = "*" }
+utils = { package = "aether-utils", path = "../utils", version = "*" }
+aether-lspd = { path = "../aether-lspd", optional = true, version = "*" }
 futures = { workspace = true, optional = true }
 glob = { workspace = true, optional = true }
 globset = { workspace = true, optional = true }
@@ -107,13 +107,13 @@ serde_yml = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 
 # subagents feature
-aether-core = { package = "aether-agent-core", path = "../aether-core", optional = true, version = "0.1.0" }
-aether-project = { path = "../aether-project", optional = true, version = "0.1.0" }
-llm = { package = "aether-llm", path = "../llm", optional = true, version = "0.1.0" }
+aether-core = { package = "aether-agent-core", path = "../aether-core", optional = true, version = "*" }
+aether-project = { path = "../aether-project", optional = true, version = "*" }
+llm = { package = "aether-llm", path = "../llm", optional = true, version = "*" }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-aether-lspd = { path = "../aether-lspd", features = ["testing"], version = "0.1.0" }
+aether-lspd = { path = "../aether-lspd", features = ["testing"], version = "*" }
 mcp-servers = { package = "aether-mcp-servers", path = ".", features = ["test-helpers"] }
 
 [[bin]]
