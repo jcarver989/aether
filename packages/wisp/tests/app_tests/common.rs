@@ -4,7 +4,7 @@ use agent_client_protocol as acp;
 use tui::Renderer as FrameRenderer;
 use tui::RendererCommand;
 use tui::Theme;
-use tui::testing::{TestTerminal, pad};
+use tui::testing::TestTerminal;
 use tui::{Component, Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use wisp::components::app::App;
 use wisp::settings::DEFAULT_CONTENT_PADDING;
