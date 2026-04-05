@@ -16,8 +16,7 @@ pub fn daemonize() -> Result<(), String> {
     setsid().map_err(|e| format!("setsid failed: {e}"))?;
 
     unsafe {
-        signal(Signal::SIGHUP, SigHandler::SigIgn)
-            .map_err(|e| format!("Failed to ignore SIGHUP: {e}"))?;
+        signal(Signal::SIGHUP, SigHandler::SigIgn).map_err(|e| format!("Failed to ignore SIGHUP: {e}"))?;
     }
 
     match unsafe { fork() } {
@@ -26,28 +25,18 @@ pub fn daemonize() -> Result<(), String> {
         Err(e) => return Err(format!("Second fork failed: {e}")),
     }
 
-    let dev_null =
-        File::open("/dev/null").map_err(|e| format!("Failed to open /dev/null: {e}"))?;
+    let dev_null = File::open("/dev/null").map_err(|e| format!("Failed to open /dev/null: {e}"))?;
     let fd = dev_null.as_raw_fd();
 
     unsafe {
         if libc::dup2(fd, 0) == -1 {
-            return Err(format!(
-                "dup2 stdin failed: {}",
-                std::io::Error::last_os_error()
-            ));
+            return Err(format!("dup2 stdin failed: {}", std::io::Error::last_os_error()));
         }
         if libc::dup2(fd, 1) == -1 {
-            return Err(format!(
-                "dup2 stdout failed: {}",
-                std::io::Error::last_os_error()
-            ));
+            return Err(format!("dup2 stdout failed: {}", std::io::Error::last_os_error()));
         }
         if libc::dup2(fd, 2) == -1 {
-            return Err(format!(
-                "dup2 stderr failed: {}",
-                std::io::Error::last_os_error()
-            ));
+            return Err(format!("dup2 stderr failed: {}", std::io::Error::last_os_error()));
         }
     }
 

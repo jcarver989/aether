@@ -64,20 +64,14 @@ pub struct LspdArgs {
 }
 
 pub fn run_lspd(args: LspdArgs) -> Result<(), String> {
-    let idle_timeout = if args.idle_timeout == 0 {
-        None
-    } else {
-        Some(Duration::from_secs(args.idle_timeout))
-    };
+    let idle_timeout = if args.idle_timeout == 0 { None } else { Some(Duration::from_secs(args.idle_timeout)) };
 
     daemonize::daemonize()?;
 
-    let runtime =
-        tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create tokio runtime: {e}"))?;
+    let runtime = tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create tokio runtime: {e}"))?;
 
     runtime.block_on(async {
-        let filter =
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&args.log_level));
+        let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&args.log_level));
 
         if let Some(ref log_file) = args.log_file {
             if let Some(parent) = log_file.parent() {
@@ -96,15 +90,10 @@ pub fn run_lspd(args: LspdArgs) -> Result<(), String> {
                 .with_writer(file.with_max_level(tracing::Level::TRACE))
                 .init();
         } else {
-            tracing_subscriber::fmt()
-                .with_env_filter(filter)
-                .with_target(true)
-                .init();
+            tracing_subscriber::fmt().with_env_filter(filter).with_target(true).init();
         }
 
         tracing::info!("Starting LSP daemon on socket: {:?}", args.socket);
-        run_daemon(args.socket, idle_timeout)
-            .await
-            .map_err(|e| format!("Daemon error: {e}"))
+        run_daemon(args.socket, idle_timeout).await.map_err(|e| format!("Daemon error: {e}"))
     })
 }
