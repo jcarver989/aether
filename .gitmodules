@@ -1,3 +1,0 @@
-[submodule "vendored/gitui"]
-	path = vendored/gitui
-	url = git@github.com:gitui-org/gitui.git
