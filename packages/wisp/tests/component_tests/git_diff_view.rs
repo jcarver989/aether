@@ -1,6 +1,6 @@
 use std::path::PathBuf;
-use tui::ViewContext;
 use tui::testing::{assert_buffer_eq, cols, render_component, render_lines};
+use tui::{GUTTER_WIDTH, SEPARATOR_WIDTH, ViewContext};
 use wisp::components::app::{GitDiffLoadState, GitDiffMode};
 use wisp::components::patch_renderer::build_patch_lines;
 use wisp::git_diff::{FileDiff, FileStatus, GitDiffDocument, Hunk, PatchLine, PatchLineKind};
@@ -89,6 +89,91 @@ fn make_mode(doc: GitDiffDocument) -> GitDiffMode {
     let mut mode = GitDiffMode::new(PathBuf::from("."));
     mode.load_document(doc);
     mode
+}
+
+fn make_wrapping_split_doc() -> GitDiffDocument {
+    GitDiffDocument {
+        repo_root: PathBuf::from("/tmp/test"),
+        files: vec![FileDiff {
+            old_path: Some("x.rs".to_string()),
+            path: "x.rs".to_string(),
+            status: FileStatus::Modified,
+            hunks: vec![Hunk {
+                header: "@@ -1,2 +1,2 @@".to_string(),
+                old_start: 1,
+                old_count: 2,
+                new_start: 1,
+                new_count: 2,
+                lines: vec![
+                    PatchLine {
+                        kind: PatchLineKind::HunkHeader,
+                        text: "@@ -1,2 +1,2 @@".to_string(),
+                        old_line_no: None,
+                        new_line_no: None,
+                    },
+                    PatchLine {
+                        kind: PatchLineKind::Removed,
+                        text: "LEFT_MARK".to_string(),
+                        old_line_no: Some(1),
+                        new_line_no: None,
+                    },
+                    PatchLine {
+                        kind: PatchLineKind::Added,
+                        text: format!("RIGHT_HEAD {} RIGHT_TAIL", "A".repeat(140)),
+                        old_line_no: None,
+                        new_line_no: Some(1),
+                    },
+                    PatchLine {
+                        kind: PatchLineKind::Context,
+                        text: "}".to_string(),
+                        old_line_no: Some(2),
+                        new_line_no: Some(2),
+                    },
+                ],
+            }],
+            binary: false,
+        }],
+    }
+}
+
+#[test]
+fn wrapped_right_pane_rows_keep_a_neutral_boundary() {
+    let mut mode = make_mode(make_wrapping_split_doc());
+    let term = render_component(|ctx| mode.render_frame(ctx), 140, 12);
+    let lines = term.get_lines();
+
+    let first_row = lines
+        .iter()
+        .position(|line| line.contains("LEFT_MARK") && line.contains("RIGHT_HEAD"))
+        .expect("expected split row containing both left and right markers");
+
+    let right_start = lines[first_row].find("RIGHT_HEAD").expect("expected RIGHT_HEAD marker in first row");
+
+    let wrapped_idx = lines
+        .iter()
+        .enumerate()
+        .skip(first_row + 1)
+        .find_map(|(index, line)| line.contains("RIGHT_TAIL").then_some(index))
+        .expect("expected wrapped continuation row containing RIGHT_TAIL marker");
+
+    let wrapped_start = lines[wrapped_idx].find("RIGHT_TAIL").expect("expected RIGHT_TAIL marker in wrapped row");
+
+    assert!(
+        wrapped_start >= right_start,
+        "wrapped continuation should not start left of original right-pane content start (was {wrapped_start}, expected >= {right_start})"
+    );
+
+    let right_panel_start = right_start.saturating_sub(GUTTER_WIDTH);
+    assert!(
+        right_panel_start >= SEPARATOR_WIDTH,
+        "right pane start must reserve separator width: start={right_panel_start}, separator={SEPARATOR_WIDTH}"
+    );
+
+    let neutral_bg = ViewContext::new((140, 12)).theme.code_bg();
+    for col in (right_panel_start - SEPARATOR_WIDTH)..right_panel_start {
+        let actual_bg = term.get_style_at(wrapped_idx, col).bg;
+        assert_eq!(actual_bg, Some(neutral_bg), "boundary column {col} should use neutral background, not added bg");
+    }
 }
 
 fn make_long_header_doc() -> GitDiffDocument {

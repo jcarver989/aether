@@ -10,8 +10,8 @@ use crate::{DiffPreview, DiffTag, SplitDiffCell};
 const MAX_DIFF_LINES: usize = 20;
 pub const MIN_SPLIT_WIDTH: u16 = 80;
 pub const GUTTER_WIDTH: usize = 5;
-pub const SEPARATOR: &str = "";
-pub const SEPARATOR_WIDTH: usize = 0;
+pub const SEPARATOR: &str = "   ";
+pub const SEPARATOR_WIDTH: usize = 3;
 const FIXED_OVERHEAD: usize = GUTTER_WIDTH * 2 + SEPARATOR_WIDTH;
 
 /// Renders a diff preview, choosing split or unified based on terminal width
@@ -57,7 +57,7 @@ fn highlight_split_diff(preview: &DiffPreview, context: &ViewContext) -> Vec<Lin
             let right = right_lines.get(i).cloned().unwrap_or_else(|| blank_panel(right_panel));
 
             let mut line = left;
-            line.push_styled(SEPARATOR, theme.muted());
+            line.push_with_style(SEPARATOR, Style::fg(theme.muted()).bg_color(theme.code_bg()));
             line.append_line(&right);
             lines.push(line);
         }
@@ -179,6 +179,70 @@ mod tests {
 
     fn added_cell(content: &str, line_num: usize) -> SplitDiffCell {
         SplitDiffCell { tag: DiffTag::Added, content: content.to_string(), line_number: Some(line_num) }
+    }
+
+    fn style_at_column(line: &Line, col: usize) -> Style {
+        let mut current = 0;
+        for span in line.spans() {
+            let width = crate::display_width_text(span.text());
+            if col < current + width {
+                return span.style();
+            }
+            current += width;
+        }
+        Style::default()
+    }
+
+    #[test]
+    fn wrapped_split_rows_preserve_neutral_boundary_columns() {
+        let preview = make_split_preview(vec![SplitDiffRow {
+            left: Some(removed_cell("LEFT_MARK", 1)),
+            right: Some(added_cell(&format!("RIGHT_HEAD {} RIGHT_TAIL", "y".repeat(140)), 1)),
+        }]);
+        let ctx = test_context_with_width(100);
+        let lines = highlight_split_diff(&preview, &ctx);
+
+        let first_row = lines
+            .iter()
+            .position(|line| {
+                let text = line.plain_text();
+                text.contains("LEFT_MARK") && text.contains("RIGHT_HEAD")
+            })
+            .expect("expected split row containing both left and right markers");
+
+        let right_start =
+            lines[first_row].plain_text().find("RIGHT_HEAD").expect("expected RIGHT_HEAD marker in first split row");
+
+        let wrapped_row = lines
+            .iter()
+            .enumerate()
+            .skip(first_row + 1)
+            .find_map(|(index, line)| line.plain_text().contains("RIGHT_TAIL").then_some(index))
+            .expect("expected wrapped continuation row containing RIGHT_TAIL marker");
+
+        let wrapped_start = lines[wrapped_row]
+            .plain_text()
+            .find("RIGHT_TAIL")
+            .expect("expected RIGHT_TAIL marker in wrapped continuation row");
+
+        assert!(
+            wrapped_start >= right_start,
+            "wrapped continuation should not start left of original right-pane content start (was {wrapped_start}, expected >= {right_start})"
+        );
+
+        let right_panel_start = right_start.saturating_sub(GUTTER_WIDTH);
+        assert!(
+            right_panel_start >= SEPARATOR_WIDTH,
+            "right pane start must leave room for separator columns, got right_start={right_panel_start}, separator={SEPARATOR_WIDTH}"
+        );
+
+        let neutral_bg = ctx.theme.code_bg();
+        let added_bg = ctx.theme.diff_added_bg();
+        for col in (right_panel_start - SEPARATOR_WIDTH)..right_panel_start {
+            let style = style_at_column(&lines[wrapped_row], col);
+            assert_eq!(style.bg, Some(neutral_bg), "separator column {col} should use neutral code background");
+            assert_ne!(style.bg, Some(added_bg), "separator column {col} should not inherit added background");
+        }
     }
 
     #[test]
