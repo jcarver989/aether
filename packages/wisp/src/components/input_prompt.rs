@@ -1,5 +1,4 @@
 use tui::{Line, ViewContext};
-use unicode_width::UnicodeWidthChar;
 
 pub fn prompt_content_width(terminal_width: usize) -> usize {
     terminal_width.saturating_sub(2).max(1)
@@ -26,14 +25,14 @@ impl InputPrompt<'_> {
     pub fn layout(&self, context: &ViewContext) -> InputPromptLayout {
         let width = usize::from(context.size.width);
         let cursor_index = clamp_to_char_boundary(self.input, self.cursor_index);
-        let cursor_display_width = plain_display_width(&self.input[..cursor_index]);
         let styled_input = style_input(self.input, context);
 
         let content_width = prompt_content_width(width);
-        let wrapped_chunks = styled_input.soft_wrap(u16::try_from(content_width).unwrap_or(u16::MAX));
+        let content_width_u16 = u16::try_from(content_width).unwrap_or(u16::MAX);
+        let wrapped_chunks = styled_input.soft_wrap(content_width_u16);
 
-        let cursor_content_row = cursor_display_width / content_width;
-        let cursor_content_col = cursor_display_width % content_width;
+        let (cursor_content_row, cursor_content_col) =
+            wrapped_cursor_position(self.input, cursor_index, content_width_u16);
 
         let content_rows = wrapped_chunks.len().max(cursor_content_row + 1);
 
@@ -99,16 +98,20 @@ fn style_mentions(input: &str, context: &ViewContext) -> Line {
     styled
 }
 
-fn plain_display_width(text: &str) -> usize {
-    text.chars().map(|ch| UnicodeWidthChar::width(ch).unwrap_or(0)).sum()
-}
-
 fn clamp_to_char_boundary(text: &str, mut idx: usize) -> usize {
     idx = idx.min(text.len());
     while !text.is_char_boundary(idx) {
         idx = idx.saturating_sub(1);
     }
     idx
+}
+
+fn wrapped_cursor_position(input: &str, cursor_index: usize, content_width: u16) -> (usize, usize) {
+    let cursor_index = clamp_to_char_boundary(input, cursor_index);
+    let wrapped_prefix = Line::new(&input[..cursor_index]).soft_wrap(content_width);
+    let row = wrapped_prefix.len().saturating_sub(1);
+    let col = wrapped_prefix.last().map_or(0, |line| line.display_width());
+    (row, col)
 }
 
 #[cfg(test)]
@@ -195,4 +198,5 @@ mod tests {
         assert!(lines[1].plain_text().contains("@main.rs"));
         assert!(lines[1].plain_text().contains("explain this"));
     }
+
 }

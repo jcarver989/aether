@@ -161,3 +161,30 @@ async fn test_paste_closes_file_picker() {
     let expected = expected_prompt(80, "@pasted text", TEST_AGENT);
     assert_buffer_eq(renderer.writer(), &expected);
 }
+
+#[tokio::test]
+async fn test_cursor_position_after_whitespace_wrap() {
+    let width: u16 = 12;
+    let terminal = TestTerminal::new(width, 24);
+    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (width, 24));
+    renderer.initial_render().unwrap();
+
+    type_string(&mut renderer, "abc def ghi").await;
+
+    let rule = "─".repeat(width as usize);
+    let expected = vec![rule.clone(), "> abc def".to_string(), "  ghi".to_string(), rule.clone(), p(TEST_AGENT)];
+    assert_buffer_eq(renderer.writer(), &expected);
+
+    let (cursor_col, cursor_row) = renderer.writer().cursor_position();
+    assert_eq!(cursor_row, 2, "cursor should be on the second content row (row 2)");
+    assert_eq!(cursor_col, 5, "cursor should be at col 5 (2 prefix + 3 for 'ghi')");
+
+    type_string(&mut renderer, "j").await;
+
+    let expected_after = vec![rule.clone(), "> abc def".to_string(), "  ghij".to_string(), rule, p(TEST_AGENT)];
+    assert_buffer_eq(renderer.writer(), &expected_after);
+
+    let (cursor_col_after, cursor_row_after) = renderer.writer().cursor_position();
+    assert_eq!(cursor_row_after, 2, "cursor should stay on the second content row after typing 'j'");
+    assert_eq!(cursor_col_after, 6, "cursor should advance to col 6 (2 prefix + 4 for 'ghij')");
+}
