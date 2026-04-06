@@ -32,3 +32,7 @@ Output your plan as structured markdown, in this format:
 2. Solution -- a short summary of the proposed solution
 3. Technical details -- implementation details with code examples of structs, schemas etc
 4. Additional details -- this includes anything else a junior engineer would need, e.g. a list of files to modify to implement the solution
+
+## Task
+
+The task to plan is: <task>$ARGUMENTS</task>
