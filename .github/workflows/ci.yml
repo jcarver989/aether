@@ -14,12 +14,20 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
+          components: rustfmt, clippy, rust-analyzer
+      - name: Install TypeScript language server
+        run: npm install -g typescript typescript-language-server
+      - uses: jdx/mise-action@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Build aether-lspd
+        run: cargo build -p aether-lspd
       - name: Check formatting
-        run: cargo fmt --all --check
+        run: just fmt-check
 
   lint:
     name: Clippy
@@ -32,8 +40,13 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: rustfmt, clippy, rust-analyzer
+      - name: Install TypeScript language server
+        run: npm install -g typescript typescript-language-server
+      - uses: jdx/mise-action@v4
       - uses: Swatinem/rust-cache@v2
+      - name: Build aether-lspd
+        run: cargo build -p aether-lspd
       - name: Clippy check
         run: just lint
 
@@ -48,7 +61,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rust-analyzer
+          components: rustfmt, clippy, rust-analyzer
       - name: Install TypeScript language server
         run: npm install -g typescript typescript-language-server
       - uses: jdx/mise-action@v4
@@ -68,6 +81,13 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy, rust-analyzer
+      - name: Install TypeScript language server
+        run: npm install -g typescript typescript-language-server
+      - uses: jdx/mise-action@v4
       - uses: Swatinem/rust-cache@v2
+      - name: Build aether-lspd
+        run: cargo build -p aether-lspd
       - name: Check documentation
         run: just doc-check
