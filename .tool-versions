@@ -1,4 +1,4 @@
 just 1.43.1
-cargo-nextest 0.9.126
+aqua:nextest-rs/nextest/cargo-nextest 0.9.126
 cargo-dist 0.31.0
 git-cliff 2.12.0
