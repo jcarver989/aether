@@ -14,27 +14,27 @@ check:
     cargo check
 
 # Run tests with nextest
-test *ARGS:
-    cargo nextest run {{ARGS}}
+test *PKGS:
+    cargo nextest run --all-features {{ if PKGS == "" { "--workspace" } else { PKGS } }}
 
-# Run tests for a specific package
-test-pkg PKG *ARGS:
-    cargo nextest run -p {{PKG}} {{ARGS}}
+# Check formatting
+fmt-check *PKGS:
+    cargo fmt --check {{ if PKGS == "" { "--all" } else { PKGS } }}
 
 # Format code
 fmt:
-    cargo fmt
-
-# Check formatting without modifying
-fmt-check:
-    cargo fmt --check
+    cargo fmt --all
 
 # Run clippy
-lint:
-    cargo clippy --workspace
+lint *PKGS:
+    cargo clippy --all-targets --all-features {{ if PKGS == "" { "--workspace" } else { PKGS } }} -- -D warnings
 
-# Format + lint
-check-all: fmt-check lint
+# Check documentation builds without warnings
+doc-check *PKGS:
+    RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --all-features {{ if PKGS == "" { "--workspace --examples" } else { PKGS } }}
+
+# Run all CI checks
+ci: fmt-check lint test doc-check
 
 # Initialize or update cargo-dist configuration and CI workflows
 dist-init:

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Run a just recipe scoped to changed packages.
+# Usage: run-check <just-recipe> <files...>
+set -euo pipefail
+cmd="$1"; shift
+PKG_FLAGS=$(scripts/changed-packages "$@")
+[ -n "$PKG_FLAGS" ] && just "$cmd" $PKG_FLAGS

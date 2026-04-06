@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
 # Extract unique workspace package names from file paths passed as arguments.
+# Reads the actual Cargo package name from each package's Cargo.toml.
 # Usage: changed-packages file1.rs file2.rs ... -- outputs -p pkg1 -p pkg2 ...
 set -euo pipefail
 
-packages=""
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+dirs=""
 for f in "$@"; do
     case "$f" in
         packages/*/*)
-            pkg=$(echo "$f" | cut -d/ -f2)
-            packages="$packages $pkg"
+            dir=$(echo "$f" | cut -d/ -f2)
+            dirs="$dirs $dir"
             ;;
     esac
 done
 
-# Deduplicate and print -p flags
-echo "$packages" | tr ' ' '\n' | sort -u | sed '/^$/d' | while read -r pkg; do
-    printf -- '-p %s ' "$pkg"
+echo "$dirs" | tr ' ' '\n' | sort -u | sed '/^$/d' | while read -r dir; do
+    toml="$REPO_ROOT/packages/$dir/Cargo.toml"
+    if [ -f "$toml" ]; then
+        pkg=$(grep '^name' "$toml" | head -1 | sed 's/.*= *"//;s/".*//')
+        printf -- '-p %s ' "$pkg"
+    fi
 done

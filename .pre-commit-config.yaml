@@ -9,24 +9,33 @@ repos:
         pass_filenames: true
         stages: [pre-commit]
 
-      - id: cargo-fmt
-        name: cargo fmt
-        entry: bash -c 'PKG_FLAGS=$(scripts/changed-packages "$@") && [ -n "$PKG_FLAGS" ] && cargo fmt --check $PKG_FLAGS || true' --
+      - id: fmt-check
+        name: just fmt-check
+        entry: scripts/run-check fmt-check
         language: system
         types: [rust]
         pass_filenames: true
+        stages: [pre-commit, pre-push]
 
-      - id: cargo-clippy
-        name: cargo clippy
-        entry: bash -c 'PKG_FLAGS=$(scripts/changed-packages "$@") && [ -n "$PKG_FLAGS" ] && cargo clippy --all-targets --all-features $PKG_FLAGS -- -D warnings || true' --
+      - id: lint
+        name: just lint
+        entry: scripts/run-check lint
         language: system
         types: [rust]
         pass_filenames: true
         stages: [pre-push]
 
-      - id: cargo-test
-        name: cargo nextest run
-        entry: bash -c 'PKG_FLAGS=$(scripts/changed-packages "$@") && [ -n "$PKG_FLAGS" ] && cargo nextest run --all-features $PKG_FLAGS || true' --
+      - id: test
+        name: just test
+        entry: scripts/run-check test
+        language: system
+        types: [rust]
+        pass_filenames: true
+        stages: [pre-push]
+
+      - id: doc-check
+        name: just doc-check
+        entry: scripts/run-check doc-check
         language: system
         types: [rust]
         pass_filenames: true
