@@ -19,10 +19,6 @@ use rmcp::service::RunningService;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-async fn workspace_diagnostics(client: &RunningService<RoleClient, ClientInfo>) -> serde_json::Value {
-    call_tool(client, "lsp_check_errors", serde_json::json!({"input": {"scope": "workspace"}})).await
-}
-
 async fn poll_workspace_diagnostics(
     client: &RunningService<RoleClient, ClientInfo>,
     predicate: impl Fn(&serde_json::Value) -> bool,
