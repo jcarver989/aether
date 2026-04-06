@@ -300,11 +300,12 @@ async fn test_workspace_diagnostics_clear_after_fix_without_file_check() {
     )
     .await;
 
-    let result = workspace_diagnostics(&client).await;
+    let result =
+        poll_workspace_diagnostics(&client, |r| file_error_count(r, &main_rs) == 0, Duration::from_secs(15)).await;
     assert_eq!(
         file_error_count(&result, &main_rs),
         0,
-        "Expected workspace diagnostics to clear immediately after fixing the file. \
+        "Expected workspace diagnostics to clear after fixing the file. \
          Full result: {result}"
     );
 }

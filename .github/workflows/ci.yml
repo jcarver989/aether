@@ -26,5 +26,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build aether-lspd
         run: cargo build -p aether-lspd
-      - name: Run CI checks
-        run: just ci
+      - name: Check formatting
+        run: just fmt-check
+      - name: Clippy
+        run: just lint
+      - name: Test
+        run: just test
+      - name: Doc check
+        run: just doc-check
