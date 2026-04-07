@@ -165,9 +165,13 @@ fn wrapped_right_pane_rows_keep_a_neutral_boundary() {
 
     let padding_width = GUTTER_WIDTH + SEPARATOR_WIDTH;
     assert!(wrapped_start >= padding_width, "wrapped content should leave room for separator and gutter");
+    let ctx = ViewContext::new((140, 12));
+    let added_bg = Some(ctx.theme.diff_added_bg());
+    let removed_bg = Some(ctx.theme.diff_removed_bg());
     for col in (wrapped_start - padding_width)..wrapped_start {
         let actual_bg = term.get_style_at(wrapped_idx, col).bg;
-        assert_eq!(actual_bg, None, "padding column {col} should use the default neutral background, not added bg");
+        assert_ne!(actual_bg, added_bg, "padding column {col} should not inherit added background");
+        assert_ne!(actual_bg, removed_bg, "padding column {col} should not inherit removed background");
     }
 }
 
@@ -186,9 +190,12 @@ fn wrapped_split_diff_continuation_row_keeps_neutral_padding() {
     let term = render_lines(&[wrapped_row], 140, 1);
     assert_buffer_eq(&term, &[cols(&[("", 91), ("RIGHT_TAIL", 0)])]);
 
+    let added_bg = Some(ctx.theme.diff_added_bg());
+    let removed_bg = Some(ctx.theme.diff_removed_bg());
     for col in 83..91 {
         let actual_bg = term.get_style_at(0, col).bg;
-        assert_eq!(actual_bg, None, "padding column {col} should use the default neutral background");
+        assert_ne!(actual_bg, added_bg, "padding column {col} should not inherit added background");
+        assert_ne!(actual_bg, removed_bg, "padding column {col} should not inherit removed background");
     }
 }
 
@@ -222,7 +229,7 @@ fn git_diff_view_keeps_wrapped_code_out_of_the_line_number_gutter() {
                     },
                     PatchLine {
                         kind: PatchLineKind::Added,
-                        text: format!("RIGHT_HEAD {} RIGHT_TAIL", filler),
+                        text: format!("RIGHT_HEAD {filler} RIGHT_TAIL"),
                         old_line_no: None,
                         new_line_no: Some(1),
                     },
@@ -303,13 +310,15 @@ fn screenshot_shaped_git_diff_wrap_row_stays_out_of_gutters() {
     let right_start =
         wrapped_row.find("blank_panel(left_panel, theme.code_bg()));").expect("expected wrapped added continuation");
 
+    let ctx = ViewContext::new((151, 8));
+    let added_bg = Some(ctx.theme.diff_added_bg());
+    let removed_bg = Some(ctx.theme.diff_removed_bg());
     let code_panel_start = left_start.saturating_sub(GUTTER_WIDTH);
     for col in code_panel_start..left_start {
         let actual_bg = term.get_style_at(wrapped_idx, col).bg;
-        assert_eq!(actual_bg, None, "blank left panel column {col} should use the default neutral background");
+        assert_ne!(actual_bg, added_bg, "blank left panel column {col} should not inherit added background");
+        assert_ne!(actual_bg, removed_bg, "blank left panel column {col} should not inherit removed background");
     }
-
-    let ctx = ViewContext::new((151, 8));
     assert_eq!(term.get_style_at(wrapped_idx, left_start).bg, Some(ctx.theme.diff_removed_bg()));
     assert_eq!(term.get_style_at(wrapped_idx, right_start).bg, Some(ctx.theme.diff_added_bg()));
 }

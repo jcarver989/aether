@@ -1,36 +1,21 @@
 use super::App;
 use crate::components::status_line::StatusLine;
 use crate::settings;
-use tui::{Component, Frame, Layout, ViewContext};
+use tui::{Component, Frame, ViewContext};
 
 pub fn build_frame(app: &mut App, context: &ViewContext) -> Frame {
     if let Some(ref mut overlay) = app.settings_overlay {
         let overlay_frame = overlay.build_frame(context);
-
-        let status_line = make_status_line(app);
-        let mut layout = Layout::new();
-        layout.section(overlay_frame);
-        layout.section(Frame::new(status_line.render(context)));
-        return layout.into_frame();
+        return Frame::vstack(vec![overlay_frame, make_status_line(app).render(context)]);
     }
 
     if app.screen_router.is_git_diff() {
         let diff_frame = app.screen_router.render(context);
-        let status_line = make_status_line(app);
-        let status_lines = status_line.render(context);
-
-        let mut layout = Layout::new();
-        layout.section(diff_frame);
-        layout.section(Frame::new(status_lines));
-        return layout.into_frame();
+        return Frame::vstack(vec![diff_frame, make_status_line(app).render(context)]);
     }
 
     let conv_frame = app.conversation_screen.render(context);
-    let status_line = make_status_line(app);
-    let mut layout = Layout::new();
-    layout.section(conv_frame);
-    layout.section(Frame::new(status_line.render(context)));
-    layout.into_frame()
+    Frame::vstack(vec![conv_frame, make_status_line(app).render(context)])
 }
 
 fn make_status_line(app: &App) -> StatusLine<'_> {

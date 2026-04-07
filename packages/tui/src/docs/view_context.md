@@ -1,11 +1,11 @@
-The region this render call may draw into, plus the [`Theme`] in effect.
+The size this render call may draw into, plus the [`Theme`] in effect.
 
-A `ViewContext` describes an **allocated render region**, not the terminal size. When a parent component renders a child, it is responsible for narrowing the context to the child's slot before calling [`Component::render`](crate::Component::render). Children should treat `size` as authoritative — only the root component should assume the full terminal width.
+A `ViewContext` describes an **allocated size**, not the terminal size. When a parent component renders a child, it is responsible for narrowing the context to the child's slot before calling [`Component::render`](crate::Component::render). Children should treat `size` as authoritative — only the root component should assume the full terminal width.
 
-# Region contract
+# Size contract
 
-- Parents allocate regions and pass region-scoped contexts to children.
-- Children render into the region they were given. They do not negotiate width upward.
+- Parents allocate sizes and pass size-scoped contexts to children.
+- Children render into the size they were given. They do not negotiate width upward.
 - Composition (stacking, side-by-side layout, padding) happens on [`Frame`](crate::Frame), not by reaching back into the parent's `ViewContext`.
 
 # Construction
@@ -21,14 +21,14 @@ use tui::Theme;
 let ctx = ViewContext::new_with_theme((120, 40), Theme::default());
 ```
 
-# Region helpers
+# Size helpers
 
-When rendering a child into part of the parent's region, derive a new context with one of:
+When rendering a child into part of the parent's size, derive a new context with one of:
 
-- **`with_size((w, h))`** — Replace the entire region.
+- **`with_size((w, h))`** — Replace the entire size.
 - **`with_width(w)`** — Replace just the width, keep the height.
 - **`with_height(h)`** — Replace just the height, keep the width.
-- **`inset(insets)`** — Shrink the region by [`Insets`](crate::Insets) on each edge. Saturates at zero on each axis.
+- **`inset(insets)`** — Shrink the size by [`Insets`](crate::Insets) on each edge. Saturates at zero on each axis.
 
 All helpers preserve the theme and (when the `syntax` feature is enabled) the syntax highlighter.
 
@@ -44,13 +44,13 @@ let left = parent.with_width(40);
 let padded = parent.inset(Insets::horizontal(2));
 ```
 
+# `Size`
+
+[`Size`](crate::Size) holds the dimensions of an allocated render area as `width` (columns) and `height` (rows), both `u16`. Implements `From<(u16, u16)>` for convenient construction.
+
 # Other methods
 
 - **`highlighter()`** — Access the [`SyntaxHighlighter`](crate::SyntaxHighlighter) (requires feature `syntax`).
-
-# `Size`
-
-`Size` holds the region's dimensions as `width` (columns) and `height` (rows), both `u16`. Implements `From<(u16, u16)>` for convenient construction.
 
 # See also
 

@@ -125,8 +125,7 @@ mod tests {
             .lines()
             .iter()
             .find(|line| {
-                line.fill().is_some_and(|f| f.bg == Some(highlight_bg))
-                    || line.spans().iter().any(|s| s.style().bg == Some(highlight_bg))
+                line.fill() == Some(highlight_bg) || line.spans().iter().any(|s| s.style().bg == Some(highlight_bg))
             })
             .map(tui::Line::plain_text)
     }

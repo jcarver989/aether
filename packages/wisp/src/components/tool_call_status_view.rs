@@ -7,7 +7,8 @@ use crate::components::sub_agent_tracker::{SUB_AGENT_VISIBLE_TOOL_LIMIT, SubAgen
 use crate::components::tracked_tool_call::TrackedToolCall;
 use tui::BRAILLE_FRAMES as FRAMES;
 use tui::{
-    DiffLine, DiffPreview, DiffTag, FitOptions, Frame, Line, SplitDiffCell, SplitDiffRow, ViewContext, render_diff,
+    DiffLine, DiffPreview, DiffTag, FitOptions, Frame, Line, SplitDiffCell, SplitDiffRow, Style, ViewContext,
+    render_diff,
 };
 
 pub const MAX_TOOL_ARG_LENGTH: usize = 200;
@@ -22,25 +23,24 @@ pub(crate) fn render_tool_tree(
 ) -> Frame {
     let has_sub_agents = sub_agents.has_sub_agents(id);
 
-    let mut lines = if has_sub_agents {
-        Vec::new()
-    } else {
-        tool_calls.get(id).map(|tc| tool_call_view(tc, tick).render(context).into_lines()).unwrap_or_default()
-    };
+    let mut frames: Vec<Frame> = Vec::new();
+    if !has_sub_agents && let Some(tc) = tool_calls.get(id) {
+        frames.push(tool_call_view(tc, tick).render(context));
+    }
 
     if let Some(agents) = sub_agents.get(id) {
         for (i, agent) in agents.iter().enumerate() {
             if i > 0 {
-                lines.push(Line::default());
+                frames.push(Frame::new(vec![Line::default()]));
             }
-            lines.push(render_agent_header(agent, tick, context));
+            frames.push(render_agent_header(agent, tick, context));
 
             let hidden_count = agent.tool_order.len().saturating_sub(SUB_AGENT_VISIBLE_TOOL_LIMIT);
 
             if hidden_count > 0 {
                 let mut summary = Line::default();
                 summary.push_styled(format!("  … {hidden_count} earlier tool calls"), context.theme.muted());
-                lines.push(summary);
+                frames.push(Frame::new(vec![summary]));
             }
 
             let mut visible = agent
@@ -50,23 +50,19 @@ pub(crate) fn render_tool_tree(
                 .filter_map(|tool_id| agent.tool_calls.get(tool_id))
                 .peekable();
 
+            let muted = Style::fg(context.theme.muted());
             while let Some(tc) = visible.next() {
-                let connector = if visible.peek().is_some() { "  ├─ " } else { "  └─ " };
+                let is_last = visible.peek().is_none();
+                let (head_str, tail_str) = if is_last { ("  └─ ", "     ") } else { ("  ├─ ", "  │  ") };
+                let head = Line::with_style(head_str, muted);
+                let tail = Line::with_style(tail_str, muted);
 
-                let view = tool_call_view(tc, tick);
-                for tool_line in view.render(context).into_lines() {
-                    let mut indented = Line::default();
-                    indented.push_styled(connector, context.theme.muted());
-                    for span in tool_line.spans() {
-                        indented.push_with_style(span.text(), span.style());
-                    }
-                    lines.push(indented);
-                }
+                frames.push(tool_call_view(tc, tick).render(context).prefix(&head, &tail));
             }
         }
     }
 
-    Frame::new(lines).fit(context.size.width, FitOptions::wrap())
+    Frame::vstack(frames).fit(context.size.width, FitOptions::wrap())
 }
 
 pub(crate) fn tool_call_view(tc: &TrackedToolCall, tick: u16) -> ToolCallStatusView<'_> {
@@ -289,7 +285,7 @@ fn is_context_row(row: &SplitDiffRow) -> bool {
         && row.right.as_ref().is_none_or(|c| c.tag == DiffTag::Context)
 }
 
-fn render_agent_header(agent: &SubAgentState, tick: u16, context: &ViewContext) -> Line {
+fn render_agent_header(agent: &SubAgentState, tick: u16, context: &ViewContext) -> Frame {
     let mut line = Line::default();
     line.push_text("  ");
     if agent.done {
@@ -300,7 +296,7 @@ fn render_agent_header(agent: &SubAgentState, tick: u16, context: &ViewContext) 
     }
     line.push_text(" ");
     line.push_text(&agent.agent_name);
-    line
+    Frame::new(vec![line])
 }
 
 fn format_arguments(arguments: &str) -> String {

@@ -67,9 +67,7 @@ pub fn display_width_line(line: &Line) -> usize {
 pub fn truncate_line(line: &Line, max_width: usize) -> Line {
     if max_width == 0 {
         let mut empty = Line::default();
-        if let Some(fill) = line.fill() {
-            empty.set_fill(fill);
-        }
+        empty.set_fill(line.fill());
         return empty;
     }
 
@@ -101,18 +99,14 @@ pub fn truncate_line(line: &Line, max_width: usize) -> Line {
         remaining -= col;
     }
 
-    if let Some(fill) = line.fill() {
-        result.set_fill(fill);
-    }
+    result.set_fill(line.fill());
     result
 }
 
 pub fn soft_wrap_line(line: &Line, width: u16) -> Vec<Line> {
     if line.is_empty() {
         let mut empty = Line::new("");
-        if let Some(fill) = line.fill() {
-            empty.set_fill(fill);
-        }
+        empty.set_fill(line.fill());
         return vec![empty];
     }
 
@@ -183,7 +177,8 @@ pub fn soft_wrap_line(line: &Line, width: u16) -> Vec<Line> {
 
     rows.push(current);
 
-    if let Some(fill) = line.fill() {
+    let fill = line.fill();
+    if fill.is_some() {
         for row in &mut rows {
             row.set_fill(fill);
         }
@@ -445,31 +440,28 @@ mod tests {
 
     #[test]
     fn soft_wrap_propagates_fill_to_each_wrapped_row() {
-        use crate::style::Style;
-        let line = Line::new("abcdef").with_fill(Style::default().bg_color(Color::Red));
+        let line = Line::new("abcdef").with_fill(Color::Red);
         let rows = soft_wrap_line(&line, 3);
         assert_eq!(rows.len(), 2);
         for row in &rows {
-            assert_eq!(row.fill(), Some(Style::default().bg_color(Color::Red)));
+            assert_eq!(row.fill(), Some(Color::Red));
         }
     }
 
     #[test]
     fn soft_wrap_preserves_fill_on_empty_line() {
-        use crate::style::Style;
-        let line = Line::default().with_fill(Style::default().bg_color(Color::Red));
+        let line = Line::default().with_fill(Color::Red);
         let rows = soft_wrap_line(&line, 10);
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].fill(), Some(Style::default().bg_color(Color::Red)));
+        assert_eq!(rows[0].fill(), Some(Color::Red));
     }
 
     #[test]
     fn truncate_line_preserves_fill_metadata() {
-        use crate::style::Style;
-        let line = Line::new("abcdef").with_fill(Style::default().bg_color(Color::Blue));
+        let line = Line::new("abcdef").with_fill(Color::Blue);
         let truncated = truncate_line(&line, 3);
         assert_eq!(truncated.plain_text(), "abc");
-        assert_eq!(truncated.fill(), Some(Style::default().bg_color(Color::Blue)));
+        assert_eq!(truncated.fill(), Some(Color::Blue));
     }
 
     #[test]

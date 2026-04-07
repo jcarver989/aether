@@ -8,23 +8,31 @@ use crate::syntax_highlighting::SyntaxHighlighter;
 #[doc = include_str!("../docs/view_context.md")]
 #[derive(Clone)]
 pub struct ViewContext {
+    /// The size this context allows the component to draw into. This is *not*
+    /// the terminal size — parents pass child contexts whose size is the slice
+    /// of the terminal allocated to the child.
     pub size: Size,
     pub theme: Arc<Theme>,
     #[cfg(feature = "syntax")]
     pub(crate) highlighter: Arc<SyntaxHighlighter>,
 }
 
-/// Dimensions of an allocated render region in columns and rows.
+/// The size, in columns and rows, a component is permitted to draw into.
+///
+/// Parents produce child sizes by slicing their own (via
+/// [`ViewContext::with_width`], [`ViewContext::with_height`], or
+/// [`ViewContext::inset`]). Children should treat the size as authoritative
+/// and never assume the full terminal width.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Size {
     pub width: u16,
     pub height: u16,
 }
 
-/// Edge insets used to shrink a [`ViewContext`] into a sub-region.
+/// Edge insets used to shrink a [`ViewContext`] to a smaller size.
 ///
 /// Used by parents that want to render a child inside a padded box: subtract
-/// the insets from the parent region to get the child's allocated region.
+/// the insets from the parent size to get the child's allocated size.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Insets {
     pub left: u16,
@@ -78,7 +86,7 @@ impl ViewContext {
         &self.highlighter
     }
 
-    /// Clone this context with a new region size, preserving theme state.
+    /// Clone this context with a new size, preserving theme state.
     pub fn with_size(&self, size: impl Into<Size>) -> Self {
         Self {
             size: size.into(),
@@ -98,7 +106,7 @@ impl ViewContext {
         self.with_size((self.size.width, height))
     }
 
-    /// Clone this context with the region shrunk by `insets` on each side.
+    /// Clone this context with the size shrunk by `insets` on each side.
     /// Saturates at zero on each axis.
     pub fn inset(&self, insets: Insets) -> Self {
         let width = self.size.width.saturating_sub(insets.left).saturating_sub(insets.right);

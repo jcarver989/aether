@@ -296,6 +296,72 @@ fn left_child_wider_than_allocation_does_not_bleed_into_right_pane() {
     assert_buffer_eq(&term, &["1234567890AB|RIGHT", "CDEFGHIJ    |", "            |"]);
 }
 
+#[test]
+fn render_emits_exactly_context_height_rows() {
+    let mut split = SplitPanel::new(
+        WideComponent { text: "1234567890ABCDEFGHIJKLMNOPQRSTUV" },
+        StubComponent::new("R"),
+        SplitLayout::fixed(15),
+    );
+    let ctx = ViewContext::new((40, 4));
+    let frame = split.render(&ctx);
+    assert_eq!(frame.lines().len(), 4, "split panel must always emit ctx.region.height rows");
+}
+
+#[test]
+fn render_pads_to_context_height_when_children_are_shorter() {
+    let mut split = make_split();
+    let ctx = ViewContext::new((40, 6));
+    let frame = split.render(&ctx);
+    assert_eq!(frame.lines().len(), 6);
+}
+
+#[test]
+fn cursor_is_hidden_when_focused_child_cursor_falls_beyond_truncation() {
+    struct DeepCursorComponent;
+    impl Component for DeepCursorComponent {
+        type Message = ();
+        async fn on_event(&mut self, _: &Event) -> Option<Vec<()>> {
+            None
+        }
+        fn render(&mut self, _ctx: &ViewContext) -> Frame {
+            let lines: Vec<Line> = (0..10).map(|i| Line::new(format!("row{i}"))).collect();
+            Frame::new(lines).with_cursor(Cursor::visible(8, 0))
+        }
+    }
+
+    let mut split = SplitPanel::new(StubComponent::new("L"), DeepCursorComponent, SplitLayout::fixed(15));
+    split.focus_right();
+
+    let ctx = ViewContext::new((40, 4));
+    let frame = split.render(&ctx);
+    assert!(!frame.cursor().is_visible, "cursor at row 8 must be hidden after truncation to 4 rows");
+}
+
+#[test]
+fn cursor_remains_visible_when_focused_child_cursor_in_visible_range() {
+    struct CursorComponent;
+    impl Component for CursorComponent {
+        type Message = ();
+        async fn on_event(&mut self, _: &Event) -> Option<Vec<()>> {
+            None
+        }
+        fn render(&mut self, _ctx: &ViewContext) -> Frame {
+            let lines: Vec<Line> = (0..10).map(|i| Line::new(format!("row{i}"))).collect();
+            Frame::new(lines).with_cursor(Cursor::visible(2, 1))
+        }
+    }
+
+    let mut split = SplitPanel::new(StubComponent::new("L"), CursorComponent, SplitLayout::fixed(15));
+    split.focus_right();
+
+    let ctx = ViewContext::new((40, 4));
+    let frame = split.render(&ctx);
+    assert!(frame.cursor().is_visible);
+    assert_eq!(frame.cursor().row, 2);
+    assert_eq!(frame.cursor().col, 1 + 15);
+}
+
 #[tokio::test]
 async fn focus_left_and_focus_right() {
     let mut split = make_split();

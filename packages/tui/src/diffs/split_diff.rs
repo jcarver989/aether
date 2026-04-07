@@ -1,6 +1,6 @@
 use crate::diffs::diff::highlight_diff;
 use crate::line::Line;
-use crate::rendering::frame::{FitOptions, Frame};
+use crate::rendering::frame::{FitOptions, Frame, FramePart};
 use crate::rendering::render_context::ViewContext;
 use crate::span::Span;
 use crate::style::Style;
@@ -12,6 +12,7 @@ pub const MIN_SPLIT_WIDTH: u16 = 80;
 pub const GUTTER_WIDTH: usize = 5;
 pub const SEPARATOR: &str = "   ";
 pub const SEPARATOR_WIDTH: usize = 3;
+const SEPARATOR_WIDTH_U16: u16 = 3;
 const FIXED_OVERHEAD: usize = GUTTER_WIDTH * 2 + SEPARATOR_WIDTH;
 
 /// Renders a diff preview, choosing split or unified based on terminal width
@@ -35,36 +36,39 @@ fn highlight_split_diff(preview: &DiffPreview, context: &ViewContext) -> Vec<Lin
     let usable = terminal_width.saturating_sub(FIXED_OVERHEAD);
     let left_content = usable / 2;
     let right_content = usable - left_content;
-    let left_panel = GUTTER_WIDTH + left_content;
-    let right_panel = GUTTER_WIDTH + right_content;
+    #[allow(clippy::cast_possible_truncation)]
+    let left_panel_u16 = (GUTTER_WIDTH + left_content) as u16;
+    #[allow(clippy::cast_possible_truncation)]
+    let right_panel_u16 = (GUTTER_WIDTH + right_content) as u16;
+    let sep_style = Style::fg(theme.muted()).bg_color(theme.background());
 
-    let mut lines = Vec::new();
+    let mut row_frames: Vec<Frame> = Vec::new();
     let mut visual_lines = 0usize;
     let mut rows_consumed = 0usize;
 
     for row in &preview.rows {
-        let left_lines = render_cell(row.left.as_ref(), left_content, &preview.lang_hint, context);
-        let right_lines = render_cell(row.right.as_ref(), right_content, &preview.lang_hint, context);
+        let left_frame = render_cell(row.left.as_ref(), left_content, &preview.lang_hint, context);
+        let right_frame = render_cell(row.right.as_ref(), right_content, &preview.lang_hint, context);
 
-        let height = left_lines.len().max(right_lines.len());
+        let height = left_frame.lines().len().max(right_frame.lines().len());
 
         if visual_lines + height > MAX_DIFF_LINES && visual_lines > 0 {
             break;
         }
 
-        for i in 0..height {
-            let left = left_lines.get(i).cloned().unwrap_or_else(|| blank_panel(left_panel));
-            let right = right_lines.get(i).cloned().unwrap_or_else(|| blank_panel(right_panel));
-
-            let mut line = left;
-            line.push_with_style(SEPARATOR, Style::fg(theme.muted()));
-            line.append_line(&right);
-            lines.push(line);
-        }
+        let sep_line = Line::with_style(SEPARATOR.to_string(), sep_style);
+        let sep_frame = Frame::new(vec![sep_line; height]);
+        row_frames.push(Frame::hstack([
+            FramePart::new(left_frame, left_panel_u16),
+            FramePart::new(sep_frame, SEPARATOR_WIDTH_U16),
+            FramePart::new(right_frame, right_panel_u16),
+        ]));
 
         visual_lines += height;
         rows_consumed += 1;
     }
+
+    let mut lines = Frame::vstack(row_frames).into_lines();
 
     if rows_consumed < preview.rows.len() {
         let remaining = preview.rows.len() - rows_consumed;
@@ -76,7 +80,7 @@ fn highlight_split_diff(preview: &DiffPreview, context: &ViewContext) -> Vec<Lin
     lines
 }
 
-pub fn blank_panel(width: usize) -> Line {
+fn blank_panel(width: usize) -> Line {
     let mut line = Line::default();
     line.push_text(" ".repeat(width));
     line
@@ -87,12 +91,12 @@ pub fn render_cell(
     content_width: usize,
     lang_hint: &str,
     context: &ViewContext,
-) -> Vec<Line> {
+) -> Frame {
     let theme = &context.theme;
     let panel_width = GUTTER_WIDTH + content_width;
 
     let Some(cell) = cell else {
-        return vec![blank_panel(panel_width)];
+        return Frame::new(vec![blank_panel(panel_width)]);
     };
 
     let is_context = cell.tag == DiffTag::Context;
@@ -137,32 +141,21 @@ pub fn render_cell(
     // content_width is derived from terminal width (u16), so it always fits in u16
     #[allow(clippy::cast_possible_truncation)]
     let content_width_u16 = content_width as u16;
-    let wrapped_frame = Frame::new(vec![content_line]).fit(content_width_u16, FitOptions::wrap());
 
-    wrapped_frame
-        .into_lines()
-        .into_iter()
-        .map(|mut line| {
+    let gutter_style = Style::fg(theme.muted());
+    let head = match cell.line_number {
+        Some(num) => Line::with_style(format!("{num:>4} "), gutter_style),
+        None => Line::with_style("     ".to_string(), gutter_style),
+    };
+    let tail = Line::new(" ".repeat(GUTTER_WIDTH));
+
+    Frame::new(vec![content_line])
+        .fit(content_width_u16, FitOptions::wrap())
+        .map_lines(|mut line| {
             line.extend_bg_to_width(content_width);
             line
         })
-        .enumerate()
-        .map(|(i, wrapped_line)| {
-            let mut line = Line::default();
-            let gutter_style = Style::fg(theme.muted());
-            if i == 0 {
-                if let Some(num) = cell.line_number {
-                    line.push_with_style(format!("{num:>4} "), gutter_style);
-                } else {
-                    line.push_with_style("     ", gutter_style);
-                }
-            } else {
-                line.push_text(" ".repeat(GUTTER_WIDTH));
-            }
-            line.append_line(&wrapped_line);
-            line
-        })
-        .collect()
+        .prefix(&head, &tail)
 }
 
 #[cfg(test)]
@@ -237,12 +230,13 @@ mod tests {
         );
 
         let added_bg = ctx.theme.diff_added_bg();
+        let removed_bg = ctx.theme.diff_removed_bg();
         let padding_width = GUTTER_WIDTH + SEPARATOR_WIDTH;
         assert!(right_start >= padding_width, "right pane content should leave room for separator and gutter");
         for col in (right_start - padding_width)..right_start {
             let style = style_at_column(&lines[wrapped_row], col);
-            assert_eq!(style.bg, None, "padding column {col} should use the default neutral background");
             assert_ne!(style.bg, Some(added_bg), "padding column {col} should not inherit added background");
+            assert_ne!(style.bg, Some(removed_bg), "padding column {col} should not inherit removed background");
         }
     }
 

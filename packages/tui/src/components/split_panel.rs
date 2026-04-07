@@ -1,6 +1,6 @@
 use super::component::{Component, Event};
 use crate::focus::{FocusOutcome, FocusRing};
-use crate::rendering::frame::{Cursor, FitOptions, Frame, FramePart};
+use crate::rendering::frame::{Cursor, Frame, FramePart};
 use crate::rendering::line::Line;
 use crate::rendering::render_context::ViewContext;
 use crate::style::Style;
@@ -176,7 +176,8 @@ impl<L: Component, R: Component> Component for SplitPanel<L, R> {
 
     fn render(&mut self, ctx: &ViewContext) -> Frame {
         let widths = self.widths(ctx.size.width);
-        let max_rows = usize::from(ctx.size.height);
+        let max_rows = ctx.size.height;
+        let total_width = ctx.size.width;
 
         let mut left = self.left.render(&ctx.with_width(widths.left));
         let mut right = self.right.render(&ctx.with_width(widths.right));
@@ -190,36 +191,19 @@ impl<L: Component, R: Component> Component for SplitPanel<L, R> {
             right = right.with_cursor(Cursor::hidden());
         }
 
-        let left = left.fit(widths.left, FitOptions::wrap().with_fill());
-        let right = right.fit(widths.right, FitOptions::wrap().with_fill());
+        let left_part = FramePart::wrap(left, widths.left);
+        let right_part = FramePart::wrap(right, widths.right);
+
         let merged = if let Some((text, style)) = &self.separator {
             let sep_proto = Line::with_style(text.clone(), *style);
             let sep_width = u16::try_from(sep_proto.display_width()).unwrap_or(0);
-            let sep_rows = left.lines().len().max(right.lines().len()).max(max_rows);
-
+            let sep_rows = left_part.frame.lines().len().max(right_part.frame.lines().len()).max(usize::from(max_rows));
             let sep_lines: Vec<Line> = (0..sep_rows).map(|_| sep_proto.clone()).collect();
-
-            Frame::hstack([
-                FramePart::new(left, widths.left),
-                FramePart::new(Frame::new(sep_lines), sep_width),
-                FramePart::new(right, widths.right),
-            ])
+            Frame::hstack([left_part, FramePart::new(Frame::new(sep_lines), sep_width), right_part])
         } else {
-            Frame::hstack([FramePart::new(left, widths.left), FramePart::new(right, widths.right)])
+            Frame::hstack([left_part, right_part])
         };
 
-        // SplitPanel always emits a full-height frame: truncate or pad with
-        // blank rows so it composes cleanly with sibling layouts.
-        let total_width = ctx.size.width;
-        let (mut lines, mut cursor) = merged.into_parts();
-        lines.truncate(max_rows);
-        if lines.len() < max_rows {
-            let blank = Line::new(" ".repeat(usize::from(total_width)));
-            lines.resize(max_rows, blank);
-        }
-        if cursor.is_visible && cursor.row >= max_rows {
-            cursor = Cursor::hidden();
-        }
-        Frame::new(lines).with_cursor(cursor)
+        merged.fit_height(max_rows, total_width)
     }
 }

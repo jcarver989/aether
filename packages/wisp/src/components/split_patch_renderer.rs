@@ -3,9 +3,11 @@ use crate::components::patch_renderer::{append_inline_comment_rows, build_commen
 use crate::git_diff::{FileDiff, PatchLine, PatchLineKind};
 use similar::{DiffOp as SimilarDiffOp, TextDiff};
 use tui::{
-    DiffTag, GUTTER_WIDTH, Line, SEPARATOR, SEPARATOR_WIDTH, SplitDiffCell, Style, ViewContext, split_blank_panel,
+    DiffTag, Frame, FramePart, GUTTER_WIDTH, Line, SEPARATOR, SEPARATOR_WIDTH, SplitDiffCell, Style, ViewContext,
     split_render_cell,
 };
+
+const SEPARATOR_WIDTH_U16: u16 = 3;
 
 pub fn build_split_patch_lines(
     file: &FileDiff,
@@ -21,8 +23,11 @@ pub fn build_split_patch_lines(
     let usable = right_width.saturating_sub(GUTTER_WIDTH * 2 + SEPARATOR_WIDTH);
     let left_content = usable / 2;
     let right_content = usable.saturating_sub(left_content);
-    let left_panel = GUTTER_WIDTH + left_content;
-    let right_panel = GUTTER_WIDTH + right_content;
+    #[allow(clippy::cast_possible_truncation)]
+    let left_panel_u16 = (GUTTER_WIDTH + left_content) as u16;
+    #[allow(clippy::cast_possible_truncation)]
+    let right_panel_u16 = (GUTTER_WIDTH + right_content) as u16;
+    let sep_style = Style::fg(theme.muted()).bg_color(theme.background());
 
     let mut patch_lines = Vec::new();
     let mut patch_refs = Vec::new();
@@ -72,27 +77,22 @@ pub fn build_split_patch_lines(
                         line_number: s.line_no,
                     });
 
-                    let left_rendered = split_render_cell(left_cell.as_ref(), left_content, lang_hint, context);
-                    let right_rendered = split_render_cell(right_cell.as_ref(), right_content, lang_hint, context);
+                    let left_frame = split_render_cell(left_cell.as_ref(), left_content, lang_hint, context);
+                    let right_frame = split_render_cell(right_cell.as_ref(), right_content, lang_hint, context);
 
-                    let height = left_rendered.len().max(right_rendered.len());
+                    let height = left_frame.lines().len().max(right_frame.lines().len());
 
-                    for i in 0..height {
-                        let l = left_rendered.get(i).cloned().unwrap_or_else(|| split_blank_panel(left_panel));
+                    let sep_line = Line::with_style(SEPARATOR.to_string(), sep_style);
+                    let sep_frame = Frame::new(vec![sep_line; height]);
+                    let row_frame = Frame::hstack([
+                        FramePart::new(left_frame, left_panel_u16),
+                        FramePart::new(sep_frame, SEPARATOR_WIDTH_U16),
+                        FramePart::new(right_frame, right_panel_u16),
+                    ]);
 
-                        let r = right_rendered.get(i).cloned().unwrap_or_else(|| split_blank_panel(right_panel));
-
-                        let mut line = l;
-                        line.push_with_style(SEPARATOR, Style::fg(theme.muted()));
-                        line.append_line(&r);
-                        patch_lines.push(line);
-
-                        if i == 0 {
-                            patch_refs.push(anchor);
-                        } else {
-                            patch_refs.push(None);
-                        }
-                    }
+                    patch_lines.extend(row_frame.into_lines());
+                    patch_refs.push(anchor);
+                    patch_refs.extend(std::iter::repeat_n(None, height.saturating_sub(1)));
                 }
             }
 

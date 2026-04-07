@@ -6,7 +6,7 @@ pub const BORDER_H_PAD: u16 = 4;
 
 /// A bordered panel for wrapping content blocks with title/footer chrome.
 ///
-/// For borderless stacking with cursor tracking, use [`Layout`](super::layout::Layout).
+/// For borderless stacking with cursor tracking, use [`Frame::vstack`](crate::Frame::vstack).
 ///
 /// # Example
 ///
@@ -22,7 +22,7 @@ pub const BORDER_H_PAD: u16 = 4;
 /// panel.push(vec![Line::new("Value: 42")]);
 ///
 /// let ctx = ViewContext::new((40, 20));
-/// let lines = panel.render(&ctx);
+/// let frame = panel.render(&ctx);
 /// ```
 pub struct Panel {
     blocks: Vec<Vec<Line>>,
@@ -68,79 +68,67 @@ impl Panel {
     }
 
     /// Render blocks with borders/chrome.
-    pub fn render(&self, context: &ViewContext) -> Vec<Line> {
+    pub fn render(&self, context: &ViewContext) -> Frame {
         let width = context.size.width as usize;
         let inner_width = width.saturating_sub(BORDER_H_PAD as usize);
+        let inner_width_u16 = u16::try_from(inner_width).unwrap_or(u16::MAX);
         let border_style = Style::fg(self.border_color);
+        let border_left = Line::new("│ ".to_string());
+        let border_right = Line::new(" │".to_string());
 
-        let mut lines = Vec::new();
+        let blank_border = || Frame::new(vec![empty_border_line(inner_width)]);
 
-        // ── Top border ──
         let title_text = self.title.as_deref().unwrap_or("");
         let bar_left = "┌─";
         let bar_right_pad =
             width.saturating_sub(UnicodeWidthStr::width(bar_left) + UnicodeWidthStr::width(title_text) + 1); // 1 for ┐
         let title_line = format!("{bar_left}{title_text}{:─>bar_right_pad$}┐", "", bar_right_pad = bar_right_pad);
-        lines.push(Line::with_style(title_line, border_style));
+        let top_frame = Frame::new(vec![Line::with_style(title_line, border_style)]);
 
-        // ── Blank line after top border ──
-        lines.push(empty_border_line(inner_width));
-
-        // ── Wrap pre-rendered blocks in borders ──
-        let inner_width_u16 = u16::try_from(inner_width).unwrap_or(u16::MAX);
+        let mut body_frames: Vec<Frame> = vec![blank_border()];
         for (i, block) in self.blocks.iter().enumerate() {
             if i > 0 {
                 for _ in 0..self.gap {
-                    lines.push(empty_border_line(inner_width));
+                    body_frames.push(blank_border());
                 }
             }
-            let block_frame = Frame::new(block.clone()).fit(inner_width_u16, FitOptions::wrap().with_fill());
-            for cl in block_frame.lines() {
-                lines.push(wrap_in_border(cl, inner_width));
-            }
+            body_frames.push(Frame::new(block.clone()).fit(inner_width_u16, FitOptions::wrap().with_fill()).wrap_each(
+                inner_width_u16,
+                &border_left,
+                &border_right,
+            ));
         }
+        let mut body_frame = Frame::vstack(body_frames);
 
-        // ── Fill padding ──
         if let Some(target_height) = self.fill_height {
-            // Reserve space for footer (1) + bottom border (1) = 2
-            let reserved = if self.footer.is_some() { 2 } else { 1 };
-            let target_content = target_height.saturating_sub(reserved);
-            while lines.len() < target_content {
-                lines.push(empty_border_line(inner_width));
+            // Reserve space for top border (1) + footer (0/1) + bottom border (1).
+            let chrome_rows = if self.footer.is_some() { 3 } else { 2 };
+            let target_body = target_height.saturating_sub(chrome_rows);
+            let current = body_frame.lines().len();
+            if current < target_body {
+                let pad: Vec<Frame> = (0..(target_body - current)).map(|_| blank_border()).collect();
+                body_frame = Frame::vstack(std::iter::once(body_frame).chain(pad));
             }
         }
 
-        // ── Footer ──
+        let mut chrome: Vec<Frame> = Vec::with_capacity(2);
         if let Some(ref footer_text) = self.footer {
             let footer_pad = inner_width.saturating_sub(UnicodeWidthStr::width(footer_text.as_str()));
             let footer_line_str = format!("│ {footer_text}{:footer_pad$} │", "", footer_pad = footer_pad);
-            lines.push(Line::with_style(footer_line_str, border_style));
+            chrome.push(Frame::new(vec![Line::with_style(footer_line_str, border_style)]));
         }
-
-        // ── Bottom border ──
         let bottom_inner = width.saturating_sub(2); // └ and ┘
         let bottom_line = format!("└{:─>bottom_inner$}┘", "", bottom_inner = bottom_inner);
-        lines.push(Line::with_style(bottom_line, border_style));
+        chrome.push(Frame::new(vec![Line::with_style(bottom_line, border_style)]));
 
-        // Clamp to fill_height if set
+        let result = Frame::vstack(std::iter::once(top_frame).chain(std::iter::once(body_frame)).chain(chrome));
+
         if let Some(target_height) = self.fill_height {
-            lines.truncate(target_height);
+            result.truncate_height(u16::try_from(target_height).unwrap_or(u16::MAX))
+        } else {
+            result
         }
-
-        lines
     }
-}
-
-/// Wrap a content line with `│ ... │` borders, extending any bg color through
-/// the padding so the highlight fills the full row width.
-fn wrap_in_border(content: &Line, inner_width: usize) -> Line {
-    let mut padded_content = content.clone();
-    padded_content.extend_bg_to_width(inner_width);
-
-    let mut line = Line::new("│ ".to_string());
-    line.append_line(&padded_content);
-    line.push_text(" │".to_string());
-    line
 }
 
 fn empty_border_line(inner_width: usize) -> Line {
@@ -156,7 +144,7 @@ mod tests {
         let mut container = Panel::new(Color::Grey).title(" Config ");
         container.push(vec![Line::new("x")]);
         let context = ViewContext::new((30, 10));
-        let lines = container.render(&context);
+        let lines = container.render(&context).into_lines();
         let top = lines[0].plain_text();
         assert!(top.starts_with("┌─ Config "), "top: {top}");
         assert!(top.ends_with('┐'), "top: {top}");
@@ -167,7 +155,7 @@ mod tests {
         let mut container = Panel::new(Color::Grey).footer("[Esc] Close");
         container.push(vec![Line::new("x")]);
         let context = ViewContext::new((30, 10));
-        let lines = container.render(&context);
+        let lines = container.render(&context).into_lines();
         let last = lines.last().unwrap().plain_text();
         assert!(last.starts_with('└'), "last: {last}");
         assert!(last.ends_with('┘'), "last: {last}");
@@ -180,7 +168,7 @@ mod tests {
         let mut container = Panel::new(Color::Grey).title(" T ").footer("F").fill_height(10);
         container.push(vec![Line::new("x")]);
         let context = ViewContext::new((30, 10));
-        let lines = container.render(&context);
+        let lines = container.render(&context).into_lines();
         assert_eq!(lines.len(), 10, "should fill to exactly 10 lines");
     }
 
@@ -189,7 +177,7 @@ mod tests {
         let mut container = Panel::new(Color::Cyan).title(" T ");
         container.push(vec![Line::new("x")]);
         let context = ViewContext::new((30, 10));
-        let lines = container.render(&context);
+        let lines = container.render(&context).into_lines();
         // Top border should have Cyan fg
         let top_span = &lines[0].spans()[0];
         assert_eq!(top_span.style().fg, Some(Color::Cyan));
@@ -204,7 +192,7 @@ mod tests {
         let mut container = Panel::new(Color::Grey);
         container.push(vec![Line::with_style("hi", Style::default().bg_color(bg))]);
         let context = ViewContext::new((20, 10));
-        let lines = container.render(&context);
+        let lines = container.render(&context).into_lines();
         // Content row (top border + blank + first content = index 2)
         let content_row = &lines[2];
         let bg_span =
@@ -218,7 +206,7 @@ mod tests {
         container.push(vec![Line::new("a")]);
         container.push(vec![Line::new("b")]);
         let context = ViewContext::new((20, 10));
-        let lines = container.render(&context);
+        let lines = container.render(&context).into_lines();
         // top border + blank + "a" + gap_blank + "b" + bottom border = 6
         assert_eq!(lines.len(), 6);
         let gap_line = lines[3].plain_text();
@@ -232,7 +220,7 @@ mod tests {
         container.push(vec![Line::new("abcdefghijklmnop")]);
         // total width 14 → inner width 10 (14 − BORDER_H_PAD)
         let context = ViewContext::new((14, 10));
-        let lines = container.render(&context);
+        let lines = container.render(&context).into_lines();
 
         // top border + blank + 2 wrapped content rows + bottom border = 5
         assert_eq!(lines.len(), 5);
@@ -245,7 +233,7 @@ mod tests {
         let mut container = Panel::new(Color::Grey).title(" Config ");
         container.push(vec![Line::new("x")]);
         let context = ViewContext::new((40, 10));
-        let lines = container.render(&context);
+        let lines = container.render(&context).into_lines();
         let top = lines.first().unwrap().plain_text();
         let bottom = lines.last().unwrap().plain_text();
         assert_eq!(

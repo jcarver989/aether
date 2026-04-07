@@ -156,7 +156,7 @@ impl GitDiffMode {
             for i in 0..height {
                 let mut line = Line::default();
                 line.push_with_style(" ".repeat(left_width), Style::default().bg_color(theme.sidebar_bg()));
-                line.push_with_style(" ", Style::default().bg_color(theme.code_bg()));
+                line.push_with_style(" ", Style::default().bg_color(theme.background()));
                 if i == 0 {
                     line.push_with_style(&msg, Style::fg(theme.text_secondary()));
                 }
@@ -166,7 +166,7 @@ impl GitDiffMode {
         }
 
         self.prepare_right_panel_cache(context);
-        self.split.set_separator_style(Style::default().bg_color(theme.code_bg()));
+        self.split.set_separator_style(Style::default().bg_color(theme.background()));
         self.split.render(context)
     }
 

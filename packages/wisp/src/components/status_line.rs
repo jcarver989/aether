@@ -4,7 +4,7 @@ use acp_utils::config_option_id::ConfigOptionId;
 use agent_client_protocol::{
     self as acp, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOptions,
 };
-use tui::{Color, Line, ViewContext, display_width_text};
+use tui::{Color, Frame, Line, ViewContext, display_width_text};
 use utils::ReasoningEffort;
 
 #[doc = include_str!("../docs/status_line.md")]
@@ -19,7 +19,7 @@ pub struct StatusLine<'a> {
 
 impl StatusLine<'_> {
     #[allow(clippy::similar_names)]
-    pub fn render(&self, context: &ViewContext) -> Vec<Line> {
+    pub fn render(&self, context: &ViewContext) -> Frame {
         let mode_display = extract_mode_display(self.config_options);
         let model_display = extract_model_display(self.config_options);
         let reasoning_effort = extract_reasoning_effort(self.config_options);
@@ -76,7 +76,7 @@ impl StatusLine<'_> {
         for (text, color) in right_parts {
             left_line.push_styled(text, color);
         }
-        vec![left_line]
+        Frame::new(vec![left_line])
     }
 }
 
@@ -211,8 +211,8 @@ mod tests {
         };
 
         let context = ViewContext::new((120, 40));
-        let lines = status.render(&context);
-        let text = lines[0].plain_text();
+        let frame = status.render(&context);
+        let text = frame.lines()[0].plain_text();
         assert!(
             !text.contains("reasoning"),
             "reasoning bar should be hidden when no reasoning_effort option exists, got: {text}"
@@ -232,8 +232,8 @@ mod tests {
         };
 
         let context = ViewContext::new((120, 40));
-        let lines = status.render(&context);
-        let text = lines[0].plain_text();
+        let frame = status.render(&context);
+        let text = frame.lines()[0].plain_text();
         assert!(
             text.contains("reasoning"),
             "reasoning bar should be visible when reasoning_effort option exists, got: {text}"

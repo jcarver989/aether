@@ -87,7 +87,8 @@ impl<'a> StatusBuilder<'a> {
             content_padding: DEFAULT_CONTENT_PADDING,
         };
         let ctx = ViewContext::new((self.width, 24));
-        let term = render_lines(&status.render(&ctx), self.width, 24);
+        let frame = status.render(&ctx);
+        let term = render_lines(frame.lines(), self.width, 24);
         let line = term.get_lines()[0].clone();
         (line, term)
     }

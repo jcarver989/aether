@@ -35,7 +35,6 @@ pub mod testing;
 pub use components::checkbox::Checkbox;
 pub use components::form::{Form, FormField, FormFieldKind, FormMessage};
 pub use components::gallery::{Gallery, GalleryMessage};
-pub use components::layout::Layout;
 pub use components::multi_select::MultiSelect;
 pub use components::number_field::NumberField;
 pub use components::panel::{BORDER_H_PAD, Panel};
@@ -51,7 +50,7 @@ pub use diffs::diff_types::{DiffLine, DiffPreview, DiffTag, SplitDiffCell, Split
 pub use focus::{FocusOutcome, FocusRing};
 pub use rendering::frame::{FitOptions, Frame, FramePart, Overflow};
 pub use rendering::line::Line;
-pub use rendering::render_context::Insets;
+pub use rendering::render_context::{Insets, Size};
 pub use rendering::style::Style;
 pub use theme::{Theme, ThemeBuildError};
 
@@ -80,9 +79,7 @@ pub use diffs::diff::highlight_diff;
 #[cfg(feature = "syntax")]
 pub use diffs::split_diff::render_diff;
 #[cfg(feature = "syntax")]
-pub use diffs::split_diff::{
-    GUTTER_WIDTH, SEPARATOR, SEPARATOR_WIDTH, blank_panel as split_blank_panel, render_cell as split_render_cell,
-};
+pub use diffs::split_diff::{GUTTER_WIDTH, SEPARATOR, SEPARATOR_WIDTH, render_cell as split_render_cell};
 
 #[cfg(feature = "syntax")]
 pub use syntax_highlighting::SyntaxHighlighter;

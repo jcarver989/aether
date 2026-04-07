@@ -46,4 +46,4 @@ These primitives are intentionally small. Containers should compose with them ra
 - [`Line`] — A single line of styled terminal output.
 - [`ViewContext`](crate::ViewContext) — The allocated render region passed into `Component::render`.
 - [`Renderer`](crate::Renderer) — Consumes frames and renders them to the terminal.
-- [`Layout`](crate::Layout) — Composes multiple frames vertically.
+- [`Frame::vstack`] — Composes multiple frames vertically.

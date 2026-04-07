@@ -14,7 +14,7 @@ use agent_client_protocol::{self as acp, SessionId};
 use std::path::PathBuf;
 use std::time::Instant;
 use tokio::sync::oneshot;
-use tui::{Component, Cursor, Event, Frame, Insets, Layout, ViewContext};
+use tui::{Component, Cursor, Event, Frame, Insets, ViewContext};
 
 pub enum ConversationScreenMessage {
     SendPrompt { user_input: String, attachments: Vec<PromptAttachment> },
@@ -289,25 +289,25 @@ impl Component for ConversationScreen {
         let content_ctx = ctx.inset(Insets::horizontal(pad_u16));
         let modal_active = self.active_modal.is_some();
 
-        let mut layout = Layout::new();
-        layout.section(conversation_window.render(ctx));
-        layout.section(plan_view.render(&content_ctx).indent(pad_u16));
-        layout.section(self.progress_indicator.render(&content_ctx).indent(pad_u16));
+        let conversation_frame = conversation_window.render(ctx);
+        let plan_frame = plan_view.render(&content_ctx).indent(pad_u16);
+        let progress_frame = self.progress_indicator.render(&content_ctx).indent(pad_u16);
 
-        // When a modal is active, suppress the prompt cursor so vstack picks
-        // the modal's cursor (vstack picks the first visible cursor; the modal
-        // is appended after the prompt for visual ordering).
         let mut prompt_frame = self.prompt_composer.render(ctx);
         if modal_active {
             prompt_frame = prompt_frame.with_cursor(Cursor::hidden());
         }
-        layout.section(prompt_frame);
 
-        match &mut self.active_modal {
-            Some(Modal::SessionPicker(picker)) => layout.section(picker.render(ctx)),
-            Some(Modal::Elicitation(form)) => layout.section(form.render(ctx)),
-            None => {}
+        let modal_frame = match &mut self.active_modal {
+            Some(Modal::SessionPicker(picker)) => Some(picker.render(ctx)),
+            Some(Modal::Elicitation(form)) => Some(form.render(ctx)),
+            None => None,
+        };
+
+        let mut sections = vec![conversation_frame, plan_frame, progress_frame, prompt_frame];
+        if let Some(frame) = modal_frame {
+            sections.push(frame);
         }
-        layout.into_frame()
+        Frame::vstack(sections)
     }
 }

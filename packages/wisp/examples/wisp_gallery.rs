@@ -176,7 +176,7 @@ impl Component for StatusLineStory {
             unhealthy_server_count: 0,
             content_padding: wisp::settings::DEFAULT_CONTENT_PADDING,
         };
-        Frame::new(status.render(ctx))
+        status.render(ctx)
     }
 }
 

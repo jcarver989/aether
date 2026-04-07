@@ -114,7 +114,7 @@ crossterm::Event ──→ Event::try_from ──→ Component::on_event ──�
 Nest components by owning them in your parent and delegating events:
 
 ```rust,no_run
-use tui::{Component, Event, Frame, Layout, ViewContext, TextField, merge};
+use tui::{Component, Event, Frame, ViewContext, TextField, merge};
 
 struct MyApp {
     name: TextField,

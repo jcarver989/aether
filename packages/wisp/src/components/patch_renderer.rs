@@ -77,16 +77,16 @@ pub fn build_patch_lines(
 
             #[allow(clippy::cast_possible_truncation)]
             let right_width_u16 = right_width as u16;
-            let wrapped_frame = Frame::new(vec![line]).fit(right_width_u16, FitOptions::wrap());
-            for (i, mut wrapped_line) in wrapped_frame.into_lines().into_iter().enumerate() {
-                wrapped_line.extend_bg_to_width(right_width);
-                patch_lines.push(wrapped_line);
-                if i == 0 {
-                    patch_refs.push(Some(anchor));
-                } else {
-                    patch_refs.push(None);
-                }
-            }
+            let wrapped = Frame::new(vec![line])
+                .fit(right_width_u16, FitOptions::wrap())
+                .map_lines(|mut l| {
+                    l.extend_bg_to_width(right_width);
+                    l
+                })
+                .into_lines();
+            patch_refs.push(Some(anchor));
+            patch_refs.extend(std::iter::repeat_n(None, wrapped.len().saturating_sub(1)));
+            patch_lines.extend(wrapped);
 
             if let Some(line_comments) = comment_map.get(&anchor) {
                 append_inline_comment_rows(&mut patch_lines, &mut patch_refs, line_comments, right_width, theme);

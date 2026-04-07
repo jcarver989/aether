@@ -197,8 +197,7 @@ mod tests {
 
         // A row marked with fill but no trailing spaces should be materialized
         // to the terminal width when VisualFrame::from_frame runs.
-        let line = Line::with_style("hi", Style::default().bg_color(Color::Blue))
-            .with_fill(Style::default().bg_color(Color::Blue));
+        let line = Line::with_style("hi", Style::default().bg_color(Color::Blue)).with_fill(Color::Blue);
         let frame = Frame::new(vec![line]);
 
         let visual = VisualFrame::from_frame(frame, Size::from((6, 1)), 0);
@@ -218,8 +217,7 @@ mod tests {
         // the trailing 25 spaces would themselves wrap into 3 phantom rows.
         // With fill metadata, the row's actual content is "ab" → 1 wrapped
         // row at width 10, materialized to 10 columns by VisualFrame.
-        let line = Line::with_style("ab", Style::default().bg_color(Color::Red))
-            .with_fill(Style::default().bg_color(Color::Red));
+        let line = Line::with_style("ab", Style::default().bg_color(Color::Red)).with_fill(Color::Red);
         let frame = Frame::new(vec![line]);
 
         let visual = VisualFrame::from_frame(frame, Size::from((10, 5)), 0);

@@ -172,7 +172,7 @@ impl<T: Component> Component for GalleryPreview<T> {
             Cursor::hidden()
         };
 
-        Frame::new(panel.render(ctx)).with_cursor(panel_cursor)
+        panel.render(ctx).with_cursor(panel_cursor)
     }
 }
 

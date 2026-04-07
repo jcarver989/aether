@@ -290,13 +290,10 @@ impl Theme {
         Style::fg(fg).bg_color(self.highlight_bg())
     }
 
-    /// Build a [`Line`] for a selected picker row: styled with
-    /// [`selected_row_style`](Self::selected_row_style) and marked with the
-    /// same style as row-fill metadata so the highlight extends to the
-    /// containing slot's full width.
+    /// Build a "selected row" line: styled foreground/background plus a row
+    /// fill so the highlight extends through trailing whitespace.
     pub fn selected_row_line(&self, text: impl Into<String>) -> Line {
-        let style = self.selected_row_style();
-        Line::with_style(text, style).with_fill(style)
+        Line::with_style(text, self.selected_row_style()).with_fill(self.highlight_bg())
     }
 
     pub fn secondary(&self) -> Color {

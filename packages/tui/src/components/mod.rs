@@ -2,7 +2,6 @@ pub mod checkbox;
 pub mod component;
 pub mod form;
 pub mod gallery;
-pub mod layout;
 pub mod multi_select;
 pub mod number_field;
 pub mod panel;

@@ -305,7 +305,7 @@ impl Component for SettingsOverlay {
         let mut container =
             Panel::new(context.theme.muted()).title(" Configuration ").footer(footer).fill_height(height).gap(GAP);
         container.push(child_lines);
-        Frame::new(container.render(context))
+        container.render(context)
     }
 }
 
