@@ -110,7 +110,7 @@ fn wrapped_cursor_position(input: &str, cursor_index: usize, content_width: u16)
     let cursor_index = clamp_to_char_boundary(input, cursor_index);
     let wrapped_prefix = Line::new(&input[..cursor_index]).soft_wrap(content_width);
     let row = wrapped_prefix.len().saturating_sub(1);
-    let col = wrapped_prefix.last().map_or(0, |line| line.display_width());
+    let col = wrapped_prefix.last().map_or(0, Line::display_width);
     (row, col)
 }
 
@@ -198,5 +198,4 @@ mod tests {
         assert!(lines[1].plain_text().contains("@main.rs"));
         assert!(lines[1].plain_text().contains("explain this"));
     }
-
 }
