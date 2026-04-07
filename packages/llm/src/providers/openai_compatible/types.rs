@@ -1,12 +1,10 @@
 use async_openai::types::chat::{
-    ChatChoiceStream, ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk,
-    ChatCompletionMessageToolCalls, ChatCompletionStreamOptions, ChatCompletionStreamResponseDelta as OpenAiDelta,
-    ChatCompletionTools, CompletionUsage, CreateChatCompletionStreamResponse, FinishReason as OpenAiFinishReason,
-    FunctionCall, FunctionCallStream, FunctionType, Role,
+    ChatCompletionMessageToolCall, ChatCompletionMessageToolCalls, ChatCompletionStreamOptions, ChatCompletionTools,
+    FunctionCall, Role,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{ChatMessage, ContentBlock};
+use crate::{ChatMessage, ContentBlock, TokenUsage};
 
 /// Unified custom types for OpenAI-compatible APIs that deviate slightly from the standard.
 /// This handles quirks from providers like `OpenRouter`, Z.ai, and potentially others.
@@ -214,98 +212,60 @@ pub struct FunctionCallDelta {
     pub arguments: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PromptTokensDetails {
     #[serde(default)]
     pub cached_tokens: Option<u32>,
+    /// `OpenRouter`-specific: tokens written to cache (cache creation).
+    /// Only returned for models with explicit caching and cache write pricing.
+    #[serde(default)]
+    pub cache_write_tokens: Option<u32>,
+    /// `OpenAI` + `OpenRouter`: input audio tokens.
+    #[serde(default)]
+    pub audio_tokens: Option<u32>,
+    /// `OpenRouter`-specific: input video tokens.
+    #[serde(default)]
+    pub video_tokens: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CompletionTokensDetails {
+    #[serde(default)]
+    pub reasoning_tokens: Option<u32>,
+    #[serde(default)]
+    pub audio_tokens: Option<u32>,
+    #[serde(default)]
+    pub accepted_prediction_tokens: Option<u32>,
+    #[serde(default)]
+    pub rejected_prediction_tokens: Option<u32>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Usage {
     pub prompt_tokens: i64,
     pub completion_tokens: i64,
     pub total_tokens: i64,
     #[serde(default)]
     pub prompt_tokens_details: Option<PromptTokensDetails>,
+    #[serde(default)]
+    pub completion_tokens_details: Option<CompletionTokensDetails>,
 }
 
-impl From<ChatCompletionStreamResponse> for CreateChatCompletionStreamResponse {
-    #[allow(deprecated)]
-    fn from(response: ChatCompletionStreamResponse) -> Self {
-        CreateChatCompletionStreamResponse {
-            id: response.id,
-            choices: response.choices.into_iter().map(Into::into).collect(),
-            created: u32::try_from(response.created).unwrap_or(0),
-            model: response.model,
-            service_tier: None,
-            system_fingerprint: response.system_fingerprint,
-            object: response.object,
-            usage: response.usage.map(Into::into),
-        }
-    }
-}
-
-impl From<FinishReason> for OpenAiFinishReason {
-    fn from(reason: FinishReason) -> Self {
-        match reason {
-            FinishReason::Stop | FinishReason::Error | FinishReason::NetworkError => OpenAiFinishReason::Stop,
-            FinishReason::Length | FinishReason::ModelContextWindowExceeded => OpenAiFinishReason::Length,
-            FinishReason::ToolCalls => OpenAiFinishReason::ToolCalls,
-            FinishReason::ContentFilter => OpenAiFinishReason::ContentFilter,
-            FinishReason::FunctionCall => OpenAiFinishReason::FunctionCall,
-        }
-    }
-}
-
-impl From<ChatCompletionStreamChoice> for ChatChoiceStream {
-    fn from(choice: ChatCompletionStreamChoice) -> Self {
-        ChatChoiceStream {
-            index: u32::try_from(choice.index).unwrap_or(0),
-            delta: choice.delta.into(),
-            finish_reason: choice.finish_reason.map(std::convert::Into::into),
-            logprobs: None,
-        }
-    }
-}
-
-impl From<ChatCompletionStreamResponseDelta> for OpenAiDelta {
-    fn from(delta: ChatCompletionStreamResponseDelta) -> Self {
-        OpenAiDelta {
-            role: delta.role,
-            content: delta.content,
-            refusal: None,
-            tool_calls: delta.tool_calls.map(|calls| calls.into_iter().map(Into::into).collect()),
-            #[allow(deprecated)]
-            function_call: None,
-        }
-    }
-}
-
-impl From<ToolCallDelta> for ChatCompletionMessageToolCallChunk {
-    fn from(call: ToolCallDelta) -> Self {
-        ChatCompletionMessageToolCallChunk {
-            index: u32::try_from(call.index).unwrap_or(0),
-            id: call.id,
-            r#type: call.tool_type.filter(|t| t == "function").map(|_| FunctionType::Function),
-            function: call.function.map(Into::into),
-        }
-    }
-}
-
-impl From<FunctionCallDelta> for FunctionCallStream {
-    fn from(f: FunctionCallDelta) -> Self {
-        FunctionCallStream { name: f.name, arguments: f.arguments }
-    }
-}
-
-impl From<Usage> for CompletionUsage {
-    fn from(u: Usage) -> Self {
-        CompletionUsage {
-            prompt_tokens: u32::try_from(u.prompt_tokens.max(0)).unwrap_or(0),
-            completion_tokens: u32::try_from(u.completion_tokens.max(0)).unwrap_or(0),
-            total_tokens: u32::try_from(u.total_tokens.max(0)).unwrap_or(0),
-            completion_tokens_details: None,
-            prompt_tokens_details: None,
+impl From<Usage> for TokenUsage {
+    fn from(usage: Usage) -> Self {
+        let prompt = usage.prompt_tokens_details.unwrap_or_default();
+        let completion = usage.completion_tokens_details.unwrap_or_default();
+        TokenUsage {
+            input_tokens: u32::try_from(usage.prompt_tokens.max(0)).unwrap_or(0),
+            output_tokens: u32::try_from(usage.completion_tokens.max(0)).unwrap_or(0),
+            cache_read_tokens: prompt.cached_tokens,
+            cache_creation_tokens: prompt.cache_write_tokens,
+            input_audio_tokens: prompt.audio_tokens,
+            input_video_tokens: prompt.video_tokens,
+            reasoning_tokens: completion.reasoning_tokens,
+            output_audio_tokens: completion.audio_tokens,
+            accepted_prediction_tokens: completion.accepted_prediction_tokens,
+            rejected_prediction_tokens: completion.rejected_prediction_tokens,
         }
     }
 }

@@ -26,10 +26,7 @@ use serde_json::Value;
 /// Resolve `tests/fixtures/{provider}/{scenario}.sse` relative to the crate
 /// manifest directory.
 pub fn fixture_path(provider: &str, scenario: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(provider)
-        .join(format!("{scenario}.sse"))
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(provider).join(format!("{scenario}.sse"))
 }
 
 /// Read a committed fixture from disk. Panics if the fixture is missing — the
@@ -78,19 +75,13 @@ pub fn assert_minimal_usage(usage: &TokenUsage, scenario: &str) {
 /// Read an environment variable, panicking with a clear instruction if missing.
 /// Used by `capture_fixtures.rs` tests to fail loudly when an API key is needed.
 pub fn require_env(name: &'static str) -> String {
-    env::var(name)
-        .unwrap_or_else(|_| panic!("{name} must be set to capture fixtures"))
+    env::var(name).unwrap_or_else(|_| panic!("{name} must be set to capture fixtures"))
 }
 
 /// `POST` a JSON body and return the raw response bytes. Panics on transport
 /// errors and on any non-2xx status, with the response body included in the
 /// panic message so capture failures are diagnosable from the test output.
-pub async fn post_json_capture(
-    client: &reqwest::Client,
-    url: &str,
-    headers: &[(&str, &str)],
-    body: &Value,
-) -> Vec<u8> {
+pub async fn post_json_capture(client: &reqwest::Client, url: &str, headers: &[(&str, &str)], body: &Value) -> Vec<u8> {
     let mut req = client.post(url).header("content-type", "application/json").json(body);
     for (k, v) in headers {
         req = req.header(*k, *v);
@@ -98,12 +89,7 @@ pub async fn post_json_capture(
     let resp = req.send().await.expect("http request to provider failed");
     let status = resp.status();
     let bytes = resp.bytes().await.expect("reading response body failed").to_vec();
-    assert!(
-        status.is_success(),
-        "provider returned {}: {}",
-        status.as_u16(),
-        String::from_utf8_lossy(&bytes)
-    );
+    assert!(status.is_success(), "provider returned {}: {}", status.as_u16(), String::from_utf8_lossy(&bytes));
     bytes
 }
 

@@ -7,7 +7,7 @@
 
 use async_openai::types::responses::ResponseStreamEvent;
 use llm::providers::codex::streaming::process_response_stream;
-use llm::{LlmError, LlmResponse, StopReason, Result};
+use llm::{LlmError, LlmResponse, Result, StopReason};
 use tokio_stream::StreamExt;
 
 use crate::providers::common::{assert_minimal_usage, find_usage, parse_sse_data_lines, read_fixture};

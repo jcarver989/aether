@@ -6,7 +6,7 @@ use async_openai::types::responses::{
     CreateResponse, EasyInputContent, EasyInputMessage, FunctionCallOutput, FunctionCallOutputItemParam, FunctionTool,
     FunctionToolCall, ImageDetail, IncludeEnum, InputContent, InputImageContent, InputItem, InputParam,
     InputTextContent, Item, MessageType, OutputItem, Reasoning, ReasoningEffort as OaiReasoningEffort,
-    ReasoningSummary, ResponseStreamEvent, Role, Tool,
+    ReasoningSummary, ResponseStreamEvent, ResponseUsage, Role, Tool,
 };
 use tokio_stream::StreamExt;
 use tracing::{debug, error};
@@ -14,8 +14,20 @@ use tracing::{debug, error};
 use crate::provider::get_context_window;
 use crate::{
     ChatMessage, ContentBlock, Context, LlmError, LlmModel, LlmResponse, LlmResponseStream, ProviderFactory,
-    ReasoningEffort, Result, StopReason, StreamingModelProvider, ToolDefinition,
+    ReasoningEffort, Result, StopReason, StreamingModelProvider, TokenUsage, ToolDefinition,
 };
+
+impl From<ResponseUsage> for TokenUsage {
+    fn from(usage: ResponseUsage) -> Self {
+        TokenUsage {
+            input_tokens: usage.input_tokens,
+            output_tokens: usage.output_tokens,
+            cache_read_tokens: Some(usage.input_tokens_details.cached_tokens),
+            reasoning_tokens: Some(usage.output_tokens_details.reasoning_tokens),
+            ..TokenUsage::default()
+        }
+    }
+}
 
 pub(crate) fn map_user_content_for_responses(parts: &[ContentBlock]) -> Result<EasyInputContent> {
     let mut items = Vec::with_capacity(parts.len());
@@ -163,9 +175,7 @@ fn process_event(
         ResponseStreamEvent::ResponseCompleted(e) => {
             let mut results = Vec::new();
             if let Some(usage) = e.response.usage {
-                let cached = usage.input_tokens_details.cached_tokens;
-                let cached = if cached > 0 { Some(cached) } else { None };
-                results.push(Ok(LlmResponse::usage_with_cache(usage.input_tokens, usage.output_tokens, cached)));
+                results.push(Ok(LlmResponse::Usage { tokens: usage.into() }));
             }
             results.push(Ok(LlmResponse::done_with_stop_reason(StopReason::EndTurn)));
             results

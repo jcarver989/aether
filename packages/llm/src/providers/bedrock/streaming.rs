@@ -2,12 +2,25 @@ use aws_sdk_bedrockruntime::primitives::event_stream::EventReceiver;
 use aws_sdk_bedrockruntime::types::error::ConverseStreamOutputError;
 use aws_sdk_bedrockruntime::types::{
     ContentBlockDelta, ContentBlockStart, ConverseStreamOutput, StopReason as BedrockStopReason,
+    TokenUsage as BedrockTokenUsage,
 };
 use futures::Stream;
 use std::collections::HashMap;
 use tracing::{debug, error, info, warn};
 
-use crate::{LlmError, LlmResponse, StopReason, ToolCallRequest};
+use crate::{LlmError, LlmResponse, StopReason, TokenUsage, ToolCallRequest};
+
+impl From<&BedrockTokenUsage> for TokenUsage {
+    fn from(usage: &BedrockTokenUsage) -> Self {
+        TokenUsage {
+            input_tokens: u32::try_from(usage.input_tokens).unwrap_or(0),
+            output_tokens: u32::try_from(usage.output_tokens).unwrap_or(0),
+            cache_read_tokens: usage.cache_read_input_tokens().and_then(|v| u32::try_from(v).ok()),
+            cache_creation_tokens: usage.cache_write_input_tokens().and_then(|v| u32::try_from(v).ok()),
+            ..TokenUsage::default()
+        }
+    }
+}
 
 struct PendingToolCall {
     id: String,
@@ -91,11 +104,9 @@ fn process_stream_event(
             info!("Bedrock message stopped: {stop_reason:?}");
             StreamEvent::Stop(stop_reason)
         }
-        ConverseStreamOutput::Metadata(metadata_event) => metadata_event.usage().map_or(StreamEvent::Skip, |usage| {
-            let input_tokens = u32::try_from(usage.input_tokens).unwrap_or(0);
-            let output_tokens = u32::try_from(usage.output_tokens).unwrap_or(0);
-            StreamEvent::Emit(LlmResponse::Usage { input_tokens, output_tokens, cached_input_tokens: None })
-        }),
+        ConverseStreamOutput::Metadata(metadata_event) => metadata_event
+            .usage()
+            .map_or(StreamEvent::Skip, |usage| StreamEvent::Emit(LlmResponse::Usage { tokens: usage.into() })),
         other => {
             warn!("Unhandled Bedrock stream event: {other:?}");
             StreamEvent::Skip
@@ -308,6 +319,58 @@ mod tests {
         let mut active = HashMap::new();
         let result = handle_content_block_stop(0, &mut active);
         assert!(matches!(result, StreamEvent::Skip));
+    }
+
+    #[test]
+    fn test_metadata_event_emits_cache_read_and_creation() {
+        let usage = aws_sdk_bedrockruntime::types::TokenUsage::builder()
+            .input_tokens(100)
+            .output_tokens(50)
+            .total_tokens(150)
+            .cache_read_input_tokens(40)
+            .cache_write_input_tokens(20)
+            .build()
+            .unwrap();
+
+        let metadata = aws_sdk_bedrockruntime::types::ConverseStreamMetadataEvent::builder().usage(usage).build();
+
+        let event = ConverseStreamOutput::Metadata(metadata);
+        let mut active = HashMap::new();
+        let result = process_stream_event(&event, &mut active);
+
+        match result {
+            StreamEvent::Emit(LlmResponse::Usage { tokens: sample }) => {
+                assert_eq!(sample.input_tokens, 100);
+                assert_eq!(sample.output_tokens, 50);
+                assert_eq!(sample.cache_read_tokens, Some(40));
+                assert_eq!(sample.cache_creation_tokens, Some(20));
+            }
+            _ => panic!("expected Emit(Usage{{..}})"),
+        }
+    }
+
+    #[test]
+    fn test_metadata_event_without_cache_fields() {
+        let usage = aws_sdk_bedrockruntime::types::TokenUsage::builder()
+            .input_tokens(10)
+            .output_tokens(5)
+            .total_tokens(15)
+            .build()
+            .unwrap();
+
+        let metadata = aws_sdk_bedrockruntime::types::ConverseStreamMetadataEvent::builder().usage(usage).build();
+
+        let event = ConverseStreamOutput::Metadata(metadata);
+        let mut active = HashMap::new();
+        let result = process_stream_event(&event, &mut active);
+
+        match result {
+            StreamEvent::Emit(LlmResponse::Usage { tokens: sample }) => {
+                assert_eq!(sample.cache_read_tokens, None);
+                assert_eq!(sample.cache_creation_tokens, None);
+            }
+            _ => panic!("expected Emit(Usage{{..}})"),
+        }
     }
 
     #[test]

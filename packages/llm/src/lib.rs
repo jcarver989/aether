@@ -22,7 +22,7 @@ pub use chat_message::{AssistantReasoning, ChatMessage, ContentBlock, EncryptedR
 pub use context::Context;
 pub use credential::ProviderCredential;
 pub use error::{ContextOverflowError, LlmError, Result};
-pub use llm_response::{LlmResponse, StopReason};
+pub use llm_response::{LlmResponse, StopReason, TokenUsage};
 pub use provider::{LlmResponseStream, ProviderFactory, StreamingModelProvider};
 pub use reasoning::ReasoningEffort;
 pub use tools::*;

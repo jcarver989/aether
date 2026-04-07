@@ -57,8 +57,7 @@ async fn openrouter_minimal_ends_with_done() {
 async fn openrouter_tool_call_emits_tool_request_and_usage() {
     let events = parse_fixture("02_tool_call").await;
 
-    let has_tool_complete =
-        events.iter().any(|e| matches!(e, LlmResponse::ToolRequestComplete { .. }));
+    let has_tool_complete = events.iter().any(|e| matches!(e, LlmResponse::ToolRequestComplete { .. }));
     assert!(has_tool_complete, "02_tool_call should yield a ToolRequestComplete");
 
     let usage = find_usage(&events).expect("usage event should be present");

@@ -1,10 +1,30 @@
-use async_openai::types::chat::{CreateChatCompletionStreamResponse, FinishReason as OpenAiFinishReason};
+use async_openai::types::chat::{
+    CompletionUsage, CreateChatCompletionStreamResponse, FinishReason as OpenAiFinishReason,
+};
 use async_stream;
 use tokio_stream::{Stream, StreamExt};
 use tracing::debug;
 
 use crate::providers::tool_call_collector::ToolCallCollector;
-use crate::{LlmError, LlmResponse, Result, StopReason};
+use crate::{LlmError, LlmResponse, Result, StopReason, TokenUsage};
+
+impl From<CompletionUsage> for TokenUsage {
+    fn from(usage: CompletionUsage) -> Self {
+        let prompt = usage.prompt_tokens_details.unwrap_or_default();
+        let completion = usage.completion_tokens_details.unwrap_or_default();
+        TokenUsage {
+            input_tokens: usage.prompt_tokens,
+            output_tokens: usage.completion_tokens,
+            cache_read_tokens: prompt.cached_tokens,
+            input_audio_tokens: prompt.audio_tokens,
+            reasoning_tokens: completion.reasoning_tokens,
+            output_audio_tokens: completion.audio_tokens,
+            accepted_prediction_tokens: completion.accepted_prediction_tokens,
+            rejected_prediction_tokens: completion.rejected_prediction_tokens,
+            ..TokenUsage::default()
+        }
+    }
+}
 
 /// Common stream processing logic that handles tool call state tracking and event emission.
 /// Works with standard `async_openai` `CreateChatCompletionStreamResponse` types.
@@ -25,12 +45,7 @@ pub fn process_completion_stream<E: Into<LlmError> + Send>(
                     // This must be checked on every chunk since usage may come
                     // in a separate final chunk after finish_reason
                     if let Some(usage) = response.usage {
-                        yield Ok(LlmResponse::Usage {
-                            input_tokens: usage.prompt_tokens,
-                            output_tokens: usage.completion_tokens,
-                            cached_input_tokens: usage.prompt_tokens_details
-                                .and_then(|d| d.cached_tokens),
-                        });
+                        yield Ok(LlmResponse::Usage { tokens: usage.into() });
                     }
 
                     if let Some(choice) = response.choices.pop() {

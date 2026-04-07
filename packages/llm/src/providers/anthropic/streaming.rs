@@ -179,22 +179,12 @@ fn handle_content_block_stop(
     }
 }
 
-fn handle_message_delta(delta_data: &super::types::MessageDelta) -> EventResult {
+fn handle_message_delta(message_delta: &super::types::MessageDelta) -> EventResult {
     debug!("Message delta received");
-    let stop_reason = delta_data.delta.stop_reason.as_deref().map(map_anthropic_stop_reason);
+    let stop_reason = message_delta.delta.stop_reason.as_deref().map(map_anthropic_stop_reason);
 
-    if let Some(usage) = &delta_data.delta.usage {
-        (
-            Some(LlmResponse::Usage {
-                input_tokens: usage.input_tokens,
-                output_tokens: usage.output_tokens,
-                cached_input_tokens: usage.cache_read_input_tokens,
-            }),
-            stop_reason,
-        )
-    } else {
-        (None, stop_reason)
-    }
+    let response = message_delta.usage.as_ref().map(|usage| LlmResponse::Usage { tokens: usage.into() });
+    (response, stop_reason)
 }
 
 fn handle_message_stop() -> EventResult {
@@ -210,6 +200,7 @@ fn handle_ping() -> EventResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::TokenUsage;
     use tokio_stream;
 
     #[tokio::test]
@@ -220,7 +211,7 @@ mod tests {
             "{\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"Hello\"}}".to_string(),
             "{\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \" world\"}}".to_string(),
             "{\"type\": \"content_block_stop\", \"index\": 0}".to_string(),
-            "{\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 10, \"output_tokens\": 25}}}".to_string(),
+            "{\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\", \"stop_sequence\": null}, \"usage\": {\"input_tokens\": 10, \"output_tokens\": 25}}".to_string(),
             "{\"type\": \"message_stop\"}".to_string(),
         ];
 
@@ -235,7 +226,10 @@ mod tests {
         assert!(matches!(responses[0], LlmResponse::Start { .. }));
         assert!(matches!(responses[1], LlmResponse::Text { ref chunk } if chunk == "Hello"));
         assert!(matches!(responses[2], LlmResponse::Text { ref chunk } if chunk == " world"));
-        assert!(matches!(responses[3], LlmResponse::Usage { input_tokens: 10, output_tokens: 25, .. }));
+        assert!(matches!(
+            responses[3],
+            LlmResponse::Usage { tokens: TokenUsage { input_tokens: 10, output_tokens: 25, .. } }
+        ));
         assert!(matches!(responses[4], LlmResponse::Done { stop_reason: Some(StopReason::EndTurn) }));
     }
 
@@ -246,7 +240,7 @@ mod tests {
             "{\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"tool_123\", \"name\": \"search\"}}".to_string(),
             "{\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\":\\\"test\\\"}\"}".to_string(),
             "{\"type\": \"content_block_stop\", \"index\": 0}".to_string(),
-            "{\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 10, \"output_tokens\": 15}}}".to_string(),
+            "{\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"input_tokens\": 10, \"output_tokens\": 15}}".to_string(),
             "{\"type\": \"message_stop\"}".to_string(),
         ];
 
@@ -265,7 +259,10 @@ mod tests {
         assert!(
             matches!(responses[2], LlmResponse::ToolRequestComplete { ref tool_call } if tool_call.id == "tool_123" && tool_call.name == "search")
         );
-        assert!(matches!(responses[3], LlmResponse::Usage { input_tokens: 10, output_tokens: 15, .. }));
+        assert!(matches!(
+            responses[3],
+            LlmResponse::Usage { tokens: TokenUsage { input_tokens: 10, output_tokens: 15, .. } }
+        ));
         assert!(matches!(responses[4], LlmResponse::Done { stop_reason: Some(StopReason::ToolCalls) }));
     }
 
@@ -316,7 +313,7 @@ mod tests {
             r#"{"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}}"#.to_string(),
             r#"{"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "Here is my answer"}}"#.to_string(),
             r#"{"type": "content_block_stop", "index": 1}"#.to_string(),
-            r#"{"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": null, "usage": {"input_tokens": 10, "output_tokens": 50}}}"#.to_string(),
+            r#"{"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": null}, "usage": {"input_tokens": 10, "output_tokens": 50}}"#.to_string(),
             r#"{"type": "message_stop"}"#.to_string(),
         ];
 
@@ -332,8 +329,47 @@ mod tests {
         assert!(matches!(responses[1], LlmResponse::Reasoning { ref chunk } if chunk == "Let me think"));
         assert!(matches!(responses[2], LlmResponse::Reasoning { ref chunk } if chunk == " about this"));
         assert!(matches!(responses[3], LlmResponse::Text { ref chunk } if chunk == "Here is my answer"));
-        assert!(matches!(responses[4], LlmResponse::Usage { input_tokens: 10, output_tokens: 50, .. }));
+        assert!(matches!(
+            responses[4],
+            LlmResponse::Usage { tokens: TokenUsage { input_tokens: 10, output_tokens: 50, .. } }
+        ));
         assert!(matches!(responses[5], LlmResponse::Done { stop_reason: Some(StopReason::EndTurn) }));
+    }
+
+    #[tokio::test]
+    async fn test_message_delta_forwards_both_cache_read_and_creation() {
+        let lines = vec![
+            r#"{"type": "message_start", "message": {"id": "msg_xyz", "type": "message", "role": "assistant", "content": [], "model": "claude-3", "stop_reason": null, "stop_sequence": null, "usage": {"input_tokens": 10, "output_tokens": 0}}}"#.to_string(),
+            r#"{"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}"#.to_string(),
+            r#"{"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "ok"}}"#.to_string(),
+            r#"{"type": "content_block_stop", "index": 0}"#.to_string(),
+            r#"{"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": null}, "usage": {"input_tokens": 100, "output_tokens": 25, "cache_creation_input_tokens": 40, "cache_read_input_tokens": 60}}"#.to_string(),
+            r#"{"type": "message_stop"}"#.to_string(),
+        ];
+
+        let stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut response_stream = Box::pin(process_anthropic_stream(stream));
+
+        let mut responses = Vec::new();
+        while let Some(result) = response_stream.next().await {
+            responses.push(result.unwrap());
+        }
+
+        let usage = responses.iter().find_map(|r| match r {
+            LlmResponse::Usage { tokens } => Some(*tokens),
+            _ => None,
+        });
+
+        assert_eq!(
+            usage,
+            Some(TokenUsage {
+                input_tokens: 100,
+                output_tokens: 25,
+                cache_read_tokens: Some(60),
+                cache_creation_tokens: Some(40),
+                ..TokenUsage::default()
+            })
+        );
     }
 
     #[tokio::test]

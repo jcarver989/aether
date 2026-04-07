@@ -85,11 +85,7 @@ fn process_event(
         }
         ResponseStreamEvent::ResponseCompleted(e) => {
             if let Some(usage) = e.response.usage {
-                responses.push(Ok(LlmResponse::Usage {
-                    input_tokens: usage.input_tokens,
-                    output_tokens: usage.output_tokens,
-                    cached_input_tokens: Some(usage.input_tokens_details.cached_tokens),
-                }));
+                responses.push(Ok(LlmResponse::Usage { tokens: usage.into() }));
             }
             match e.response.status {
                 Status::Completed => *last_stop_reason = Some(StopReason::EndTurn),
@@ -110,6 +106,7 @@ fn process_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::TokenUsage;
     use async_openai::types::responses::{
         FunctionToolCall, ReasoningItem, Response, ResponseCompletedEvent, ResponseErrorEvent,
         ResponseFunctionCallArgumentsDeltaEvent, ResponseFunctionCallArgumentsDoneEvent, ResponseOutputItemAddedEvent,
@@ -133,11 +130,20 @@ mod tests {
     }
 
     fn make_usage(input_tokens: u32, output_tokens: u32) -> ResponseUsage {
+        make_usage_full(input_tokens, output_tokens, 0, 0)
+    }
+
+    fn make_usage_full(
+        input_tokens: u32,
+        output_tokens: u32,
+        cached_tokens: u32,
+        reasoning_tokens: u32,
+    ) -> ResponseUsage {
         serde_json::from_value(serde_json::json!({
             "input_tokens": input_tokens,
-            "input_tokens_details": { "cached_tokens": 0 },
+            "input_tokens_details": { "cached_tokens": cached_tokens },
             "output_tokens": output_tokens,
-            "output_tokens_details": { "reasoning_tokens": 0 },
+            "output_tokens_details": { "reasoning_tokens": reasoning_tokens },
             "total_tokens": input_tokens + output_tokens
         }))
         .unwrap()
@@ -183,7 +189,10 @@ mod tests {
         assert!(matches!(responses[0], LlmResponse::Start { .. }));
         assert!(matches!(responses[1], LlmResponse::Text { ref chunk } if chunk == "Hello"));
         assert!(matches!(responses[2], LlmResponse::Text { ref chunk } if chunk == " world"));
-        assert!(matches!(responses[3], LlmResponse::Usage { input_tokens: 10, output_tokens: 5, .. }));
+        assert!(matches!(
+            responses[3],
+            LlmResponse::Usage { tokens: TokenUsage { input_tokens: 10, output_tokens: 5, .. } }
+        ));
         assert!(matches!(responses[4], LlmResponse::Done { stop_reason: Some(StopReason::EndTurn) }));
     }
 
@@ -361,6 +370,38 @@ mod tests {
         assert_eq!(responses.len(), 1);
         assert!(
             matches!(&responses[0], Ok(LlmResponse::EncryptedReasoning { content, .. }) if content == "enc-blob-data")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_usage_forwards_reasoning_and_cache_read() {
+        let events = vec![ResponseStreamEvent::ResponseCompleted(ResponseCompletedEvent {
+            sequence_number: 1,
+            response: make_response(&Status::Completed, Some(make_usage_full(120, 80, 50, 30))),
+        })];
+
+        let stream = make_stream(events);
+        let mut response_stream = Box::pin(process_response_stream(stream));
+
+        let mut responses = Vec::new();
+        while let Some(result) = response_stream.next().await {
+            responses.push(result.unwrap());
+        }
+
+        let usage = responses.iter().find_map(|r| match r {
+            LlmResponse::Usage { tokens } => Some(*tokens),
+            _ => None,
+        });
+
+        assert_eq!(
+            usage,
+            Some(TokenUsage {
+                input_tokens: 120,
+                output_tokens: 80,
+                cache_read_tokens: Some(50),
+                reasoning_tokens: Some(30),
+                ..TokenUsage::default()
+            })
         );
     }
 

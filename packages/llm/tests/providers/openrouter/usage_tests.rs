@@ -1,9 +1,9 @@
+use llm::LlmResponse;
 use llm::providers::openai_compatible;
 use llm::providers::openai_compatible::streaming::process_compatible_stream;
 use llm::providers::openai_compatible::types::{
     ChatCompletionStreamChoice, ChatCompletionStreamResponse, ChatCompletionStreamResponseDelta, Usage,
 };
-use llm::LlmResponse;
 use tokio_stream::StreamExt;
 
 /// Test that negative token counts from `OpenRouter` are clamped to 0 by the

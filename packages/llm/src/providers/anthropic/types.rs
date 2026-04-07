@@ -1,3 +1,4 @@
+use crate::TokenUsage;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -251,6 +252,18 @@ pub struct Usage {
     pub cache_read_input_tokens: Option<u32>,
 }
 
+impl From<&Usage> for TokenUsage {
+    fn from(usage: &Usage) -> Self {
+        TokenUsage {
+            input_tokens: usage.input_tokens,
+            output_tokens: usage.output_tokens,
+            cache_read_tokens: usage.cache_read_input_tokens,
+            cache_creation_tokens: usage.cache_creation_input_tokens,
+            ..TokenUsage::default()
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ContentBlockStart {
@@ -293,6 +306,8 @@ pub struct ContentBlockStop {
 #[serde(rename_all = "snake_case")]
 pub struct MessageDelta {
     pub delta: MessageDeltaData,
+    #[serde(default)]
+    pub usage: Option<Usage>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -302,8 +317,6 @@ pub struct MessageDeltaData {
     pub stop_reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_sequence: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub usage: Option<Usage>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

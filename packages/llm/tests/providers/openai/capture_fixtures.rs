@@ -24,12 +24,15 @@ const REASONING_PROMPT: &str = "A clock currently shows 3:15. Compute the exact 
 #[tokio::test]
 #[ignore = "captures live fixture, requires OPENAI_API_KEY"]
 async fn capture_openai_01_minimal() {
-    let bytes = send(CHAT_URL, &json!({
-        "model": MODEL,
-        "stream": true,
-        "stream_options": {"include_usage": true},
-        "messages": [{"role": "user", "content": "Reply with exactly: hi"}],
-    }))
+    let bytes = send(
+        CHAT_URL,
+        &json!({
+            "model": MODEL,
+            "stream": true,
+            "stream_options": {"include_usage": true},
+            "messages": [{"role": "user", "content": "Reply with exactly: hi"}],
+        }),
+    )
     .await;
     write_fixture("openai", "01_minimal", &bytes);
 }
@@ -37,25 +40,28 @@ async fn capture_openai_01_minimal() {
 #[tokio::test]
 #[ignore = "captures live fixture, requires OPENAI_API_KEY"]
 async fn capture_openai_02_tool_call() {
-    let bytes = send(CHAT_URL, &json!({
-        "model": MODEL,
-        "stream": true,
-        "stream_options": {"include_usage": true},
-        "tools": [{
-            "type": "function",
-            "function": {
-                "name": "get_weather",
-                "description": "Get the current weather for a city.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"city": {"type": "string"}},
-                    "required": ["city"],
+    let bytes = send(
+        CHAT_URL,
+        &json!({
+            "model": MODEL,
+            "stream": true,
+            "stream_options": {"include_usage": true},
+            "tools": [{
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "description": "Get the current weather for a city.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                        "required": ["city"],
+                    },
                 },
-            },
-        }],
-        "tool_choice": "auto",
-        "messages": [{"role": "user", "content": "What's the weather in Tokyo? Use the tool."}],
-    }))
+            }],
+            "tool_choice": "auto",
+            "messages": [{"role": "user", "content": "What's the weather in Tokyo? Use the tool."}],
+        }),
+    )
     .await;
     write_fixture("openai", "02_tool_call", &bytes);
 }
@@ -63,13 +69,16 @@ async fn capture_openai_02_tool_call() {
 #[tokio::test]
 #[ignore = "captures live fixture, requires OPENAI_API_KEY"]
 async fn capture_openai_03_reasoning() {
-    let bytes = send(CHAT_URL, &json!({
-        "model": REASONING_MODEL,
-        "stream": true,
-        "stream_options": {"include_usage": true},
-        "reasoning_effort": "medium",
-        "messages": [{"role": "user", "content": REASONING_PROMPT}],
-    }))
+    let bytes = send(
+        CHAT_URL,
+        &json!({
+            "model": REASONING_MODEL,
+            "stream": true,
+            "stream_options": {"include_usage": true},
+            "reasoning_effort": "medium",
+            "messages": [{"role": "user", "content": REASONING_PROMPT}],
+        }),
+    )
     .await;
     write_fixture("openai", "03_reasoning", &bytes);
 }
@@ -77,11 +86,14 @@ async fn capture_openai_03_reasoning() {
 #[tokio::test]
 #[ignore = "captures live fixture, requires OPENAI_API_KEY"]
 async fn capture_openai_responses_01_minimal() {
-    let bytes = send(RESPONSES_URL, &json!({
-        "model": REASONING_MODEL,
-        "stream": true,
-        "input": "Reply with exactly: hi",
-    }))
+    let bytes = send(
+        RESPONSES_URL,
+        &json!({
+            "model": REASONING_MODEL,
+            "stream": true,
+            "input": "Reply with exactly: hi",
+        }),
+    )
     .await;
     write_fixture("openai_responses", "01_minimal", &bytes);
 }
@@ -89,12 +101,15 @@ async fn capture_openai_responses_01_minimal() {
 #[tokio::test]
 #[ignore = "captures live fixture, requires OPENAI_API_KEY"]
 async fn capture_openai_responses_02_reasoning() {
-    let bytes = send(RESPONSES_URL, &json!({
-        "model": REASONING_MODEL,
-        "stream": true,
-        "reasoning": {"effort": "medium"},
-        "input": REASONING_PROMPT,
-    }))
+    let bytes = send(
+        RESPONSES_URL,
+        &json!({
+            "model": REASONING_MODEL,
+            "stream": true,
+            "reasoning": {"effort": "medium"},
+            "input": REASONING_PROMPT,
+        }),
+    )
     .await;
     write_fixture("openai_responses", "02_reasoning", &bytes);
 }

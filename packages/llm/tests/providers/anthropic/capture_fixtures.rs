@@ -98,11 +98,5 @@ async fn capture_anthropic_05_reasoning() {
 async fn send(body: &Value) -> Vec<u8> {
     let key = require_env("ANTHROPIC_API_KEY");
     let client = reqwest::Client::new();
-    post_json_capture(
-        &client,
-        URL,
-        &[("x-api-key", key.as_str()), ("anthropic-version", "2023-06-01")],
-        body,
-    )
-    .await
+    post_json_capture(&client, URL, &[("x-api-key", key.as_str()), ("anthropic-version", "2023-06-01")], body).await
 }

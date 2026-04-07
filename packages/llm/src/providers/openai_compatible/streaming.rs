@@ -62,12 +62,7 @@ pub fn process_compatible_stream<E: Into<LlmError> + Send>(
                     chunk_count += 1;
 
                     if let Some(usage) = response.usage {
-                        yield Ok(LlmResponse::Usage {
-                            input_tokens: u32::try_from(usage.prompt_tokens.max(0)).unwrap_or(0),
-                            output_tokens: u32::try_from(usage.completion_tokens.max(0)).unwrap_or(0),
-                            cached_input_tokens: usage.prompt_tokens_details
-                                .and_then(|d| d.cached_tokens),
-                        });
+                        yield Ok(LlmResponse::Usage { tokens: usage.into() });
                     }
 
                     if let Some(choice) = response.choices.pop() {
@@ -157,10 +152,38 @@ fn map_openai_compatible_finish_reason(reason: FinishReason) -> StopReason {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::TokenUsage;
     use crate::providers::openai_compatible::types::{
-        ChatCompletionStreamChoice, ChatCompletionStreamResponseDelta, FinishReason, FunctionCallDelta, ToolCallDelta,
+        ChatCompletionStreamChoice, ChatCompletionStreamResponseDelta, CompletionTokensDetails, FinishReason,
+        FunctionCallDelta, PromptTokensDetails, ToolCallDelta, Usage,
     };
     use tokio_stream::StreamExt;
+
+    fn usage_chunk(usage: Usage) -> ChatCompletionStreamResponse {
+        ChatCompletionStreamResponse {
+            id: "chunk_usage".to_string(),
+            choices: vec![],
+            created: 1,
+            model: "test".to_string(),
+            system_fingerprint: None,
+            object: "chat.completion.chunk".to_string(),
+            usage: Some(usage),
+        }
+    }
+
+    async fn collect_first_usage(stream: Vec<ChatCompletionStreamResponse>) -> Option<TokenUsage> {
+        let stream_items =
+            stream.into_iter().map(Ok::<ChatCompletionStreamResponse, std::io::Error>).collect::<Vec<_>>();
+        let mut processed = Box::pin(process_compatible_stream(tokio_stream::iter(stream_items)));
+        let mut events = Vec::new();
+        while let Some(event) = processed.next().await {
+            events.push(event.unwrap());
+        }
+        events.into_iter().find_map(|e| match e {
+            LlmResponse::Usage { tokens } => Some(tokens),
+            _ => None,
+        })
+    }
 
     #[tokio::test]
     async fn test_process_compatible_stream_emits_reasoning_chunks() {
@@ -243,6 +266,87 @@ mod tests {
         );
         assert!(events.iter().any(|e| matches!(e, LlmResponse::ToolRequestComplete { tool_call } if tool_call.id == "call_1" && tool_call.arguments == "{}")));
         assert!(matches!(events.last(), Some(LlmResponse::Done { stop_reason: Some(StopReason::ToolCalls) })));
+    }
+
+    #[tokio::test]
+    async fn test_zai_shape_only_populates_cache_read() {
+        let chunk = usage_chunk(Usage {
+            prompt_tokens: 100,
+            completion_tokens: 50,
+            total_tokens: 150,
+            prompt_tokens_details: Some(PromptTokensDetails { cached_tokens: Some(30), ..Default::default() }),
+            completion_tokens_details: None,
+        });
+
+        let tokens = collect_first_usage(vec![chunk]).await.expect("usage event");
+        assert_eq!(
+            tokens,
+            TokenUsage { input_tokens: 100, output_tokens: 50, cache_read_tokens: Some(30), ..TokenUsage::default() }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_openrouter_shape_populates_all_fields() {
+        let chunk = usage_chunk(Usage {
+            prompt_tokens: 1000,
+            completion_tokens: 500,
+            total_tokens: 1500,
+            prompt_tokens_details: Some(PromptTokensDetails {
+                cached_tokens: Some(100),
+                cache_write_tokens: Some(50),
+                audio_tokens: Some(10),
+                video_tokens: Some(5),
+            }),
+            completion_tokens_details: Some(CompletionTokensDetails {
+                reasoning_tokens: Some(300),
+                audio_tokens: Some(8),
+                accepted_prediction_tokens: Some(2),
+                rejected_prediction_tokens: Some(1),
+            }),
+        });
+
+        let tokens = collect_first_usage(vec![chunk]).await.expect("usage event");
+        assert_eq!(
+            tokens,
+            TokenUsage {
+                input_tokens: 1000,
+                output_tokens: 500,
+                cache_read_tokens: Some(100),
+                cache_creation_tokens: Some(50),
+                input_audio_tokens: Some(10),
+                input_video_tokens: Some(5),
+                reasoning_tokens: Some(300),
+                output_audio_tokens: Some(8),
+                accepted_prediction_tokens: Some(2),
+                rejected_prediction_tokens: Some(1),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_openai_shape_populates_input_audio_and_completion_details() {
+        let chunk = usage_chunk(Usage {
+            prompt_tokens: 200,
+            completion_tokens: 100,
+            total_tokens: 300,
+            prompt_tokens_details: Some(PromptTokensDetails {
+                cached_tokens: Some(80),
+                audio_tokens: Some(12),
+                ..Default::default()
+            }),
+            completion_tokens_details: Some(CompletionTokensDetails {
+                reasoning_tokens: Some(40),
+                accepted_prediction_tokens: Some(5),
+                ..Default::default()
+            }),
+        });
+
+        let tokens = collect_first_usage(vec![chunk]).await.expect("usage event");
+        assert_eq!(tokens.cache_read_tokens, Some(80));
+        assert_eq!(tokens.cache_creation_tokens, None);
+        assert_eq!(tokens.input_audio_tokens, Some(12));
+        assert_eq!(tokens.reasoning_tokens, Some(40));
+        assert_eq!(tokens.accepted_prediction_tokens, Some(5));
     }
 
     #[tokio::test]
