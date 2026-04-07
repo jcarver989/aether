@@ -280,6 +280,22 @@ fn soft_wrap_preserves_right_panel_background_style_on_wrapped_rows() {
     assert_eq!(term.get_style_at(1, 29).bg, expected_bg);
 }
 
+#[test]
+fn left_child_wider_than_allocation_does_not_bleed_into_right_pane() {
+    let mut split = SplitPanel::new(
+        WideComponent { text: "1234567890ABCDEFGHIJ" },
+        StubComponent::new("RIGHT"),
+        SplitLayout::fixed(12),
+    )
+    .with_separator("|", Style::default());
+
+    let term = render_component(|ctx| split.render(ctx), 30, 3);
+
+    // left allocation is 12 columns; the wide left content must wrap inside
+    // those 12 columns and never overlap the separator or the right pane.
+    assert_buffer_eq(&term, &["1234567890AB|RIGHT", "CDEFGHIJ    |", "            |"]);
+}
+
 #[tokio::test]
 async fn focus_left_and_focus_right() {
     let mut split = make_split();

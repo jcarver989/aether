@@ -1,7 +1,7 @@
 use crate::diffs::diff::highlight_diff;
 use crate::line::Line;
+use crate::rendering::frame::{FitOptions, Frame};
 use crate::rendering::render_context::ViewContext;
-use crate::rendering::soft_wrap::soft_wrap_line;
 use crate::span::Span;
 use crate::style::Style;
 
@@ -136,13 +136,18 @@ pub fn render_cell(
 
     // content_width is derived from terminal width (u16), so it always fits in u16
     #[allow(clippy::cast_possible_truncation)]
-    let wrapped = soft_wrap_line(&content_line, content_width as u16);
+    let content_width_u16 = content_width as u16;
+    let wrapped_frame = Frame::new(vec![content_line]).fit(content_width_u16, FitOptions::wrap());
 
-    wrapped
+    wrapped_frame
+        .into_lines()
         .into_iter()
+        .map(|mut line| {
+            line.extend_bg_to_width(content_width);
+            line
+        })
         .enumerate()
-        .map(|(i, mut wrapped_line)| {
-            wrapped_line.extend_bg_to_width(content_width);
+        .map(|(i, wrapped_line)| {
             let mut line = Line::default();
             if i == 0 {
                 if let Some(num) = cell.line_number {

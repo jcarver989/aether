@@ -1,9 +1,8 @@
 use super::component::{Component, Event};
 use crate::focus::{FocusOutcome, FocusRing};
-use crate::rendering::frame::{Cursor, Frame};
+use crate::rendering::frame::{Cursor, FitOptions, Frame, FramePart};
 use crate::rendering::line::Line;
 use crate::rendering::render_context::ViewContext;
-use crate::rendering::soft_wrap::{soft_wrap_lines_with_map, truncate_line};
 use crate::style::Style;
 use crossterm::event::KeyCode;
 
@@ -177,67 +176,50 @@ impl<L: Component, R: Component> Component for SplitPanel<L, R> {
 
     fn render(&mut self, ctx: &ViewContext) -> Frame {
         let widths = self.widths(ctx.size.width);
-
-        let left_ctx = ctx.with_size((widths.left, ctx.size.height));
-        let right_ctx = ctx.with_size((widths.right, ctx.size.height));
-
-        let (left_lines, left_cursor) = self.left.render(&left_ctx).into_parts();
-        let (right_lines, right_cursor) = self.right.render(&right_ctx).into_parts();
-
-        let (mut right_visual_lines, right_row_starts) = if widths.right == 0 {
-            (Vec::new(), vec![0; right_lines.len()])
-        } else {
-            soft_wrap_lines_with_map(&right_lines, widths.right)
-        };
-
-        for line in &mut right_visual_lines {
-            line.extend_bg_to_width(widths.right.into());
-        }
-
         let max_rows = usize::from(ctx.size.height);
-        let sep_width = self.separator.as_ref().map_or(0, |(t, _)| t.len());
-        let mut merged = Vec::with_capacity(max_rows);
 
-        for i in 0..max_rows {
-            let mut line = match left_lines.get(i) {
-                Some(l) => {
-                    let mut l = truncate_line(l, widths.left.into());
-                    l.extend_bg_to_width(widths.left.into());
-                    l
-                }
-                None => Line::new(" ".repeat(widths.left.into())),
-            };
-            if let Some((text, style)) = &self.separator {
-                line.push_with_style(text, *style);
-            }
-            if let Some(right) = right_visual_lines.get(i) {
-                line.append_line(right);
-            }
-            merged.push(line);
+        let mut left = self.left.render(&ctx.with_width(widths.left));
+        let mut right = self.right.render(&ctx.with_width(widths.right));
+
+        // Only the focused side may contribute the merged cursor — suppress the
+        // other side's cursor before composition so hstack picks the right one.
+        if !self.focus.is_focused(0) {
+            left = left.with_cursor(Cursor::hidden());
+        }
+        if !self.focus.is_focused(1) {
+            right = right.with_cursor(Cursor::hidden());
         }
 
-        let cursor = if self.focus.is_focused(0) && left_cursor.is_visible {
-            if left_cursor.row < max_rows { left_cursor } else { Cursor::hidden() }
-        } else if self.focus.is_focused(1) && right_cursor.is_visible && widths.right > 0 {
-            let mut row = right_row_starts
-                .get(right_cursor.row)
-                .copied()
-                .unwrap_or_else(|| right_visual_lines.len().saturating_sub(1));
-            let mut col = right_cursor.col;
-            let right_width = usize::from(widths.right);
+        let left = left.fit(widths.left, FitOptions::wrap().with_fill());
+        let right = right.fit(widths.right, FitOptions::wrap().with_fill());
+        let merged = if let Some((text, style)) = &self.separator {
+            let sep_proto = Line::with_style(text.clone(), *style);
+            let sep_width = u16::try_from(sep_proto.display_width()).unwrap_or(0);
+            let sep_rows = left.lines().len().max(right.lines().len()).max(max_rows);
 
-            row += col / right_width;
-            col %= right_width;
+            let sep_lines: Vec<Line> = (0..sep_rows).map(|_| sep_proto.clone()).collect();
 
-            if row < max_rows {
-                Cursor::visible(row, col + usize::from(widths.left) + sep_width)
-            } else {
-                Cursor::hidden()
-            }
+            Frame::hstack([
+                FramePart::new(left, widths.left),
+                FramePart::new(Frame::new(sep_lines), sep_width),
+                FramePart::new(right, widths.right),
+            ])
         } else {
-            Cursor::hidden()
+            Frame::hstack([FramePart::new(left, widths.left), FramePart::new(right, widths.right)])
         };
 
-        Frame::new(merged).with_cursor(cursor)
+        // SplitPanel always emits a full-height frame: truncate or pad with
+        // blank rows so it composes cleanly with sibling layouts.
+        let total_width = ctx.size.width;
+        let (mut lines, mut cursor) = merged.into_parts();
+        lines.truncate(max_rows);
+        if lines.len() < max_rows {
+            let blank = Line::new(" ".repeat(usize::from(total_width)));
+            lines.resize(max_rows, blank);
+        }
+        if cursor.is_visible && cursor.row >= max_rows {
+            cursor = Cursor::hidden();
+        }
+        Frame::new(lines).with_cursor(cursor)
     }
 }

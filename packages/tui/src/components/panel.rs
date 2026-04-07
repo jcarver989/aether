@@ -1,4 +1,4 @@
-use crate::{Color, Line, Style, ViewContext};
+use crate::{Color, FitOptions, Frame, Line, Style, ViewContext};
 use unicode_width::UnicodeWidthStr;
 
 /// Width consumed by left ("│ ") and right (" │") borders.
@@ -87,13 +87,15 @@ impl Panel {
         lines.push(empty_border_line(inner_width));
 
         // ── Wrap pre-rendered blocks in borders ──
+        let inner_width_u16 = u16::try_from(inner_width).unwrap_or(u16::MAX);
         for (i, block) in self.blocks.iter().enumerate() {
             if i > 0 {
                 for _ in 0..self.gap {
                     lines.push(empty_border_line(inner_width));
                 }
             }
-            for cl in block {
+            let block_frame = Frame::new(block.clone()).fit(inner_width_u16, FitOptions::wrap().with_fill());
+            for cl in block_frame.lines() {
                 lines.push(wrap_in_border(cl, inner_width));
             }
         }
@@ -222,6 +224,20 @@ mod tests {
         let gap_line = lines[3].plain_text();
         assert!(gap_line.starts_with('│'), "gap: {gap_line}");
         assert!(gap_line.ends_with('│'), "gap: {gap_line}");
+    }
+
+    #[test]
+    fn overlong_content_wraps_inside_borders() {
+        let mut container = Panel::new(Color::Grey);
+        container.push(vec![Line::new("abcdefghijklmnop")]);
+        // total width 14 → inner width 10 (14 − BORDER_H_PAD)
+        let context = ViewContext::new((14, 10));
+        let lines = container.render(&context);
+
+        // top border + blank + 2 wrapped content rows + bottom border = 5
+        assert_eq!(lines.len(), 5);
+        assert_eq!(lines[2].plain_text(), "│ abcdefghij │");
+        assert_eq!(lines[3].plain_text(), "│ klmnop     │");
     }
 
     #[test]

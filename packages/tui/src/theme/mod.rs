@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use std::fmt;
 
+use crate::rendering::line::Line;
 use crate::style::Style;
 use crossterm::style::Color;
 mod defaults;
@@ -287,6 +288,15 @@ impl Theme {
 
     pub fn selected_row_style_with_fg(&self, fg: Color) -> Style {
         Style::fg(fg).bg_color(self.highlight_bg())
+    }
+
+    /// Build a [`Line`] for a selected picker row: styled with
+    /// [`selected_row_style`](Self::selected_row_style) and marked with the
+    /// same style as row-fill metadata so the highlight extends to the
+    /// containing slot's full width.
+    pub fn selected_row_line(&self, text: impl Into<String>) -> Line {
+        let style = self.selected_row_style();
+        Line::with_style(text, style).with_fill(style)
     }
 
     pub fn secondary(&self) -> Color {

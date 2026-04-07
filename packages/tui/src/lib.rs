@@ -49,8 +49,9 @@ pub use components::text_field::TextField;
 pub use components::{Component, Cursor, Event, PickerMessage, ViewContext, merge, wrap_selection};
 pub use diffs::diff_types::{DiffLine, DiffPreview, DiffTag, SplitDiffCell, SplitDiffRow};
 pub use focus::{FocusOutcome, FocusRing};
-pub use rendering::frame::Frame;
+pub use rendering::frame::{FitOptions, Frame, FramePart, Overflow};
 pub use rendering::line::Line;
+pub use rendering::render_context::Insets;
 pub use rendering::style::Style;
 pub use theme::{Theme, ThemeBuildError};
 
