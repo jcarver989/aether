@@ -10,6 +10,12 @@ use super::style::Style;
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Line {
     spans: Vec<Span>,
+    /// Optional row-fill metadata. When set, the row should be visually
+    /// extended to its containing width with trailing spaces in this style.
+    /// Materialization is deferred until composition (`Frame::hstack`) or the
+    /// terminal-facing layer (`VisualFrame::from_frame`), so wrapping doesn't
+    /// produce phantom rows from premature trailing spaces.
+    fill: Option<Style>,
 }
 
 impl Line {
@@ -19,7 +25,7 @@ impl Line {
             return Self::default();
         }
 
-        Self { spans: vec![Span::new(text)] }
+        Self { spans: vec![Span::new(text)], fill: None }
     }
 
     pub fn styled(text: impl Into<String>, color: Color) -> Self {
@@ -32,7 +38,7 @@ impl Line {
             return Self::default();
         }
 
-        Self { spans: vec![Span::with_style(text, style)] }
+        Self { spans: vec![Span::with_style(text, style)], fill: None }
     }
 
     pub fn spans(&self) -> &[Span] {
@@ -40,7 +46,45 @@ impl Line {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.spans.is_empty()
+        self.spans.is_empty() && self.fill.is_none()
+    }
+
+    /// Returns the row-fill style, if any.
+    ///
+    /// A `Some` value means the row asks to be extended to the containing
+    /// width with trailing spaces in this style. The fill stays as metadata
+    /// until [`extend_bg_to_width`](Self::extend_bg_to_width) materializes it
+    /// (or `Frame::hstack` / `VisualFrame::from_frame` does so implicitly).
+    pub fn fill(&self) -> Option<Style> {
+        self.fill
+    }
+
+    /// Builder: mark this row as filling its containing width with `style`.
+    pub fn with_fill(mut self, style: Style) -> Self {
+        self.fill = Some(style);
+        self
+    }
+
+    /// Mark this row as filling its containing width with `style`.
+    pub fn set_fill(&mut self, style: Style) {
+        self.fill = Some(style);
+    }
+
+    /// Clear any row-fill metadata.
+    pub fn clear_fill(&mut self) {
+        self.fill = None;
+    }
+
+    /// The style this row's trailing space *would* be filled with.
+    ///
+    /// Prefers explicit fill metadata, otherwise the first background color
+    /// found among the row's spans, otherwise the default style. Used by
+    /// composition layers (e.g., `Frame::fit` with `with_fill`) to decide what
+    /// background to extend.
+    pub fn infer_fill_style(&self) -> Style {
+        self.fill
+            .or_else(|| self.spans.iter().find_map(|s| s.style().bg).map(|bg| Style::default().bg_color(bg)))
+            .unwrap_or_default()
     }
 
     pub fn prepend(mut self, text: impl Into<String>) -> Self {
@@ -48,18 +92,23 @@ impl Line {
 
         if text.is_empty() {
             return self;
+        }
+
+        // If a fill style is set or any span has a bg, prepended text should
+        // pick that style up so the indent is visually contiguous with the
+        // row's eventual fill. Otherwise, merge into the leading default-style
+        // span when possible to keep span counts low.
+        let bg_style =
+            self.fill.or_else(|| self.spans.iter().find_map(|s| s.style().bg).map(|bg| Style::default().bg_color(bg)));
+
+        if let Some(style) = bg_style {
+            self.spans.insert(0, Span::with_style(text, style));
         } else if let Some(first) = self.spans.first_mut()
             && first.style == Style::default()
         {
             first.text.insert_str(0, &text);
         } else {
-            let bg_style = self
-                .spans
-                .iter()
-                .find_map(|s| s.style().bg)
-                .map(|bg| Style::default().bg_color(bg))
-                .unwrap_or_default();
-            self.spans.insert(0, Span::with_style(text, bg_style));
+            self.spans.insert(0, Span::with_style(text, Style::default()));
         }
 
         self
@@ -101,15 +150,13 @@ impl Line {
         let current_width = UnicodeWidthStr::width(self.plain_text().as_str());
         let pad = target_width.saturating_sub(current_width);
         if pad == 0 {
+            self.fill = None;
             return;
         }
 
-        let bg = self.spans.iter().find_map(|span| span.style().bg);
-        if let Some(bg) = bg {
-            self.push_with_style(format!("{:pad$}", "", pad = pad), Style::default().bg_color(bg));
-        } else {
-            self.push_text(format!("{:pad$}", "", pad = pad));
-        }
+        let pad_style = self.infer_fill_style();
+        self.fill = None;
+        self.push_with_style(format!("{:pad$}", "", pad = pad), pad_style);
     }
 
     pub fn to_ansi_string(&self) -> String {
@@ -257,6 +304,48 @@ mod tests {
     fn prepend_empty_is_noop() {
         let line = Line::new("hello").prepend("");
         assert_eq!(line.plain_text(), "hello");
+    }
+
+    #[test]
+    fn with_fill_sets_fill_metadata_without_changing_spans() {
+        let line = Line::new("hello").with_fill(Style::default().bg_color(Color::Red));
+        assert_eq!(line.plain_text(), "hello");
+        assert_eq!(line.fill(), Some(Style::default().bg_color(Color::Red)));
+    }
+
+    #[test]
+    fn extend_bg_to_width_consumes_fill_and_uses_its_style_for_padding() {
+        let mut line = Line::new("hi").with_fill(Style::default().bg_color(Color::Magenta));
+        line.extend_bg_to_width(5);
+        assert_eq!(line.plain_text(), "hi   ");
+        assert_eq!(line.fill(), None);
+        let pad_span = line.spans().last().unwrap();
+        assert_eq!(pad_span.style().bg, Some(Color::Magenta));
+    }
+
+    #[test]
+    fn extend_bg_to_width_clears_fill_when_already_at_target_width() {
+        let mut line = Line::new("hello").with_fill(Style::default().bg_color(Color::Red));
+        line.extend_bg_to_width(5);
+        assert_eq!(line.plain_text(), "hello");
+        assert_eq!(line.fill(), None, "fill should be cleared even when no padding was needed");
+    }
+
+    #[test]
+    fn extend_bg_to_width_falls_back_to_span_bg_when_no_fill_set() {
+        let mut line = Line::with_style("hi", Style::default().bg_color(Color::Blue));
+        line.extend_bg_to_width(5);
+        let pad_span = line.spans().last().unwrap();
+        assert_eq!(pad_span.style().bg, Some(Color::Blue));
+    }
+
+    #[test]
+    fn prepend_carries_fill_style_when_no_span_bg_present() {
+        let line = Line::new("hi").with_fill(Style::default().bg_color(Color::Green)).prepend("..");
+        assert_eq!(line.plain_text(), "..hi");
+        // Prepend should not produce a default-style span; it should pick up the
+        // fill style so the indent is visually contiguous with the row's fill.
+        assert_eq!(line.spans()[0].style().bg, Some(Color::Green));
     }
 
     #[test]

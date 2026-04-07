@@ -47,7 +47,7 @@ impl<W: Write> Renderer<W> {
     pub fn render_frame(&mut self, f: impl FnOnce(&ViewContext) -> Frame) -> io::Result<()> {
         let context = self.context();
         let frame = f(&context).clamp_cursor();
-        self.render_frame_internal(&frame)
+        self.render_frame_internal(frame)
     }
 
     pub fn clear_screen(&mut self) -> io::Result<()> {
@@ -110,7 +110,7 @@ impl<W: Write> Renderer<W> {
         self.prev_frame.as_ref().map_or(0, super::visual_frame::VisualFrame::overflow)
     }
 
-    fn render_frame_internal(&mut self, frame: &Frame) -> io::Result<()> {
+    fn render_frame_internal(&mut self, frame: Frame) -> io::Result<()> {
         let next_frame = {
             let flushed = self.prev_frame.as_ref().map_or(0, super::visual_frame::VisualFrame::overflow);
             VisualFrame::from_frame(frame, self.size, flushed)
@@ -258,7 +258,7 @@ mod tests {
     }
 
     /// Render `first`, clear output buffer, render `second`, return the output.
-    fn diff_output(r: &mut Renderer<FakeWriter>, first: &Frame, second: &Frame) -> String {
+    fn diff_output(r: &mut Renderer<FakeWriter>, first: Frame, second: Frame) -> String {
         r.render_frame_internal(first).unwrap();
         r.terminal.writer.bytes.clear();
         r.render_frame_internal(second).unwrap();
@@ -318,7 +318,7 @@ mod tests {
         for lines in [vec![], vec!["hello", "world"]] {
             let mut r = renderer((80, 24));
             let f = frame(&lines);
-            let out = diff_output(&mut r, &f, &f);
+            let out = diff_output(&mut r, f.clone(), f);
             for word in &lines {
                 assert_missing(&out, word, "identical re-render should not rewrite content");
             }
@@ -330,7 +330,7 @@ mod tests {
     fn first_render_writes_all_lines() {
         let mut r = renderer((80, 24));
         let f = frame(&["hello", "world"]);
-        r.render_frame_internal(&f).unwrap();
+        r.render_frame_internal(f).unwrap();
         let out = output(&r);
         for word in ["hello", "world"] {
             assert_has(&out, word, "first render should contain line");
@@ -340,7 +340,7 @@ mod tests {
     #[test]
     fn changing_middle_line_rewrites_from_diff() {
         let mut r = renderer((80, 24));
-        let out = diff_output(&mut r, &frame(&["aaa", "bbb", "ccc"]), &frame(&["aaa", "BBB", "ccc"]));
+        let out = diff_output(&mut r, frame(&["aaa", "bbb", "ccc"]), frame(&["aaa", "BBB", "ccc"]));
         for word in ["BBB", "ccc"] {
             assert_has(&out, word, "changed/subsequent lines should be rewritten");
         }
@@ -349,7 +349,7 @@ mod tests {
     #[test]
     fn appending_line_moves_to_next_row_before_writing() {
         let mut r = renderer((80, 24));
-        let out = diff_output(&mut r, &frame(&["aaa", "bbb"]), &frame(&["aaa", "bbb", "ccc"]));
+        let out = diff_output(&mut r, frame(&["aaa", "bbb"]), frame(&["aaa", "bbb", "ccc"]));
         let ccc_pos = out.find("ccc").expect("missing appended line");
         assert!(out[..ccc_pos].contains("\r\n"), "should move to next row before appending: {out:?}");
     }
@@ -358,7 +358,7 @@ mod tests {
     fn push_to_scrollback_restores_cursor_even_when_nothing_new_is_flushed() {
         let mut r = renderer((80, 2));
         let f = frame_with_cursor(&["L1", "L2", "L3", "L4"], 2, 0);
-        r.render_frame_internal(&f).unwrap();
+        r.render_frame_internal(f).unwrap();
         r.terminal.writer.bytes.clear();
         r.push_to_scrollback(&[Line::new("already flushed 1"), Line::new("already flushed 2")]).unwrap();
         assert_has(&output(&r), "\x1b[1B", "should restore cursor before early return");
@@ -368,10 +368,10 @@ mod tests {
     fn push_to_scrollback_clears_prev_visible_lines() {
         let mut r = renderer((80, 24));
         let f = frame(&["managed line"]);
-        r.render_frame_internal(&f).unwrap();
+        r.render_frame_internal(f.clone()).unwrap();
         r.push_to_scrollback(&[Line::new("scrolled")]).unwrap();
         r.terminal.writer.bytes.clear();
-        r.render_frame_internal(&f).unwrap();
+        r.render_frame_internal(f).unwrap();
         assert_has(&output(&r), "managed line", "should re-render managed content after scrollback");
     }
 
@@ -397,7 +397,7 @@ mod tests {
         let mut r = renderer((80, 24));
         r.clear_screen().unwrap();
         r.terminal.writer.bytes.clear();
-        r.render_frame_internal(&frame(&["hello"])).unwrap();
+        r.render_frame_internal(frame(&["hello"])).unwrap();
         let out = output(&r);
         assert_has(&out, "hello", "should render content");
         assert_missing(&out, "\x1b[2J", "render after clear_screen should not re-clear viewport");
@@ -406,10 +406,10 @@ mod tests {
     #[test]
     fn resize_marks_terminal_for_full_clear_and_redraw() {
         let mut r = renderer((10, 4));
-        r.render_frame_internal(&frame(&["abcdefghij"])).unwrap();
+        r.render_frame_internal(frame(&["abcdefghij"])).unwrap();
         r.terminal.writer.bytes.clear();
         r.on_resize((5, 4));
-        r.render_frame_internal(&frame(&["abcdefghij"])).unwrap();
+        r.render_frame_internal(frame(&["abcdefghij"])).unwrap();
         let out = output(&r);
         for (seq, label) in
             [("\x1b[2J", "ClearAll"), ("\x1b[3J", "Purge"), ("abcde", "wrapped-1"), ("fghij", "wrapped-2")]
@@ -421,7 +421,7 @@ mod tests {
     #[test]
     fn on_resize_resets_prev_frame() {
         let mut r = renderer((80, 24));
-        r.render_frame_internal(&frame(&["hello"])).unwrap();
+        r.render_frame_internal(frame(&["hello"])).unwrap();
         assert!(r.prev_frame.is_some());
         r.on_resize((40, 12));
         assert!(r.prev_frame.is_none(), "on_resize should reset prev_frame");
@@ -431,7 +431,7 @@ mod tests {
     fn visual_frame_splits_overflow_from_visible_lines() {
         let mut r = renderer((80, 2));
         let f = frame_with_cursor(&["L1", "L2", "L3", "L4"], 3, 0);
-        r.render_frame_internal(&f).unwrap();
+        r.render_frame_internal(f).unwrap();
         assert_eq!(r.flushed_visual_count(), 2);
     }
 
@@ -439,7 +439,7 @@ mod tests {
     fn cursor_remapped_after_wrap() {
         let mut r = renderer((3, 24));
         let f = frame_with_cursor(&["abcdef"], 0, 5);
-        r.render_frame_internal(&f).unwrap();
+        r.render_frame_internal(f).unwrap();
         assert_has(&output(&r), "\x1b[2C", "cursor should be at col 2 (MoveRight(2))");
     }
 }

@@ -62,9 +62,15 @@ pub fn display_width_line(line: &Line) -> usize {
 /// Walks spans tracking cumulative display width, slicing at the character
 /// boundary where the budget is exhausted. No ellipsis is appended — callers
 /// can pad with [`Line::extend_bg_to_width`] if needed.
+///
+/// Row-fill metadata on the source line is preserved on the result.
 pub fn truncate_line(line: &Line, max_width: usize) -> Line {
     if max_width == 0 {
-        return Line::default();
+        let mut empty = Line::default();
+        if let Some(fill) = line.fill() {
+            empty.set_fill(fill);
+        }
+        return empty;
     }
 
     let mut result = Line::default();
@@ -95,12 +101,19 @@ pub fn truncate_line(line: &Line, max_width: usize) -> Line {
         remaining -= col;
     }
 
+    if let Some(fill) = line.fill() {
+        result.set_fill(fill);
+    }
     result
 }
 
 pub fn soft_wrap_line(line: &Line, width: u16) -> Vec<Line> {
     if line.is_empty() {
-        return vec![Line::new("")];
+        let mut empty = Line::new("");
+        if let Some(fill) = line.fill() {
+            empty.set_fill(fill);
+        }
+        return vec![empty];
     }
 
     let max_width = width as usize;
@@ -163,6 +176,12 @@ pub fn soft_wrap_line(line: &Line, width: u16) -> Vec<Line> {
     }
 
     rows.push(current);
+
+    if let Some(fill) = line.fill() {
+        for row in &mut rows {
+            row.set_fill(fill);
+        }
+    }
     rows
 }
 
@@ -403,6 +422,35 @@ mod tests {
         assert_eq!(rows[1].plain_text(), "world");
         assert_eq!(rows[0].spans()[0].style().fg, Some(Color::Red));
         assert_eq!(rows[1].spans()[0].style().fg, Some(Color::Red));
+    }
+
+    #[test]
+    fn soft_wrap_propagates_fill_to_each_wrapped_row() {
+        use crate::style::Style;
+        let line = Line::new("abcdef").with_fill(Style::default().bg_color(Color::Red));
+        let rows = soft_wrap_line(&line, 3);
+        assert_eq!(rows.len(), 2);
+        for row in &rows {
+            assert_eq!(row.fill(), Some(Style::default().bg_color(Color::Red)));
+        }
+    }
+
+    #[test]
+    fn soft_wrap_preserves_fill_on_empty_line() {
+        use crate::style::Style;
+        let line = Line::default().with_fill(Style::default().bg_color(Color::Red));
+        let rows = soft_wrap_line(&line, 10);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].fill(), Some(Style::default().bg_color(Color::Red)));
+    }
+
+    #[test]
+    fn truncate_line_preserves_fill_metadata() {
+        use crate::style::Style;
+        let line = Line::new("abcdef").with_fill(Style::default().bg_color(Color::Blue));
+        let truncated = truncate_line(&line, 3);
+        assert_eq!(truncated.plain_text(), "abc");
+        assert_eq!(truncated.fill(), Some(Style::default().bg_color(Color::Blue)));
     }
 
     #[test]

@@ -1,9 +1,8 @@
 use crate::Frame;
 use crate::rendering::render_context::Size;
 
-use super::frame::Cursor;
+use super::frame::{Cursor, FitOptions};
 use super::line::Line;
-use super::soft_wrap::soft_wrap_lines_with_map;
 
 /// Result of diffing two `VisualFrames`' visible lines.
 #[derive(Debug)]
@@ -34,24 +33,28 @@ pub struct VisualFrame {
 
 impl VisualFrame {
     /// Creates a `VisualFrame` from a logical Frame, applying soft-wrap and viewport split.
-    pub fn from_frame(frame: &Frame, size: Size, flushed_visual_count: usize) -> Self {
-        let (wrapped_lines, logical_to_visual) = soft_wrap_lines_with_map(frame.lines(), size.width);
+    ///
+    /// As the terminal-facing layer, this is also where deferred row-fill
+    /// metadata gets materialized into trailing spaces sized to the terminal
+    /// width. Materializing here (rather than during composition) lets fills
+    /// survive intermediate wraps without producing phantom rows.
+    pub fn from_frame(frame: Frame, size: Size, flushed_visual_count: usize) -> Self {
+        let was_cursor_visible = frame.cursor().is_visible;
+        let fitted = frame.fit(size.width, FitOptions::wrap());
+        let (mut wrapped_lines, fitted_cursor) = fitted.into_parts();
 
-        let mut visual_cursor_row =
-            logical_to_visual.get(frame.cursor().row).copied().unwrap_or_else(|| wrapped_lines.len().saturating_sub(1));
-
-        let mut visual_cursor_col = frame.cursor().col;
-        let width = usize::from(size.width);
-        if width > 0 {
-            visual_cursor_row += visual_cursor_col / width;
-            visual_cursor_col %= width;
-        } else {
-            visual_cursor_col = 0;
+        if size.width > 0 {
+            let target = usize::from(size.width);
+            for line in &mut wrapped_lines {
+                if line.fill().is_some() {
+                    line.extend_bg_to_width(target);
+                }
+            }
         }
 
-        if visual_cursor_row >= wrapped_lines.len() {
-            visual_cursor_row = wrapped_lines.len().saturating_sub(1);
-        }
+        // Frame::fit hides the cursor at width == 0; preserve the caller's visibility.
+        let visual_cursor_col = if size.width == 0 { 0 } else { fitted_cursor.col };
+        let visual_cursor_row = if size.width == 0 { 0 } else { fitted_cursor.row };
 
         let viewport_rows = usize::from(size.height.max(1));
         let total_lines = wrapped_lines.len();
@@ -64,7 +67,7 @@ impl VisualFrame {
             Vec::new()
         };
 
-        let visible_lines = wrapped_lines[overflow..].to_vec();
+        let visible_lines = wrapped_lines.split_off(overflow);
         let final_cursor_row = if visual_cursor_row >= overflow {
             cursor_row_after_overflow.min(visible_lines.len().saturating_sub(1))
         } else {
@@ -74,7 +77,7 @@ impl VisualFrame {
         Self {
             scrollback_lines,
             visible_lines,
-            cursor: Cursor { row: final_cursor_row, col: visual_cursor_col, is_visible: frame.cursor().is_visible },
+            cursor: Cursor { row: final_cursor_row, col: visual_cursor_col, is_visible: was_cursor_visible },
             overflow,
         }
     }
@@ -132,7 +135,7 @@ mod tests {
     fn visual_frame_from_frame_soft_wraps_and_splits() {
         let frame = Frame::new(vec![Line::new("abcdef")]).with_cursor(Cursor { row: 0, col: 5, is_visible: true });
 
-        let visual = VisualFrame::from_frame(&frame, Size::from((3, 5)), 0);
+        let visual = VisualFrame::from_frame(frame, Size::from((3, 5)), 0);
         assert_eq!(visual.visible_lines(), &[Line::new("abc"), Line::new("def")]);
         assert_eq!(visual.cursor().row, 1);
         assert_eq!(visual.cursor().col, 2);
@@ -144,7 +147,7 @@ mod tests {
         let frame = Frame::new(vec![Line::new("L1"), Line::new("L2"), Line::new("L3"), Line::new("L4")])
             .with_cursor(Cursor { row: 3, col: 0, is_visible: true });
 
-        let visual = VisualFrame::from_frame(&frame, Size::from((80, 2)), 0);
+        let visual = VisualFrame::from_frame(frame, Size::from((80, 2)), 0);
         assert_eq!(visual.scrollback_lines(), &[Line::new("L1"), Line::new("L2")]);
         assert_eq!(visual.visible_lines(), &[Line::new("L3"), Line::new("L4")]);
         assert_eq!(visual.cursor().row, 1);
@@ -158,7 +161,7 @@ mod tests {
             Frame::new(vec![Line::new("L1"), Line::new("L2"), Line::new("L3"), Line::new("L4"), Line::new("L5")])
                 .with_cursor(Cursor { row: 4, col: 0, is_visible: true });
 
-        let visual = VisualFrame::from_frame(&frame, Size::from((80, 2)), 1);
+        let visual = VisualFrame::from_frame(frame, Size::from((80, 2)), 1);
 
         assert_eq!(visual.scrollback_lines(), &[Line::new("L2"), Line::new("L3")]);
         assert_eq!(visual.visible_lines(), &[Line::new("L4"), Line::new("L5")]);
@@ -174,7 +177,7 @@ mod tests {
             is_visible: true,
         });
 
-        let visual = VisualFrame::from_frame(&frame, Size::from((80, 2)), 0);
+        let visual = VisualFrame::from_frame(frame, Size::from((80, 2)), 0);
         assert_eq!(visual.cursor().row, 0);
         assert_eq!(visual.visible_lines().len(), 2);
     }
@@ -182,16 +185,53 @@ mod tests {
     #[test]
     fn visual_frame_empty_frame() {
         let frame = Frame::new(vec![]);
-        let visual = VisualFrame::from_frame(&frame, Size::from((80, 24)), 0);
+        let visual = VisualFrame::from_frame(frame, Size::from((80, 24)), 0);
         assert!(visual.scrollback_lines().is_empty());
         assert!(visual.visible_lines().is_empty());
+    }
+
+    #[test]
+    fn visual_frame_materializes_fill_to_terminal_width() {
+        use crate::style::Style;
+        use crossterm::style::Color;
+
+        // A row marked with fill but no trailing spaces should be materialized
+        // to the terminal width when VisualFrame::from_frame runs.
+        let line = Line::with_style("hi", Style::default().bg_color(Color::Blue))
+            .with_fill(Style::default().bg_color(Color::Blue));
+        let frame = Frame::new(vec![line]);
+
+        let visual = VisualFrame::from_frame(frame, Size::from((6, 1)), 0);
+        let visible = visual.visible_lines();
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].plain_text(), "hi    ");
+        assert_eq!(visible[0].fill(), None, "fill should be cleared after materialization");
+    }
+
+    #[test]
+    fn fill_marked_row_does_not_produce_phantom_rows_when_wrapped_smaller() {
+        use crate::style::Style;
+        use crossterm::style::Color;
+
+        // Regression for the trailing-space wrap artifact: when a row was
+        // pre-padded with `extend_bg_to_width(30)` and then wrapped at width 10,
+        // the trailing 25 spaces would themselves wrap into 3 phantom rows.
+        // With fill metadata, the row's actual content is "ab" → 1 wrapped
+        // row at width 10, materialized to 10 columns by VisualFrame.
+        let line = Line::with_style("ab", Style::default().bg_color(Color::Red))
+            .with_fill(Style::default().bg_color(Color::Red));
+        let frame = Frame::new(vec![line]);
+
+        let visual = VisualFrame::from_frame(frame, Size::from((10, 5)), 0);
+        assert_eq!(visual.visible_lines().len(), 1, "fill should not produce phantom wrapped rows");
+        assert_eq!(visual.visible_lines()[0].plain_text(), "ab        ");
     }
 
     #[test]
     fn visual_frame_zero_width_keeps_lines_unwrapped() {
         let frame = Frame::new(vec![Line::new("abcdef")]).with_cursor(Cursor { row: 0, col: 3, is_visible: true });
 
-        let visual = VisualFrame::from_frame(&frame, Size::from((0, 5)), 0);
+        let visual = VisualFrame::from_frame(frame, Size::from((0, 5)), 0);
         assert_eq!(visual.visible_lines(), &[Line::new("abcdef")]);
         assert_eq!(visual.cursor().col, 0);
     }
@@ -201,7 +241,7 @@ mod tests {
         let lines = vec![Line::new("abcdef")];
         let visual_frame_lines = {
             let frame = Frame::new(lines.clone()).with_cursor(Cursor { row: 0, col: 0, is_visible: true });
-            let visual = VisualFrame::from_frame(&frame, Size::from((3, 5)), 0);
+            let visual = VisualFrame::from_frame(frame, Size::from((3, 5)), 0);
             visual.visible_lines().to_vec()
         };
 
@@ -215,7 +255,7 @@ mod tests {
             col: 0,
             is_visible: true,
         });
-        VisualFrame::from_frame(&frame, Size::from((80, 24)), 0)
+        VisualFrame::from_frame(frame, Size::from((80, 24)), 0)
     }
 
     #[test]
