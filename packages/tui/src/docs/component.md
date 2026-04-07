@@ -14,7 +14,9 @@ Use [`merge`](crate::merge) to combine outcomes from multiple children.
 
 # Rendering
 
-[`render`](Component::render) receives a [`ViewContext`](crate::ViewContext) (terminal size + theme) and returns a [`Frame`](crate::Frame) — a vector of [`Line`](crate::Line)s plus an optional [`Cursor`](crate::Cursor) position. The parent is responsible for composing child frames (see [`Layout`](crate::Layout)).
+[`render`](Component::render) receives a [`ViewContext`](crate::ViewContext) — the **allocated render region** plus theme — and returns a [`Frame`](crate::Frame), a vector of [`Line`](crate::Line)s plus an optional [`Cursor`](crate::Cursor) position.
+
+Parents are responsible for narrowing the context to the child's slot before calling `render` (using [`with_width`](crate::ViewContext::with_width), [`with_size`](crate::ViewContext::with_size), or [`inset`](crate::ViewContext::inset)). Children should treat `ctx.size` as authoritative — only the root component should assume the full terminal width. Composition between siblings happens on `Frame` itself via [`fit`](crate::Frame::fit), [`indent`](crate::Frame::indent), [`vstack`](crate::Frame::vstack), and [`hstack`](crate::Frame::hstack), not by reaching back into the parent's context.
 
 # Usage
 

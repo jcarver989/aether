@@ -134,8 +134,8 @@ impl Component for MyApp {
     fn render(&mut self, ctx: &ViewContext) -> Frame {
         // Stack child frames vertically
         let mut layout = Layout::new();
-        layout.section(self.name.render(ctx).into_lines());
-        layout.section(self.path.render(ctx).into_lines());
+        layout.section(self.name.render(ctx));
+        layout.section(self.path.render(ctx));
         layout.into_frame()
     }
 }
