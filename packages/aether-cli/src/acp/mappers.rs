@@ -144,11 +144,21 @@ fn map_agent_message_to_notification(
 
 pub fn try_into_ext_notification(msg: &AgentMessage) -> Option<acp::ExtNotification> {
     match msg {
-        AgentMessage::ContextUsageUpdate { usage_ratio, tokens_used, context_limit } => {
+        AgentMessage::ContextUsageUpdate {
+            usage_ratio,
+            tokens_used,
+            context_limit,
+            cache_read_tokens,
+            cache_creation_tokens,
+            reasoning_tokens,
+        } => {
             let params = ContextUsageParams {
                 usage_ratio: *usage_ratio,
                 tokens_used: *tokens_used,
                 context_limit: *context_limit,
+                cache_read_tokens: *cache_read_tokens,
+                cache_creation_tokens: *cache_creation_tokens,
+                reasoning_tokens: *reasoning_tokens,
             };
             Some(params.into())
         }

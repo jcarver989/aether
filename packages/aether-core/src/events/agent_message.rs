@@ -78,6 +78,12 @@ pub enum AgentMessage {
         tokens_used: u32,
         /// Maximum context limit, if known.
         context_limit: Option<u32>,
+        /// Prompt tokens served from cache on the most recent API call.
+        cache_read_tokens: Option<u32>,
+        /// Prompt tokens written to cache on the most recent API call.
+        cache_creation_tokens: Option<u32>,
+        /// Reasoning tokens spent on the most recent API call.
+        reasoning_tokens: Option<u32>,
     },
 
     /// Agent is auto-continuing because LLM stopped with a resumable stop reason.

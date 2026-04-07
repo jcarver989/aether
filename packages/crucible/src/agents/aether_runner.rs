@@ -164,7 +164,7 @@ async fn stream_agent_messages(mut rx: Receiver<AgentMessage>, tx: Sender<AgentR
             AgentMessage::ContextCompactionResult { messages_removed, .. } => {
                 tracing::debug!("Context compacted: {} messages removed", messages_removed);
             }
-            AgentMessage::ContextUsageUpdate { usage_ratio, tokens_used, context_limit } => {
+            AgentMessage::ContextUsageUpdate { usage_ratio, tokens_used, context_limit, .. } => {
                 match (usage_ratio, context_limit) {
                     (Some(usage_ratio), Some(context_limit)) => {
                         tracing::debug!(

@@ -62,7 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(ContextCompactionResult { messages_removed, .. }) => {
                 println!("Context compacted: {messages_removed} messages removed");
             }
-            Some(ContextUsageUpdate { usage_ratio, tokens_used, context_limit }) => {
+            Some(ContextUsageUpdate { usage_ratio, tokens_used, context_limit, .. }) => {
                 match (usage_ratio, context_limit) {
                     (Some(usage_ratio), Some(context_limit)) => {
                         println!(

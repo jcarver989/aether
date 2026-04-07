@@ -27,11 +27,22 @@ pub const AUTH_METHODS_UPDATED_METHOD: &str = "_aether/auth_methods_updated";
 pub const ELICITATION_METHOD: &str = "aether/elicitation";
 
 /// Parameters for `_aether/context_usage` notifications.
+///
+/// `cache_read_tokens`, `cache_creation_tokens`, and `reasoning_tokens` come
+/// from the most recent API response and are optional because not every
+/// provider exposes them. They give clients enough signal to render
+/// cache-hit ratios and reasoning-token spend without re-parsing a stream.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ContextUsageParams {
     pub usage_ratio: Option<f64>,
     pub tokens_used: u32,
     pub context_limit: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_creation_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_tokens: Option<u32>,
 }
 
 /// Parameters for `_aether/context_cleared` notifications.
@@ -317,13 +328,38 @@ mod tests {
 
     #[test]
     fn context_usage_params_roundtrip() {
-        let params = ContextUsageParams { usage_ratio: Some(0.75), tokens_used: 75000, context_limit: Some(100_000) };
+        let params = ContextUsageParams {
+            usage_ratio: Some(0.75),
+            tokens_used: 75000,
+            context_limit: Some(100_000),
+            cache_read_tokens: Some(40_000),
+            cache_creation_tokens: Some(2_000),
+            reasoning_tokens: Some(500),
+        };
 
         let notification: ExtNotification = params.clone().into();
         assert_eq!(notification.method.as_ref(), CONTEXT_USAGE_METHOD);
 
         let parsed: ContextUsageParams = serde_json::from_str(notification.params.get()).expect("valid JSON");
         assert_eq!(parsed, params);
+    }
+
+    #[test]
+    fn context_usage_params_omits_unset_optional_token_fields() {
+        let params = ContextUsageParams {
+            usage_ratio: Some(0.1),
+            tokens_used: 100,
+            context_limit: Some(1_000),
+            cache_read_tokens: None,
+            cache_creation_tokens: None,
+            reasoning_tokens: None,
+        };
+
+        let notification: ExtNotification = params.clone().into();
+        let raw = notification.params.get();
+        assert!(!raw.contains("cache_read_tokens"));
+        assert!(!raw.contains("cache_creation_tokens"));
+        assert!(!raw.contains("reasoning_tokens"));
     }
 
     #[test]
@@ -453,7 +489,14 @@ mod tests {
     fn try_from_wrong_method_returns_error() {
         let notification = ext_notification(
             CONTEXT_USAGE_METHOD,
-            &ContextUsageParams { usage_ratio: Some(0.5), tokens_used: 50000, context_limit: Some(100_000) },
+            &ContextUsageParams {
+                usage_ratio: Some(0.5),
+                tokens_used: 50000,
+                context_limit: Some(100_000),
+                cache_read_tokens: None,
+                cache_creation_tokens: None,
+                reasoning_tokens: None,
+            },
         );
 
         let result = McpRequest::try_from(&notification);

@@ -92,7 +92,7 @@ async fn test_switch_model_unknown_context_limit_resets_context_meter() {
     );
     assert!(
         messages.iter().any(|m| {
-            matches!(m, AgentMessage::ContextUsageUpdate { usage_ratio: None, context_limit: None, tokens_used: 0 })
+            matches!(m, AgentMessage::ContextUsageUpdate { usage_ratio: None, context_limit: None, tokens_used: 0, .. })
         }),
         "Expected context usage reset for unknown context limit, got: {messages:?}"
     );

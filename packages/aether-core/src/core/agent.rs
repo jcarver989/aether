@@ -5,7 +5,7 @@ use futures::Stream;
 use llm::types::IsoString;
 use llm::{
     AssistantReasoning, ChatMessage, Context, EncryptedReasoningContent, LlmError, LlmResponse, StopReason,
-    StreamingModelProvider, ToolCallError, ToolCallRequest, ToolCallResult,
+    StreamingModelProvider, TokenUsage, ToolCallError, ToolCallRequest, ToolCallResult,
 };
 use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
@@ -248,14 +248,7 @@ impl Agent {
         let new = self.llm.display_name();
         let _ = self.message_tx.send(AgentMessage::ModelSwitched { previous, new }).await;
 
-        let _ = self
-            .message_tx
-            .send(AgentMessage::ContextUsageUpdate {
-                usage_ratio: self.token_tracker.usage_ratio(),
-                tokens_used: self.token_tracker.last_input_tokens(),
-                context_limit: self.token_tracker.context_limit(),
-            })
-            .await;
+        let _ = self.message_tx.send(self.context_usage_message()).await;
     }
 
     fn start_llm_stream(&mut self) {
@@ -357,8 +350,8 @@ impl Agent {
                 let _ = self.message_tx.send(AgentMessage::Error { message }).await;
             }
 
-            Usage { input_tokens, output_tokens, cached_input_tokens } => {
-                self.handle_llm_usage(input_tokens, output_tokens, cached_input_tokens).await;
+            Usage { tokens: sample } => {
+                self.handle_llm_usage(sample).await;
             }
         }
     }
@@ -420,37 +413,27 @@ impl Agent {
         }
     }
 
-    async fn handle_llm_usage(&mut self, input_tokens: u32, output_tokens: u32, cached_input_tokens: Option<u32>) {
-        self.token_tracker.record_usage(input_tokens, output_tokens, cached_input_tokens);
-        match (self.token_tracker.usage_ratio(), self.token_tracker.tokens_remaining()) {
-            (Some(usage_ratio), Some(tokens_remaining)) => {
-                tracing::debug!(
-                    "Token usage - input: {}, output: {}, ratio: {:.2}%, remaining: {}",
-                    input_tokens,
-                    output_tokens,
-                    usage_ratio * 100.0,
-                    tokens_remaining
-                );
-            }
-            _ => {
-                tracing::debug!(
-                    "Token usage - input: {}, output: {}, ratio: unknown (context limit unavailable)",
-                    input_tokens,
-                    output_tokens
-                );
-            }
-        }
+    async fn handle_llm_usage(&mut self, sample: TokenUsage) {
+        self.token_tracker.record_usage(sample);
+        let ratio_pct = self.token_tracker.usage_ratio().map(|r| r * 100.0);
+        let remaining = self.token_tracker.tokens_remaining();
+        tracing::debug!(?sample, ?ratio_pct, ?remaining, "Token usage");
 
-        let _ = self
-            .message_tx
-            .send(AgentMessage::ContextUsageUpdate {
-                usage_ratio: self.token_tracker.usage_ratio(),
-                tokens_used: self.token_tracker.last_input_tokens(),
-                context_limit: self.token_tracker.context_limit(),
-            })
-            .await;
+        let _ = self.message_tx.send(self.context_usage_message()).await;
 
         self.maybe_compact_context().await;
+    }
+
+    fn context_usage_message(&self) -> AgentMessage {
+        let last = self.token_tracker.last_usage();
+        AgentMessage::ContextUsageUpdate {
+            usage_ratio: self.token_tracker.usage_ratio(),
+            tokens_used: self.token_tracker.last_input_tokens(),
+            context_limit: self.token_tracker.context_limit(),
+            cache_read_tokens: last.cache_read_tokens,
+            cache_creation_tokens: last.cache_creation_tokens,
+            reasoning_tokens: last.reasoning_tokens,
+        }
     }
 
     /// Pre-flight check: estimate context size and compact proactively if it would
