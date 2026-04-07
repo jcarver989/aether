@@ -68,9 +68,7 @@ impl Component for CommandPicker {
             let truncated = truncate_text(&line_text, max_width);
 
             if is_selected {
-                let mut line = Line::with_style(truncated, ctx.theme.selected_row_style());
-                line.extend_bg_to_width(max_width);
-                line
+                ctx.theme.selected_row_line(truncated)
             } else {
                 build_styled_command_line(&truncated, padded_name.len(), ctx.theme.muted())
             }

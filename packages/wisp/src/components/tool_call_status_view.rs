@@ -6,24 +6,26 @@ use std::path::Path;
 use crate::components::sub_agent_tracker::{SUB_AGENT_VISIBLE_TOOL_LIMIT, SubAgentState, SubAgentTracker};
 use crate::components::tracked_tool_call::TrackedToolCall;
 use tui::BRAILLE_FRAMES as FRAMES;
-use tui::{DiffLine, DiffPreview, DiffTag, Line, SplitDiffCell, SplitDiffRow, ViewContext, render_diff};
+use tui::{
+    DiffLine, DiffPreview, DiffTag, FitOptions, Frame, Line, SplitDiffCell, SplitDiffRow, ViewContext, render_diff,
+};
 
 pub const MAX_TOOL_ARG_LENGTH: usize = 200;
 
-/// Render a tool call and its sub-agent hierarchy (if any) as status lines.
+/// Render a tool call and its sub-agent hierarchy (if any) as a frame.
 pub(crate) fn render_tool_tree(
     id: &str,
     tool_calls: &HashMap<String, TrackedToolCall>,
     sub_agents: &SubAgentTracker,
     tick: u16,
     context: &ViewContext,
-) -> Vec<Line> {
+) -> Frame {
     let has_sub_agents = sub_agents.has_sub_agents(id);
 
     let mut lines = if has_sub_agents {
         Vec::new()
     } else {
-        tool_calls.get(id).map(|tc| tool_call_view(tc, tick).render(context)).unwrap_or_default()
+        tool_calls.get(id).map(|tc| tool_call_view(tc, tick).render(context).into_lines()).unwrap_or_default()
     };
 
     if let Some(agents) = sub_agents.get(id) {
@@ -52,7 +54,7 @@ pub(crate) fn render_tool_tree(
                 let connector = if visible.peek().is_some() { "  ├─ " } else { "  └─ " };
 
                 let view = tool_call_view(tc, tick);
-                for tool_line in view.render(context) {
+                for tool_line in view.render(context).into_lines() {
                     let mut indented = Line::default();
                     indented.push_styled(connector, context.theme.muted());
                     for span in tool_line.spans() {
@@ -64,7 +66,7 @@ pub(crate) fn render_tool_tree(
         }
     }
 
-    lines
+    Frame::new(lines).fit(context.size.width, FitOptions::wrap())
 }
 
 pub(crate) fn tool_call_view(tc: &TrackedToolCall, tick: u16) -> ToolCallStatusView<'_> {
@@ -96,7 +98,7 @@ pub enum ToolCallStatus {
 }
 
 impl ToolCallStatusView<'_> {
-    pub fn render(&self, context: &ViewContext) -> Vec<Line> {
+    pub fn render(&self, context: &ViewContext) -> Frame {
         let (indicator, indicator_color) = match &self.status {
             ToolCallStatus::Running => {
                 let frame = FRAMES[self.tick as usize % FRAMES.len()];
@@ -133,7 +135,7 @@ impl ToolCallStatusView<'_> {
             lines.extend(render_diff(preview, context));
         }
 
-        lines
+        Frame::new(lines).fit(context.size.width, FitOptions::wrap())
     }
 }
 

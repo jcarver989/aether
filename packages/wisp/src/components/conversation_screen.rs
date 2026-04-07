@@ -1,6 +1,6 @@
 use crate::components::app::PromptAttachment;
 use crate::components::command_picker::CommandEntry;
-use crate::components::conversation_window::{ConversationBuffer, ConversationWindow, wrap_and_pad_lines};
+use crate::components::conversation_window::{ConversationBuffer, ConversationWindow};
 use crate::components::elicitation_form::{ElicitationForm, ElicitationMessage};
 use crate::components::plan_tracker::PlanTracker;
 use crate::components::plan_view::PlanView;
@@ -14,7 +14,7 @@ use agent_client_protocol::{self as acp, SessionId};
 use std::path::PathBuf;
 use std::time::Instant;
 use tokio::sync::oneshot;
-use tui::{Component, Event, Frame, Layout, ViewContext};
+use tui::{Component, Cursor, Event, Frame, Insets, Layout, ViewContext};
 
 pub enum ConversationScreenMessage {
     SendPrompt { user_input: String, attachments: Vec<PromptAttachment> },
@@ -285,23 +285,27 @@ impl Component for ConversationScreen {
         };
         let plan_view = PlanView { entries: self.plan_tracker.cached_entries() };
 
+        let pad_u16 = u16::try_from(self.content_padding).unwrap_or(u16::MAX);
+        let content_ctx = ctx.inset(Insets::horizontal(pad_u16));
+        let modal_active = self.active_modal.is_some();
+
         let mut layout = Layout::new();
         layout.section(conversation_window.render(ctx));
-        let plan_lines = wrap_and_pad_lines(plan_view.render(ctx), self.content_padding, ctx.size.width);
-        layout.section(plan_lines);
-        let progress_lines =
-            wrap_and_pad_lines(self.progress_indicator.render(ctx), self.content_padding, ctx.size.width);
-        layout.section(progress_lines);
-        let prompt_frame = self.prompt_composer.render(ctx);
-        layout.section_with_cursor(prompt_frame.lines().to_vec(), prompt_frame.cursor());
+        layout.section(plan_view.render(&content_ctx).indent(pad_u16));
+        layout.section(self.progress_indicator.render(&content_ctx).indent(pad_u16));
+
+        // When a modal is active, suppress the prompt cursor so vstack picks
+        // the modal's cursor (vstack picks the first visible cursor; the modal
+        // is appended after the prompt for visual ordering).
+        let mut prompt_frame = self.prompt_composer.render(ctx);
+        if modal_active {
+            prompt_frame = prompt_frame.with_cursor(Cursor::hidden());
+        }
+        layout.section(prompt_frame);
+
         match &mut self.active_modal {
-            Some(Modal::SessionPicker(picker)) => {
-                let frame = picker.render(ctx);
-                layout.section_with_cursor(frame.lines().to_vec(), frame.cursor());
-            }
-            Some(Modal::Elicitation(form)) => {
-                layout.section(form.render(ctx).into_lines());
-            }
+            Some(Modal::SessionPicker(picker)) => layout.section(picker.render(ctx)),
+            Some(Modal::Elicitation(form)) => layout.section(form.render(ctx)),
             None => {}
         }
         layout.into_frame()

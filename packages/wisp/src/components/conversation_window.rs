@@ -2,7 +2,7 @@ use std::mem::{Discriminant, discriminant};
 
 use crate::components::thought_message::ThoughtMessage;
 use crate::components::tool_call_statuses::ToolCallStatuses;
-use tui::{Line, Style, ViewContext, render_markdown};
+use tui::{FitOptions, Frame, Insets, Line, Style, ViewContext, render_markdown};
 
 #[derive(Debug, Clone)]
 pub enum SegmentContent {
@@ -133,34 +133,51 @@ pub struct ConversationWindow<'a> {
 }
 
 impl ConversationWindow<'_> {
-    pub fn render(&self, context: &ViewContext) -> Vec<Line> {
-        let mut lines = Vec::new();
-        let mut last_segment_kind = None;
+    pub fn render(&self, context: &ViewContext) -> Frame {
+        let pad_u16 = u16::try_from(self.content_padding).unwrap_or(u16::MAX);
+        let content_ctx = context.inset(Insets::horizontal(pad_u16));
+
+        let mut sections: Vec<Frame> = Vec::new();
+        let mut last_segment_kind: Option<Discriminant<SegmentContent>> = None;
 
         for segment in &self.conversation.segments {
             let kind = discriminant(&segment.content);
-            let mut rendered =
-                render_stream_segment(&segment.content, self.tool_call_statuses, self.content_padding, context);
-            if !matches!(segment.content, SegmentContent::UserMessage(_)) {
-                rendered = wrap_and_pad_lines(rendered, self.content_padding, context.size.width);
+            let frame = if matches!(segment.content, SegmentContent::UserMessage(_)) {
+                render_segment_frame(&segment.content, self.tool_call_statuses, self.content_padding, context)
+            } else {
+                render_segment_frame(&segment.content, self.tool_call_statuses, self.content_padding, &content_ctx)
+                    .indent(pad_u16)
+            };
+
+            if frame.lines().is_empty() {
+                continue;
             }
-            extend_with_vertical_margin(&mut lines, &mut last_segment_kind, kind, &rendered);
+
+            if let Some(prev_kind) = last_segment_kind
+                && prev_kind != kind
+            {
+                sections.push(Frame::new(vec![Line::default()]));
+            }
+            sections.push(frame);
+            last_segment_kind = Some(kind);
         }
 
-        lines
+        Frame::vstack(sections)
     }
 }
 
-fn render_stream_segment(
+fn render_segment_frame(
     segment: &SegmentContent,
     tool_call_statuses: &ToolCallStatuses,
     content_padding: usize,
     context: &ViewContext,
-) -> Vec<Line> {
+) -> Frame {
     match segment {
-        SegmentContent::UserMessage(text) => render_user_message_block(text, content_padding, context),
+        SegmentContent::UserMessage(text) => Frame::new(render_user_message_block(text, content_padding, context)),
         SegmentContent::Thought(text) => ThoughtMessage { text }.render(context),
-        SegmentContent::Text(text) => render_markdown(text, context),
+        SegmentContent::Text(text) => {
+            Frame::new(render_markdown(text, context)).fit(context.size.width, FitOptions::wrap())
+        }
         SegmentContent::ToolCall(id) => tool_call_statuses.render_tool(id, context),
     }
 }
@@ -211,36 +228,6 @@ fn pad_user_message_line(line: &Line, left_padding: usize, block_width: usize, b
 
 fn padded_background_line(width: usize, style: Style) -> Line {
     Line::with_style(" ".repeat(width.max(1)), style)
-}
-
-pub(crate) fn wrap_and_pad_lines(lines: Vec<Line>, padding: usize, width: u16) -> Vec<Line> {
-    if padding == 0 {
-        return lines;
-    }
-    let content_width = (width as usize).saturating_sub(padding * 2).max(1);
-    let wrap_width = u16::try_from(content_width).unwrap_or(u16::MAX);
-    let prefix = " ".repeat(padding);
-    lines.into_iter().flat_map(|line| line.soft_wrap(wrap_width)).map(|line| line.prepend(&prefix)).collect()
-}
-
-fn extend_with_vertical_margin(
-    target: &mut Vec<Line>,
-    last_segment_kind: &mut Option<Discriminant<SegmentContent>>,
-    kind: Discriminant<SegmentContent>,
-    lines: &[Line],
-) {
-    if lines.is_empty() {
-        return;
-    }
-
-    if let Some(prev_kind) = *last_segment_kind
-        && prev_kind != kind
-    {
-        target.push(Line::new(String::new()));
-    }
-
-    target.extend_from_slice(lines);
-    *last_segment_kind = Some(kind);
 }
 
 #[cfg(test)]
@@ -303,7 +290,8 @@ mod tests {
         };
         let context = ViewContext::new((80, 24));
 
-        let lines = window.render(&context);
+        let frame = window.render(&context);
+        let lines = frame.lines();
 
         assert_eq!(lines.len(), 3);
         let left_padding = " ".repeat(DEFAULT_CONTENT_PADDING);
@@ -329,7 +317,8 @@ mod tests {
         };
         let context = ViewContext::new((80, 24));
 
-        let lines = window.render(&context);
+        let frame = window.render(&context);
+        let lines = frame.lines();
 
         assert_eq!(lines.len(), 5);
         let left_padding = " ".repeat(DEFAULT_CONTENT_PADDING);
@@ -337,7 +326,7 @@ mod tests {
         assert!(lines[2].plain_text().trim().is_empty());
         assert_eq!(lines[3].plain_text().trim_end(), format!("{left_padding}line three"));
 
-        for line in &lines {
+        for line in lines {
             assert_user_message_style(line, &context);
         }
 
@@ -359,7 +348,8 @@ mod tests {
         };
         let context = ViewContext::new((8, 24));
 
-        let lines = window.render(&context);
+        let frame = window.render(&context);
+        let lines = frame.lines();
 
         let pad = " ".repeat(DEFAULT_CONTENT_PADDING);
         let content_width = 8 - DEFAULT_CONTENT_PADDING;
@@ -369,7 +359,7 @@ mod tests {
             assert!(line.plain_text().starts_with(&pad), "line should start with padding: '{}'", line.plain_text());
         }
         assert!(lines.iter().all(|line| line.display_width() == usize::from(context.size.width)));
-        for line in &lines {
+        for line in lines {
             assert_user_message_style(line, &context);
         }
     }
@@ -437,7 +427,8 @@ mod tests {
         };
         let context = ViewContext::new((20, 24));
 
-        let lines = window.render(&context);
+        let frame = window.render(&context);
+        let lines = frame.lines();
         let padding_prefix = " ".repeat(DEFAULT_CONTENT_PADDING);
         assert!(lines.len() >= 2, "text should wrap into at least 2 lines, got {}", lines.len());
         for (i, line) in lines.iter().enumerate() {

@@ -71,7 +71,7 @@ impl Component for ProgressIndicatorStory {
     }
 
     fn render(&mut self, ctx: &ViewContext) -> Frame {
-        Frame::new(self.indicator.render(ctx))
+        self.indicator.render(ctx)
     }
 }
 
@@ -105,7 +105,8 @@ impl Component for ToolCallStatusStory {
                 status: &running,
                 tick: self.tick,
             }
-            .render(ctx),
+            .render(ctx)
+            .into_lines(),
         );
         lines.push(Line::default());
 
@@ -118,7 +119,8 @@ impl Component for ToolCallStatusStory {
                 status: &success,
                 tick: self.tick,
             }
-            .render(ctx),
+            .render(ctx)
+            .into_lines(),
         );
         lines.push(Line::default());
 
@@ -131,7 +133,8 @@ impl Component for ToolCallStatusStory {
                 status: &error,
                 tick: self.tick,
             }
-            .render(ctx),
+            .render(ctx)
+            .into_lines(),
         );
 
         Frame::new(lines)
@@ -151,7 +154,7 @@ impl Component for ThoughtMessageStory {
 
     fn render(&mut self, ctx: &ViewContext) -> Frame {
         let view = ThoughtMessage { text: &self.text };
-        Frame::new(view.render(ctx))
+        view.render(ctx)
     }
 }
 
@@ -190,7 +193,7 @@ impl Component for PlanViewStory {
 
     fn render(&mut self, ctx: &ViewContext) -> Frame {
         let view = PlanView { entries: &self.entries };
-        Frame::new(view.render(ctx))
+        view.render(ctx)
     }
 }
 

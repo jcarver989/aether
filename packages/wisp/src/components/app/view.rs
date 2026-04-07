@@ -9,8 +9,8 @@ pub fn build_frame(app: &mut App, context: &ViewContext) -> Frame {
 
         let status_line = make_status_line(app);
         let mut layout = Layout::new();
-        layout.section_with_cursor(overlay_frame.lines().to_vec(), overlay_frame.cursor());
-        layout.section(status_line.render(context));
+        layout.section(overlay_frame);
+        layout.section(Frame::new(status_line.render(context)));
         return layout.into_frame();
     }
 
@@ -20,16 +20,16 @@ pub fn build_frame(app: &mut App, context: &ViewContext) -> Frame {
         let status_lines = status_line.render(context);
 
         let mut layout = Layout::new();
-        layout.section_with_cursor(diff_frame.lines().to_vec(), diff_frame.cursor());
-        layout.section(status_lines);
+        layout.section(diff_frame);
+        layout.section(Frame::new(status_lines));
         return layout.into_frame();
     }
 
     let conv_frame = app.conversation_screen.render(context);
     let status_line = make_status_line(app);
     let mut layout = Layout::new();
-    layout.section_with_cursor(conv_frame.lines().to_vec(), conv_frame.cursor());
-    layout.section(status_line.render(context));
+    layout.section(conv_frame);
+    layout.section(Frame::new(status_line.render(context)));
     layout.into_frame()
 }
 

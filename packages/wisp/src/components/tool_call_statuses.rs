@@ -6,7 +6,7 @@ use std::time::Instant;
 use crate::components::sub_agent_tracker::SubAgentTracker;
 use crate::components::tool_call_status_view::{ToolCallStatus, compute_diff_preview, render_tool_tree};
 use crate::components::tracked_tool_call::{TrackedToolCall, raw_input_fragment, upsert_tracked_tool_call};
-use tui::{Line, ViewContext};
+use tui::{Frame, ViewContext};
 
 /// Tracks active tool calls and produces status lines for the frame.
 #[derive(Clone)]
@@ -125,7 +125,7 @@ impl ToolCallStatuses {
         self.sub_agents.remove(id);
     }
 
-    pub fn render_tool(&self, id: &str, context: &ViewContext) -> Vec<Line> {
+    pub fn render_tool(&self, id: &str, context: &ViewContext) -> Frame {
         render_tool_tree(id, &self.tool_calls, &self.sub_agents, self.tick, context)
     }
 
@@ -223,7 +223,7 @@ mod tests {
 
         statuses.remove_tool("parent-1");
         assert!(!statuses.progress().running_any);
-        assert!(statuses.render_tool("parent-1", &ctx()).is_empty());
+        assert!(statuses.render_tool("parent-1", &ctx()).lines().is_empty());
     }
 
     #[test]
@@ -310,7 +310,8 @@ mod tests {
             start_line: Some(1),
         });
 
-        let lines = statuses.render_tool("tool-1", &ctx());
+        let frame = statuses.render_tool("tool-1", &ctx());
+        let lines = frame.lines();
         assert!(lines.len() > 1);
         let all_text: String = lines.iter().map(tui::Line::plain_text).collect();
         assert!(all_text.contains("old line"), "Expected removed line: {all_text}");
@@ -337,8 +338,8 @@ mod tests {
             start_line: Some(1),
         });
 
-        let lines = statuses.render_tool("tool-1", &ctx());
-        assert_eq!(lines.len(), 1, "Should only have status line while running");
+        let frame = statuses.render_tool("tool-1", &ctx());
+        assert_eq!(frame.lines().len(), 1, "Should only have status line while running");
     }
 
     #[test]
@@ -350,8 +351,8 @@ mod tests {
 
         assert!(!statuses.is_tool_running("tool-1"));
         assert!(!statuses.progress().running_any);
-        let lines = statuses.render_tool("tool-1", &ctx());
-        assert!(lines[0].plain_text().contains('✓'));
+        let frame = statuses.render_tool("tool-1", &ctx());
+        assert!(frame.lines()[0].plain_text().contains('✓'));
     }
 
     #[test]

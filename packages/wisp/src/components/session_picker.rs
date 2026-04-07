@@ -99,9 +99,7 @@ impl Component for SessionPicker {
             let truncated = truncate_text(&line_text, max_width);
 
             if is_selected {
-                let mut line = Line::with_style(truncated, ctx.theme.selected_row_style());
-                line.extend_bg_to_width(max_width);
-                line
+                ctx.theme.selected_row_line(truncated)
             } else {
                 let boundary = padded_title.len().min(truncated.len());
                 let mut line = Line::new(&truncated[..boundary]);

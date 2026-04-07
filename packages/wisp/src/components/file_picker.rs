@@ -92,13 +92,7 @@ impl Component for FilePicker {
 
         let item_lines = self.combobox.render_items(context, |file, is_selected, ctx| {
             let line_text = file.display_name.clone();
-            if is_selected {
-                let mut line = Line::with_style(line_text, ctx.theme.selected_row_style());
-                line.extend_bg_to_width(ctx.size.width as usize);
-                line
-            } else {
-                Line::new(line_text)
-            }
+            if is_selected { ctx.theme.selected_row_line(line_text) } else { Line::new(line_text) }
         });
         lines.extend(item_lines);
 
@@ -126,7 +120,15 @@ mod tests {
     fn selected_text(picker: &mut FilePicker) -> Option<String> {
         let context = ViewContext::new(DEFAULT_SIZE);
         let frame = picker.render(&context);
-        frame.lines().iter().find(|line| line.plain_text().starts_with("  ")).map(tui::Line::plain_text)
+        let highlight_bg = context.theme.highlight_bg();
+        frame
+            .lines()
+            .iter()
+            .find(|line| {
+                line.fill().is_some_and(|f| f.bg == Some(highlight_bg))
+                    || line.spans().iter().any(|s| s.style().bg == Some(highlight_bg))
+            })
+            .map(tui::Line::plain_text)
     }
 
     #[test]
@@ -199,14 +201,14 @@ mod tests {
     fn selected_entry_highlight_fills_full_line_width() {
         let mut picker = FilePicker::new_with_entries(vec![file_match("a.rs")]);
         let context = ViewContext::new((20, 24));
-        let lines = rendered_raw_lines_with_context(|ctx| picker.render(ctx), (20, 24));
-        let selected_line =
-            lines.iter().find(|line| line.plain_text().starts_with("  ")).expect("should render a selected line");
-
+        let highlight_bg = context.theme.highlight_bg();
+        let term = tui::testing::render_component(|ctx| picker.render(ctx), 20, 24);
+        let row = term.get_lines().iter().position(|l| l.starts_with("  a.rs")).expect("should render a selected line");
+        let last_col_style = term.get_style_at(row, 19);
         assert_eq!(
-            selected_line.display_width(),
-            context.size.width as usize,
-            "selected row should fill the full visible width",
+            last_col_style.bg,
+            Some(highlight_bg),
+            "selected row should fill the full visible width with highlight background",
         );
     }
 

@@ -1,6 +1,6 @@
 use agent_client_protocol::{PlanEntry, PlanEntryStatus};
 
-use tui::{Line, Style, ViewContext};
+use tui::{FitOptions, Frame, Line, Style, ViewContext};
 
 const CHECKBOX_EMPTY: &str = "\u{2610}"; // Ballot Box
 const CHECKBOX_FILLED: &str = "\u{2611}"; // Ballot Box with Check
@@ -18,9 +18,9 @@ pub struct PlanView<'a> {
 }
 
 impl PlanView<'_> {
-    pub fn render(&self, context: &ViewContext) -> Vec<Line> {
+    pub fn render(&self, context: &ViewContext) -> Frame {
         if self.entries.is_empty() {
-            return vec![];
+            return Frame::empty();
         }
 
         let mut lines = Vec::with_capacity(self.entries.len() + 2);
@@ -50,7 +50,7 @@ impl PlanView<'_> {
             lines.push(line);
         }
 
-        lines
+        Frame::new(lines).fit(context.size.width, FitOptions::wrap())
     }
 }
 
@@ -70,7 +70,7 @@ mod tests {
     #[test]
     fn empty_entries_render_nothing() {
         let view = PlanView { entries: &[] };
-        assert!(view.render(&ctx()).is_empty());
+        assert!(view.render(&ctx()).lines().is_empty());
     }
 
     #[test]
@@ -81,7 +81,8 @@ mod tests {
             entry("Test", PlanEntryStatus::Pending),
         ];
         let view = PlanView { entries: &entries };
-        let lines = view.render(&ctx());
+        let frame = view.render(&ctx());
+        let lines = frame.lines();
         assert_eq!(lines.len(), 5);
         assert_eq!(lines[0].plain_text(), "");
         assert_eq!(lines[1].plain_text(), "Plan");
@@ -91,8 +92,8 @@ mod tests {
     fn completed_entry_has_filled_checkbox() {
         let entries = vec![entry("Done task", PlanEntryStatus::Completed)];
         let view = PlanView { entries: &entries };
-        let lines = view.render(&ctx());
-        let text = lines[2].plain_text();
+        let frame = view.render(&ctx());
+        let text = frame.lines()[2].plain_text();
         assert!(text.contains(CHECKBOX_FILLED));
         assert!(text.contains("Done task"));
     }
@@ -101,8 +102,8 @@ mod tests {
     fn completed_entry_has_strikethrough() {
         let entries = vec![entry("Done task", PlanEntryStatus::Completed)];
         let view = PlanView { entries: &entries };
-        let lines = view.render(&ctx());
-        let spans = lines[2].spans();
+        let frame = view.render(&ctx());
+        let spans = frame.lines()[2].spans();
         let text_span = &spans[1];
         assert!(text_span.style().strikethrough);
     }
@@ -111,8 +112,8 @@ mod tests {
     fn in_progress_entry_has_filled_checkbox() {
         let entries = vec![entry("Working", PlanEntryStatus::InProgress)];
         let view = PlanView { entries: &entries };
-        let lines = view.render(&ctx());
-        let text = lines[2].plain_text();
+        let frame = view.render(&ctx());
+        let text = frame.lines()[2].plain_text();
         assert!(text.contains(CHECKBOX_FILLED));
         assert!(text.contains("Working"));
     }
@@ -121,8 +122,8 @@ mod tests {
     fn pending_entry_has_empty_checkbox() {
         let entries = vec![entry("Todo", PlanEntryStatus::Pending)];
         let view = PlanView { entries: &entries };
-        let lines = view.render(&ctx());
-        let text = lines[2].plain_text();
+        let frame = view.render(&ctx());
+        let text = frame.lines()[2].plain_text();
         assert!(text.contains(CHECKBOX_EMPTY));
         assert!(text.contains("Todo"));
     }

@@ -1,5 +1,5 @@
 use tui::BRAILLE_FRAMES as FRAMES;
-use tui::{Line, Style, ViewContext};
+use tui::{FitOptions, Frame, Line, Style, ViewContext};
 
 const MESSAGES: &[&str] = &[
     "Tip: Hit Tab to adjust reasoning level (off → low → medium → high)",
@@ -62,18 +62,19 @@ impl ProgressIndicator {
 }
 
 impl ProgressIndicator {
-    pub fn render(&self, context: &ViewContext) -> Vec<Line> {
+    pub fn render(&self, context: &ViewContext) -> Frame {
         if !self.is_active() {
-            return vec![];
+            return Frame::empty();
         }
 
-        let frame = FRAMES[self.tick as usize % FRAMES.len()];
+        let frame_char = FRAMES[self.tick as usize % FRAMES.len()];
         let mut line = Line::default();
-        line.push_styled(frame.to_string(), context.theme.info());
+        line.push_styled(frame_char.to_string(), context.theme.info());
         line.push_styled(format!(" {}", self.current_message()), context.theme.text_secondary());
         line.push_with_style("  (esc to interrupt)".to_string(), Style::fg(context.theme.muted()).italic());
 
-        vec![Line::default(), line, Line::default()]
+        let lines = vec![Line::default(), line, Line::default()];
+        Frame::new(lines).fit(context.size.width, FitOptions::wrap())
     }
 }
 
@@ -82,27 +83,29 @@ mod tests {
     use super::*;
 
     fn ctx() -> ViewContext {
-        ViewContext::new((80, 24))
+        // Wide enough for the longest tip + " (esc to interrupt)" suffix to fit on one row.
+        ViewContext::new((200, 24))
     }
 
     #[test]
     fn renders_nothing_when_idle() {
         let indicator = ProgressIndicator::default();
-        assert!(indicator.render(&ctx()).is_empty());
+        assert!(indicator.render(&ctx()).lines().is_empty());
     }
 
     #[test]
     fn renders_nothing_when_all_complete_and_not_waiting() {
         let mut indicator = ProgressIndicator::default();
         indicator.update(3, 3, false);
-        assert!(indicator.render(&ctx()).is_empty());
+        assert!(indicator.render(&ctx()).lines().is_empty());
     }
 
     #[test]
     fn renders_when_tools_running() {
         let mut indicator = ProgressIndicator::default();
         indicator.update(1, 3, false);
-        let lines = indicator.render(&ctx());
+        let frame = indicator.render(&ctx());
+        let lines = frame.lines();
         assert_eq!(lines.len(), 3);
         let text = lines[1].plain_text();
         assert!(text.contains("esc to interrupt"));
@@ -112,7 +115,8 @@ mod tests {
     fn renders_when_waiting_for_response_without_tools() {
         let mut indicator = ProgressIndicator::default();
         indicator.update(0, 0, true);
-        let lines = indicator.render(&ctx());
+        let frame = indicator.render(&ctx());
+        let lines = frame.lines();
         assert_eq!(lines.len(), 3);
         let text = lines[1].plain_text();
         assert!(text.contains("esc to interrupt"));
@@ -125,8 +129,8 @@ mod tests {
         let mut b = ProgressIndicator::default();
         b.update(0, 1, false);
         b.set_tick(1);
-        let text_a = a.render(&ctx())[1].plain_text();
-        let text_b = b.render(&ctx())[1].plain_text();
+        let text_a = a.render(&ctx()).lines()[1].plain_text();
+        let text_b = b.render(&ctx()).lines()[1].plain_text();
         assert_ne!(text_a, text_b);
     }
 
@@ -135,8 +139,8 @@ mod tests {
         let mut indicator = ProgressIndicator::default();
         indicator.update(1, 3, false);
         indicator.on_tick();
-        let lines = indicator.render(&ctx());
-        assert!(!lines.is_empty());
+        let frame = indicator.render(&ctx());
+        assert!(!frame.lines().is_empty());
     }
 
     #[test]
@@ -153,7 +157,7 @@ mod tests {
         let mut indicator = ProgressIndicator::default();
         indicator.update(3, 3, false);
         indicator.on_tick();
-        assert!(indicator.render(&ctx()).is_empty());
+        assert!(indicator.render(&ctx()).lines().is_empty());
     }
 
     #[test]
@@ -161,8 +165,8 @@ mod tests {
         let mut indicator = ProgressIndicator::default();
         indicator.update(0, 0, true);
         indicator.set_turn_count(1);
-        let lines = indicator.render(&ctx());
-        let text = lines[1].plain_text();
+        let frame = indicator.render(&ctx());
+        let text = frame.lines()[1].plain_text();
         assert!(text.contains(MESSAGES[0]));
     }
 
@@ -172,7 +176,7 @@ mod tests {
         // First turn: inactive → active
         indicator.update(0, 0, true);
         assert_eq!(indicator.turn_count, 1);
-        let tip_0 = indicator.render(&ctx())[1].plain_text();
+        let tip_0 = indicator.render(&ctx()).lines()[1].plain_text();
 
         // Go inactive
         indicator.update(0, 0, false);
@@ -180,7 +184,7 @@ mod tests {
         // Second turn: inactive → active
         indicator.update(0, 0, true);
         assert_eq!(indicator.turn_count, 2);
-        let tip_1 = indicator.render(&ctx())[1].plain_text();
+        let tip_1 = indicator.render(&ctx()).lines()[1].plain_text();
 
         assert_ne!(tip_0, tip_1);
         assert!(tip_0.contains(MESSAGES[0]));
@@ -192,7 +196,7 @@ mod tests {
         let mut indicator = ProgressIndicator::default();
         indicator.update(0, 0, true);
         indicator.set_turn_count(MESSAGES.len() + 1);
-        let text = indicator.render(&ctx())[1].plain_text();
+        let text = indicator.render(&ctx()).lines()[1].plain_text();
         assert!(text.contains("Working..."));
     }
 

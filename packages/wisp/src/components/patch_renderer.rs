@@ -1,7 +1,7 @@
 use crate::components::app::git_diff_mode::{PatchLineRef, QueuedComment};
 use crate::git_diff::{FileDiff, PatchLineKind};
 use std::collections::HashMap;
-use tui::{Color, Line, Span, Style, ViewContext, soft_wrap_line};
+use tui::{Color, FitOptions, Frame, Line, Span, Style, ViewContext};
 
 pub(crate) fn build_comment_map(comments: &[QueuedComment]) -> HashMap<PatchLineRef, Vec<&QueuedComment>> {
     let mut map: HashMap<PatchLineRef, Vec<&QueuedComment>> = HashMap::new();
@@ -76,8 +76,9 @@ pub fn build_patch_lines(
             let anchor = PatchLineRef { hunk_index: hunk_idx, line_index: line_idx };
 
             #[allow(clippy::cast_possible_truncation)]
-            let wrapped = soft_wrap_line(&line, right_width as u16);
-            for (i, mut wrapped_line) in wrapped.into_iter().enumerate() {
+            let right_width_u16 = right_width as u16;
+            let wrapped_frame = Frame::new(vec![line]).fit(right_width_u16, FitOptions::wrap());
+            for (i, mut wrapped_line) in wrapped_frame.into_lines().into_iter().enumerate() {
                 wrapped_line.extend_bg_to_width(right_width);
                 patch_lines.push(wrapped_line);
                 if i == 0 {

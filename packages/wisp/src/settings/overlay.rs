@@ -7,7 +7,7 @@ use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::McpServerStatusEntry;
 use agent_client_protocol::{self as acp, SessionConfigKind, SessionConfigOption};
 use tui::Panel;
-use tui::{Component, Cursor, Event, Frame, Layout, Line, ViewContext};
+use tui::{Component, Cursor, Event, Frame, Line, ViewContext};
 use unicode_width::UnicodeWidthStr;
 
 const MIN_HEIGHT: usize = 3;
@@ -76,9 +76,7 @@ impl SettingsOverlay {
         } else {
             Cursor::hidden()
         };
-        let mut layout = Layout::new();
-        layout.section(self.render(ctx).into_lines());
-        layout.into_frame().with_cursor(cursor)
+        self.render(ctx).with_cursor(cursor)
     }
 
     pub fn update_child_viewport(&mut self, max_height: usize) {

@@ -53,13 +53,9 @@ fn selected_text(picker: &mut CommandPicker) -> Option<String> {
     let highlight_bg = theme.highlight_bg();
     let term = render_component(|ctx| picker.render(ctx), DEFAULT_SIZE.0, DEFAULT_SIZE.1);
     let output = term.get_lines();
-    // Check col 2 (after the 2-char prepend) to find the row with highlight_bg,
-    // and skip empty rows (which may be wrap overflow from extend_bg_to_width).
-    output
-        .iter()
-        .enumerate()
-        .find(|(i, l)| !l.is_empty() && term.get_style_at(*i, 2).bg == Some(highlight_bg))
-        .map(|(_, l)| l.clone())
+    // Look at column 2 (after the 2-char `prepend("  ")` from Combobox) to find
+    // the row with the highlight background — that's the selected row.
+    output.iter().enumerate().find(|(i, _)| term.get_style_at(*i, 2).bg == Some(highlight_bg)).map(|(_, l)| l.clone())
 }
 
 #[test]

@@ -10,7 +10,7 @@ fn ctx() -> ViewContext {
 }
 
 fn render_all(statuses: &ToolCallStatuses, ids: &[&str], ctx: &ViewContext) -> Vec<Line> {
-    ids.iter().flat_map(|id| statuses.render_tool(id, ctx)).collect()
+    ids.iter().flat_map(|id| statuses.render_tool(id, ctx).into_lines()).collect()
 }
 
 fn make_tool_call(id: &str, title: &str, raw_input: Option<&str>) -> acp::ToolCall {
@@ -74,7 +74,7 @@ fn tool_update_event(id: &str, chunk: &str) -> String {
 }
 
 fn render_tool_lines(statuses: &ToolCallStatuses, id: &str) -> Vec<String> {
-    let lines = statuses.render_tool(id, &ctx());
+    let lines = statuses.render_tool(id, &ctx()).into_lines();
     let count = lines.len();
     let term = render_lines(&lines, 80, 24);
     term.get_lines().into_iter().take(count).collect()
@@ -115,7 +115,7 @@ fn update_to_success() {
 fn unknown_update_is_ignored() {
     let mut statuses = ToolCallStatuses::new();
     statuses.on_tool_call_update(&make_tool_call_update("unknown", acp::ToolCallStatus::Completed));
-    assert!(statuses.render_tool("unknown", &ctx()).is_empty());
+    assert!(statuses.render_tool("unknown", &ctx()).lines().is_empty());
 }
 
 #[test]
@@ -163,7 +163,7 @@ fn clear_removes_all() {
     statuses.on_tool_call(&make_tool_call("tool-1", "Read", None));
     statuses.clear();
     assert!(!statuses.has_tool("tool-1"));
-    assert!(statuses.render_tool("tool-1", &ctx()).is_empty());
+    assert!(statuses.render_tool("tool-1", &ctx()).lines().is_empty());
 }
 
 #[test]
@@ -177,7 +177,7 @@ fn view_renders_running_with_spinner() {
         status: &status,
         tick: 0,
     };
-    let lines = view.render(&ctx());
+    let lines = view.render(&ctx()).into_lines();
     assert_eq!(lines.len(), 1);
     let term = render_lines(&lines, 80, 24);
     let output = term.get_lines();
@@ -205,8 +205,8 @@ fn view_running_spinner_changes_with_tick() {
         status: &status,
         tick: 1,
     };
-    let lines_a = view_a.render(&ctx());
-    let lines_b = view_b.render(&ctx());
+    let lines_a = view_a.render(&ctx()).into_lines();
+    let lines_b = view_b.render(&ctx()).into_lines();
     let term_a = render_lines(&lines_a, 80, 24);
     let term_b = render_lines(&lines_b, 80, 24);
     let a = &term_a.get_lines()[0];
@@ -225,7 +225,7 @@ fn view_renders_success() {
         status: &status,
         tick: 0,
     };
-    let lines = view.render(&ctx());
+    let lines = view.render(&ctx()).into_lines();
     assert_eq!(lines.len(), 1);
     let term = render_lines(&lines, 80, 24);
     let output = term.get_lines();
@@ -243,7 +243,7 @@ fn view_renders_error() {
         status: &status,
         tick: 0,
     };
-    let lines = view.render(&ctx());
+    let lines = view.render(&ctx()).into_lines();
     assert_eq!(lines.len(), 1);
     let term = render_lines(&lines, 80, 24);
     let output = term.get_lines();
@@ -264,10 +264,14 @@ fn view_truncates_utf8_arguments_without_panicking() {
         tick: 0,
     };
 
-    let lines = view.render(&ctx());
-    assert_eq!(lines.len(), 1);
     let expected = format!("✓ TestTool {}", "a".repeat(MAX_TOOL_ARG_LENGTH - 2));
     let width = expected.len() + 10;
+    // width chosen so the long argument fits on one row; we're testing
+    // utf-8 boundary handling, not wrapping.
+    #[allow(clippy::cast_possible_truncation)]
+    let non_wrapping_ctx = ViewContext::new((width as u16, 24));
+    let lines = view.render(&non_wrapping_ctx).into_lines();
+    assert_eq!(lines.len(), 1);
     #[allow(clippy::cast_possible_truncation)]
     let term = render_lines(&lines, width as u16, 24);
     let output = term.get_lines();
@@ -287,7 +291,7 @@ fn view_running_hides_raw_args_then_shows_display_value() {
     };
 
     // While running with no display_value, raw args are hidden
-    let lines = view.render(&ctx());
+    let lines = view.render(&ctx()).into_lines();
     let term = render_lines(&lines, 80, 24);
     let output = term.get_lines();
     assert!(!output[0].contains("file_path"));
@@ -295,7 +299,7 @@ fn view_running_hides_raw_args_then_shows_display_value() {
 
     // After display_value arrives, it is shown
     let view = ToolCallStatusView { display_value: Some("main.rs"), ..view };
-    let lines = view.render(&ctx());
+    let lines = view.render(&ctx()).into_lines();
     let term = render_lines(&lines, 80, 24);
     let output = term.get_lines();
     assert_eq!(output[0], format!("{} Read (main.rs)", FRAMES[0]));
