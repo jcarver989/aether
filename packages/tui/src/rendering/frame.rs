@@ -126,14 +126,14 @@ impl Frame {
     /// - [`Overflow::Wrap`]: each line is soft-wrapped to `width`. The cursor
     ///   row is remapped to the wrapped visual row, and the cursor column is
     ///   reduced modulo `width`, with the row advanced for any overflow. This
-    ///   matches the wrap math used by [`VisualFrame`](super::visual_frame::VisualFrame).
+    ///   matches the wrap math used by `VisualFrame`.
     /// - [`Overflow::Truncate`]: each line is truncated to `width`. Row count
     ///   is unchanged. The cursor column is clamped to `width.saturating_sub(1)`.
     /// - `fill_x`: every resulting row is marked with row-fill metadata using
     ///   any background color present on the row. The fill is **not**
     ///   materialized into trailing spaces here — that happens later, in
     ///   [`Frame::hstack`] (per slot width) or
-    ///   [`VisualFrame`](super::visual_frame::VisualFrame) (per terminal width).
+    ///   `VisualFrame` (per terminal width).
     ///   Deferring materialization is what prevents trailing-space rows from
     ///   producing phantom rows when wrapped again at a smaller width.
     ///
