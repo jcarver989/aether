@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 pub struct AgentCatalog {
     project_root: PathBuf,
     inherited_prompts: Vec<Prompt>,
-    inherited_mcp_config_path: Option<PathBuf>,
+    inherited_mcp_config_paths: Vec<PathBuf>,
     specs: Vec<AgentSpec>,
 }
 
@@ -22,15 +22,15 @@ impl AgentCatalog {
     pub(crate) fn new(
         project_root: PathBuf,
         inherited_prompts: Vec<Prompt>,
-        inherited_mcp_config_path: Option<PathBuf>,
+        inherited_mcp_config_paths: Vec<PathBuf>,
         specs: Vec<AgentSpec>,
     ) -> Self {
-        Self { project_root, inherited_prompts, inherited_mcp_config_path, specs }
+        Self { project_root, inherited_prompts, inherited_mcp_config_paths, specs }
     }
 
     /// Create an empty catalog for a project with no settings.
     pub fn empty(project_root: PathBuf) -> Self {
-        Self::new(project_root, Vec::new(), None, Vec::new())
+        Self::new(project_root, Vec::new(), Vec::new(), Vec::new())
     }
 
     /// The project root directory.
@@ -64,7 +64,7 @@ impl AgentCatalog {
     /// Resolve and return a named agent spec ready for runtime use.
     pub fn resolve(&self, name: &str, cwd: &Path) -> Result<AgentSpec, SettingsError> {
         let mut spec = self.get(name)?.clone();
-        spec.resolve_mcp_config(self.inherited_mcp_config_path.as_deref(), cwd);
+        spec.resolve_mcp_config(&self.inherited_mcp_config_paths, cwd);
         Ok(spec)
     }
 
@@ -76,7 +76,7 @@ impl AgentCatalog {
         cwd: &Path,
     ) -> AgentSpec {
         let mut spec = AgentSpec::default_spec(model, reasoning_effort, self.inherited_prompts.clone());
-        spec.resolve_mcp_config(self.inherited_mcp_config_path.as_deref(), cwd);
+        spec.resolve_mcp_config(&self.inherited_mcp_config_paths, cwd);
         spec
     }
 }
@@ -106,7 +106,7 @@ mod tests {
             model: "anthropic:claude-sonnet-4-5".to_string(),
             reasoning_effort: None,
             prompts: vec![],
-            mcp_config_path: None,
+            mcp_config_paths: Vec::new(),
             exposure,
             tools: ToolFilter::default(),
         }
@@ -123,11 +123,11 @@ mod tests {
                 Prompt::from_globs(vec!["BASE.md".to_string()], project_root.clone()),
                 Prompt::from_globs(vec!["AGENTS.md".to_string()], project_root.clone()),
             ],
-            mcp_config_path: None,
+            mcp_config_paths: Vec::new(),
             exposure: AgentSpecExposure::both(),
             tools: ToolFilter::default(),
         };
-        AgentCatalog::new(project_root, inherited_prompts, None, vec![planner])
+        AgentCatalog::new(project_root, inherited_prompts, Vec::new(), vec![planner])
     }
 
     #[test]
@@ -137,7 +137,7 @@ mod tests {
         let catalog = AgentCatalog::new(
             root,
             vec![],
-            None,
+            Vec::new(),
             vec![
                 make_spec("planner", AgentSpecExposure::both()),
                 make_spec("internal", AgentSpecExposure::agent_only()),
@@ -156,7 +156,7 @@ mod tests {
         let catalog = AgentCatalog::new(
             root,
             vec![],
-            None,
+            Vec::new(),
             vec![
                 make_spec("planner", AgentSpecExposure::both()),
                 make_spec("user-only", AgentSpecExposure::user_only()),
@@ -191,17 +191,17 @@ mod tests {
         write_file(dir.path(), "inherited-mcp.json", "{}");
 
         let mut planner = make_spec("planner", AgentSpecExposure::both());
-        planner.mcp_config_path = Some(dir.path().join("agent-mcp.json"));
+        planner.mcp_config_paths = vec![dir.path().join("agent-mcp.json")];
 
         let catalog = AgentCatalog::new(
             dir.path().to_path_buf(),
             vec![],
-            Some(dir.path().join("inherited-mcp.json")),
+            vec![dir.path().join("inherited-mcp.json")],
             vec![planner],
         );
 
         let spec = catalog.resolve("planner", dir.path()).unwrap();
-        assert_eq!(spec.mcp_config_path, Some(dir.path().join("agent-mcp.json")));
+        assert_eq!(spec.mcp_config_paths, vec![dir.path().join("agent-mcp.json")]);
     }
 
     #[test]
@@ -213,12 +213,12 @@ mod tests {
         let catalog = AgentCatalog::new(
             dir.path().to_path_buf(),
             vec![],
-            Some(dir.path().join("inherited-mcp.json")),
+            vec![dir.path().join("inherited-mcp.json")],
             vec![make_spec("planner", AgentSpecExposure::both())],
         );
 
         let spec = catalog.resolve("planner", dir.path()).unwrap();
-        assert_eq!(spec.mcp_config_path, Some(dir.path().join("inherited-mcp.json")));
+        assert_eq!(spec.mcp_config_paths, vec![dir.path().join("inherited-mcp.json")]);
     }
 
     #[test]
@@ -229,12 +229,12 @@ mod tests {
         let catalog = AgentCatalog::new(
             dir.path().to_path_buf(),
             vec![],
-            None,
+            Vec::new(),
             vec![make_spec("planner", AgentSpecExposure::both())],
         );
 
         let spec = catalog.resolve("planner", dir.path()).unwrap();
-        assert_eq!(spec.mcp_config_path, Some(dir.path().join("mcp.json")));
+        assert_eq!(spec.mcp_config_paths, vec![dir.path().join("mcp.json")]);
     }
 
     #[test]
@@ -243,12 +243,12 @@ mod tests {
         let catalog = AgentCatalog::new(
             dir.path().to_path_buf(),
             vec![],
-            None,
+            Vec::new(),
             vec![make_spec("planner", AgentSpecExposure::both())],
         );
 
         let spec = catalog.resolve("planner", dir.path()).unwrap();
-        assert!(spec.mcp_config_path.is_none());
+        assert!(spec.mcp_config_paths.is_empty());
     }
 
     #[test]
@@ -262,6 +262,6 @@ mod tests {
         assert_eq!(spec.name, "__default__");
         assert_eq!(spec.model, model.to_string());
         assert_eq!(spec.prompts.len(), 1);
-        assert!(spec.mcp_config_path.is_none());
+        assert!(spec.mcp_config_paths.is_empty());
     }
 }

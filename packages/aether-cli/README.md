@@ -147,7 +147,7 @@ Define agents with specific model, prompts, and tool configurations:
 ```json
 {
   "prompts": [".aether/SYSTEM.md", "AGENTS.md"],
-  "mcpServers": ".aether/mcp.json",
+  "mcpServers": [".aether/mcp.json"],
   "agents": [
     {
       "name": "planner",
@@ -157,7 +157,7 @@ Define agents with specific model, prompts, and tool configurations:
       "userInvocable": true,
       "agentInvocable": true,
       "prompts": [".aether/prompts/planner.md"],
-      "mcpServers": ".aether/mcp/planner.json"
+      "mcpServers": [".aether/mcp/planner.json"]
     },
     {
       "name": "researcher",

@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         command_tx: mcp_tx,
         elicitation_rx: _,
         handle: _mcp_handle,
-    } = mcp().from_json_file("examples/mcp.json").await?.spawn().await?;
+    } = mcp().from_json_files(&["examples/mcp.json"]).await?.spawn().await?;
 
     let (tx, mut rx, _handle) = agent(llm)
         .system_prompt(Prompt::text("You are a helpful assistant with access to web browsing tools via Playwright."))

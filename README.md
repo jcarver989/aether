@@ -139,9 +139,9 @@ Use `aether-agent-core` as a Rust library to build your own agent in ~25 lines. 
        // 1. Create a provider (reads ANTHROPIC_API_KEY from env)
        let llm = AnthropicProvider::new(None)?;
 
-       // 2. Spawn MCP tool servers from an mcp.json file
+       // 2. Spawn MCP tool servers from one or more mcp.json files
        let McpSpawnResult { tool_definitions: tools, command_tx: mcp_tx, .. } =
-           mcp().from_json_file("mcp.json").await?.spawn().await?;
+           mcp().from_json_files(&["mcp.json"]).await?.spawn().await?;
 
        // 3. Build and spawn the agent
        let (tx, mut rx, _handle) = agent(llm)

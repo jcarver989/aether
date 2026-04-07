@@ -32,11 +32,12 @@ pub struct AgentSpec {
     /// which is expanded to system environment info during resolution.
     /// `Prompt::McpInstructions` is added separately during agent construction.
     pub prompts: Vec<Prompt>,
-    /// Resolved MCP config path for this agent.
+    /// Resolved MCP config paths for this agent, applied in order.
     ///
-    /// Before catalog resolution, this holds the agent-local override.
-    /// After catalog resolution, this holds the effective path (agent-local > inherited > cwd).
-    pub mcp_config_path: Option<PathBuf>,
+    /// On server name collisions across files, the last entry in the list wins.
+    /// Before catalog resolution, this holds agent-local overrides (empty if none).
+    /// After catalog resolution, this holds the effective list (agent-local > inherited > cwd/mcp.json).
+    pub mcp_config_paths: Vec<PathBuf>,
     /// How this agent can be invoked.
     pub exposure: AgentSpecExposure,
     /// Tool filter for restricting which MCP tools this agent can use.
@@ -52,27 +53,27 @@ impl AgentSpec {
             model: model.to_string(),
             reasoning_effort,
             prompts,
-            mcp_config_path: None,
+            mcp_config_paths: Vec::new(),
             exposure: AgentSpecExposure::none(),
             tools: ToolFilter::default(),
         }
     }
 
-    /// Resolve effective MCP config path in place using precedence:
-    /// 1. Agent's own `mcp_config_path` (kept as-is)
-    /// 2. `inherited_mcp_config_path` (from settings)
-    /// 3. `cwd/mcp.json`
-    pub fn resolve_mcp_config(&mut self, inherited: Option<&Path>, cwd: &Path) {
-        if self.mcp_config_path.is_some() {
+    /// Resolve effective MCP config paths in place using precedence:
+    /// 1. Agent's own `mcp_config_paths` (kept as-is if non-empty)
+    /// 2. `inherited` paths from settings (if non-empty)
+    /// 3. `cwd/mcp.json` (becomes a single-element list if it exists)
+    pub fn resolve_mcp_config(&mut self, inherited: &[PathBuf], cwd: &Path) {
+        if !self.mcp_config_paths.is_empty() {
             return;
         }
-        if let Some(path) = inherited {
-            self.mcp_config_path = Some(path.to_path_buf());
+        if !inherited.is_empty() {
+            self.mcp_config_paths = inherited.to_vec();
             return;
         }
         let cwd_mcp = cwd.join("mcp.json");
         if cwd_mcp.is_file() {
-            self.mcp_config_path = Some(cwd_mcp);
+            self.mcp_config_paths = vec![cwd_mcp];
         }
     }
 }
@@ -157,7 +158,7 @@ mod tests {
             model: "anthropic:claude-sonnet-4-5".to_string(),
             reasoning_effort: None,
             prompts: vec![],
-            mcp_config_path: None,
+            mcp_config_paths: Vec::new(),
             exposure: AgentSpecExposure::both(),
             tools: ToolFilter::default(),
         }
@@ -174,12 +175,12 @@ mod tests {
         assert_eq!(spec.model, model.to_string());
         assert!(spec.reasoning_effort.is_none());
         assert_eq!(spec.prompts.len(), 1);
-        assert!(spec.mcp_config_path.is_none());
+        assert!(spec.mcp_config_paths.is_empty());
         assert_eq!(spec.exposure, AgentSpecExposure::none());
     }
 
     #[test]
-    fn resolve_mcp_prefers_agent_local_path() {
+    fn resolve_mcp_prefers_agent_local_paths() {
         let dir = tempfile::tempdir().unwrap();
         let agent_path = dir.path().join("agent-mcp.json");
         let inherited_path = dir.path().join("inherited-mcp.json");
@@ -187,10 +188,10 @@ mod tests {
         fs::write(&inherited_path, "{}").unwrap();
 
         let mut spec = make_spec();
-        spec.mcp_config_path = Some(agent_path.clone());
+        spec.mcp_config_paths = vec![agent_path.clone()];
 
-        spec.resolve_mcp_config(Some(&inherited_path), dir.path());
-        assert_eq!(spec.mcp_config_path, Some(agent_path));
+        spec.resolve_mcp_config(&[inherited_path], dir.path());
+        assert_eq!(spec.mcp_config_paths, vec![agent_path]);
     }
 
     #[test]
@@ -201,8 +202,8 @@ mod tests {
         fs::write(dir.path().join("mcp.json"), "{}").unwrap();
 
         let mut spec = make_spec();
-        spec.resolve_mcp_config(Some(&inherited_path), dir.path());
-        assert_eq!(spec.mcp_config_path, Some(inherited_path));
+        spec.resolve_mcp_config(std::slice::from_ref(&inherited_path), dir.path());
+        assert_eq!(spec.mcp_config_paths, vec![inherited_path]);
     }
 
     #[test]
@@ -211,16 +212,16 @@ mod tests {
         fs::write(dir.path().join("mcp.json"), "{}").unwrap();
 
         let mut spec = make_spec();
-        spec.resolve_mcp_config(None, dir.path());
-        assert_eq!(spec.mcp_config_path, Some(dir.path().join("mcp.json")));
+        spec.resolve_mcp_config(&[], dir.path());
+        assert_eq!(spec.mcp_config_paths, vec![dir.path().join("mcp.json")]);
     }
 
     #[test]
-    fn resolve_mcp_returns_none_when_nothing_found() {
+    fn resolve_mcp_yields_empty_when_nothing_found() {
         let dir = tempfile::tempdir().unwrap();
         let mut spec = make_spec();
-        spec.resolve_mcp_config(None, dir.path());
-        assert!(spec.mcp_config_path.is_none());
+        spec.resolve_mcp_config(&[], dir.path());
+        assert!(spec.mcp_config_paths.is_empty());
     }
 
     fn make_tool(name: &str) -> ToolDefinition {

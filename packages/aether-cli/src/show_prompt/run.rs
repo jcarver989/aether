@@ -14,7 +14,7 @@ pub async fn run_prompt(args: PromptArgs) -> Result<(), CliError> {
     let catalog = load_agent_catalog(&cwd).map_err(|e| CliError::AgentError(e.to_string()))?;
     let spec = resolve_agent_spec(&catalog, args.agent.as_deref(), &cwd)?;
 
-    let info = RuntimeBuilder::from_spec(cwd, spec).mcp_config_opt(args.mcp_config).build_prompt_info().await?;
+    let info = RuntimeBuilder::from_spec(cwd, spec).mcp_configs(args.mcp_configs).build_prompt_info().await?;
 
     let system_prompt = build_prompt(&info.spec.prompts, args.system_prompt.as_deref()).await?;
     let tools_output = build_tools(&info.tool_definitions);

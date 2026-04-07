@@ -10,7 +10,7 @@ use aether_core::mcp::mcp;
 
 let builder = mcp()
     .with_builtin_servers("/my/project".into(), "/my/project".as_ref())
-    .from_json_file("mcp.json")
+    .from_json_files(&["mcp.json"])
     .await
     .unwrap();
 ```

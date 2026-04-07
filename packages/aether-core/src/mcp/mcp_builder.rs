@@ -8,7 +8,7 @@ use mcp_utils::client::{
 
 use super::run_mcp_task::{McpCommand, run_mcp_task};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::{
     sync::mpsc::{self, Receiver, Sender},
@@ -74,13 +74,20 @@ impl McpBuilder {
         self
     }
 
-    pub fn with_oauth_handler<H: OAuthHandler + 'static>(mut self, handler: H) -> Self {
+    pub fn with_oauth_handler<T: OAuthHandler + 'static>(mut self, handler: T) -> Self {
         self.oauth_handler = Some(Arc::new(handler));
         self
     }
 
-    pub async fn from_json_file(mut self, path: &str) -> Result<Self, ParseError> {
-        let raw_config = RawMcpConfig::from_json_file(path)?;
+    /// Load and merge MCP server definitions from one or more JSON files.
+    ///
+    /// On server name collisions across files, the rightmost file in `paths` wins.
+    /// Empty `paths` is a no-op.
+    pub async fn from_json_files<T: AsRef<Path>>(mut self, paths: &[T]) -> Result<Self, ParseError> {
+        if paths.is_empty() {
+            return Ok(self);
+        }
+        let raw_config = RawMcpConfig::from_json_files(paths)?;
         let mcp_configs = raw_config.into_configs(&self.factories).await?;
         self.mcp_configs.extend(mcp_configs);
         Ok(self)

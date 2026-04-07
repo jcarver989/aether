@@ -247,7 +247,7 @@ async fn execute_single_agent(
             command_tx,
             elicitation_rx: _,
             handle: _,
-        } = spawn_mcps(spec.mcp_config_path.as_deref(), roots, catalog.project_root()).await?;
+        } = spawn_mcps(&spec.mcp_config_paths, roots, catalog.project_root()).await?;
         let filtered_tools = spec.tools.apply(tool_definitions);
         spec.prompts.push(Prompt::mcp_instructions(instructions));
 
@@ -319,18 +319,18 @@ async fn execute_single_agent(
 }
 
 async fn spawn_mcps(
-    effective_mcp_config_path: Option<&Path>,
+    effective_mcp_config_paths: &[PathBuf],
     roots: Vec<PathBuf>,
     project_root: &Path,
 ) -> Result<McpSpawnResult, String> {
     let mut builder = mcp().with_builtin_servers(project_root.to_path_buf(), project_root);
     builder = builder.with_roots(roots);
 
-    if let Some(mcp_path) = effective_mcp_config_path {
+    if !effective_mcp_config_paths.is_empty() {
         builder = builder
-            .from_json_file(mcp_path.to_str().ok_or("Invalid MCP config path")?)
+            .from_json_files(effective_mcp_config_paths)
             .await
-            .map_err(|e| format!("Failed to load mcp.json: {e}"))?;
+            .map_err(|e| format!("Failed to load mcp configs: {e}"))?;
     }
 
     builder.spawn().await.map_err(|e| format!("Failed to spawn MCP manager: {e}"))

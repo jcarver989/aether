@@ -20,7 +20,7 @@ pub enum OutputFormat {
 pub struct RunConfig {
     pub prompt: String,
     pub cwd: PathBuf,
-    pub mcp_config: Option<PathBuf>,
+    pub mcp_configs: Vec<PathBuf>,
     pub spec: AgentSpec,
     pub system_prompt: Option<String>,
     pub output: OutputFormat,
@@ -41,7 +41,7 @@ pub async fn run_headless(args: HeadlessArgs) -> Result<ExitCode, CliError> {
     let config = RunConfig {
         prompt,
         cwd,
-        mcp_config: args.mcp_config,
+        mcp_configs: args.mcp_configs,
         spec,
         system_prompt: args.system_prompt,
         output,
@@ -75,9 +75,10 @@ pub struct HeadlessArgs {
     #[arg(short = 'C', long = "cwd", default_value = ".")]
     pub cwd: PathBuf,
 
-    /// Path to mcp.json (auto-detected if omitted)
+    /// Path(s) to mcp.json. Pass multiple times to layer configs (last wins on collisions).
+    /// If omitted, paths from settings.json `mcpServers` are used (or `cwd/mcp.json` is auto-detected).
     #[arg(long = "mcp-config")]
-    pub mcp_config: Option<PathBuf>,
+    pub mcp_configs: Vec<PathBuf>,
 
     /// Additional system prompt
     #[arg(long = "system-prompt")]

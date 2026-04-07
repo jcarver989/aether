@@ -188,6 +188,19 @@ impl RawMcpConfig {
         Self::from_json(&content)
     }
 
+    /// Parse and merge multiple MCP config files in order.
+    ///
+    /// Server name collisions are resolved by "last file wins" via `HashMap::extend`,
+    /// so the rightmost file in `paths` takes precedence on overlap.
+    pub fn from_json_files<T: AsRef<Path>>(paths: &[T]) -> Result<Self, ParseError> {
+        let mut merged = HashMap::new();
+        for path in paths {
+            let raw = Self::from_json_file(path)?;
+            merged.extend(raw.servers);
+        }
+        Ok(Self { servers: merged })
+    }
+
     /// Parse MCP configuration from a JSON string
     pub fn from_json(json: &str) -> Result<Self, ParseError> {
         Ok(serde_json::from_str(json)?)
@@ -290,4 +303,86 @@ async fn parse_tool_proxy(
     }
 
     Ok(McpServerConfig::ToolProxy { name, servers: nested_configs })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    fn write_config(dir: &Path, name: &str, json: &str) -> std::path::PathBuf {
+        let path = dir.join(name);
+        fs::write(&path, json).unwrap();
+        path
+    }
+
+    fn stdio_config(command: &str) -> String {
+        format!(r#"{{"servers": {{"coding": {{"type": "stdio", "command": "{command}"}}}}}}"#)
+    }
+
+    #[test]
+    fn from_json_files_empty_returns_empty_servers() {
+        let result = RawMcpConfig::from_json_files::<&str>(&[]).unwrap();
+        assert!(result.servers.is_empty());
+    }
+
+    #[test]
+    fn from_json_files_single_file_matches_from_json_file() {
+        let dir = tempdir().unwrap();
+        let path = write_config(dir.path(), "a.json", &stdio_config("ls"));
+
+        let single = RawMcpConfig::from_json_file(&path).unwrap();
+        let multi = RawMcpConfig::from_json_files(&[&path]).unwrap();
+
+        assert_eq!(single.servers.len(), multi.servers.len());
+        assert!(multi.servers.contains_key("coding"));
+    }
+
+    #[test]
+    fn from_json_files_merges_disjoint_servers() {
+        let dir = tempdir().unwrap();
+        let a = write_config(dir.path(), "a.json", r#"{"servers": {"alpha": {"type": "stdio", "command": "a"}}}"#);
+        let b = write_config(dir.path(), "b.json", r#"{"servers": {"beta": {"type": "stdio", "command": "b"}}}"#);
+
+        let merged = RawMcpConfig::from_json_files(&[a, b]).unwrap();
+        assert_eq!(merged.servers.len(), 2);
+        assert!(merged.servers.contains_key("alpha"));
+        assert!(merged.servers.contains_key("beta"));
+    }
+
+    #[test]
+    fn from_json_files_last_file_wins_on_collision() {
+        let dir = tempdir().unwrap();
+        let a = write_config(dir.path(), "a.json", &stdio_config("from_a"));
+        let b = write_config(dir.path(), "b.json", &stdio_config("from_b"));
+
+        let merged_ab = RawMcpConfig::from_json_files(&[&a, &b]).unwrap();
+        match merged_ab.servers.get("coding").unwrap() {
+            RawMcpServerConfig::Stdio { command, .. } => assert_eq!(command, "from_b"),
+            other => panic!("expected Stdio, got {other:?}"),
+        }
+
+        let merged_ba = RawMcpConfig::from_json_files(&[&b, &a]).unwrap();
+        match merged_ba.servers.get("coding").unwrap() {
+            RawMcpServerConfig::Stdio { command, .. } => assert_eq!(command, "from_a"),
+            other => panic!("expected Stdio, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn from_json_files_propagates_io_error_on_missing_file() {
+        let dir = tempdir().unwrap();
+        let missing = dir.path().join("does-not-exist.json");
+        let result = RawMcpConfig::from_json_files(&[missing]);
+        assert!(matches!(result, Err(ParseError::IoError(_))));
+    }
+
+    #[test]
+    fn from_json_files_propagates_json_error_on_invalid_file() {
+        let dir = tempdir().unwrap();
+        let bad = write_config(dir.path(), "bad.json", "not valid json");
+        let result = RawMcpConfig::from_json_files(&[bad]);
+        assert!(matches!(result, Err(ParseError::JsonError(_))));
+    }
 }

@@ -75,11 +75,7 @@ impl<T: StreamingModelProvider + 'static> AetherRunner<T> {
 
         if let Some(mcp_json_path) = &self.mcp_json_path {
             mcp_builder = mcp_builder
-                .from_json_file(
-                    mcp_json_path
-                        .to_str()
-                        .ok_or_else(|| RunError::ConfigurationError("Invalid mcp.json path".to_string()))?,
-                )
+                .from_json_files(std::slice::from_ref(mcp_json_path))
                 .await
                 .map_err(|e| RunError::ConfigurationError(format!("Failed to load mcp.json: {e}")))?;
         }

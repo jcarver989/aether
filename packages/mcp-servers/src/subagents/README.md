@@ -30,7 +30,7 @@ Sub-agents are discovered from `.aether/settings.json`:
       "model": "anthropic:claude-sonnet-4-5",
       "agentInvocable": true,
       "prompts": [".aether/prompts/explore.md"],
-      "mcpServers": ".aether/mcp/explore.json",
+      "mcpServers": [".aether/mcp/explore.json"],
       "tools": {
         "allow": ["coding__*"],
         "deny": ["coding__write_file", "coding__bash"]

@@ -14,8 +14,8 @@ use std::path::Path;
 struct Settings {
     /// Inherited prompts for all agents.
     prompts: Vec<String>,
-    /// Path to inherited MCP config for all agents.
-    mcp_servers: Option<String>,
+    /// Paths to inherited MCP configs for all agents, applied in order (last wins on collisions).
+    mcp_servers: Vec<String>,
     /// The canonical authored agent registry.
     agents: Vec<AgentEntry>,
 }
@@ -35,7 +35,8 @@ struct AgentEntry {
     agent_invocable: bool,
     #[serde(default)]
     prompts: Vec<String>,
-    mcp_servers: Option<String>,
+    #[serde(default)]
+    mcp_servers: Vec<String>,
     #[serde(default)]
     tools: ToolFilter,
 }
@@ -71,7 +72,7 @@ fn resolve_settings(project_root: &Path, settings: Settings) -> Result<super::ca
     let Settings { prompts: inherited_patterns, mcp_servers, agents } = settings;
 
     validate_prompt_entries(project_root, &inherited_patterns, None)?;
-    let inherited_mcp_config_path = resolve_mcp_config_path(project_root, mcp_servers.as_deref())?;
+    let inherited_mcp_config_paths = resolve_mcp_config_paths(project_root, &mcp_servers)?;
     let inherited_prompts = build_inherited_prompts(&inherited_patterns, project_root);
 
     let mut seen_names = HashSet::new();
@@ -84,7 +85,7 @@ fn resolve_settings(project_root: &Path, settings: Settings) -> Result<super::ca
     Ok(super::catalog::AgentCatalog::new(
         project_root.to_path_buf(),
         inherited_prompts,
-        inherited_mcp_config_path,
+        inherited_mcp_config_paths,
         specs,
     ))
 }
@@ -127,7 +128,7 @@ fn resolve_agent_entry(
         return Err(SettingsError::NoPrompts { agent: name.clone() });
     }
 
-    let mcp_config_path = resolve_mcp_config_path(project_root, entry.mcp_servers.as_deref())?;
+    let mcp_config_paths = resolve_mcp_config_paths(project_root, &entry.mcp_servers)?;
 
     let mut prompts = Vec::with_capacity(inherited_prompts.len() + entry.prompts.len());
     prompts.extend_from_slice(inherited_prompts);
@@ -141,7 +142,7 @@ fn resolve_agent_entry(
         model,
         reasoning_effort,
         prompts,
-        mcp_config_path,
+        mcp_config_paths,
         exposure: AgentSpecExposure { user_invocable: entry.user_invocable, agent_invocable: entry.agent_invocable },
         tools: entry.tools,
     })
@@ -206,21 +207,20 @@ fn validate_prompt_entries(
     Ok(())
 }
 
-fn resolve_mcp_config_path(
+fn resolve_mcp_config_paths(
     project_root: &Path,
-    mcp_path: Option<&str>,
-) -> Result<Option<std::path::PathBuf>, SettingsError> {
-    match mcp_path {
-        None => Ok(None),
-        Some(path) => {
-            let full_path = project_root.join(path);
-            if full_path.is_file() {
-                Ok(Some(full_path))
-            } else {
-                Err(SettingsError::InvalidMcpConfigPath { path: path.to_string() })
-            }
+    mcp_paths: &[String],
+) -> Result<Vec<std::path::PathBuf>, SettingsError> {
+    let mut resolved = Vec::with_capacity(mcp_paths.len());
+    for path in mcp_paths {
+        let full_path = project_root.join(path);
+        if full_path.is_file() {
+            resolved.push(full_path);
+        } else {
+            return Err(SettingsError::InvalidMcpConfigPath { path: path.clone() });
         }
     }
+    Ok(resolved)
 }
 
 /// Validate that a prompt entry resolves to at least one file.
@@ -501,14 +501,14 @@ mod tests {
     #[test]
     fn invalid_mcp_servers_path_rejected() {
         let (_, result) = setup_and_load(
-            r#"{"mcpServers": "nonexistent.json", "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
+            r#"{"mcpServers": ["nonexistent.json"], "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
         );
         assert!(matches!(result, Err(SettingsError::InvalidMcpConfigPath { .. })));
     }
 
     #[test]
     fn invalid_agent_mcp_servers_path_rejected() {
-        let (_, result) = setup_and_load(&agent_settings(r#""mcpServers": "nonexistent.json""#));
+        let (_, result) = setup_and_load(&agent_settings(r#""mcpServers": ["nonexistent.json"]"#));
         assert!(matches!(result, Err(SettingsError::InvalidMcpConfigPath { .. })));
     }
 
@@ -519,11 +519,95 @@ mod tests {
         write_file(dir.path(), ".aether/mcp/default.json", "{}");
         write_settings(
             dir.path(),
-            r#"{"mcpServers": ".aether/mcp/default.json", "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
+            r#"{"mcpServers": [".aether/mcp/default.json"], "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
         );
 
         let catalog = load_agent_catalog(dir.path()).unwrap();
-        assert!(catalog.resolve("planner", dir.path()).unwrap().mcp_config_path.is_some());
+        let resolved = catalog.resolve("planner", dir.path()).unwrap();
+        assert_eq!(resolved.mcp_config_paths, vec![dir.path().join(".aether/mcp/default.json")]);
+    }
+
+    #[test]
+    fn top_level_mcp_servers_array_parses_and_resolves_in_order() {
+        let dir = create_temp_project();
+        write_file(dir.path(), "AGENTS.md", "Be helpful");
+        write_file(dir.path(), ".aether/mcp/a.json", "{}");
+        write_file(dir.path(), ".aether/mcp/b.json", "{}");
+        write_settings(
+            dir.path(),
+            r#"{"mcpServers": [".aether/mcp/a.json", ".aether/mcp/b.json"], "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
+        );
+
+        let catalog = load_agent_catalog(dir.path()).unwrap();
+        let resolved = catalog.resolve("planner", dir.path()).unwrap();
+        assert_eq!(
+            resolved.mcp_config_paths,
+            vec![dir.path().join(".aether/mcp/a.json"), dir.path().join(".aether/mcp/b.json")]
+        );
+    }
+
+    #[test]
+    fn top_level_mcp_servers_invalid_path_in_middle_of_array_rejected() {
+        let dir = create_temp_project();
+        write_file(dir.path(), "AGENTS.md", "Be helpful");
+        write_file(dir.path(), "good.json", "{}");
+        write_settings(
+            dir.path(),
+            r#"{"mcpServers": ["good.json", "bad.json"], "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
+        );
+
+        let result = load_agent_catalog(dir.path());
+        match result {
+            Err(SettingsError::InvalidMcpConfigPath { path }) => assert_eq!(path, "bad.json"),
+            other => panic!("expected InvalidMcpConfigPath for bad.json, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn agent_mcp_servers_array_parses() {
+        let dir = create_temp_project();
+        write_file(dir.path(), "AGENTS.md", "Be helpful");
+        write_file(dir.path(), "a.json", "{}");
+        write_file(dir.path(), "b.json", "{}");
+        write_settings(
+            dir.path(),
+            r#"{"agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"], "mcpServers": ["a.json", "b.json"]}]}"#,
+        );
+
+        let catalog = load_agent_catalog(dir.path()).unwrap();
+        let resolved = catalog.resolve("planner", dir.path()).unwrap();
+        assert_eq!(resolved.mcp_config_paths, vec![dir.path().join("a.json"), dir.path().join("b.json")]);
+    }
+
+    #[test]
+    fn agent_mcp_servers_overrides_inherited_array() {
+        let dir = create_temp_project();
+        write_file(dir.path(), "AGENTS.md", "Be helpful");
+        write_file(dir.path(), "base.json", "{}");
+        write_file(dir.path(), "override.json", "{}");
+        write_settings(
+            dir.path(),
+            r#"{"mcpServers": ["base.json"], "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"], "mcpServers": ["override.json"]}]}"#,
+        );
+
+        let catalog = load_agent_catalog(dir.path()).unwrap();
+        let resolved = catalog.resolve("planner", dir.path()).unwrap();
+        assert_eq!(resolved.mcp_config_paths, vec![dir.path().join("override.json")]);
+    }
+
+    #[test]
+    fn empty_mcp_servers_array_falls_back_to_cwd_mcp() {
+        let dir = create_temp_project();
+        write_file(dir.path(), "AGENTS.md", "Be helpful");
+        write_file(dir.path(), "mcp.json", "{}");
+        write_settings(
+            dir.path(),
+            r#"{"mcpServers": [], "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
+        );
+
+        let catalog = load_agent_catalog(dir.path()).unwrap();
+        let resolved = catalog.resolve("planner", dir.path()).unwrap();
+        assert_eq!(resolved.mcp_config_paths, vec![dir.path().join("mcp.json")]);
     }
 
     #[test]

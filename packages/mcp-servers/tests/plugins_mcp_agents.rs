@@ -48,7 +48,7 @@ async fn test_spawn_agent_with_coding_mcp_from_settings_catalog() {
       "model": "anthropic:claude-sonnet-4-5",
       "agentInvocable": true,
       "prompts": [".aether/prompts/coder.md"],
-      "mcpServers": ".aether/mcp/coder.json"
+      "mcpServers": [".aether/mcp/coder.json"]
     }
   ]
 }"#,

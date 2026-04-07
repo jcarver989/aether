@@ -454,7 +454,7 @@ fn build_agent_json(input: &WizardInput) -> Value {
 fn build_settings_json(input: &WizardInput) -> String {
     let value = serde_json::json!({
         "prompts": [".aether/SYSTEM.md", "AGENTS.md"],
-        "mcpServers": ".aether/mcp.json",
+        "mcpServers": [".aether/mcp.json"],
         "agents": [build_agent_json(input)]
     });
     serde_json::to_string_pretty(&value).expect("settings serialization cannot fail")
@@ -613,7 +613,7 @@ mod tests {
         assert!(prompts.contains(&Value::String(".aether/SYSTEM.md".to_string())));
         assert!(prompts.contains(&Value::String("AGENTS.md".to_string())));
 
-        assert_eq!(settings["mcpServers"].as_str().unwrap(), ".aether/mcp.json");
+        assert_eq!(settings["mcpServers"].as_array().unwrap(), &vec![Value::String(".aether/mcp.json".to_string())],);
 
         let agents = settings["agents"].as_array().unwrap();
         assert_eq!(agents.len(), 1);
@@ -653,7 +653,7 @@ mod tests {
         let default_agent = catalog.resolve_default(&model, None, dir.path());
 
         let expected_path = dir.path().join(".aether/mcp.json");
-        assert_eq!(default_agent.mcp_config_path, Some(expected_path));
+        assert_eq!(default_agent.mcp_config_paths, vec![expected_path]);
     }
 
     #[test]

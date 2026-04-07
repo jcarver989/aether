@@ -47,7 +47,7 @@
       "userInvocable": false,
       "agentInvocable": true,
       "prompts": [".aether/agents/codebase-explorer/AGENTS.md"],
-      "mcpServers": ".aether/agents/codebase-explorer/mcp.json"
+      "mcpServers": [".aether/agents/codebase-explorer/mcp.json"]
     }
   ]
 }

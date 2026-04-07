@@ -94,7 +94,7 @@ let builder = mcp()
     }));
 
 // Load mcp.json -- matches server keys to registered factories
-let builder = builder.from_json_file("mcp.json").await?;
+let builder = builder.from_json_files(&["mcp.json"]).await?;
 ```
 
 ## Programmatic Usage
