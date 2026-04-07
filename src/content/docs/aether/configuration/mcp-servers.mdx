@@ -128,9 +128,30 @@ Environment variables are expanded in `command`, `args`, `url`, and `env` values
 
 Each agent can use a different MCP config by setting `mcpServers` in its [agent entry](/aether/configuration/agent-settings/). Aether resolves the config in this order:
 
-1. Agent-level `mcpServers` (if set)
-2. Top-level `mcpServers` (inherited)
+1. Agent-level `mcpServers` (if non-empty)
+2. Top-level `mcpServers` (inherited, if non-empty)
 3. `mcp.json` in the working directory
+
+## Merging multiple files
+
+Both top-level and agent-level `mcpServers` accept an array of paths. Files are loaded and merged in order — on server name collisions, the **last file in the array wins**. This lets you layer a shared base config with project- or agent-specific overrides:
+
+```json
+{
+  "mcpServers": [".aether/mcp/base.json", ".aether/mcp/overrides.json"],
+  "agents": [
+    {
+      "name": "researcher",
+      "description": "Research agent",
+      "model": "anthropic:claude-sonnet-4-5",
+      "userInvocable": true,
+      "mcpServers": [".aether/mcp/base.json", ".aether/mcp/researcher.json"]
+    }
+  ]
+}
+```
+
+Note that an agent-level `mcpServers` array completely replaces the inherited list rather than appending — include any base files explicitly if you want them.
 
 ## Tool filtering
 

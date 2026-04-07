@@ -24,7 +24,7 @@ Agents are defined in `.aether/settings.json` — their model, prompts, tools, a
 ```json
 {
   "prompts": ["AGENTS.md"],
-  "mcpServers": ".aether/mcp.json",
+  "mcpServers": [".aether/mcp.json"],
   "agents": [
     {
       "name": "coder",
@@ -41,7 +41,7 @@ Agents are defined in `.aether/settings.json` — their model, prompts, tools, a
 | Field | Type | Description |
 |-------|------|-------------|
 | `prompts` | `string[]` | Glob patterns for prompt files inherited by all agents |
-| `mcpServers` | `string` | Path to inherited MCP config (relative to project root) |
+| `mcpServers` | `string[]` | Paths to inherited MCP configs (relative to project root). Files are merged in order — on server name collisions, the last file wins. |
 | `agents` | `AgentEntry[]` | Array of agent definitions |
 
 ## Agent entry fields
@@ -55,7 +55,7 @@ Agents are defined in `.aether/settings.json` — their model, prompts, tools, a
 | `userInvocable` | `boolean` | `false` | Appears as a mode in the TUI and ACP clients |
 | `agentInvocable` | `boolean` | `false` | Can be spawned as a [sub-agent](/aether/built-in-servers/subagents/) |
 | `prompts` | `string[]` | `[]` | Glob patterns for agent-specific prompt files |
-| `mcpServers` | `string` | — | Override MCP config path for this agent |
+| `mcpServers` | `string[]` | `[]` | Override inherited MCP configs for this agent. Files are merged in order — on collisions, the last file wins. |
 | `tools` | `object` | `{}` | [Tool filtering](/aether/configuration/mcp-servers/#tool-filtering) with `allow` and `deny` arrays |
 
 ## Validation rules

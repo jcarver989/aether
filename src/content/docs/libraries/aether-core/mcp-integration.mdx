@@ -14,7 +14,7 @@ use aether_core::mcp::mcp;
 ```rust
 let mcp_result = mcp()
     .register_in_memory_server("coding", server_factory)
-    .from_json_file(".aether/mcp.json").await?
+    .from_json_files(&[".aether/mcp.json"]).await?
     .with_roots(vec![PathBuf::from(".")])
     .spawn()
     .await?;
@@ -23,7 +23,7 @@ let mcp_result = mcp()
 | Method | Description |
 |--------|-------------|
 | `register_in_memory_server(name, factory)` | Add a built-in MCP server |
-| `from_json_file(path)` | Load servers from a JSON config file |
+| `from_json_files(paths)` | Load and merge servers from one or more JSON config files (last file wins on collision) |
 | `with_servers(configs)` | Add servers from a `Vec<McpServerConfig>` |
 | `with_roots(paths)` | Set workspace roots for server discovery |
 | `with_oauth_handler(handler)` | Set OAuth handler for authenticated servers |
@@ -59,7 +59,7 @@ use aether_core::mcp::mcp;
 
 // 1. Spawn MCP servers
 let mcp_result = mcp()
-    .from_json_file(".aether/mcp.json").await?
+    .from_json_files(&[".aether/mcp.json"]).await?
     .spawn()
     .await?;
 
@@ -92,11 +92,11 @@ See [Embedding Servers](/libraries/mcp-servers/embedding/) for details on constr
 
 ## Loading from config
 
-`from_json_file()` reads the standard MCP config format (`.aether/mcp.json`):
+`from_json_files()` reads the standard MCP config format (`.aether/mcp.json`) from one or more files and merges them. On server name collisions across files, the rightmost path wins:
 
 ```rust
 let mcp_result = mcp()
-    .from_json_file(".aether/mcp.json").await?
+    .from_json_files(&[".aether/mcp/base.json", ".aether/mcp/overrides.json"]).await?
     .spawn()
     .await?;
 ```
