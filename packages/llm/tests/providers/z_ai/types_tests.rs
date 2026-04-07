@@ -1,4 +1,4 @@
-use async_openai::types::chat::{CreateChatCompletionStreamResponse, Role};
+use async_openai::types::chat::Role;
 use llm::providers::openai_compatible::ChatCompletionStreamResponse;
 
 /// Test that we can deserialize the actual Z.ai response format
@@ -62,32 +62,6 @@ fn test_deserialize_zai_response_with_finish_reason() {
 
     assert_eq!(response.choices[0].delta.content, Some("Hello world".to_string()));
     assert!(response.choices[0].finish_reason.is_some());
-}
-
-#[test]
-fn test_convert_to_openai_type() {
-    let json = r#"{
-        "id": "test123",
-        "created": 1760762344,
-        "model": "glm-4.6",
-        "choices": [{
-            "index": 0,
-            "delta": {
-                "role": "assistant",
-                "content": "test"
-            }
-        }]
-    }"#;
-
-    let response: ChatCompletionStreamResponse = serde_json::from_str(json).unwrap();
-
-    // Convert to standard OpenAI type
-    let openai_response: CreateChatCompletionStreamResponse = response.into();
-
-    assert_eq!(openai_response.id, "test123");
-    assert_eq!(openai_response.model, "glm-4.6");
-    assert_eq!(openai_response.created, 1_760_762_344);
-    assert_eq!(openai_response.object, "chat.completion.chunk");
 }
 
 #[test]

@@ -1,17 +1,15 @@
-use async_openai::types::chat::Role;
-use llm::LlmResponse;
-use llm::providers::openai::streaming::process_completion_stream;
 use llm::providers::openai_compatible;
+use llm::providers::openai_compatible::streaming::process_compatible_stream;
 use llm::providers::openai_compatible::types::{
     ChatCompletionStreamChoice, ChatCompletionStreamResponse, ChatCompletionStreamResponseDelta, Usage,
 };
+use llm::LlmResponse;
 use tokio_stream::StreamExt;
 
-/// Test that negative token counts are handled correctly
+/// Test that negative token counts from `OpenRouter` are clamped to 0 by the
+/// `Usage -> TokenUsage` conversion in `process_compatible_stream`.
 #[tokio::test]
 async fn test_openrouter_negative_token_handling() {
-    // OpenRouter sometimes returns negative token counts
-    // Our conversion should handle this by clamping to 0
     let stream_items = vec![Ok::<ChatCompletionStreamResponse, std::io::Error>(ChatCompletionStreamResponse {
         id: "gen-123".to_string(),
         choices: vec![ChatCompletionStreamChoice {
@@ -30,48 +28,46 @@ async fn test_openrouter_negative_token_handling() {
         system_fingerprint: None,
         object: "chat.completion.chunk".to_string(),
         usage: Some(Usage {
-            prompt_tokens: -5, // Negative value
+            prompt_tokens: -5,
             completion_tokens: 10,
             total_tokens: 5,
             prompt_tokens_details: None,
+            completion_tokens_details: None,
         }),
     })];
 
-    let stream = tokio_stream::iter(stream_items.into_iter().map(|r| r.map(std::convert::Into::into)));
-    let mut processed_stream = Box::pin(process_completion_stream(stream));
+    let stream = tokio_stream::iter(stream_items);
+    let mut processed_stream = Box::pin(process_compatible_stream(stream));
 
     let mut events = Vec::new();
     while let Some(event) = processed_stream.next().await {
         events.push(event.unwrap());
     }
 
-    // Verify negative tokens are clamped to 0
-    let usage_events: Vec<_> = events
+    let usage = events
         .iter()
-        .filter_map(|e| match e {
-            LlmResponse::Usage { input_tokens, output_tokens, .. } => Some((input_tokens, output_tokens)),
+        .find_map(|e| match e {
+            LlmResponse::Usage { tokens } => Some(*tokens),
             _ => None,
         })
-        .collect();
+        .expect("usage event");
 
-    assert_eq!(usage_events.len(), 1);
-    assert_eq!(*usage_events[0].0, 0, "Negative input tokens should be clamped to 0");
-    assert_eq!(*usage_events[0].1, 10, "Output tokens should be 10");
+    assert_eq!(usage.input_tokens, 0, "Negative input tokens should be clamped to 0");
+    assert_eq!(usage.output_tokens, 10, "Output tokens should be 10");
 }
 
-/// Test that usage data is captured when sent in a separate chunk after `finish_reason`
-/// This matches `OpenRouter`'s actual behavior where usage comes in the "last SSE message"
-/// See: <https://openrouter.ai/docs/guides/usage-accounting>
+/// Verify usage data is captured when sent in a separate chunk after `finish_reason`,
+/// matching `OpenRouter`'s actual behavior. See: <https://openrouter.ai/docs/guides/usage-accounting>.
 #[tokio::test]
 async fn test_openrouter_usage_in_separate_final_chunk() {
     let stream_items: Vec<Result<ChatCompletionStreamResponse, std::io::Error>> = vec![
-        // Chunk 1: Content
+        // Chunk 1: content
         Ok(ChatCompletionStreamResponse {
             id: "gen-123".to_string(),
             choices: vec![ChatCompletionStreamChoice {
                 index: 0,
                 delta: ChatCompletionStreamResponseDelta {
-                    role: Some(Role::Assistant),
+                    role: None,
                     content: Some("Hello world".to_string()),
                     reasoning_content: None,
                     tool_calls: None,
@@ -85,7 +81,7 @@ async fn test_openrouter_usage_in_separate_final_chunk() {
             object: "chat.completion.chunk".to_string(),
             usage: None,
         }),
-        // Chunk 2: finish_reason but NO usage yet
+        // Chunk 2: finish_reason but no usage
         Ok(ChatCompletionStreamResponse {
             id: "gen-123".to_string(),
             choices: vec![ChatCompletionStreamChoice {
@@ -103,12 +99,12 @@ async fn test_openrouter_usage_in_separate_final_chunk() {
             model: "openai/gpt-3.5-turbo".to_string(),
             system_fingerprint: None,
             object: "chat.completion.chunk".to_string(),
-            usage: None, // No usage in this chunk!
+            usage: None,
         }),
-        // Chunk 3: Usage data in separate final chunk with empty choices
+        // Chunk 3: usage in separate final chunk with empty choices
         Ok(ChatCompletionStreamResponse {
             id: "gen-123".to_string(),
-            choices: vec![], // Empty choices array
+            choices: vec![],
             created: 1_234_567_890,
             model: "openai/gpt-3.5-turbo".to_string(),
             system_fingerprint: None,
@@ -118,37 +114,29 @@ async fn test_openrouter_usage_in_separate_final_chunk() {
                 completion_tokens: 25,
                 total_tokens: 40,
                 prompt_tokens_details: None,
+                completion_tokens_details: None,
             }),
         }),
     ];
 
-    // Convert to standard OpenAI format and process
-    let stream = tokio_stream::iter(stream_items.into_iter().map(|r| r.map(std::convert::Into::into)));
-    let mut processed_stream = Box::pin(process_completion_stream(stream));
+    let stream = tokio_stream::iter(stream_items);
+    let mut processed_stream = Box::pin(process_compatible_stream(stream));
 
     let mut events = Vec::new();
     while let Some(event) = processed_stream.next().await {
         events.push(event.unwrap());
     }
 
-    // Verify we got usage data from the separate final chunk
-    let usage_events: Vec<_> = events
+    let usage = events
         .iter()
-        .filter_map(|e| match e {
-            LlmResponse::Usage { input_tokens, output_tokens, .. } => Some((*input_tokens, *output_tokens)),
+        .find_map(|e| match e {
+            LlmResponse::Usage { tokens } => Some(*tokens),
             _ => None,
         })
-        .collect();
+        .expect("usage event");
+    assert_eq!(usage.input_tokens, 15);
+    assert_eq!(usage.output_tokens, 25);
 
-    assert_eq!(
-        usage_events.len(),
-        1,
-        "Should have exactly one usage event even when usage is in separate chunk after finish_reason"
-    );
-    assert_eq!(usage_events[0].0, 15, "Input tokens should be 15");
-    assert_eq!(usage_events[0].1, 25, "Output tokens should be 25");
-
-    // Also verify we got the text content
     let text_events: Vec<_> = events
         .iter()
         .filter_map(|e| match e {
@@ -156,8 +144,7 @@ async fn test_openrouter_usage_in_separate_final_chunk() {
             _ => None,
         })
         .collect();
-    assert_eq!(text_events.len(), 1);
-    assert_eq!(text_events[0], "Hello world");
+    assert_eq!(text_events, vec!["Hello world".to_string()]);
 }
 
 /// Test that the `OpenRouterChatRequest` serializes the usage parameter correctly
