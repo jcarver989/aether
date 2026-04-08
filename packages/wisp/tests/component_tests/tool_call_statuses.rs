@@ -1,7 +1,7 @@
 use acp_utils::notifications::SubAgentProgressParams;
 use agent_client_protocol as acp;
-use tui::testing::render_lines;
-use tui::{BRAILLE_FRAMES as FRAMES, Line, ViewContext};
+use tui::testing::{assert_buffer_eq, render_component, render_lines};
+use tui::{BRAILLE_FRAMES as FRAMES, DiffLine, DiffPreview, DiffTag, Line, SplitDiffCell, SplitDiffRow, ViewContext};
 use wisp::components::tool_call_status_view::{MAX_TOOL_ARG_LENGTH, ToolCallStatus, ToolCallStatusView};
 use wisp::components::tool_call_statuses::ToolCallStatuses;
 
@@ -303,6 +303,49 @@ fn view_running_hides_raw_args_then_shows_display_value() {
     let term = render_lines(&lines, 80, 24);
     let output = term.get_lines();
     assert_eq!(output[0], format!("{} Read (main.rs)", FRAMES[0]));
+}
+
+#[test]
+fn indented_split_diff_does_not_bleed_diff_bg_into_left_indent_columns() {
+    // conversation_window indents tool-call frames; the indent columns must
+    // stay neutral instead of inheriting the diff bg from later spans.
+    let preview = DiffPreview {
+        lines: vec![
+            DiffLine { tag: DiffTag::Removed, content: "old code".to_string() },
+            DiffLine { tag: DiffTag::Added, content: "new code".to_string() },
+        ],
+        rows: vec![SplitDiffRow {
+            left: Some(SplitDiffCell { tag: DiffTag::Removed, content: "old code".to_string(), line_number: Some(1) }),
+            right: Some(SplitDiffCell { tag: DiffTag::Added, content: "new code".to_string(), line_number: Some(1) }),
+        }],
+        lang_hint: String::new(),
+        start_line: None,
+    };
+    let status = ToolCallStatus::Success;
+    let view = ToolCallStatusView {
+        name: "Edit",
+        arguments: "",
+        display_value: Some("file.rs"),
+        diff_preview: Some(&preview),
+        status: &status,
+        tick: 0,
+    };
+
+    let indent: u16 = 2;
+    let term = render_component(|ctx| view.render(ctx).indent(indent), 100, 4);
+
+    let diff_row = 1;
+    assert_buffer_eq(
+        &term,
+        &["  ✓ Edit (file.rs)", "     1 old code                                         1 new code", "", ""],
+    );
+
+    let theme = &ViewContext::new((100, 4)).theme;
+    for col in 0..usize::from(indent) {
+        let bg = term.get_style_at(diff_row, col).bg;
+        assert_ne!(bg, Some(theme.diff_removed_bg()), "indent col {col} should not inherit diff_removed_bg");
+        assert_ne!(bg, Some(theme.diff_added_bg()), "indent col {col} should not inherit diff_added_bg");
+    }
 }
 
 #[test]

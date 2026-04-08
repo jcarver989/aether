@@ -94,12 +94,15 @@ impl Line {
             return self;
         }
 
-        // If a fill style is set or any span has a bg, prepended text should
-        // pick that style up so the indent is visually contiguous with the
-        // row's eventual fill. Otherwise, merge into the leading default-style
-        // span when possible to keep span counts low.
+        // If a fill style is set, or the *leading* span has a bg, prepended
+        // text picks that style up so the indent is visually contiguous with
+        // the row's eventual fill. Looking only at the first span avoids
+        // bleeding a later span's bg (e.g. a diff_added_bg content span)
+        // backwards across a no-bg gutter into the prepended indent.
+        // Otherwise, merge into the leading default-style span when possible
+        // to keep span counts low.
         let bg_style =
-            self.fill.or_else(|| self.spans.iter().find_map(|s| s.style().bg).map(|bg| Style::default().bg_color(bg)));
+            self.fill.or_else(|| self.spans.first().and_then(|s| s.style().bg).map(|bg| Style::default().bg_color(bg)));
 
         if let Some(style) = bg_style {
             self.spans.insert(0, Span::with_style(text, style));
@@ -346,6 +349,21 @@ mod tests {
         // Prepend should not produce a default-style span; it should pick up the
         // fill style so the indent is visually contiguous with the row's fill.
         assert_eq!(line.spans()[0].style().bg, Some(Color::Green));
+    }
+
+    #[test]
+    fn prepend_does_not_inherit_bg_from_non_leading_span() {
+        // A line built like a split-diff row: a no-bg gutter followed by
+        // colored content. Prepending an indent must NOT inherit the
+        // content span's bg, otherwise the indent visibly leaks the diff
+        // color out the left edge of the line.
+        let mut line = Line::default();
+        line.push_text("     ");
+        line.push_with_style("old code", Style::default().bg_color(Color::Red));
+        let prepended = line.prepend("  ");
+
+        assert_eq!(prepended.plain_text(), "       old code");
+        assert_eq!(prepended.spans()[0].style().bg, None, "prepended indent should not pick up bg from a later span");
     }
 
     #[test]
