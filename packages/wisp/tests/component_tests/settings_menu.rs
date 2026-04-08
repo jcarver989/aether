@@ -13,7 +13,7 @@ fn make_select_option(
     values: &[(&str, &str)],
 ) -> agent_client_protocol::SessionConfigOption {
     let options: Vec<SessionConfigSelectOption> =
-        values.iter().map(|(v, n)| SessionConfigSelectOption::new(v.to_string(), n.to_string())).collect();
+        values.iter().map(|(v, n)| SessionConfigSelectOption::new((*v).to_string(), (*n).to_string())).collect();
     agent_client_protocol::SessionConfigOption::select(id.to_string(), name.to_string(), current.to_string(), options)
 }
 

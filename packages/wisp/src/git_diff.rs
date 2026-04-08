@@ -180,7 +180,7 @@ async fn build_untracked_file_diff(repo_root: &Path, relative_path: String) -> F
     for (i, line) in text_lines.iter().enumerate() {
         patch_lines.push(PatchLine {
             kind: PatchLineKind::Added,
-            text: line.to_string(),
+            text: (*line).to_string(),
             old_line_no: None,
             new_line_no: Some(i + 1),
         });

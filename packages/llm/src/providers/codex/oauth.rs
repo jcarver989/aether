@@ -306,7 +306,6 @@ mod tests {
         assert!(AUTHORIZE_URL.starts_with("https://"));
         assert!(TOKEN_URL.starts_with("https://"));
         assert!(REDIRECT_URI.starts_with("http://localhost:"));
-        assert!(!CLIENT_ID.is_empty());
         assert!(SCOPE.contains("openid"));
     }
 

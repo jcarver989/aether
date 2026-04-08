@@ -248,7 +248,7 @@ mod tests {
 
     fn sel(id: &str, name: &str, current: &str, values: &[(&str, &str)]) -> SessionConfigOption {
         let options: Vec<SessionConfigSelectOption> =
-            values.iter().map(|(v, n)| SessionConfigSelectOption::new(v.to_string(), n.to_string())).collect();
+            values.iter().map(|(v, n)| SessionConfigSelectOption::new((*v).to_string(), (*n).to_string())).collect();
         SessionConfigOption::select(id.to_string(), name.to_string(), current.to_string(), options)
     }
 

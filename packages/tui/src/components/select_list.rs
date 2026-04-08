@@ -146,7 +146,7 @@ mod tests {
     }
 
     fn items(names: &[&str]) -> Vec<TestItem> {
-        names.iter().map(|n| TestItem(n.to_string())).collect()
+        names.iter().map(|n| TestItem((*n).to_string())).collect()
     }
 
     fn key(code: KeyCode) -> Event {
