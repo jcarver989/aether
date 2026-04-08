@@ -74,16 +74,28 @@ pub enum AgentMessage {
     ContextUsageUpdate {
         /// Current usage ratio (0.0 - 1.0), if context window is known.
         usage_ratio: Option<f64>,
-        /// Tokens used in current context.
-        tokens_used: u32,
         /// Maximum context limit, if known.
         context_limit: Option<u32>,
+        /// Input tokens on the most recent API call (the current context size).
+        input_tokens: u32,
+        /// Output tokens on the most recent API call.
+        output_tokens: u32,
         /// Prompt tokens served from cache on the most recent API call.
         cache_read_tokens: Option<u32>,
         /// Prompt tokens written to cache on the most recent API call.
         cache_creation_tokens: Option<u32>,
         /// Reasoning tokens spent on the most recent API call.
         reasoning_tokens: Option<u32>,
+        /// Cumulative input tokens since the agent started.
+        total_input_tokens: u64,
+        /// Cumulative output tokens since the agent started.
+        total_output_tokens: u64,
+        /// Cumulative cache-read tokens since the agent started.
+        total_cache_read_tokens: u64,
+        /// Cumulative cache-creation tokens since the agent started.
+        total_cache_creation_tokens: u64,
+        /// Cumulative reasoning tokens since the agent started.
+        total_reasoning_tokens: u64,
     },
 
     /// Agent is auto-continuing because LLM stopped with a resumable stop reason.

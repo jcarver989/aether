@@ -78,18 +78,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(ContextCompactionResult { messages_removed, .. }) => {
                 println!("Context compacted: {messages_removed} messages removed");
             }
-            Some(ContextUsageUpdate { usage_ratio, tokens_used, context_limit, .. }) => {
+            Some(ContextUsageUpdate { usage_ratio, input_tokens, context_limit, .. }) => {
                 match (usage_ratio, context_limit) {
                     (Some(usage_ratio), Some(context_limit)) => {
                         println!(
                             "Context usage: {:.1}% ({}/{} tokens)",
                             usage_ratio * 100.0,
-                            tokens_used,
+                            input_tokens,
                             context_limit
                         );
                     }
                     _ => {
-                        println!("Context usage: unknown limit ({tokens_used} tokens used)");
+                        println!("Context usage: unknown limit ({input_tokens} tokens used)");
                     }
                 }
             }

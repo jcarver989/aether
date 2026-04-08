@@ -28,21 +28,34 @@ pub const ELICITATION_METHOD: &str = "aether/elicitation";
 
 /// Parameters for `_aether/context_usage` notifications.
 ///
-/// `cache_read_tokens`, `cache_creation_tokens`, and `reasoning_tokens` come
-/// from the most recent API response and are optional because not every
-/// provider exposes them. They give clients enough signal to render
-/// cache-hit ratios and reasoning-token spend without re-parsing a stream.
+/// Per-turn fields (`input_tokens`, `output_tokens`, `cache_read_tokens`,
+/// `cache_creation_tokens`, `reasoning_tokens`) come from the most recent
+/// API response. The `total_*` fields are cumulative across the agent's
+/// lifetime. The optional fields are `None` when the provider doesn't
+/// expose that dimension; this is semantically distinct from `Some(0)`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ContextUsageParams {
     pub usage_ratio: Option<f64>,
-    pub tokens_used: u32,
     pub context_limit: Option<u32>,
+    pub input_tokens: u32,
+    #[serde(default)]
+    pub output_tokens: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_read_tokens: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_creation_tokens: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_tokens: Option<u32>,
+    #[serde(default)]
+    pub total_input_tokens: u64,
+    #[serde(default)]
+    pub total_output_tokens: u64,
+    #[serde(default)]
+    pub total_cache_read_tokens: u64,
+    #[serde(default)]
+    pub total_cache_creation_tokens: u64,
+    #[serde(default)]
+    pub total_reasoning_tokens: u64,
 }
 
 /// Parameters for `_aether/context_cleared` notifications.
@@ -330,11 +343,17 @@ mod tests {
     fn context_usage_params_roundtrip() {
         let params = ContextUsageParams {
             usage_ratio: Some(0.75),
-            tokens_used: 75000,
             context_limit: Some(100_000),
+            input_tokens: 75_000,
+            output_tokens: 1_200,
             cache_read_tokens: Some(40_000),
             cache_creation_tokens: Some(2_000),
             reasoning_tokens: Some(500),
+            total_input_tokens: 200_000,
+            total_output_tokens: 8_000,
+            total_cache_read_tokens: 90_000,
+            total_cache_creation_tokens: 5_000,
+            total_reasoning_tokens: 1_500,
         };
 
         let notification: ExtNotification = params.clone().into();
@@ -348,18 +367,24 @@ mod tests {
     fn context_usage_params_omits_unset_optional_token_fields() {
         let params = ContextUsageParams {
             usage_ratio: Some(0.1),
-            tokens_used: 100,
             context_limit: Some(1_000),
+            input_tokens: 100,
+            output_tokens: 0,
             cache_read_tokens: None,
             cache_creation_tokens: None,
             reasoning_tokens: None,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+            total_cache_read_tokens: 0,
+            total_cache_creation_tokens: 0,
+            total_reasoning_tokens: 0,
         };
 
         let notification: ExtNotification = params.clone().into();
         let raw = notification.params.get();
-        assert!(!raw.contains("cache_read_tokens"));
-        assert!(!raw.contains("cache_creation_tokens"));
-        assert!(!raw.contains("reasoning_tokens"));
+        assert!(!raw.contains("\"cache_read_tokens\""));
+        assert!(!raw.contains("\"cache_creation_tokens\""));
+        assert!(!raw.contains("\"reasoning_tokens\""));
     }
 
     #[test]
@@ -491,11 +516,17 @@ mod tests {
             CONTEXT_USAGE_METHOD,
             &ContextUsageParams {
                 usage_ratio: Some(0.5),
-                tokens_used: 50000,
                 context_limit: Some(100_000),
+                input_tokens: 50_000,
+                output_tokens: 0,
                 cache_read_tokens: None,
                 cache_creation_tokens: None,
                 reasoning_tokens: None,
+                total_input_tokens: 0,
+                total_output_tokens: 0,
+                total_cache_read_tokens: 0,
+                total_cache_creation_tokens: 0,
+                total_reasoning_tokens: 0,
             },
         );
 

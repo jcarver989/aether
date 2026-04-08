@@ -146,19 +146,31 @@ pub fn try_into_ext_notification(msg: &AgentMessage) -> Option<acp::ExtNotificat
     match msg {
         AgentMessage::ContextUsageUpdate {
             usage_ratio,
-            tokens_used,
             context_limit,
+            input_tokens,
+            output_tokens,
             cache_read_tokens,
             cache_creation_tokens,
             reasoning_tokens,
+            total_input_tokens,
+            total_output_tokens,
+            total_cache_read_tokens,
+            total_cache_creation_tokens,
+            total_reasoning_tokens,
         } => {
             let params = ContextUsageParams {
                 usage_ratio: *usage_ratio,
-                tokens_used: *tokens_used,
                 context_limit: *context_limit,
+                input_tokens: *input_tokens,
+                output_tokens: *output_tokens,
                 cache_read_tokens: *cache_read_tokens,
                 cache_creation_tokens: *cache_creation_tokens,
                 reasoning_tokens: *reasoning_tokens,
+                total_input_tokens: *total_input_tokens,
+                total_output_tokens: *total_output_tokens,
+                total_cache_read_tokens: *total_cache_read_tokens,
+                total_cache_creation_tokens: *total_cache_creation_tokens,
+                total_reasoning_tokens: *total_reasoning_tokens,
             };
             Some(params.into())
         }

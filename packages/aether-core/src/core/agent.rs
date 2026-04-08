@@ -428,11 +428,17 @@ impl Agent {
         let last = self.token_tracker.last_usage();
         AgentMessage::ContextUsageUpdate {
             usage_ratio: self.token_tracker.usage_ratio(),
-            tokens_used: self.token_tracker.last_input_tokens(),
             context_limit: self.token_tracker.context_limit(),
+            input_tokens: last.input_tokens,
+            output_tokens: last.output_tokens,
             cache_read_tokens: last.cache_read_tokens,
             cache_creation_tokens: last.cache_creation_tokens,
             reasoning_tokens: last.reasoning_tokens,
+            total_input_tokens: self.token_tracker.total_input_tokens(),
+            total_output_tokens: self.token_tracker.total_output_tokens(),
+            total_cache_read_tokens: self.token_tracker.total_cache_read_tokens(),
+            total_cache_creation_tokens: self.token_tracker.total_cache_creation_tokens(),
+            total_reasoning_tokens: self.token_tracker.total_reasoning_tokens(),
         }
     }
 

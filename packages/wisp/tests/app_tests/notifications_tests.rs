@@ -44,7 +44,7 @@ async fn test_context_usage_notification_updates_percent_left() {
 
     let raw = serde_json::value::to_raw_value(&serde_json::json!({
         "usage_ratio": 0.75,
-        "tokens_used": 150_000,
+        "input_tokens": 150_000,
         "context_limit": 200_000
     }))
     .unwrap();
@@ -70,7 +70,7 @@ async fn test_context_usage_notification_with_unknown_limit_clears_meter() {
     // First set a known usage
     let raw = serde_json::value::to_raw_value(&serde_json::json!({
         "usage_ratio": 0.67,
-        "tokens_used": 100_000,
+        "input_tokens": 100_000,
         "context_limit": 150_000
     }))
     .unwrap();
@@ -81,7 +81,7 @@ async fn test_context_usage_notification_with_unknown_limit_clears_meter() {
     // Then clear it with null ratio
     let raw = serde_json::value::to_raw_value(&serde_json::json!({
         "usage_ratio": null,
-        "tokens_used": 0,
+        "input_tokens": 0,
         "context_limit": null
     }))
     .unwrap();

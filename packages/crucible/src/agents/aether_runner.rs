@@ -164,18 +164,18 @@ async fn stream_agent_messages(mut rx: Receiver<AgentMessage>, tx: Sender<AgentR
             AgentMessage::ContextCompactionResult { messages_removed, .. } => {
                 tracing::debug!("Context compacted: {} messages removed", messages_removed);
             }
-            AgentMessage::ContextUsageUpdate { usage_ratio, tokens_used, context_limit, .. } => {
+            AgentMessage::ContextUsageUpdate { usage_ratio, input_tokens, context_limit, .. } => {
                 match (usage_ratio, context_limit) {
                     (Some(usage_ratio), Some(context_limit)) => {
                         tracing::debug!(
                             "Context usage: {:.1}% ({}/{} tokens)",
                             usage_ratio * 100.0,
-                            tokens_used,
+                            input_tokens,
                             context_limit
                         );
                     }
                     _ => {
-                        tracing::debug!("Context usage: unknown limit ({} tokens used)", tokens_used);
+                        tracing::debug!("Context usage: unknown limit ({} tokens used)", input_tokens);
                     }
                 }
             }
