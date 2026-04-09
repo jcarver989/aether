@@ -79,10 +79,11 @@ pub fn build_split_patch_lines(
 
                     for i in 0..height {
                         let l = left_rendered.get(i).cloned().unwrap_or_else(|| split_blank_panel(left_panel));
+
                         let r = right_rendered.get(i).cloned().unwrap_or_else(|| split_blank_panel(right_panel));
 
                         let mut line = l;
-                        line.push_with_style(SEPARATOR, Style::fg(theme.muted()).bg_color(theme.code_bg()));
+                        line.push_with_style(SEPARATOR, Style::fg(theme.muted()));
                         line.append_line(&r);
                         patch_lines.push(line);
 

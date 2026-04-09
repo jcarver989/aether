@@ -147,6 +147,7 @@ pub fn soft_wrap_line(line: &Line, width: u16) -> Vec<Line> {
 
             let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
             if ch_width > 0 && current_width + ch_width > max_width && current_width > 0 {
+                let had_last_ws = last_ws.is_some();
                 let (break_at, skip_to, new_width) = if let Some((ws_pos, ws_end, width_after_ws)) = last_ws.take() {
                     (ws_pos, ws_end, current_width - width_after_ws)
                 } else {
@@ -161,6 +162,11 @@ pub fn soft_wrap_line(line: &Line, width: u16) -> Vec<Line> {
                 current_width = new_width;
                 if skip_to < i {
                     current.push_with_style(&text[skip_to..i], style);
+                }
+                if !had_last_ws && ch.is_whitespace() {
+                    start = i + ch.len_utf8();
+                    last_ws = None;
+                    continue;
                 }
                 start = i;
             }
@@ -422,6 +428,19 @@ mod tests {
         assert_eq!(rows[1].plain_text(), "world");
         assert_eq!(rows[0].spans()[0].style().fg, Some(Color::Red));
         assert_eq!(rows[1].spans()[0].style().fg, Some(Color::Red));
+    }
+
+    #[test]
+    fn drops_whitespace_when_new_span_starts_at_wrap_boundary() {
+        let mut line = Line::default();
+        line.push_styled("abcdefghij", Color::Red);
+        line.push_styled(" klm", Color::Blue);
+        let rows = soft_wrap_line(&line, 10);
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].plain_text(), "abcdefghij");
+        assert_eq!(rows[1].plain_text(), "klm");
+        assert_eq!(rows[1].spans()[0].style().fg, Some(Color::Blue));
     }
 
     #[test]

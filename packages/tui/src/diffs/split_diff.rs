@@ -57,7 +57,7 @@ fn highlight_split_diff(preview: &DiffPreview, context: &ViewContext) -> Vec<Lin
             let right = right_lines.get(i).cloned().unwrap_or_else(|| blank_panel(right_panel));
 
             let mut line = left;
-            line.push_with_style(SEPARATOR, Style::fg(theme.muted()).bg_color(theme.code_bg()));
+            line.push_with_style(SEPARATOR, Style::fg(theme.muted()));
             line.append_line(&right);
             lines.push(line);
         }
@@ -149,11 +149,12 @@ pub fn render_cell(
         .enumerate()
         .map(|(i, wrapped_line)| {
             let mut line = Line::default();
+            let gutter_style = Style::fg(theme.muted());
             if i == 0 {
                 if let Some(num) = cell.line_number {
-                    line.push_styled(format!("{num:>4} "), theme.muted());
+                    line.push_with_style(format!("{num:>4} "), gutter_style);
                 } else {
-                    line.push_styled("     ", theme.muted());
+                    line.push_with_style("     ", gutter_style);
                 }
             } else {
                 line.push_text(" ".repeat(GUTTER_WIDTH));
@@ -235,18 +236,13 @@ mod tests {
             "wrapped continuation should not start left of original right-pane content start (was {wrapped_start}, expected >= {right_start})"
         );
 
-        let right_panel_start = right_start.saturating_sub(GUTTER_WIDTH);
-        assert!(
-            right_panel_start >= SEPARATOR_WIDTH,
-            "right pane start must leave room for separator columns, got right_start={right_panel_start}, separator={SEPARATOR_WIDTH}"
-        );
-
-        let neutral_bg = ctx.theme.code_bg();
         let added_bg = ctx.theme.diff_added_bg();
-        for col in (right_panel_start - SEPARATOR_WIDTH)..right_panel_start {
+        let padding_width = GUTTER_WIDTH + SEPARATOR_WIDTH;
+        assert!(right_start >= padding_width, "right pane content should leave room for separator and gutter");
+        for col in (right_start - padding_width)..right_start {
             let style = style_at_column(&lines[wrapped_row], col);
-            assert_eq!(style.bg, Some(neutral_bg), "separator column {col} should use neutral code background");
-            assert_ne!(style.bg, Some(added_bg), "separator column {col} should not inherit added background");
+            assert_eq!(style.bg, None, "padding column {col} should use the default neutral background");
+            assert_ne!(style.bg, Some(added_bg), "padding column {col} should not inherit added background");
         }
     }
 

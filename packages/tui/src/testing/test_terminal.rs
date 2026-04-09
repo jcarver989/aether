@@ -1,6 +1,5 @@
+use crossterm::style::{Color, force_color_output};
 use std::io::{self, Write};
-
-use crossterm::style::Color;
 
 use crate::Style;
 
@@ -53,6 +52,7 @@ pub struct TestTerminal {
 impl TestTerminal {
     /// Create a new test terminal with given size
     pub fn new(columns: u16, rows: u16) -> Self {
+        force_color_output(true);
         let buffer = vec![vec![Cell::default(); columns as usize]; rows as usize];
         Self {
             buffer,
