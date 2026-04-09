@@ -8,7 +8,7 @@ Wraps the raw crossterm event types into a smaller, focused set. Convert from [`
 - **`Paste(String)`** — Bracketed paste content (requires [`TerminalSession`](crate::TerminalSession) with bracketed paste enabled).
 - **`Mouse(MouseEvent)`** — Mouse input (scroll, click, drag). Requires mouse capture.
 - **`Tick`** — A periodic timer tick, useful for animations (e.g. [`Spinner`](crate::Spinner)).
-- **`Resize(Size)`** — The terminal was resized to a new [`Size`](crate::Region).
+- **`Resize(Size)`** — The terminal was resized to a new [`Size`](crate::Size).
 
 # Conversion
 

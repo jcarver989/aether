@@ -141,7 +141,7 @@ impl Component for MyApp {
 }
 ```
 
-Use [`FocusRing`] to track which child receives events and [`Layout`] to stack frames vertically.
+Use [`FocusRing`] to track which child receives events and `Layout` to stack frames vertically.
 
 ## Built-in widgets
 
@@ -164,7 +164,7 @@ Use [`FocusRing`] to track which child receives events and [`Layout`] to stack f
 |---------|-------------|---------|
 | `syntax` | Syntax highlighting, markdown rendering, diff previews via syntect | yes |
 | `picker` | Fuzzy combobox picker via nucleo | yes |
-| `testing` | Test utilities ([`TestTerminal`](testing::TestTerminal), `render_component`, `assert_buffer_eq`) | no |
+| `testing` | Test utilities (`TestTerminal`, `render_component`, `assert_buffer_eq`) | no |
 
 Disable defaults for a smaller dependency tree:
 
