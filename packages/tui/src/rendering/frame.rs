@@ -362,6 +362,63 @@ impl Frame {
         Self { lines, cursor: self.cursor.shift_col(left_width) }
     }
 
+    /// Insert the lines of `other` into this frame immediately after `after_row`.
+    ///
+    /// Rows `0..=after_row` remain in place. The lines of `other` appear
+    /// between row `after_row` and what was previously row `after_row + 1`.
+    /// Rows that followed the insertion point shift down by
+    /// `other.lines().len()`.
+    ///
+    /// If `after_row >= self.lines.len()`, the lines are appended at the end.
+    ///
+    /// Cursor rule (consistent with `vstack` / `hstack`): the host frame's
+    /// visible cursor takes priority — shifted down when it sits after the
+    /// insertion point. Otherwise, `other`'s visible cursor is adopted with
+    /// its row offset to the insertion position.
+    pub fn splice(self, after_row: usize, other: Frame) -> Self {
+        let inserted_count = other.lines.len();
+        if inserted_count == 0 {
+            return self;
+        }
+
+        let split_at = (after_row + 1).min(self.lines.len());
+        let mut lines = self.lines;
+        let tail: Vec<Line> = lines.drain(split_at..).collect();
+        lines.extend(other.lines);
+        lines.extend(tail);
+
+        let cursor = if self.cursor.is_visible {
+            if self.cursor.row > after_row {
+                Cursor { row: self.cursor.row + inserted_count, ..self.cursor }
+            } else {
+                self.cursor
+            }
+        } else if other.cursor.is_visible {
+            Cursor { row: other.cursor.row + split_at, col: other.cursor.col, is_visible: true }
+        } else {
+            Cursor::hidden()
+        };
+
+        Self { lines, cursor }
+    }
+
+    /// Drop the first `offset` rows and keep at most `height` rows.
+    ///
+    /// The cursor row is shifted up by `offset`. If the cursor falls outside
+    /// the visible window it is hidden.
+    pub fn scroll(self, offset: usize, height: usize) -> Self {
+        let end = (offset + height).min(self.lines.len());
+        let visible: Vec<Line> = self.lines.into_iter().skip(offset).take(height).collect();
+
+        let cursor = if self.cursor.is_visible && self.cursor.row >= offset && self.cursor.row < end {
+            Cursor { row: self.cursor.row - offset, col: self.cursor.col, is_visible: true }
+        } else {
+            Cursor::hidden()
+        };
+
+        Self { lines: visible, cursor }
+    }
+
     fn fit_wrap(self, width: u16, fill_x: bool) -> Self {
         let (mut wrapped_lines, logical_to_visual) = soft_wrap_lines_with_map(&self.lines, width);
 
@@ -978,5 +1035,127 @@ mod tests {
         assert_eq!(frame.lines()[0].plain_text(), "abcXX");
         assert_eq!(frame.lines()[1].plain_text(), "defYY");
         assert_eq!(frame.lines()[2].plain_text(), "gh ZZ");
+    }
+
+    #[test]
+    fn splice_inserts_after_row() {
+        let frame = Frame::new(vec![Line::new("a"), Line::new("b"), Line::new("c")]);
+        let other = Frame::new(vec![Line::new("X"), Line::new("Y")]);
+        let frame = frame.splice(1, other);
+        assert_eq!(frame.lines().len(), 5);
+        assert_eq!(frame.lines()[0].plain_text(), "a");
+        assert_eq!(frame.lines()[1].plain_text(), "b");
+        assert_eq!(frame.lines()[2].plain_text(), "X");
+        assert_eq!(frame.lines()[3].plain_text(), "Y");
+        assert_eq!(frame.lines()[4].plain_text(), "c");
+    }
+
+    #[test]
+    fn splice_at_end_appends() {
+        let frame = Frame::new(vec![Line::new("a"), Line::new("b")]);
+        let other = Frame::new(vec![Line::new("X")]);
+        let frame = frame.splice(1, other);
+        assert_eq!(frame.lines().len(), 3);
+        assert_eq!(frame.lines()[2].plain_text(), "X");
+    }
+
+    #[test]
+    fn splice_beyond_end_appends() {
+        let frame = Frame::new(vec![Line::new("a")]);
+        let other = Frame::new(vec![Line::new("X")]);
+        let frame = frame.splice(100, other);
+        assert_eq!(frame.lines().len(), 2);
+        assert_eq!(frame.lines()[1].plain_text(), "X");
+    }
+
+    #[test]
+    fn splice_empty_other_is_noop() {
+        let frame = Frame::new(vec![Line::new("a"), Line::new("b")]).with_cursor(Cursor::visible(1, 0));
+        let other = Frame::empty();
+        let frame = frame.splice(0, other);
+        assert_eq!(frame.lines().len(), 2);
+        assert_eq!(frame.cursor(), Cursor::visible(1, 0));
+    }
+
+    #[test]
+    fn splice_shifts_self_cursor_down() {
+        let frame = Frame::new(vec![Line::new("a"), Line::new("b"), Line::new("c")]).with_cursor(Cursor::visible(2, 3));
+        let other = Frame::new(vec![Line::new("X"), Line::new("Y"), Line::new("Z")]);
+        let frame = frame.splice(1, other);
+        assert_eq!(frame.cursor(), Cursor::visible(5, 3));
+    }
+
+    #[test]
+    fn splice_preserves_self_cursor_before_insertion() {
+        let frame = Frame::new(vec![Line::new("a"), Line::new("b"), Line::new("c")]).with_cursor(Cursor::visible(0, 1));
+        let other = Frame::new(vec![Line::new("X")]);
+        let frame = frame.splice(1, other);
+        assert_eq!(frame.cursor(), Cursor::visible(0, 1));
+    }
+
+    #[test]
+    fn splice_does_not_shift_self_cursor_on_insertion_row() {
+        let frame = Frame::new(vec![Line::new("a"), Line::new("b"), Line::new("c")]).with_cursor(Cursor::visible(1, 0));
+        let other = Frame::new(vec![Line::new("X")]);
+        let frame = frame.splice(1, other);
+        assert_eq!(frame.cursor(), Cursor::visible(1, 0));
+    }
+
+    #[test]
+    fn splice_adopts_other_cursor() {
+        let frame = Frame::new(vec![Line::new("a"), Line::new("b"), Line::new("c")]);
+        let other = Frame::new(vec![Line::new("X"), Line::new("Y")]).with_cursor(Cursor::visible(1, 5));
+        let frame = frame.splice(1, other);
+        assert_eq!(frame.cursor(), Cursor::visible(3, 5));
+    }
+
+    #[test]
+    fn splice_self_cursor_wins() {
+        let frame = Frame::new(vec![Line::new("a"), Line::new("b")]).with_cursor(Cursor::visible(0, 0));
+        let other = Frame::new(vec![Line::new("X")]).with_cursor(Cursor::visible(0, 5));
+        let frame = frame.splice(0, other);
+        assert_eq!(frame.cursor(), Cursor::visible(0, 0));
+    }
+
+    #[test]
+    fn scroll_clips_to_viewport() {
+        let frame = Frame::new(vec![Line::new("a"), Line::new("b"), Line::new("c"), Line::new("d"), Line::new("e")]);
+        let frame = frame.scroll(1, 3);
+        assert_eq!(frame.lines().len(), 3);
+        assert_eq!(frame.lines()[0].plain_text(), "b");
+        assert_eq!(frame.lines()[1].plain_text(), "c");
+        assert_eq!(frame.lines()[2].plain_text(), "d");
+    }
+
+    #[test]
+    fn scroll_adjusts_cursor() {
+        let frame = Frame::new(vec![Line::new("a"), Line::new("b"), Line::new("c"), Line::new("d"), Line::new("e")])
+            .with_cursor(Cursor::visible(3, 2));
+        let frame = frame.scroll(1, 4);
+        assert_eq!(frame.cursor(), Cursor::visible(2, 2));
+    }
+
+    #[test]
+    fn scroll_hides_cursor_above_viewport() {
+        let frame = Frame::new(vec![Line::new("a"), Line::new("b"), Line::new("c")]).with_cursor(Cursor::visible(0, 0));
+        let frame = frame.scroll(2, 1);
+        assert!(!frame.cursor().is_visible);
+    }
+
+    #[test]
+    fn scroll_hides_cursor_below_viewport() {
+        let frame = Frame::new(vec![Line::new("a"), Line::new("b"), Line::new("c"), Line::new("d")])
+            .with_cursor(Cursor::visible(3, 0));
+        let frame = frame.scroll(0, 2);
+        assert!(!frame.cursor().is_visible);
+    }
+
+    #[test]
+    fn scroll_zero_offset_is_truncate() {
+        let frame = Frame::new(vec![Line::new("a"), Line::new("b"), Line::new("c")]);
+        let frame = frame.scroll(0, 2);
+        assert_eq!(frame.lines().len(), 2);
+        assert_eq!(frame.lines()[0].plain_text(), "a");
+        assert_eq!(frame.lines()[1].plain_text(), "b");
     }
 }
