@@ -1,7 +1,7 @@
 mod app_tests {
     mod command_picker_tests;
     mod common;
-    mod file_picker_tests;
+    mod git_diff_tests;
     mod input_prompt_tests;
     mod lifecycle_tests;
     mod message_streaming_tests;

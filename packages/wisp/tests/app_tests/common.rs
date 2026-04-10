@@ -60,6 +60,10 @@ impl Renderer {
         Self { app, frame_renderer }
     }
 
+    pub(super) fn needs_mouse_capture(&self) -> bool {
+        self.app.needs_mouse_capture()
+    }
+
     pub(super) fn writer(&self) -> &TestTerminal {
         self.frame_renderer.writer()
     }

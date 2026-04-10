@@ -50,11 +50,6 @@ impl ScreenRouter {
     pub fn git_diff_mode_mut(&mut self) -> &mut GitDiffMode {
         &mut self.git_diff_mode
     }
-
-    #[cfg(test)]
-    pub fn enter_git_diff_for_test(&mut self) {
-        self.screen_mode = ScreenMode::GitDiff;
-    }
 }
 
 impl Component for ScreenRouter {

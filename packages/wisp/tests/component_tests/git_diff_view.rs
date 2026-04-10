@@ -1,8 +1,7 @@
 use std::path::PathBuf;
-use tui::testing::{assert_buffer_eq, cols, render_component, render_lines};
-use tui::{GUTTER_WIDTH, SEPARATOR_WIDTH, ViewContext};
+use tui::testing::{assert_buffer_eq, cols, key, render_component, render_lines};
+use tui::{Event, GUTTER_WIDTH, KeyCode, SEPARATOR_WIDTH, ViewContext};
 use wisp::components::app::{GitDiffLoadState, GitDiffMode};
-use wisp::components::patch_renderer::build_patch_lines;
 use wisp::git_diff::{FileDiff, FileStatus, GitDiffDocument, Hunk, PatchLine, PatchLineKind};
 
 fn make_test_doc() -> GitDiffDocument {
@@ -384,21 +383,41 @@ fn render_shows_file_list_and_patch() {
 }
 
 #[test]
-fn patch_lines_have_syntax_highlighted_spans() {
-    let doc = make_test_doc();
-    let context = ViewContext::new((100, 24));
-    let file = &doc.files[0];
-    let (patch_lines, _refs) = build_patch_lines(file, 100, &context, &[]);
+fn added_lines_use_added_background_style() {
+    let mut mode = make_mode(make_test_doc());
+    let term = render_component(|ctx| mode.render_frame(ctx), 100, 8);
+    let lines = term.get_lines();
 
-    let term = render_lines(&patch_lines, 100, 24);
-    let output = term.get_lines();
+    let added_row = lines.iter().position(|line| line.contains("new();")).expect("expected added diff line");
+    let added_col = lines[added_row].find("new();").expect("expected added code text in row");
 
-    assert!(output[1].contains("fn main()"), "context line should contain code, got: {}", output[1]);
+    let ctx = ViewContext::new((100, 8));
+    assert_eq!(term.get_style_at(added_row, added_col).bg, Some(ctx.theme.diff_added_bg()));
+}
 
-    let added_line = &patch_lines[3];
+#[test]
+fn narrow_width_renders_unified_diff_rows() {
+    let mut mode = make_mode(make_test_doc());
+    let term = render_component(|ctx| mode.render_frame(ctx), 108, 10);
+    let lines = term.get_lines();
+
+    assert!(lines.iter().any(|line| line.contains("old();")), "expected removed line in unified view");
+    assert!(lines.iter().any(|line| line.contains("new();")), "expected added line in unified view");
     assert!(
-        added_line.spans().iter().skip(1).any(|span| span.style().bg == Some(context.theme.diff_added_bg())),
-        "added code spans should keep diff_added_bg"
+        !lines.iter().any(|line| line.contains("old();") && line.contains("new();")),
+        "unified view should keep old/new content on separate rows"
+    );
+}
+
+#[test]
+fn wide_width_renders_split_diff_rows() {
+    let mut mode = make_mode(make_test_doc());
+    let term = render_component(|ctx| mode.render_frame(ctx), 109, 10);
+    let lines = term.get_lines();
+
+    assert!(
+        lines.iter().any(|line| line.contains("old();") && line.contains("new();")),
+        "split view should render old/new content on the same row"
     );
 }
 
@@ -440,4 +459,181 @@ fn git_split_view_preserves_hunk_header_background_on_wrapped_rows() {
     assert!(expected_bg.is_some(), "expected hunk header to have background style");
     assert_eq!(term.get_style_at(header_row + 1, header_col).bg, expected_bg);
     assert_eq!(term.get_style_at(header_row + 1, 129).bg, expected_bg);
+}
+
+fn make_comment_test_doc() -> GitDiffDocument {
+    GitDiffDocument {
+        repo_root: PathBuf::from("/tmp/test"),
+        files: vec![FileDiff {
+            old_path: Some("test.rs".to_string()),
+            path: "test.rs".to_string(),
+            status: FileStatus::Added,
+            hunks: vec![Hunk {
+                header: "@@ -0,0 +1,3 @@".to_string(),
+                old_start: 0,
+                old_count: 0,
+                new_start: 1,
+                new_count: 3,
+                lines: vec![
+                    PatchLine {
+                        kind: PatchLineKind::HunkHeader,
+                        text: "@@ -0,0 +1,3 @@".to_string(),
+                        old_line_no: None,
+                        new_line_no: None,
+                    },
+                    PatchLine {
+                        kind: PatchLineKind::Added,
+                        text: "line_one".to_string(),
+                        old_line_no: None,
+                        new_line_no: Some(1),
+                    },
+                    PatchLine {
+                        kind: PatchLineKind::Added,
+                        text: "line_two".to_string(),
+                        old_line_no: None,
+                        new_line_no: Some(2),
+                    },
+                    PatchLine {
+                        kind: PatchLineKind::Added,
+                        text: "line_three".to_string(),
+                        old_line_no: None,
+                        new_line_no: Some(3),
+                    },
+                ],
+            }],
+            binary: false,
+        }],
+    }
+}
+
+async fn send_keys(mode: &mut GitDiffMode, codes: &[KeyCode]) {
+    let ctx = ViewContext::new((100, 20));
+    for &code in codes {
+        mode.render_frame(&ctx);
+        mode.on_key_event(&Event::Key(key(code))).await;
+    }
+}
+
+#[tokio::test]
+async fn draft_comment_appears_after_correct_line_when_submitted_comment_exists() {
+    let mut mode = make_mode(make_comment_test_doc());
+
+    // Focus right panel (l on file list triggers FileOpened)
+    send_keys(&mut mode, &[KeyCode::Char('l')]).await;
+    // Move cursor down to line_one, open comment, type "first", submit
+    send_keys(
+        &mut mode,
+        &[
+            KeyCode::Char('j'),
+            KeyCode::Char('c'),
+            KeyCode::Char('f'),
+            KeyCode::Char('i'),
+            KeyCode::Char('r'),
+            KeyCode::Char('s'),
+            KeyCode::Char('t'),
+            KeyCode::Enter,
+        ],
+    )
+    .await;
+    // Move cursor to line_three (two j presses), open draft, type "draft"
+    send_keys(
+        &mut mode,
+        &[
+            KeyCode::Char('j'),
+            KeyCode::Char('j'),
+            KeyCode::Char('c'),
+            KeyCode::Char('d'),
+            KeyCode::Char('r'),
+            KeyCode::Char('a'),
+            KeyCode::Char('f'),
+            KeyCode::Char('t'),
+        ],
+    )
+    .await;
+
+    let term = render_component(|ctx| mode.render_frame(ctx), 100, 20);
+    let lines = term.get_lines();
+
+    let line_one_row = lines.iter().position(|l| l.contains("line_one")).expect("line_one should render");
+    let comment_row = lines.iter().position(|l| l.contains("first")).expect("submitted comment should render");
+    let line_two_row = lines.iter().position(|l| l.contains("line_two")).expect("line_two should render");
+    let line_three_row = lines.iter().position(|l| l.contains("line_three")).expect("line_three should render");
+    let draft_row = lines.iter().position(|l| l.contains("draft")).expect("draft text should render");
+
+    assert!(
+        comment_row > line_one_row,
+        "submitted comment (row {comment_row}) should appear after line_one (row {line_one_row})"
+    );
+    assert!(
+        line_two_row > comment_row,
+        "line_two (row {line_two_row}) should appear after submitted comment (row {comment_row})"
+    );
+    assert!(
+        line_three_row > line_two_row,
+        "line_three (row {line_three_row}) should appear after line_two (row {line_two_row})"
+    );
+    assert!(
+        draft_row > line_three_row,
+        "draft (row {draft_row}) should appear after line_three (row {line_three_row}), \
+         not shifted up by the submitted comment splice"
+    );
+}
+
+#[tokio::test]
+async fn submitted_comment_visible_on_last_line() {
+    let mut mode = make_mode(make_comment_test_doc());
+
+    send_keys(&mut mode, &[KeyCode::Char('l')]).await;
+    send_keys(
+        &mut mode,
+        &[
+            KeyCode::Char('j'),
+            KeyCode::Char('j'),
+            KeyCode::Char('j'),
+            KeyCode::Char('c'),
+            KeyCode::Char('h'),
+            KeyCode::Char('i'),
+            KeyCode::Enter,
+        ],
+    )
+    .await;
+
+    // height=6 → body_height=4, exactly fits 4 diff lines.
+    // The 3-row comment box below line_three is entirely off-screen without a scroll fix.
+    let term = render_component(|ctx| mode.render_frame(ctx), 100, 6);
+    let lines = term.get_lines();
+
+    assert!(lines.iter().any(|l| l.contains("line_three")), "cursor line should be visible, got: {lines:?}");
+    assert!(
+        lines.iter().any(|l| l.contains("hi")),
+        "submitted comment text should be visible in viewport, got: {lines:?}"
+    );
+    assert!(lines.iter().any(|l| l.contains("└")), "comment bottom border should be visible, got: {lines:?}");
+}
+
+#[tokio::test]
+async fn draft_comment_bottom_border_visible_on_last_line() {
+    let mut mode = make_mode(make_comment_test_doc());
+
+    send_keys(&mut mode, &[KeyCode::Char('l')]).await;
+    send_keys(
+        &mut mode,
+        &[
+            KeyCode::Char('j'),
+            KeyCode::Char('j'),
+            KeyCode::Char('j'),
+            KeyCode::Char('c'),
+            KeyCode::Char('h'),
+            KeyCode::Char('i'),
+        ],
+    )
+    .await;
+
+    // height=8 → body_height=6. 4 diff lines + 3 draft rows = 7 body rows.
+    // Without fix the draft content row is visible but the bottom border is clipped.
+    let term = render_component(|ctx| mode.render_frame(ctx), 100, 8);
+    let lines = term.get_lines();
+
+    assert!(lines.iter().any(|l| l.contains("hi")), "draft text should be visible, got: {lines:?}");
+    assert!(lines.iter().any(|l| l.contains("└")), "draft bottom border should be visible, got: {lines:?}");
 }

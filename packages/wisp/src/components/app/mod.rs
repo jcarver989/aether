@@ -619,13 +619,11 @@ mod tests {
     use crate::components::command_picker::CommandEntry;
     use crate::components::conversation_screen::Modal;
     use crate::components::conversation_window::SegmentContent;
-    use crate::components::elicitation_form::ElicitationForm;
     use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings, save_settings};
     use crate::test_helpers::with_wisp_home;
     use std::fs;
     use std::time::Duration;
     use tempfile::TempDir;
-    use tokio::sync::oneshot;
     use tui::testing::render_component;
     use tui::{Frame, KeyCode, KeyModifiers, Renderer, Theme, ViewContext};
 
@@ -866,102 +864,6 @@ mod tests {
 
         send_key(&mut app, KeyCode::Char('q'), KeyModifiers::CONTROL).await;
         assert!(app.exit_requested(), "custom Ctrl+Q should exit");
-    }
-
-    #[tokio::test]
-    async fn ctrl_g_toggles_git_diff_viewer() {
-        let mut app = make_app();
-
-        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
-        assert!(app.screen_router.is_git_diff(), "should open git diff");
-
-        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
-        assert!(!app.screen_router.is_git_diff(), "should close git diff");
-    }
-
-    #[tokio::test]
-    async fn needs_mouse_capture_in_git_diff() {
-        let mut app = make_app();
-        assert!(!app.needs_mouse_capture());
-
-        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
-        assert!(app.needs_mouse_capture());
-
-        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
-        assert!(!app.needs_mouse_capture());
-    }
-
-    #[tokio::test]
-    async fn ctrl_g_blocked_during_elicitation() {
-        let mut app = make_app();
-        app.conversation_screen.active_modal = Some(Modal::Elicitation(ElicitationForm::from_params(
-            acp_utils::notifications::ElicitationParams {
-                message: "test".to_string(),
-                schema: acp_utils::ElicitationSchema::builder().build().unwrap(),
-            },
-            oneshot::channel().0,
-        )));
-
-        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
-        assert!(!app.screen_router.is_git_diff(), "git diff should not open during elicitation");
-    }
-
-    #[tokio::test]
-    async fn esc_in_diff_mode_does_not_cancel() {
-        let mut app = make_app();
-        app.conversation_screen.waiting_for_response = true;
-        app.screen_router.enter_git_diff_for_test();
-
-        send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
-
-        assert!(!app.exit_requested());
-        assert!(
-            app.conversation_screen.waiting_for_response,
-            "Esc should NOT cancel a running prompt while git diff mode is active"
-        );
-    }
-
-    #[tokio::test]
-    async fn git_diff_submit_sends_prompt_and_closes_diff_when_idle() {
-        use acp_utils::client::PromptCommand;
-
-        let (mut app, mut rx) = make_app_with_config_recording(&[]);
-        app.screen_router.enter_git_diff_for_test();
-
-        let mut commands = Vec::new();
-        app.handle_screen_router_message(
-            &mut commands,
-            ScreenRouterMessage::SendPrompt { user_input: "Looks good".to_string() },
-        )
-        .await;
-
-        assert!(!app.screen_router.is_git_diff(), "successful submit should exit git diff mode");
-        assert!(app.conversation_screen.waiting_for_response, "submit should transition into waiting state");
-
-        let cmd = rx.try_recv().expect("expected Prompt command to be sent");
-        match cmd {
-            PromptCommand::Prompt { text, .. } => {
-                assert!(text.contains("Looks good"));
-            }
-            other => panic!("expected Prompt command, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn git_diff_submit_while_waiting_is_ignored_and_keeps_diff_open() {
-        let (mut app, mut rx) = make_app_with_config_recording(&[]);
-        app.conversation_screen.waiting_for_response = true;
-        app.screen_router.enter_git_diff_for_test();
-
-        let mut commands = Vec::new();
-        app.handle_screen_router_message(
-            &mut commands,
-            ScreenRouterMessage::SendPrompt { user_input: "Needs follow-up".to_string() },
-        )
-        .await;
-
-        assert!(app.screen_router.is_git_diff(), "blocked submit should keep git diff mode open");
-        assert!(rx.try_recv().is_err(), "no prompt should be sent while waiting");
     }
 
     #[tokio::test]
