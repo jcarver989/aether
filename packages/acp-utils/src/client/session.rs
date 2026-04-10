@@ -97,7 +97,7 @@ async fn handle_elicitation_ext_method(
 /// Spawn an agent subprocess and establish an ACP session.
 ///
 /// The handshake (initialize + `new_session`) runs on a dedicated !Send thread.
-/// `client_factory` creates the ACP [`Client`](acp::Client) implementation,
+/// `client_factory` creates the ACP [`Client`] implementation,
 /// receiving the event sender so it can forward protocol events.
 ///
 /// For the common auto-approve case, use `AutoApproveClient::new`:
