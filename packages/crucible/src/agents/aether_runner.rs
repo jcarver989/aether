@@ -209,7 +209,7 @@ impl<T: StreamingModelProvider + Clone + 'static> AgentRunner for AetherRunner<T
             tool_definitions,
             instructions,
             command_tx,
-            elicitation_rx: _,
+            event_rx: _,
             handle: _mcp_handle,
             server_statuses: _,
         } = mcp_builder.spawn().await.map_err(|e| RunError::ExecutionFailed(format!("Failed to spawn MCP: {e}")))?;

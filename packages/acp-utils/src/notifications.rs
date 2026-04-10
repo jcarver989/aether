@@ -5,8 +5,8 @@
 
 use agent_client_protocol::{AuthMethod, ExtNotification};
 pub use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
-use rmcp::model::ElicitationSchema;
-use serde::{Deserialize, Serialize};
+pub use rmcp::model::CreateElicitationRequestParams;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::value::to_raw_value;
 use std::fmt;
 use std::sync::Arc;
@@ -69,10 +69,14 @@ pub struct AuthMethodsUpdatedParams {
 }
 
 /// Parameters sent via `ext_method` for `aether/elicitation`.
+///
+/// Carries the full RMCP elicitation request plus the originating server name
+/// so the client can distinguish form vs URL mode and display which
+/// server is requesting.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ElicitationParams {
-    pub message: String,
-    pub schema: ElicitationSchema,
+    pub server_name: String,
+    pub request: CreateElicitationRequestParams,
 }
 
 pub use rmcp::model::ElicitationAction;
@@ -85,10 +89,13 @@ pub struct ElicitationResponse {
     pub content: Option<serde_json::Value>,
 }
 
+pub use mcp_utils::client::UrlElicitationCompleteParams;
+
 /// Server→client MCP extension notifications (relay → wisp).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum McpNotification {
     ServerStatus { servers: Vec<McpServerStatusEntry> },
+    UrlElicitationComplete(UrlElicitationCompleteParams),
 }
 
 impl From<McpNotification> for ExtNotification {
@@ -112,27 +119,41 @@ impl From<McpRequest> for ExtNotification {
 /// Error returned when converting an `ExtNotification` into a typed MCP message.
 #[derive(Debug)]
 pub enum ExtNotificationParseError {
-    WrongMethod,
-    InvalidJson(serde_json::Error),
+    WrongMethod { expected: &'static str, actual: String },
+    InvalidJson { method: &'static str, source: serde_json::Error },
 }
 
 impl fmt::Display for ExtNotificationParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::WrongMethod => write!(f, "notification method is not {MCP_MESSAGE_METHOD}"),
-            Self::InvalidJson(e) => write!(f, "invalid JSON params: {e}"),
+            Self::WrongMethod { expected, actual } => {
+                write!(f, "notification method mismatch: expected {expected}, got {actual}")
+            }
+            Self::InvalidJson { method, source } => write!(f, "invalid JSON params for {method}: {source}"),
         }
     }
+}
+
+fn parse_ext_notification<T: DeserializeOwned>(
+    notification: &ExtNotification,
+    method: &'static str,
+) -> Result<T, ExtNotificationParseError> {
+    if notification.method.as_ref() != method {
+        return Err(ExtNotificationParseError::WrongMethod {
+            expected: method,
+            actual: notification.method.as_ref().to_string(),
+        });
+    }
+
+    serde_json::from_str(notification.params.get())
+        .map_err(|source| ExtNotificationParseError::InvalidJson { method, source })
 }
 
 impl TryFrom<&ExtNotification> for McpRequest {
     type Error = ExtNotificationParseError;
 
     fn try_from(n: &ExtNotification) -> Result<Self, Self::Error> {
-        if n.method.as_ref() != MCP_MESSAGE_METHOD {
-            return Err(ExtNotificationParseError::WrongMethod);
-        }
-        serde_json::from_str(n.params.get()).map_err(ExtNotificationParseError::InvalidJson)
+        parse_ext_notification(n, MCP_MESSAGE_METHOD)
     }
 }
 
@@ -140,10 +161,7 @@ impl TryFrom<&ExtNotification> for McpNotification {
     type Error = ExtNotificationParseError;
 
     fn try_from(n: &ExtNotification) -> Result<Self, Self::Error> {
-        if n.method.as_ref() != MCP_MESSAGE_METHOD {
-            return Err(ExtNotificationParseError::WrongMethod);
-        }
-        serde_json::from_str(n.params.get()).map_err(ExtNotificationParseError::InvalidJson)
+        parse_ext_notification(n, MCP_MESSAGE_METHOD)
     }
 }
 
@@ -151,10 +169,7 @@ impl TryFrom<&ExtNotification> for AuthMethodsUpdatedParams {
     type Error = ExtNotificationParseError;
 
     fn try_from(n: &ExtNotification) -> Result<Self, Self::Error> {
-        if n.method.as_ref() != AUTH_METHODS_UPDATED_METHOD {
-            return Err(ExtNotificationParseError::WrongMethod);
-        }
-        serde_json::from_str(n.params.get()).map_err(ExtNotificationParseError::InvalidJson)
+        parse_ext_notification(n, AUTH_METHODS_UPDATED_METHOD)
     }
 }
 
@@ -321,22 +336,59 @@ mod tests {
 
     #[test]
     fn elicitation_params_roundtrip() {
-        use rmcp::model::EnumSchema;
+        use rmcp::model::{ElicitationSchema, EnumSchema};
 
         let params = ElicitationParams {
-            message: "Pick a color".to_string(),
-            schema: ElicitationSchema::builder()
-                .required_enum_schema(
-                    "color",
-                    EnumSchema::builder(vec!["red".into(), "green".into(), "blue".into()]).untitled().build(),
-                )
-                .build()
-                .unwrap(),
+            server_name: "github".to_string(),
+            request: CreateElicitationRequestParams::FormElicitationParams {
+                meta: None,
+                message: "Pick a color".to_string(),
+                requested_schema: ElicitationSchema::builder()
+                    .required_enum_schema(
+                        "color",
+                        EnumSchema::builder(vec!["red".into(), "green".into(), "blue".into()]).untitled().build(),
+                    )
+                    .build()
+                    .unwrap(),
+            },
         };
 
         let json = serde_json::to_string(&params).unwrap();
         let parsed: ElicitationParams = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, params);
+    }
+
+    #[test]
+    fn elicitation_params_url_roundtrip() {
+        let params = ElicitationParams {
+            server_name: "github".to_string(),
+            request: CreateElicitationRequestParams::UrlElicitationParams {
+                meta: None,
+                message: "Authorize GitHub".to_string(),
+                url: "https://github.com/login/oauth".to_string(),
+                elicitation_id: "el-123".to_string(),
+            },
+        };
+
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("\"mode\":\"url\""));
+        assert!(json.contains("\"server_name\":\"github\""));
+        let parsed: ElicitationParams = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, params);
+    }
+
+    #[test]
+    fn mcp_notification_url_elicitation_complete_roundtrip() {
+        let msg = McpNotification::UrlElicitationComplete(UrlElicitationCompleteParams {
+            server_name: "github".to_string(),
+            elicitation_id: "el-456".to_string(),
+        });
+
+        let notification: ExtNotification = msg.clone().into();
+        assert_eq!(notification.method.as_ref(), MCP_MESSAGE_METHOD);
+
+        let parsed: McpNotification = serde_json::from_str(notification.params.get()).expect("valid JSON");
+        assert_eq!(parsed, msg);
     }
 
     #[test]
@@ -531,7 +583,11 @@ mod tests {
         );
 
         let result = McpRequest::try_from(&notification);
-        assert!(matches!(result, Err(ExtNotificationParseError::WrongMethod)));
+        assert!(matches!(
+            result,
+            Err(ExtNotificationParseError::WrongMethod { expected, actual })
+                if expected == MCP_MESSAGE_METHOD && actual == CONTEXT_USAGE_METHOD
+        ));
     }
 
     #[test]
@@ -539,16 +595,24 @@ mod tests {
         let notification = ext_notification(MCP_MESSAGE_METHOD, &"not a valid McpRequest");
 
         let result = McpRequest::try_from(&notification);
-        assert!(matches!(result, Err(ExtNotificationParseError::InvalidJson(_))));
+        assert!(matches!(
+            result,
+            Err(ExtNotificationParseError::InvalidJson { method, .. }) if method == MCP_MESSAGE_METHOD
+        ));
     }
 
     #[test]
     fn ext_notification_parse_error_display() {
-        let wrong = ExtNotificationParseError::WrongMethod;
+        let wrong = ExtNotificationParseError::WrongMethod {
+            expected: MCP_MESSAGE_METHOD,
+            actual: CONTEXT_USAGE_METHOD.to_string(),
+        };
         assert!(wrong.to_string().contains(MCP_MESSAGE_METHOD));
+        assert!(wrong.to_string().contains(CONTEXT_USAGE_METHOD));
 
         let json_err = serde_json::from_str::<McpRequest>("{}").unwrap_err();
-        let invalid = ExtNotificationParseError::InvalidJson(json_err);
+        let invalid = ExtNotificationParseError::InvalidJson { method: MCP_MESSAGE_METHOD, source: json_err };
         assert!(invalid.to_string().contains("invalid JSON"));
+        assert!(invalid.to_string().contains(MCP_MESSAGE_METHOD));
     }
 }

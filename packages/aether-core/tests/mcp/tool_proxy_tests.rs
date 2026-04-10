@@ -18,8 +18,9 @@ async fn test_tool_proxy_exposes_only_call_tool() {
         instructions: _,
         server_statuses: _,
         command_tx: _,
-        elicitation_rx: _,
+        event_rx: _,
         handle: _,
+        ..
     } = mcp().with_servers(vec![config]).spawn().await.unwrap();
 
     // The proxy should expose exactly one tool: proxy__call_tool
@@ -37,8 +38,9 @@ async fn test_tool_proxy_instructions_mention_tool_directory() {
         instructions,
         server_statuses: _,
         command_tx: _,
-        elicitation_rx: _,
+        event_rx: _,
         handle: _,
+        ..
     } = mcp().with_servers(vec![config]).spawn().await.unwrap();
 
     let proxy_instr =
@@ -75,8 +77,9 @@ async fn test_tool_proxy_does_not_expose_nested_server_tools() {
         instructions: _,
         server_statuses: _,
         command_tx: _,
-        elicitation_rx: _,
+        event_rx: _,
         handle: _,
+        ..
     } = mcp().with_servers(vec![config]).spawn().await.unwrap();
 
     // The agent should NOT see individual tools like math__add_numbers
@@ -99,8 +102,9 @@ async fn test_tool_proxy_does_not_leak_nested_instructions() {
         instructions,
         server_statuses: _,
         command_tx: _,
-        elicitation_rx: _,
+        event_rx: _,
         handle: _,
+        ..
     } = mcp().with_servers(vec![config]).spawn().await.unwrap();
 
     // Nested server instructions should NOT appear as top-level entries
@@ -122,8 +126,9 @@ async fn test_tool_proxy_writes_tool_files_to_disk() {
         instructions,
         server_statuses: _,
         command_tx: _,
-        elicitation_rx: _,
+        event_rx: _,
         handle: _,
+        ..
     } = mcp().with_servers(vec![config]).spawn().await.unwrap();
 
     let proxy_instr = instructions
@@ -172,8 +177,9 @@ async fn test_tool_proxy_call_tool_routes_to_nested_server() {
         instructions,
         server_statuses: _,
         command_tx,
-        elicitation_rx: _,
+        event_rx: _,
         handle: _,
+        ..
     } = mcp().with_servers(vec![config]).spawn().await.unwrap();
 
     // Call add_numbers through the proxy using ExecuteTool
@@ -221,8 +227,9 @@ async fn test_tool_proxy_call_tool_unknown_server_returns_error() {
         instructions,
         server_statuses: _,
         command_tx,
-        elicitation_rx: _,
+        event_rx: _,
         handle: _,
+        ..
     } = mcp().with_servers(vec![config]).spawn().await.unwrap();
 
     let arguments = serde_json::json!({
@@ -272,8 +279,9 @@ async fn test_tool_proxy_multiple_nested_servers() {
         instructions,
         server_statuses: _,
         command_tx: _,
-        elicitation_rx: _,
+        event_rx: _,
         handle: _,
+        ..
     } = mcp().with_servers(vec![config]).spawn().await.unwrap();
 
     // Still only one tool exposed
@@ -305,8 +313,9 @@ async fn test_tool_proxy_server_status_shows_connected() {
         instructions,
         server_statuses,
         command_tx: _,
-        elicitation_rx: _,
+        event_rx: _,
         handle: _,
+        ..
     } = mcp().with_servers(vec![config]).spawn().await.unwrap();
 
     // The proxy itself should show as Connected with tool_count=1 (just call_tool)

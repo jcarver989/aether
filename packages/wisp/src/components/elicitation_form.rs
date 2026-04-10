@@ -1,59 +1,258 @@
-use acp_utils::notifications::{ElicitationAction, ElicitationParams, ElicitationResponse};
+use acp_utils::notifications::{
+    CreateElicitationRequestParams, ElicitationAction, ElicitationParams, ElicitationResponse,
+};
 use acp_utils::{
     ConstTitle, ElicitationSchema, EnumSchema, MultiSelectEnumSchema, PrimitiveSchema, SingleSelectEnumSchema,
 };
+use std::process::Command;
+use std::sync::Arc;
 use tokio::sync::oneshot;
-use tui::{Checkbox, MultiSelect, NumberField, RadioSelect, SelectOption, TextField};
-use tui::{Component, Event, Form, FormField, FormFieldKind, FormMessage, Frame, ViewContext};
+use tui::{
+    Checkbox, Component, Event, Form, FormField, FormFieldKind, FormMessage, Frame, MultiSelect, NumberField,
+    RadioSelect, SelectOption, TextField, ViewContext,
+};
 
 pub enum ElicitationMessage {
     Responded,
+    /// Emitted when a URL modal successfully opens the browser.
+    UrlOpened {
+        elicitation_id: String,
+        server_name: String,
+    },
 }
 
+pub enum ElicitationUi {
+    Form(Form),
+    Url(UrlPrompt),
+}
+
+pub struct UrlPrompt {
+    pub server_name: String,
+    pub elicitation_id: String,
+    pub message: String,
+    pub url: String,
+    pub host: Option<String>,
+    pub warnings: Vec<String>,
+    pub launch_error: Option<String>,
+}
+
+type BrowserOpener = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
+
 pub struct ElicitationForm {
-    pub form: Form,
+    pub ui: ElicitationUi,
+    browser_opener: BrowserOpener,
     pub(crate) response_tx: Option<oneshot::Sender<ElicitationResponse>>,
+}
+
+impl UrlPrompt {
+    pub fn new(server_name: String, elicitation_id: String, message: String, url: String) -> Self {
+        let parsed_url = url::Url::parse(&url);
+        let host = parsed_url.as_ref().ok().and_then(|parsed| parsed.host_str().map(std::string::ToString::to_string));
+
+        let mut warnings = Vec::new();
+        match parsed_url {
+            Ok(parsed_url) => {
+                if let Some(ref h) = host
+                    && h.contains("xn--")
+                {
+                    warnings.push(
+                        "Warning: URL contains punycode (internationalized domain). Verify the domain before proceeding."
+                            .to_string(),
+                    );
+                }
+                if parsed_url.scheme() != "https" && !is_local_http_url(&parsed_url) {
+                    warnings.push("Warning: URL does not use HTTPS.".to_string());
+                }
+            }
+            Err(_) => {
+                warnings.push("Warning: URL could not be parsed. Verify it carefully before proceeding.".to_string());
+            }
+        }
+
+        Self { server_name, elicitation_id, message, url, host, warnings, launch_error: None }
+    }
 }
 
 impl Component for ElicitationForm {
     type Message = ElicitationMessage;
 
     async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
-        let outcome = self.form.on_event(event).await?;
-        if let Some(msg) = outcome.into_iter().next() {
-            match msg {
-                FormMessage::Close => {
-                    let _ = self.response_tx.take().map(|tx| tx.send(Self::decline()));
-                    return Some(vec![ElicitationMessage::Responded]);
+        match &mut self.ui {
+            ElicitationUi::Form(form) => {
+                let outcome = form.on_event(event).await?;
+                if let Some(msg) = outcome.into_iter().next() {
+                    match msg {
+                        FormMessage::Close => {
+                            let _ = self.response_tx.take().map(|tx| tx.send(Self::cancel()));
+                            return Some(vec![ElicitationMessage::Responded]);
+                        }
+                        FormMessage::Submit => {
+                            let response = self.confirm();
+                            let _ = self.response_tx.take().map(|tx| tx.send(response));
+                            return Some(vec![ElicitationMessage::Responded]);
+                        }
+                    }
                 }
-                FormMessage::Submit => {
-                    let response = self.confirm();
-                    let _ = self.response_tx.take().map(|tx| tx.send(response));
-                    return Some(vec![ElicitationMessage::Responded]);
+                Some(vec![])
+            }
+            ElicitationUi::Url(prompt) => {
+                let Event::Key(key) = event else {
+                    return Some(vec![]);
+                };
+                match key.code {
+                    tui::KeyCode::Enter => match (self.browser_opener)(&prompt.url) {
+                        Ok(()) => {
+                            let server_name = prompt.server_name.clone();
+                            let elicitation_id = prompt.elicitation_id.clone();
+                            let _ = self.response_tx.take().map(|tx| {
+                                tx.send(ElicitationResponse { action: ElicitationAction::Accept, content: None })
+                            });
+                            return Some(vec![
+                                ElicitationMessage::Responded,
+                                ElicitationMessage::UrlOpened { elicitation_id, server_name },
+                            ]);
+                        }
+                        Err(e) => {
+                            prompt.launch_error = Some(format!("Failed to open browser: {e}"));
+                        }
+                    },
+                    tui::KeyCode::Char('d' | 'D') => {
+                        let _ = self.response_tx.take().map(|tx| tx.send(Self::decline()));
+                        return Some(vec![ElicitationMessage::Responded]);
+                    }
+                    tui::KeyCode::Esc => {
+                        let _ = self.response_tx.take().map(|tx| tx.send(Self::cancel()));
+                        return Some(vec![ElicitationMessage::Responded]);
+                    }
+                    _ => {}
                 }
+                Some(vec![])
             }
         }
-        Some(vec![])
     }
 
     fn render(&mut self, ctx: &ViewContext) -> Frame {
-        self.form.render(ctx)
+        match &mut self.ui {
+            ElicitationUi::Form(form) => form.render(ctx),
+            ElicitationUi::Url(prompt) => render_url_prompt(prompt, ctx),
+        }
     }
 }
 
 impl ElicitationForm {
     pub fn from_params(params: ElicitationParams, response_tx: oneshot::Sender<ElicitationResponse>) -> Self {
-        let fields = parse_schema(&params.schema);
-        Self { form: Form::new(params.message, fields), response_tx: Some(response_tx) }
+        Self::with_browser_opener(params, response_tx, default_browser_opener)
+    }
+
+    pub fn with_browser_opener<F>(
+        params: ElicitationParams,
+        response_tx: oneshot::Sender<ElicitationResponse>,
+        browser_opener: F,
+    ) -> Self
+    where
+        F: Fn(&str) -> Result<(), String> + Send + Sync + 'static,
+    {
+        let ui = match params.request {
+            CreateElicitationRequestParams::FormElicitationParams { message, requested_schema, .. } => {
+                let fields = parse_schema(&requested_schema);
+                ElicitationUi::Form(Form::new(message, fields))
+            }
+            CreateElicitationRequestParams::UrlElicitationParams { message, url, elicitation_id, .. } => {
+                ElicitationUi::Url(UrlPrompt::new(params.server_name, elicitation_id, message, url))
+            }
+        };
+        Self { ui, browser_opener: Arc::new(browser_opener), response_tx: Some(response_tx) }
     }
 
     pub fn confirm(&self) -> ElicitationResponse {
-        ElicitationResponse { action: ElicitationAction::Accept, content: Some(self.form.to_json()) }
+        match &self.ui {
+            ElicitationUi::Form(form) => {
+                ElicitationResponse { action: ElicitationAction::Accept, content: Some(form.to_json()) }
+            }
+            ElicitationUi::Url(_) => ElicitationResponse { action: ElicitationAction::Accept, content: None },
+        }
     }
 
     pub fn decline() -> ElicitationResponse {
         ElicitationResponse { action: ElicitationAction::Decline, content: None }
     }
+
+    pub fn cancel() -> ElicitationResponse {
+        ElicitationResponse { action: ElicitationAction::Cancel, content: None }
+    }
+}
+
+fn render_url_prompt(prompt: &UrlPrompt, ctx: &ViewContext) -> Frame {
+    use tui::{Line, Style};
+
+    let mut lines = Vec::new();
+    let primary = ctx.theme.primary();
+    let text_primary = ctx.theme.text_primary();
+    let text_secondary = ctx.theme.text_secondary();
+    let warning_color = ctx.theme.warning();
+    let muted = ctx.theme.muted();
+
+    lines.push(Line::with_style(
+        format!("{} requests you to open a URL", prompt.server_name),
+        Style::fg(primary).bold(),
+    ));
+    lines.push(Line::default());
+    lines.push(Line::with_style(&prompt.message, Style::fg(text_primary)));
+    lines.push(Line::default());
+    lines.push(Line::with_style("URL:", Style::fg(text_secondary)));
+    lines.push(Line::with_style(&prompt.url, Style::fg(primary)));
+
+    if let Some(ref host) = prompt.host {
+        lines.push(Line::with_style(format!("Host: {host}"), Style::fg(text_secondary)));
+    }
+
+    if !prompt.warnings.is_empty() {
+        lines.push(Line::default());
+        for warning in &prompt.warnings {
+            lines.push(Line::styled(warning, warning_color));
+        }
+    }
+
+    if let Some(ref error) = prompt.launch_error {
+        lines.push(Line::default());
+        lines.push(Line::styled(error, ctx.theme.error()));
+    }
+
+    lines.push(Line::default());
+    lines.push(Line::styled("Enter to open URL · D to decline · Esc to cancel", muted));
+
+    Frame::new(lines)
+}
+
+fn is_local_http_url(url: &url::Url) -> bool {
+    if url.scheme() != "http" {
+        return false;
+    }
+
+    matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "::1"))
+}
+
+fn default_browser_opener(url: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let status = Command::new("open").arg(url).status().map_err(|e| e.to_string())?;
+        return status.success().then_some(()).ok_or_else(|| format!("open exited with status {status}"));
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let status = Command::new("xdg-open").arg(url).status().map_err(|e| e.to_string())?;
+        return status.success().then_some(()).ok_or_else(|| format!("xdg-open exited with status {status}"));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let status = Command::new("cmd").args(["/C", "start", url]).status().map_err(|e| e.to_string())?;
+        return status.success().then_some(()).ok_or_else(|| format!("start exited with status {status}"));
+    }
+
+    #[allow(unreachable_code)]
+    Err("Unsupported platform for opening URLs".to_string())
 }
 
 fn parse_schema(schema: &ElicitationSchema) -> Vec<FormField> {
@@ -179,6 +378,7 @@ mod tests {
     use super::*;
     use acp_utils::EnumSchema;
     use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex};
 
     fn test_schema() -> ElicitationSchema {
         serde_json::from_value(serde_json::json!({
@@ -270,20 +470,24 @@ mod tests {
     fn confirm_produces_correct_json() {
         let (tx, _rx) = oneshot::channel();
         let params = ElicitationParams {
-            message: "Test".to_string(),
-            schema: ElicitationSchema::builder()
-                .optional_string("name")
-                .optional_bool("approved", true)
-                .optional_enum_schema(
-                    "color",
-                    EnumSchema::builder(vec!["red".into(), "green".into()])
-                        .untitled()
-                        .with_default("green")
-                        .unwrap()
-                        .build(),
-                )
-                .build()
-                .unwrap(),
+            server_name: "test-server".to_string(),
+            request: CreateElicitationRequestParams::FormElicitationParams {
+                meta: None,
+                message: "Test".to_string(),
+                requested_schema: ElicitationSchema::builder()
+                    .optional_string("name")
+                    .optional_bool("approved", true)
+                    .optional_enum_schema(
+                        "color",
+                        EnumSchema::builder(vec!["red".into(), "green".into()])
+                            .untitled()
+                            .with_default("green")
+                            .unwrap()
+                            .build(),
+                    )
+                    .build()
+                    .unwrap(),
+            },
         };
 
         let form = ElicitationForm::from_params(params, tx);
@@ -297,10 +501,204 @@ mod tests {
     }
 
     #[test]
-    fn esc_returns_decline() {
+    fn esc_returns_cancel() {
+        let response = ElicitationForm::cancel();
+        assert_eq!(response.action, ElicitationAction::Cancel);
+        assert!(response.content.is_none());
+    }
+
+    #[test]
+    fn decline_returns_decline() {
         let response = ElicitationForm::decline();
         assert_eq!(response.action, ElicitationAction::Decline);
         assert!(response.content.is_none());
+    }
+
+    #[test]
+    fn url_prompt_parses_host() {
+        let prompt = UrlPrompt::new(
+            "github".to_string(),
+            "el-1".to_string(),
+            "Authorize".to_string(),
+            "https://github.com/login/oauth".to_string(),
+        );
+        assert_eq!(prompt.host.as_deref(), Some("github.com"));
+        assert!(prompt.warnings.is_empty());
+        assert!(prompt.launch_error.is_none());
+    }
+
+    #[test]
+    fn url_prompt_warns_on_non_https() {
+        let prompt = UrlPrompt::new(
+            "test".to_string(),
+            "el-1".to_string(),
+            "Open this".to_string(),
+            "http://example.com/form".to_string(),
+        );
+        assert_eq!(prompt.warnings.len(), 1);
+        assert!(prompt.warnings[0].contains("HTTPS"));
+    }
+
+    #[test]
+    fn url_prompt_does_not_warn_on_localhost() {
+        let prompt = UrlPrompt::new(
+            "test".to_string(),
+            "el-1".to_string(),
+            "Local".to_string(),
+            "http://localhost:3000/auth".to_string(),
+        );
+        assert!(prompt.warnings.is_empty());
+    }
+
+    #[test]
+    fn url_prompt_warns_on_invalid_url() {
+        let prompt = UrlPrompt::new(
+            "test".to_string(),
+            "el-invalid".to_string(),
+            "Check this".to_string(),
+            "not a valid url".to_string(),
+        );
+        assert!(prompt.host.is_none());
+        assert!(
+            prompt.warnings.iter().any(|warning| warning.contains("could not be parsed")),
+            "invalid URLs should show an explicit warning"
+        );
+    }
+
+    #[test]
+    fn url_prompt_warns_on_punycode() {
+        let prompt = UrlPrompt::new(
+            "test".to_string(),
+            "el-1".to_string(),
+            "Phishing".to_string(),
+            "https://xn--e1afmkfd.xn--p1ai/".to_string(),
+        );
+        assert_eq!(prompt.warnings.len(), 1);
+        assert!(prompt.warnings[0].contains("punycode"));
+    }
+
+    #[test]
+    fn url_prompt_warns_on_punycode_and_non_https() {
+        let prompt = UrlPrompt::new(
+            "test".to_string(),
+            "el-1".to_string(),
+            "Both".to_string(),
+            "http://xn--e1afmkfd.xn--p1ai/".to_string(),
+        );
+        assert_eq!(prompt.warnings.len(), 2, "both warnings should be present");
+        assert!(prompt.warnings.iter().any(|w| w.contains("punycode")));
+        assert!(prompt.warnings.iter().any(|w| w.contains("HTTPS")));
+    }
+
+    fn url_params(server: &str, id: &str, url: &str) -> ElicitationParams {
+        ElicitationParams {
+            server_name: server.to_string(),
+            request: CreateElicitationRequestParams::UrlElicitationParams {
+                meta: None,
+                message: "Auth".to_string(),
+                url: url.to_string(),
+                elicitation_id: id.to_string(),
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn url_modal_enter_returns_accept_with_carried_id() {
+        let opened_urls = Arc::new(Mutex::new(Vec::new()));
+        let opened_urls_for_opener = Arc::clone(&opened_urls);
+        let (tx, rx) = oneshot::channel();
+        let params = url_params("github", "el-123", "https://github.com/login/oauth");
+        let mut form = ElicitationForm::with_browser_opener(params, tx, move |url| {
+            opened_urls_for_opener.lock().unwrap().push(url.to_string());
+            Ok(())
+        });
+        let outcome =
+            form.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Enter, tui::KeyModifiers::NONE))).await;
+        let messages = outcome.unwrap();
+
+        assert_eq!(opened_urls.lock().unwrap().as_slice(), ["https://github.com/login/oauth"]);
+        assert!(messages.iter().any(|m| matches!(m, ElicitationMessage::Responded)));
+        let opened = messages.iter().find_map(|m| match m {
+            ElicitationMessage::UrlOpened { elicitation_id, server_name } => {
+                Some((elicitation_id.clone(), server_name.clone()))
+            }
+            ElicitationMessage::Responded => None,
+        });
+        let (id, server) = opened.expect("UrlOpened message should be emitted");
+        assert_eq!(id, "el-123", "elicitation_id must come from request, not URL re-parsing");
+        assert_eq!(server, "github");
+
+        let response = rx.await.unwrap();
+        assert_eq!(response.action, ElicitationAction::Accept);
+        assert!(response.content.is_none());
+    }
+
+    #[tokio::test]
+    async fn url_modal_launch_failure_keeps_modal_open_and_shows_error() {
+        let (tx, mut rx) = oneshot::channel();
+        let params = url_params("github", "el-fail", "https://github.com/login/oauth");
+        let mut form = ElicitationForm::with_browser_opener(params, tx, |_| Err("boom".to_string()));
+
+        let outcome =
+            form.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Enter, tui::KeyModifiers::NONE))).await;
+        let messages = outcome.expect("URL opener failure should still produce an event result");
+        assert!(messages.is_empty(), "modal should remain open on launch failure");
+        assert!(rx.try_recv().is_err(), "response should not be sent when browser launch fails");
+
+        let ElicitationUi::Url(prompt) = &form.ui else {
+            panic!("expected URL prompt");
+        };
+        assert_eq!(prompt.launch_error.as_deref(), Some("Failed to open browser: boom"));
+    }
+
+    #[tokio::test]
+    async fn url_modal_d_returns_decline() {
+        let (tx, rx) = oneshot::channel();
+        let params = url_params("github", "el-456", "https://github.com/login/oauth");
+        let mut form = ElicitationForm::from_params(params, tx);
+        let outcome =
+            form.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Char('d'), tui::KeyModifiers::NONE))).await;
+        let messages = outcome.unwrap();
+
+        assert!(messages.iter().any(|m| matches!(m, ElicitationMessage::Responded)));
+
+        let response = rx.await.unwrap();
+        assert_eq!(response.action, ElicitationAction::Decline);
+    }
+
+    #[tokio::test]
+    async fn url_modal_esc_returns_cancel() {
+        let (tx, rx) = oneshot::channel();
+        let params = url_params("github", "el-789", "https://github.com/login/oauth");
+        let mut form = ElicitationForm::from_params(params, tx);
+        let outcome = form.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Esc, tui::KeyModifiers::NONE))).await;
+        let messages = outcome.unwrap();
+
+        assert!(messages.iter().any(|m| matches!(m, ElicitationMessage::Responded)));
+
+        let response = rx.await.unwrap();
+        assert_eq!(response.action, ElicitationAction::Cancel);
+    }
+
+    #[tokio::test]
+    async fn form_modal_esc_returns_cancel() {
+        let (tx, rx) = oneshot::channel();
+        let params = ElicitationParams {
+            server_name: "test".to_string(),
+            request: CreateElicitationRequestParams::FormElicitationParams {
+                meta: None,
+                message: "Test".to_string(),
+                requested_schema: ElicitationSchema::builder().build().unwrap(),
+            },
+        };
+        let mut form = ElicitationForm::from_params(params, tx);
+        let outcome = form.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Esc, tui::KeyModifiers::NONE))).await;
+        let messages = outcome.unwrap();
+
+        assert!(messages.iter().any(|m| matches!(m, ElicitationMessage::Responded)));
+
+        let response = rx.await.unwrap();
+        assert_eq!(response.action, ElicitationAction::Cancel);
     }
 
     #[test]
@@ -336,5 +734,26 @@ mod tests {
         let schema = ElicitationSchema::new(BTreeMap::new());
         let fields = parse_schema(&schema);
         assert!(fields.is_empty());
+    }
+
+    #[test]
+    fn url_modal_renders_server_name_and_url() {
+        use tui::testing::render_component;
+
+        let prompt = UrlPrompt::new(
+            "github".to_string(),
+            "el-1".to_string(),
+            "Authorize GitHub".to_string(),
+            "https://github.com/login/oauth".to_string(),
+        );
+        let ui = ElicitationUi::Url(prompt);
+        let mut form = ElicitationForm { ui, browser_opener: Arc::new(default_browser_opener), response_tx: None };
+
+        let lines = render_component(|ctx| form.render(ctx), 80, 20).get_lines();
+        let text: String = lines.join("\n");
+        assert!(text.contains("github"), "should show server name");
+        assert!(text.contains("https://github.com/login/oauth"), "should show full URL");
+        assert!(text.contains("github.com"), "should show host");
+        assert!(text.contains("Enter to open URL"), "should show footer hint");
     }
 }

@@ -12,7 +12,10 @@ pub mod variables;
 pub use config::*;
 pub use connection::ServerInstructions;
 pub use error::{McpError, Result};
-pub use manager::{ElicitationRequest, McpManager, McpServerStatus, McpServerStatusEntry};
+pub use manager::{
+    ElicitationRequest, McpClientEvent, McpManager, McpServerStatus, McpServerStatusEntry, UrlElicitationCompleteParams,
+};
+pub use mcp_client::cancel_result;
 pub use naming::split_on_server_name;
 pub use roots::root_from_path;
 pub use variables::{VarError, expand_env_vars};

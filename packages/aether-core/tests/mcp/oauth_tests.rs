@@ -2,7 +2,7 @@ use aether_core::mcp::{McpSpawnResult, mcp};
 use aether_core::testing::{FakeMcpServer, fake_mcp};
 use futures::future::BoxFuture;
 use mcp_utils::client::oauth::{OAuthCallback, OAuthError, OAuthHandler, accept_oauth_callback};
-use mcp_utils::client::{ElicitationRequest, McpManager, McpServerConfig, ServerConfig};
+use mcp_utils::client::{McpClientEvent, McpManager, McpServerConfig, ServerConfig};
 use mcp_utils::status::McpServerStatus;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use std::sync::Arc;
@@ -65,7 +65,7 @@ async fn cancelling_handler_returns_user_cancelled() {
 async fn builder_with_oauth_handler_spawns_successfully() {
     let handler = FakeOAuthHandler::new("code", "state");
 
-    let McpSpawnResult { tool_definitions, instructions, elicitation_rx: _, .. } =
+    let McpSpawnResult { tool_definitions, instructions, event_rx: _, .. } =
         mcp().with_oauth_handler(handler).with_servers(vec![]).spawn().await.unwrap();
 
     assert!(tool_definitions.is_empty());
@@ -74,8 +74,8 @@ async fn builder_with_oauth_handler_spawns_successfully() {
 
 #[tokio::test]
 async fn http_server_without_handler_returns_error() {
-    let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
-    let mut manager = mcp_utils::client::McpManager::new(elicitation_tx, None);
+    let (event_tx, _event_rx) = mpsc::channel::<McpClientEvent>(50);
+    let mut manager = mcp_utils::client::McpManager::new(event_tx, None);
 
     let config = StreamableHttpClientTransportConfig::with_uri("http://localhost:19999/mcp");
     let result = manager.add_mcp(ServerConfig::Http { name: "test_server".to_string(), config }.into()).await;
@@ -86,8 +86,8 @@ async fn http_server_without_handler_returns_error() {
 #[tokio::test]
 async fn http_server_with_handler_stashes_needs_oauth_on_failure() {
     let handler = FakeOAuthHandler::new("test_code", "test_state");
-    let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
-    let mut manager = mcp_utils::client::McpManager::new(elicitation_tx, Some(Arc::new(handler)));
+    let (event_tx, _event_rx) = mpsc::channel::<McpClientEvent>(50);
+    let mut manager = mcp_utils::client::McpManager::new(event_tx, Some(Arc::new(handler)));
 
     let config = StreamableHttpClientTransportConfig::with_uri("http://localhost:19999/mcp");
     let result = manager.add_mcp(ServerConfig::Http { name: "test_oauth_server".to_string(), config }.into()).await;
@@ -108,8 +108,8 @@ async fn http_server_with_handler_stashes_needs_oauth_on_failure() {
 #[tokio::test]
 async fn add_mcps_continues_on_oauth_failure() {
     let handler = FakeOAuthHandler::new("code", "state");
-    let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
-    let mut manager = mcp_utils::client::McpManager::new(elicitation_tx, Some(Arc::new(handler)));
+    let (event_tx, _event_rx) = mpsc::channel::<McpClientEvent>(50);
+    let mut manager = mcp_utils::client::McpManager::new(event_tx, Some(Arc::new(handler)));
 
     let configs = vec![
         ServerConfig::Http {
@@ -160,8 +160,8 @@ async fn oauth_handler_is_dyn_compatible() {
 #[tokio::test]
 async fn tool_proxy_with_failing_http_surfaces_needs_oauth() {
     let handler = FakeOAuthHandler::new("code", "state");
-    let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
-    let mut manager = McpManager::new(elicitation_tx, Some(Arc::new(handler)));
+    let (event_tx, _event_rx) = mpsc::channel::<McpClientEvent>(50);
+    let mut manager = McpManager::new(event_tx, Some(Arc::new(handler)));
 
     // A tool-proxy with one in-memory server (succeeds) and one HTTP server (fails → NeedsOAuth)
     let configs = vec![McpServerConfig::ToolProxy {
@@ -203,8 +203,8 @@ async fn tool_proxy_with_failing_http_surfaces_needs_oauth() {
 
 #[tokio::test]
 async fn tool_proxy_partial_connection_works() {
-    let (elicitation_tx, _elicitation_rx) = mpsc::channel::<ElicitationRequest>(50);
-    let mut manager = McpManager::new(elicitation_tx, None);
+    let (event_tx, _event_rx) = mpsc::channel::<McpClientEvent>(50);
+    let mut manager = McpManager::new(event_tx, None);
 
     // A tool-proxy with two servers: one in-memory (succeeds), one HTTP (fails)
     let configs = vec![McpServerConfig::ToolProxy {

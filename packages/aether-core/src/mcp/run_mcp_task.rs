@@ -6,7 +6,10 @@ use futures::future::Either;
 use futures::stream::{self, StreamExt};
 use llm::{ToolCallError, ToolCallRequest, ToolCallResult, ToolDefinition};
 use rmcp::RoleClient;
-use rmcp::model::{CallToolRequestParams, GetPromptResult, ProgressNotificationParam, Prompt};
+use rmcp::model::{
+    CallToolRequestParams, CreateElicitationRequestParams, ErrorCode, GetPromptResult, ProgressNotificationParam,
+    Prompt,
+};
 use rmcp::service::RunningService;
 use std::sync::Arc;
 use std::time::Duration;
@@ -150,8 +153,17 @@ async fn execute_mcp_call(
                 let _ = event_tx.send(progress_event).await;
             }
             Some(Either::Right(result)) => {
-                break result
-                    .map_err(|e| ToolCallError::from_request(request, format!("Tool execution failed: {e}")))?;
+                break match result {
+                    Ok(server_result) => server_result,
+                    Err(e) => {
+                        if let rmcp::service::ServiceError::McpError(ref error_data) = e
+                            && error_data.code == ErrorCode::URL_ELICITATION_REQUIRED
+                        {
+                            return Err(handle_url_elicitation_required(&client, request, error_data).await);
+                        }
+                        return Err(ToolCallError::from_request(request, format!("Tool execution failed: {e}")));
+                    }
+                };
             }
             None => {
                 return Err(ToolCallError::from_request(request, "Stream ended without result"));
@@ -164,4 +176,158 @@ async fn execute_mcp_call(
     };
 
     mcp_result_to_tool_call_result(request, mcp_result)
+}
+
+#[derive(serde::Deserialize)]
+struct UrlElicitationRequiredData {
+    elicitations: Vec<CreateElicitationRequestParams>,
+}
+
+#[derive(Debug)]
+enum UrlElicitationRequiredParseError {
+    MissingData,
+    InvalidData(serde_json::Error),
+    NoUrlRequests,
+}
+
+impl std::fmt::Display for UrlElicitationRequiredParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingData => write!(f, "missing error data"),
+            Self::InvalidData(error) => write!(f, "malformed error data: {error}"),
+            Self::NoUrlRequests => write!(f, "provided no URL elicitation requests"),
+        }
+    }
+}
+
+fn parse_required_url_elicitations(
+    error_data: &rmcp::model::ErrorData,
+) -> Result<Vec<CreateElicitationRequestParams>, UrlElicitationRequiredParseError> {
+    let data = error_data.data.as_ref().ok_or(UrlElicitationRequiredParseError::MissingData)?;
+    let parsed: UrlElicitationRequiredData =
+        serde_json::from_value(data.clone()).map_err(UrlElicitationRequiredParseError::InvalidData)?;
+
+    let url_elicitations = parsed
+        .elicitations
+        .into_iter()
+        .filter(|elicitation| matches!(elicitation, CreateElicitationRequestParams::UrlElicitationParams { .. }))
+        .collect::<Vec<_>>();
+
+    if url_elicitations.is_empty() {
+        return Err(UrlElicitationRequiredParseError::NoUrlRequests);
+    }
+
+    Ok(url_elicitations)
+}
+
+/// Handle a `URL_ELICITATION_REQUIRED` (-32042) error by dispatching each
+/// URL elicitation through the same consent channel used by normal
+/// `create_elicitation` requests.
+async fn handle_url_elicitation_required(
+    client: &Arc<RunningService<RoleClient, McpClient>>,
+    request: &ToolCallRequest,
+    error_data: &rmcp::model::ErrorData,
+) -> ToolCallError {
+    let server_name = client.service().server_name().to_string();
+    let url_elicitations = match parse_required_url_elicitations(error_data) {
+        Ok(url_elicitations) => url_elicitations,
+        Err(UrlElicitationRequiredParseError::NoUrlRequests) => {
+            return ToolCallError::from_request(
+                request,
+                format!("Server '{server_name}' requires URL elicitation but provided no URL elicitation requests"),
+            );
+        }
+        Err(parse_error) => {
+            return ToolCallError::from_request(
+                request,
+                format!("Server '{server_name}' sent an invalid URL elicitation response: {parse_error}"),
+            );
+        }
+    };
+
+    tracing::info!("Server '{server_name}' requires {} URL elicitation(s)", url_elicitations.len());
+
+    for elicitation in url_elicitations {
+        let result = client.service().dispatch_elicitation(elicitation).await;
+        match result.action {
+            rmcp::model::ElicitationAction::Decline => {
+                return ToolCallError::from_request(
+                    request,
+                    format!("Required browser interaction for server '{server_name}' was declined"),
+                );
+            }
+            rmcp::model::ElicitationAction::Cancel => {
+                return ToolCallError::from_request(
+                    request,
+                    format!("Required browser interaction for server '{server_name}' was cancelled"),
+                );
+            }
+            rmcp::model::ElicitationAction::Accept => {
+                tracing::info!("User accepted URL elicitation for server '{server_name}'");
+            }
+        }
+    }
+
+    ToolCallError::from_request(
+        request,
+        format!(
+            "Server '{server_name}' requires a browser flow. The URL has been opened for your approval. Retry the previous request after completing the browser flow."
+        ),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn url_elicitation_required_data_parses_url_entries() {
+        let data = serde_json::json!({
+            "elicitations": [
+                {
+                    "mode": "url",
+                    "message": "Auth",
+                    "url": "https://example.com/auth?elicitationId=el-1",
+                    "elicitationId": "el-1"
+                }
+            ]
+        });
+
+        let parsed: UrlElicitationRequiredData = serde_json::from_value(data).unwrap();
+        assert_eq!(parsed.elicitations.len(), 1);
+        assert!(matches!(
+            &parsed.elicitations[0],
+            CreateElicitationRequestParams::UrlElicitationParams { elicitation_id, .. } if elicitation_id == "el-1"
+        ));
+    }
+
+    #[test]
+    fn parse_required_url_elicitations_filters_to_url_only() {
+        let error_data = rmcp::model::ErrorData {
+            code: rmcp::model::ErrorCode::URL_ELICITATION_REQUIRED,
+            message: "URL elicitation required".into(),
+            data: Some(serde_json::json!({
+                "elicitations": [
+                    {
+                        "mode": "url",
+                        "message": "Auth",
+                        "url": "https://example.com/auth",
+                        "elicitationId": "el-1"
+                    },
+                    {
+                        "mode": "form",
+                        "message": "Pick a color",
+                        "requestedSchema": { "type": "object", "properties": {} }
+                    }
+                ]
+            })),
+        };
+
+        let result = parse_required_url_elicitations(&error_data).unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(matches!(
+            &result[0],
+            CreateElicitationRequestParams::UrlElicitationParams { elicitation_id, .. } if elicitation_id == "el-1"
+        ));
+    }
 }

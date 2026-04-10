@@ -2,7 +2,7 @@ use llm::ToolDefinition;
 use mcp_utils::client::oauth::OAuthHandler;
 
 use mcp_utils::client::{
-    ElicitationRequest, McpError, McpManager, McpServerConfig, McpServerStatusEntry, ParseError, RawMcpConfig,
+    McpClientEvent, McpError, McpManager, McpServerConfig, McpServerStatusEntry, ParseError, RawMcpConfig,
     ServerFactory, ServerInstructions, root_from_path,
 };
 
@@ -25,7 +25,7 @@ pub struct McpSpawnResult {
     pub instructions: Vec<ServerInstructions>,
     pub server_statuses: Vec<McpServerStatusEntry>,
     pub command_tx: Sender<McpCommand>,
-    pub elicitation_rx: Receiver<ElicitationRequest>,
+    pub event_rx: Receiver<McpClientEvent>,
     pub handle: JoinHandle<()>,
 }
 
@@ -95,9 +95,9 @@ impl McpBuilder {
 
     pub async fn spawn(self) -> Result<McpSpawnResult, McpError> {
         let (mcp_command_tx, mcp_command_rx) = mpsc::channel::<McpCommand>(self.mcp_channel_capacity);
-        let (elicitation_tx, elicitation_rx) = mpsc::channel::<ElicitationRequest>(self.mcp_channel_capacity);
+        let (event_tx, event_rx) = mpsc::channel::<McpClientEvent>(self.mcp_channel_capacity);
 
-        let mut mcp_manager = McpManager::new(elicitation_tx, self.oauth_handler);
+        let mut mcp_manager = McpManager::new(event_tx, self.oauth_handler);
         mcp_manager.add_mcps(self.mcp_configs).await?;
 
         // Set workspace roots if provided
@@ -116,7 +116,7 @@ impl McpBuilder {
             instructions,
             server_statuses,
             command_tx: mcp_command_tx,
-            elicitation_rx,
+            event_rx,
             handle: mcp_handle,
         })
     }

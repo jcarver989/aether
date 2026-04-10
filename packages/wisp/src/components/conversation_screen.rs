@@ -11,6 +11,7 @@ use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::keybindings::Keybindings;
 use acp_utils::notifications::ElicitationResponse;
 use agent_client_protocol::{self as acp, SessionId};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Instant;
 use tokio::sync::oneshot;
@@ -40,6 +41,7 @@ pub struct ConversationScreen {
     pub(crate) waiting_for_response: bool,
     pub(crate) active_modal: Option<Modal>,
     pub(crate) content_padding: usize,
+    pub(crate) pending_url_elicitations: HashSet<(String, String)>,
 }
 
 impl ConversationScreen {
@@ -53,6 +55,7 @@ impl ConversationScreen {
             waiting_for_response: false,
             active_modal: None,
             content_padding,
+            pending_url_elicitations: HashSet::new(),
         }
     }
 
@@ -92,6 +95,7 @@ impl ConversationScreen {
         self.waiting_for_response = false;
         self.plan_tracker.clear();
         self.progress_indicator = ProgressIndicator::default();
+        self.pending_url_elicitations.clear();
     }
 
     pub fn open_session_picker(&mut self, sessions: Vec<acp::SessionInfo>) {
@@ -185,6 +189,16 @@ impl ConversationScreen {
         self.tool_call_statuses.on_sub_agent_progress(progress);
     }
 
+    pub fn on_url_elicitation_complete(&mut self, params: &acp_utils::notifications::UrlElicitationCompleteParams) {
+        let key = (params.server_name.clone(), params.elicitation_id.clone());
+        if self.pending_url_elicitations.remove(&key) {
+            self.conversation.push_user_message(&format!(
+                "[wisp] {} finished the browser flow. Retry the previous request if it did not resume automatically.",
+                params.server_name
+            ));
+        }
+    }
+
     fn plan_tracker_has_tick_driven_visibility(&self) -> bool {
         self.plan_tracker.has_completed_in_grace_period()
     }
@@ -198,6 +212,12 @@ impl ConversationScreen {
                     match msg {
                         ElicitationMessage::Responded => {
                             self.active_modal = None;
+                        }
+                        ElicitationMessage::UrlOpened { elicitation_id, server_name } => {
+                            self.pending_url_elicitations.insert((server_name.clone(), elicitation_id.clone()));
+                            self.conversation.push_user_message(&format!(
+                                "[wisp] Opened browser for {server_name}. Complete the flow, then retry the previous action if needed."
+                            ));
                         }
                     }
                 }

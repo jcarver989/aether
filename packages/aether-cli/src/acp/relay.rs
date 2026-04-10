@@ -6,9 +6,9 @@ use aether_core::mcp::run_mcp_task::McpCommand;
 use agent_client_protocol::{self as acp, ExtNotification, SessionId};
 use llm::parser::ModelProviderParser;
 use llm::{ContentBlock, ReasoningEffort};
-use mcp_utils::client::ElicitationRequest;
-use rmcp::model::{CreateElicitationRequestParams, CreateElicitationResult, ElicitationSchema};
-use std::collections::BTreeMap;
+use mcp_utils::client::{ElicitationRequest, McpClientEvent, cancel_result};
+use rmcp::model::CreateElicitationRequestParams;
+use rmcp::model::CreateElicitationResult;
 use std::fmt;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -84,7 +84,7 @@ async fn run_session_relay(
         agent_handle: _agent_handle,
         _mcp_handle,
         mcp_tx,
-        mut elicitation_rx,
+        mut event_rx,
         initial_server_statuses,
     } = session;
 
@@ -108,7 +108,7 @@ async fn run_session_relay(
                             agent_tx: &agent_tx,
                             agent_rx: &mut agent_rx,
                             mcp_tx: &mcp_tx,
-                            elicitation_rx: &mut elicitation_rx,
+                            event_rx: &mut event_rx,
                             mcp_request_rx: &mut mcp_request_rx,
                             cmd_rx: &mut cmd_rx,
                             actor_handle: &actor_handle,
@@ -130,6 +130,9 @@ async fn run_session_relay(
                     }
                 }
             }
+            Some(event) = event_rx.recv() => {
+                handle_mcp_client_event(&actor_handle, event).await;
+            }
             else => break,
         }
     }
@@ -139,7 +142,7 @@ struct PromptContext<'a> {
     agent_tx: &'a mpsc::Sender<UserMessage>,
     agent_rx: &'a mut mpsc::Receiver<AgentMessage>,
     mcp_tx: &'a mpsc::Sender<McpCommand>,
-    elicitation_rx: &'a mut mpsc::Receiver<ElicitationRequest>,
+    event_rx: &'a mut mpsc::Receiver<McpClientEvent>,
     mcp_request_rx: &'a mut mpsc::Receiver<McpRequest>,
     cmd_rx: &'a mut mpsc::Receiver<SessionCommand>,
     actor_handle: &'a AcpActorHandle,
@@ -221,8 +224,8 @@ where
                     return Err(RelayError::ChannelClosed);
                 }
             }
-            Some(elicitation) = ctx.elicitation_rx.recv() => {
-                handle_elicitation_request(ctx.actor_handle, elicitation).await;
+            Some(event) = ctx.event_rx.recv() => {
+                handle_mcp_client_event(ctx.actor_handle, event).await;
             }
             Some(msg) = ctx.mcp_request_rx.recv() => {
                 match msg {
@@ -258,7 +261,7 @@ fn log_event(store: &SessionStore, session_id: &str, event: &SessionEvent) {
 }
 
 async fn handle_elicitation_request(actor_handle: &AcpActorHandle, elicitation: ElicitationRequest) {
-    let ext_params = build_elicitation_params(&elicitation.request);
+    let ext_params = build_elicitation_params(&elicitation.server_name, &elicitation.request);
     let ext_request = build_ext_request(&ext_params);
 
     let result = actor_handle.ext_method(ext_request).await;
@@ -266,7 +269,7 @@ async fn handle_elicitation_request(actor_handle: &AcpActorHandle, elicitation: 
         Ok(ref response) => parse_elicitation_response(response),
         Err(e) => {
             error!("Failed to send elicitation ext_method: {:?}", e);
-            CreateElicitationResult::new(rmcp::model::ElicitationAction::Cancel)
+            cancel_result()
         }
     };
 
@@ -275,15 +278,8 @@ async fn handle_elicitation_request(actor_handle: &AcpActorHandle, elicitation: 
     }
 }
 
-fn build_elicitation_params(request: &CreateElicitationRequestParams) -> ElicitationParams {
-    match request {
-        CreateElicitationRequestParams::FormElicitationParams { message, requested_schema, .. } => {
-            ElicitationParams { message: message.clone(), schema: requested_schema.clone() }
-        }
-        CreateElicitationRequestParams::UrlElicitationParams { message, .. } => {
-            ElicitationParams { message: message.clone(), schema: ElicitationSchema::new(BTreeMap::new()) }
-        }
-    }
+fn build_elicitation_params(server_name: &str, request: &CreateElicitationRequestParams) -> ElicitationParams {
+    ElicitationParams { server_name: server_name.to_string(), request: request.clone() }
 }
 
 fn build_ext_request(params: &ElicitationParams) -> acp::ExtRequest {
@@ -302,7 +298,7 @@ fn parse_elicitation_response(response: &acp::ExtResponse) -> CreateElicitationR
         }
         Err(e) => {
             error!("Failed to parse elicitation response: {:?}", e);
-            CreateElicitationResult::new(rmcp::model::ElicitationAction::Cancel)
+            cancel_result()
         }
     }
 }
@@ -458,6 +454,20 @@ async fn forward_notification(actor_handle: &AcpActorHandle, acp_session_id: &Se
     }
 }
 
+async fn handle_mcp_client_event(actor_handle: &AcpActorHandle, event: McpClientEvent) {
+    match event {
+        McpClientEvent::Elicitation(elicitation) => {
+            handle_elicitation_request(actor_handle, elicitation).await;
+        }
+        McpClientEvent::UrlElicitationComplete(params) => {
+            let notification: ExtNotification = McpNotification::UrlElicitationComplete(params).into();
+            if let Err(e) = actor_handle.send_ext_notification(notification).await {
+                error!("Failed to send URL elicitation complete notification: {:?}", e);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -523,13 +533,54 @@ mod tests {
         let elicitation = CreateElicitationRequestParams::FormElicitationParams {
             meta: None,
             message: "Pick a color".to_string(),
-            requested_schema: ElicitationSchema::builder().required_bool("approved").build().unwrap(),
+            requested_schema: rmcp::model::ElicitationSchema::builder().required_bool("approved").build().unwrap(),
         };
 
-        let params = build_elicitation_params(&elicitation);
-        assert_eq!(params.message, "Pick a color");
-        assert_eq!(params.schema.properties.len(), 1);
-        assert!(params.schema.properties.contains_key("approved"));
+        let params = build_elicitation_params("test-server", &elicitation);
+        assert_eq!(params.server_name, "test-server");
+        match &params.request {
+            CreateElicitationRequestParams::FormElicitationParams { message, requested_schema, .. } => {
+                assert_eq!(message, "Pick a color");
+                assert_eq!(requested_schema.properties.len(), 1);
+                assert!(requested_schema.properties.contains_key("approved"));
+            }
+            CreateElicitationRequestParams::UrlElicitationParams { .. } => panic!("Expected Form, got Url"),
+        }
+    }
+
+    #[test]
+    fn test_build_elicitation_params_from_url() {
+        let elicitation = CreateElicitationRequestParams::UrlElicitationParams {
+            meta: None,
+            message: "Authorize GitHub".to_string(),
+            url: "https://github.com/login/oauth".to_string(),
+            elicitation_id: "el-123".to_string(),
+        };
+
+        let params = build_elicitation_params("github", &elicitation);
+        assert_eq!(params.server_name, "github");
+        match &params.request {
+            CreateElicitationRequestParams::UrlElicitationParams { message, url, elicitation_id, .. } => {
+                assert_eq!(message, "Authorize GitHub");
+                assert_eq!(url, "https://github.com/login/oauth");
+                assert_eq!(elicitation_id, "el-123");
+            }
+            CreateElicitationRequestParams::FormElicitationParams { .. } => panic!("Expected Url, got Form"),
+        }
+    }
+
+    #[test]
+    fn test_parse_elicitation_response_accept_no_content() {
+        let response_json = serde_json::json!({
+            "action": "accept",
+            "content": null
+        });
+        let raw = serde_json::value::to_raw_value(&response_json).unwrap();
+        let ext_response = acp::ExtResponse::new(Arc::from(raw));
+
+        let result = parse_elicitation_response(&ext_response);
+        assert_eq!(result.action, rmcp::model::ElicitationAction::Accept);
+        assert!(result.content.is_none());
     }
 
     #[test]
@@ -561,6 +612,20 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_elicitation_response_cancel() {
+        let response_json = serde_json::json!({
+            "action": "cancel",
+            "content": null
+        });
+        let raw = serde_json::value::to_raw_value(&response_json).unwrap();
+        let ext_response = acp::ExtResponse::new(Arc::from(raw));
+
+        let result = parse_elicitation_response(&ext_response);
+        assert_eq!(result.action, rmcp::model::ElicitationAction::Cancel);
+        assert!(result.content.is_none());
+    }
+
+    #[test]
     fn test_parse_elicitation_response_invalid_json() {
         let raw: Arc<serde_json::value::RawValue> = serde_json::from_str("\"not_an_object\"").unwrap();
         let ext_response = acp::ExtResponse::new(raw);
@@ -568,5 +633,42 @@ mod tests {
         let result = parse_elicitation_response(&ext_response);
         assert_eq!(result.action, rmcp::model::ElicitationAction::Cancel);
         assert!(result.content.is_none());
+    }
+
+    #[tokio::test]
+    async fn url_elicitation_complete_event_emits_ext_notification() {
+        use acp_utils::notifications::{MCP_MESSAGE_METHOD, McpNotification};
+        use acp_utils::server::AcpRequest;
+
+        let (req_tx, mut req_rx) = mpsc::unbounded_channel();
+        let handle = AcpActorHandle::new(req_tx);
+        let event = McpClientEvent::UrlElicitationComplete(mcp_utils::client::UrlElicitationCompleteParams {
+            server_name: "github".to_string(),
+            elicitation_id: "el-42".to_string(),
+        });
+
+        let driver = tokio::spawn(async move {
+            let request = req_rx.recv().await.expect("expected ExtNotification request");
+            match request {
+                AcpRequest::ExtNotification { notification, response_tx } => {
+                    let _ = response_tx.send(Ok(()));
+                    notification
+                }
+                other => panic!("expected ExtNotification, got {other:?}"),
+            }
+        });
+
+        handle_mcp_client_event(&handle, event).await;
+        let notification = driver.await.expect("driver task should complete");
+
+        assert_eq!(notification.method.as_ref(), MCP_MESSAGE_METHOD);
+        let parsed = McpNotification::try_from(&notification).expect("should parse");
+        assert_eq!(
+            parsed,
+            McpNotification::UrlElicitationComplete(acp_utils::notifications::UrlElicitationCompleteParams {
+                server_name: "github".to_string(),
+                elicitation_id: "el-42".to_string(),
+            })
+        );
     }
 }

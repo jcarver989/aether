@@ -5,7 +5,7 @@ use aether_core::events::{AgentMessage, UserMessage};
 use aether_core::mcp::run_mcp_task::McpCommand;
 use llm::ChatMessage;
 use mcp_utils::client::oauth::BrowserOAuthHandler;
-use mcp_utils::client::{ElicitationRequest, McpServerConfig};
+use mcp_utils::client::{McpClientEvent, McpServerConfig};
 use mcp_utils::status::McpServerStatusEntry;
 
 use agent_client_protocol as acp;
@@ -24,7 +24,7 @@ pub struct Session {
     pub agent_handle: AgentHandle,
     pub _mcp_handle: JoinHandle<()>,
     pub mcp_tx: mpsc::Sender<McpCommand>,
-    pub elicitation_rx: mpsc::Receiver<ElicitationRequest>,
+    pub event_rx: mpsc::Receiver<McpClientEvent>,
     pub initial_server_statuses: Vec<McpServerStatusEntry>,
 }
 
@@ -65,7 +65,7 @@ impl Session {
             agent_handle: agent.agent_handle,
             _mcp_handle: agent.mcp_handle,
             mcp_tx: agent.mcp_tx,
-            elicitation_rx: agent.elicitation_rx,
+            event_rx: agent.event_rx,
             initial_server_statuses: agent.server_statuses,
         })
     }

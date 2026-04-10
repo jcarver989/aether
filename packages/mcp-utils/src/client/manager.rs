@@ -13,11 +13,12 @@ use rmcp::{
     RoleClient,
     model::{
         CallToolRequestParams, ClientCapabilities, ClientInfo, CreateElicitationRequestParams, CreateElicitationResult,
-        ElicitationAction, Implementation, Root,
+        ElicitationAction, FormElicitationCapability, Implementation, Root, UrlElicitationCapability,
     },
     service::RunningService,
     transport::streamable_http_client::StreamableHttpClientTransportConfig,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -27,6 +28,7 @@ pub use crate::status::{McpServerStatus, McpServerStatusEntry};
 
 #[derive(Debug)]
 pub struct ElicitationRequest {
+    pub server_name: String,
     pub request: CreateElicitationRequestParams,
     pub response_sender: oneshot::Sender<CreateElicitationResult>,
 }
@@ -35,6 +37,21 @@ pub struct ElicitationRequest {
 pub struct ElicitationResponse {
     pub action: ElicitationAction,
     pub content: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UrlElicitationCompleteParams {
+    pub server_name: String,
+    pub elicitation_id: String,
+}
+
+/// Events emitted by MCP clients that require attention from the host
+/// (e.g. the relay or TUI). Flows through a single channel from `McpManager`
+/// to the consumer.
+#[derive(Debug)]
+pub enum McpClientEvent {
+    Elicitation(ElicitationRequest),
+    UrlElicitationComplete(UrlElicitationCompleteParams),
 }
 
 /// Whether a server's tools should be directly exposed to the agent or only
@@ -53,7 +70,7 @@ pub struct McpManager {
     tools: HashMap<String, Tool>,
     tool_definitions: Vec<ToolDefinition>,
     client_info: ClientInfo,
-    elicitation_sender: mpsc::Sender<ElicitationRequest>,
+    event_sender: mpsc::Sender<McpClientEvent>,
     /// Roots shared with all MCP clients
     roots: Arc<RwLock<Vec<Root>>>,
     oauth_handler: Option<Arc<dyn OAuthHandler>>,
@@ -65,19 +82,19 @@ pub struct McpManager {
 }
 
 impl McpManager {
-    pub fn new(
-        elicitation_sender: mpsc::Sender<ElicitationRequest>,
-        oauth_handler: Option<Arc<dyn OAuthHandler>>,
-    ) -> Self {
+    pub fn new(event_sender: mpsc::Sender<McpClientEvent>, oauth_handler: Option<Arc<dyn OAuthHandler>>) -> Self {
+        let mut capabilities = ClientCapabilities::builder().enable_elicitation().enable_roots().build();
+        if let Some(elicitation) = capabilities.elicitation.as_mut() {
+            elicitation.form = Some(FormElicitationCapability::default());
+            elicitation.url = Some(UrlElicitationCapability::default());
+        }
+
         Self {
             servers: HashMap::new(),
             tools: HashMap::new(),
             tool_definitions: Vec::new(),
-            client_info: ClientInfo::new(
-                ClientCapabilities::builder().enable_elicitation().enable_roots().build(),
-                Implementation::new("aether", "0.1.0"),
-            ),
-            elicitation_sender,
+            client_info: ClientInfo::new(capabilities, Implementation::new("aether", "0.1.0")),
+            event_sender,
             roots: Arc::new(RwLock::new(Vec::new())),
             oauth_handler,
             server_statuses: Vec::new(),
@@ -86,12 +103,17 @@ impl McpManager {
         }
     }
 
-    fn create_mcp_client(&self) -> McpClient {
-        McpClient::new(self.client_info.clone(), self.elicitation_sender.clone(), Arc::clone(&self.roots))
+    fn create_mcp_client(&self, server_name: &str) -> McpClient {
+        McpClient::new(
+            self.client_info.clone(),
+            server_name.to_string(),
+            self.event_sender.clone(),
+            Arc::clone(&self.roots),
+        )
     }
 
-    fn connect_params(&self) -> ConnectParams {
-        ConnectParams { mcp_client: self.create_mcp_client(), oauth_handler: self.oauth_handler.clone() }
+    fn connect_params(&self, server_name: &str) -> ConnectParams {
+        ConnectParams { mcp_client: self.create_mcp_client(server_name), oauth_handler: self.oauth_handler.clone() }
     }
 
     /// Update or insert the status entry for a server.
@@ -123,7 +145,7 @@ impl McpManager {
             name: name.clone(),
             config: StreamableHttpClientTransportConfig::with_uri(base_url).auth_header(auth_header),
         };
-        let params = self.connect_params();
+        let params = self.connect_params(&name);
         match McpServerConnection::connect(config, params).await {
             ConnectResult::Connected(conn) => self.register_server(&name, conn, Registration::Direct).await,
             ConnectResult::NeedsOAuth { error, .. } => Err(error),
@@ -137,7 +159,7 @@ impl McpManager {
 
             McpServerConfig::Server(config) => {
                 let name = config.name().to_string();
-                let params = self.connect_params();
+                let params = self.connect_params(&name);
                 match McpServerConnection::connect(config, params).await {
                     ConnectResult::Connected(conn) => self.register_server(&name, conn, Registration::Direct).await,
                     ConnectResult::NeedsOAuth { name, config, error } => {
@@ -163,7 +185,7 @@ impl McpManager {
 
         for config in servers {
             let server_name = config.name().to_string();
-            let params = self.connect_params();
+            let params = self.connect_params(&server_name);
 
             let result = match McpServerConnection::connect(config, params).await {
                 ConnectResult::Connected(conn) => self.register_server(&server_name, conn, Registration::Proxied).await,
@@ -228,7 +250,7 @@ impl McpManager {
             .await
             .map_err(|e| McpError::ConnectionFailed(format!("OAuth failed for '{name}': {e}")))?;
 
-        let mcp_client = self.create_mcp_client();
+        let mcp_client = self.create_mcp_client(&name);
         let conn = McpServerConnection::reconnect_with_auth(&name, config, auth_client, mcp_client).await?;
 
         // If this server is proxied, register without exposing tools to the agent
@@ -627,8 +649,8 @@ mod tests {
 
     #[tokio::test]
     async fn drop_logs_cleanup_abort_with_tracing() {
-        let (elicitation_sender, _elicitation_receiver) = mpsc::channel(1);
-        let mut manager = McpManager::new(elicitation_sender, None);
+        let (event_sender, _event_receiver) = mpsc::channel(1);
+        let mut manager = McpManager::new(event_sender, None);
         manager
             .add_mcp(
                 ServerConfig::InMemory { name: "test".to_string(), server: TestServer::default().into_dyn() }.into(),

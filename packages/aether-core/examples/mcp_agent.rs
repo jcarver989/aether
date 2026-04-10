@@ -18,8 +18,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         instructions: _,
         server_statuses: _,
         command_tx: mcp_tx,
-        elicitation_rx: _,
+        event_rx: _,
         handle: _mcp_handle,
+        ..
     } = mcp().from_json_files(&["examples/mcp.json"]).await?.spawn().await?;
 
     let (tx, mut rx, _handle) = agent(llm)

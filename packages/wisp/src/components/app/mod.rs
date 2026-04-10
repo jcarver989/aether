@@ -388,11 +388,18 @@ impl App {
                 }
             }
             _ => {
-                if let Ok(McpNotification::ServerStatus { servers }) = McpNotification::try_from(notification) {
-                    if let Some(ref mut overlay) = self.settings_overlay {
-                        overlay.update_server_statuses(servers.clone());
+                if let Ok(notification) = McpNotification::try_from(notification) {
+                    match notification {
+                        McpNotification::ServerStatus { servers } => {
+                            if let Some(ref mut overlay) = self.settings_overlay {
+                                overlay.update_server_statuses(servers.clone());
+                            }
+                            self.server_statuses = servers;
+                        }
+                        McpNotification::UrlElicitationComplete(params) => {
+                            self.conversation_screen.on_url_elicitation_complete(&params);
+                        }
                     }
-                    self.server_statuses = servers;
                 }
             }
         }
@@ -619,6 +626,7 @@ mod tests {
     use crate::components::command_picker::CommandEntry;
     use crate::components::conversation_screen::Modal;
     use crate::components::conversation_window::SegmentContent;
+    use crate::components::elicitation_form::ElicitationForm;
     use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings, save_settings};
     use crate::test_helpers::with_wisp_home;
     use std::fs;
@@ -867,6 +875,106 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ctrl_g_toggles_git_diff_viewer() {
+        let mut app = make_app();
+
+        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
+        assert!(app.screen_router.is_git_diff(), "should open git diff");
+
+        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
+        assert!(!app.screen_router.is_git_diff(), "should close git diff");
+    }
+
+    #[tokio::test]
+    async fn needs_mouse_capture_in_git_diff() {
+        let mut app = make_app();
+        assert!(!app.needs_mouse_capture());
+
+        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
+        assert!(app.needs_mouse_capture());
+
+        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
+        assert!(!app.needs_mouse_capture());
+    }
+
+    #[tokio::test]
+    async fn ctrl_g_blocked_during_elicitation() {
+        let mut app = make_app();
+        app.conversation_screen.active_modal = Some(Modal::Elicitation(ElicitationForm::from_params(
+            acp_utils::notifications::ElicitationParams {
+                server_name: "test-server".to_string(),
+                request: acp_utils::notifications::CreateElicitationRequestParams::FormElicitationParams {
+                    meta: None,
+                    message: "test".to_string(),
+                    requested_schema: acp_utils::ElicitationSchema::builder().build().unwrap(),
+                },
+            },
+            oneshot::channel().0,
+        )));
+
+        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
+        assert!(!app.screen_router.is_git_diff(), "git diff should not open during elicitation");
+    }
+
+    #[tokio::test]
+    async fn esc_in_diff_mode_does_not_cancel() {
+        let mut app = make_app();
+        app.conversation_screen.waiting_for_response = true;
+        app.screen_router.enter_git_diff_for_test();
+
+        send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+
+        assert!(!app.exit_requested());
+        assert!(
+            app.conversation_screen.waiting_for_response,
+            "Esc should NOT cancel a running prompt while git diff mode is active"
+        );
+    }
+
+    #[tokio::test]
+    async fn git_diff_submit_sends_prompt_and_closes_diff_when_idle() {
+        use acp_utils::client::PromptCommand;
+
+        let (mut app, mut rx) = make_app_with_config_recording(&[]);
+        app.screen_router.enter_git_diff_for_test();
+
+        let mut commands = Vec::new();
+        app.handle_screen_router_message(
+            &mut commands,
+            ScreenRouterMessage::SendPrompt { user_input: "Looks good".to_string() },
+        )
+        .await;
+
+        assert!(!app.screen_router.is_git_diff(), "successful submit should exit git diff mode");
+        assert!(app.conversation_screen.waiting_for_response, "submit should transition into waiting state");
+
+        let cmd = rx.try_recv().expect("expected Prompt command to be sent");
+        match cmd {
+            PromptCommand::Prompt { text, .. } => {
+                assert!(text.contains("Looks good"));
+            }
+            other => panic!("expected Prompt command, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn git_diff_submit_while_waiting_is_ignored_and_keeps_diff_open() {
+        let (mut app, mut rx) = make_app_with_config_recording(&[]);
+        app.conversation_screen.waiting_for_response = true;
+        app.screen_router.enter_git_diff_for_test();
+
+        let mut commands = Vec::new();
+        app.handle_screen_router_message(
+            &mut commands,
+            ScreenRouterMessage::SendPrompt { user_input: "Needs follow-up".to_string() },
+        )
+        .await;
+
+        assert!(app.screen_router.is_git_diff(), "blocked submit should keep git diff mode open");
+        assert!(rx.try_recv().is_err(), "no prompt should be sent while waiting");
+    }
+
+    #[tokio::test]
     async fn mouse_scroll_ignored_in_conversation_mode() {
         use tui::{MouseEvent, MouseEventKind};
         let mut app = make_app();
@@ -1069,5 +1177,132 @@ mod tests {
             other => panic!("expected SetConfigOption, got {other:?}"),
         }
         assert!(rx.try_recv().is_err(), "model was unchanged, no extra command expected");
+    }
+
+    #[tokio::test]
+    async fn url_completion_appends_status_text_for_known_pending_id() {
+        let mut app = make_app();
+
+        app.conversation_screen.pending_url_elicitations.insert(("github".to_string(), "el-1".to_string()));
+
+        let params = acp_utils::notifications::UrlElicitationCompleteParams {
+            server_name: "github".to_string(),
+            elicitation_id: "el-1".to_string(),
+        };
+        app.conversation_screen.on_url_elicitation_complete(&params);
+
+        let messages: Vec<_> = app
+            .conversation_screen
+            .conversation
+            .segments()
+            .filter_map(|seg| match seg {
+                SegmentContent::UserMessage(text) if text.contains("github") && text.contains("finished") => Some(text),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(messages.len(), 1, "should show completion message for known ID");
+        assert!(messages[0].to_lowercase().contains("retry"), "completion message should mention retry");
+    }
+
+    #[tokio::test]
+    async fn url_completion_ignores_unknown_id() {
+        let mut app = make_app();
+
+        // No pending elicitations registered
+        let params = acp_utils::notifications::UrlElicitationCompleteParams {
+            server_name: "unknown-server".to_string(),
+            elicitation_id: "el-unknown".to_string(),
+        };
+        app.conversation_screen.on_url_elicitation_complete(&params);
+
+        let has_completion = app
+            .conversation_screen
+            .conversation
+            .segments()
+            .any(|seg| matches!(seg, SegmentContent::UserMessage(t) if t.contains("finished")));
+        assert!(!has_completion, "should not show completion message for unknown ID");
+    }
+
+    #[tokio::test]
+    async fn url_completion_ignores_mismatched_server_name_for_known_id() {
+        let mut app = make_app();
+
+        app.conversation_screen.pending_url_elicitations.insert(("github".to_string(), "el-1".to_string()));
+
+        let params = acp_utils::notifications::UrlElicitationCompleteParams {
+            server_name: "linear".to_string(),
+            elicitation_id: "el-1".to_string(),
+        };
+        app.conversation_screen.on_url_elicitation_complete(&params);
+
+        assert!(
+            app.conversation_screen.pending_url_elicitations.contains(&("github".to_string(), "el-1".to_string())),
+            "mismatched server name should not clear the pending elicitation"
+        );
+        let has_completion = app
+            .conversation_screen
+            .conversation
+            .segments()
+            .any(|seg| matches!(seg, SegmentContent::UserMessage(t) if t.contains("finished")));
+        assert!(!has_completion, "should not show completion message for mismatched server name");
+    }
+
+    #[tokio::test]
+    async fn url_completion_ignores_duplicate_id() {
+        let mut app = make_app();
+
+        app.conversation_screen.pending_url_elicitations.insert(("github".to_string(), "el-1".to_string()));
+
+        let params = acp_utils::notifications::UrlElicitationCompleteParams {
+            server_name: "github".to_string(),
+            elicitation_id: "el-1".to_string(),
+        };
+
+        // First completion should show message
+        app.conversation_screen.on_url_elicitation_complete(&params);
+        // Second completion should be silently ignored (ID already removed)
+        app.conversation_screen.on_url_elicitation_complete(&params);
+
+        let count = app
+            .conversation_screen
+            .conversation
+            .segments()
+            .filter(|seg| matches!(seg, SegmentContent::UserMessage(t) if t.contains("finished")))
+            .count();
+        assert_eq!(count, 1, "should show exactly one completion message, not duplicates");
+    }
+
+    #[tokio::test]
+    async fn ctrl_g_blocked_during_url_elicitation_modal() {
+        let mut app = make_app();
+        app.conversation_screen.active_modal = Some(Modal::Elicitation(ElicitationForm::from_params(
+            acp_utils::notifications::ElicitationParams {
+                server_name: "test-server".to_string(),
+                request: acp_utils::notifications::CreateElicitationRequestParams::UrlElicitationParams {
+                    meta: None,
+                    message: "Auth".to_string(),
+                    url: "https://example.com/auth".to_string(),
+                    elicitation_id: "el-1".to_string(),
+                },
+            },
+            oneshot::channel().0,
+        )));
+
+        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
+        assert!(!app.screen_router.is_git_diff(), "git diff should not open during URL elicitation modal");
+    }
+
+    #[tokio::test]
+    async fn reset_after_context_cleared_clears_pending_url_elicitations() {
+        let mut app = make_app();
+        app.conversation_screen.pending_url_elicitations.insert(("github".to_string(), "el-1".to_string()));
+        app.conversation_screen.pending_url_elicitations.insert(("linear".to_string(), "el-2".to_string()));
+
+        app.conversation_screen.reset_after_context_cleared();
+
+        assert!(
+            app.conversation_screen.pending_url_elicitations.is_empty(),
+            "pending URL elicitations should be cleared on reset"
+        );
     }
 }

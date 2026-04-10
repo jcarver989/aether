@@ -10,7 +10,7 @@ use aether_project::load_agent_catalog;
 use llm::{ChatMessage, LlmModel, ToolDefinition};
 use mcp_servers::McpBuilderExt;
 use mcp_utils::client::oauth::OAuthHandler;
-use mcp_utils::client::{ElicitationRequest, McpServerConfig};
+use mcp_utils::client::{McpClientEvent, McpServerConfig};
 use mcp_utils::status::McpServerStatusEntry;
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -31,7 +31,7 @@ pub struct Runtime {
     pub agent_rx: Receiver<AgentMessage>,
     pub agent_handle: AgentHandle,
     pub mcp_tx: Sender<McpCommand>,
-    pub elicitation_rx: Receiver<ElicitationRequest>,
+    pub event_rx: Receiver<McpClientEvent>,
     pub server_statuses: Vec<McpServerStatusEntry>,
     pub mcp_handle: JoinHandle<()>,
 }
@@ -126,7 +126,7 @@ impl RuntimeBuilder {
             agent_rx,
             agent_handle,
             mcp_tx: mcp.mcp_tx,
-            elicitation_rx: mcp.elicitation_rx,
+            event_rx: mcp.event_rx,
             server_statuses: mcp.server_statuses,
             mcp_handle: mcp.mcp_handle,
         })
@@ -163,14 +163,14 @@ impl RuntimeBuilder {
             instructions,
             server_statuses,
             command_tx: mcp_tx,
-            elicitation_rx,
+            event_rx,
             handle: mcp_handle,
         } = builder.spawn().await.map_err(|e| CliError::McpError(e.to_string()))?;
 
         let mut spec = self.spec;
         spec.prompts.push(Prompt::mcp_instructions(instructions));
 
-        Ok(McpParts { spec, tool_definitions, mcp_tx, elicitation_rx, server_statuses, mcp_handle })
+        Ok(McpParts { spec, tool_definitions, mcp_tx, event_rx, server_statuses, mcp_handle })
     }
 }
 
@@ -178,7 +178,7 @@ struct McpParts {
     spec: AgentSpec,
     tool_definitions: Vec<ToolDefinition>,
     mcp_tx: Sender<McpCommand>,
-    elicitation_rx: Receiver<ElicitationRequest>,
+    event_rx: Receiver<McpClientEvent>,
     server_statuses: Vec<McpServerStatusEntry>,
     mcp_handle: JoinHandle<()>,
 }
