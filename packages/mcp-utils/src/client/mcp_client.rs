@@ -53,10 +53,10 @@ impl ClientHandler for McpClient {
         match self.elicitation_sender.send(elicitation_request).await {
             Ok(()) => match response_rx.await {
                 Ok(result) => Ok(result),
-                Err(_) => Ok(CreateElicitationResult { action: ElicitationAction::Decline, content: None }),
+                Err(_) => Ok(CreateElicitationResult::new(ElicitationAction::Decline)),
             },
 
-            Err(_) => Ok(CreateElicitationResult { action: ElicitationAction::Decline, content: None }),
+            Err(_) => Ok(CreateElicitationResult::new(ElicitationAction::Decline)),
         }
     }
 

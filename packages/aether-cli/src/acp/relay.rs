@@ -266,7 +266,7 @@ async fn handle_elicitation_request(actor_handle: &AcpActorHandle, elicitation: 
         Ok(ref response) => parse_elicitation_response(response),
         Err(e) => {
             error!("Failed to send elicitation ext_method: {:?}", e);
-            CreateElicitationResult { action: rmcp::model::ElicitationAction::Cancel, content: None }
+            CreateElicitationResult::new(rmcp::model::ElicitationAction::Cancel)
         }
     };
 
@@ -295,10 +295,14 @@ fn parse_elicitation_response(response: &acp::ExtResponse) -> CreateElicitationR
     let parsed: Result<ElicitationResponse, _> = serde_json::from_str(response.0.get());
 
     match parsed {
-        Ok(r) => CreateElicitationResult { action: r.action, content: r.content },
+        Ok(r) => {
+            let mut result = CreateElicitationResult::new(r.action);
+            result.content = r.content;
+            result
+        }
         Err(e) => {
             error!("Failed to parse elicitation response: {:?}", e);
-            CreateElicitationResult { action: rmcp::model::ElicitationAction::Cancel, content: None }
+            CreateElicitationResult::new(rmcp::model::ElicitationAction::Cancel)
         }
     }
 }
