@@ -2,10 +2,10 @@
 
 ## Key Commands
 
-- **Compile** -- use LSP tools, or `cargo check` if you must
-- **Tests** -- `cargo nextest run`
-- **Lint** -- `cargo clippy`
-- **Format** -- `cargo fmt`
+- **Compile** -- use LSP tools, or `just check` if you must
+- **Tests** -- `just test`
+- **Lint** -- `just lint`
+- **Format** -- `just fmt`
 
 ## Coding Style
 
