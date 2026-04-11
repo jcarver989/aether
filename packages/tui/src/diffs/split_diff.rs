@@ -40,7 +40,6 @@ fn highlight_split_diff(preview: &DiffPreview, context: &ViewContext) -> Vec<Lin
     let left_panel_u16 = (GUTTER_WIDTH + left_content) as u16;
     #[allow(clippy::cast_possible_truncation)]
     let right_panel_u16 = (GUTTER_WIDTH + right_content) as u16;
-    let sep_style = Style::fg(theme.muted()).bg_color(theme.background());
 
     let mut row_frames: Vec<Frame> = Vec::new();
     let mut visual_lines = 0usize;
@@ -56,7 +55,7 @@ fn highlight_split_diff(preview: &DiffPreview, context: &ViewContext) -> Vec<Lin
             break;
         }
 
-        let sep_line = Line::with_style(SEPARATOR.to_string(), sep_style);
+        let sep_line = Line::new(SEPARATOR.to_string());
         let sep_frame = Frame::new(vec![sep_line; height]);
         row_frames.push(Frame::hstack([
             FramePart::new(left_frame, left_panel_u16),
@@ -385,6 +384,29 @@ mod tests {
         let first_width = lines[0].display_width();
         for (i, line) in lines.iter().enumerate() {
             assert_eq!(line.display_width(), first_width, "line {i} width mismatch");
+        }
+    }
+
+    #[test]
+    fn separator_has_no_background_on_context_row() {
+        let preview = make_split_preview(vec![SplitDiffRow {
+            left: Some(SplitDiffCell { tag: DiffTag::Context, content: "hello".to_string(), line_number: Some(1) }),
+            right: Some(SplitDiffCell { tag: DiffTag::Context, content: "world".to_string(), line_number: Some(1) }),
+        }]);
+        let ctx = test_context_with_width(100);
+        let lines = highlight_split_diff(&preview, &ctx);
+        assert_eq!(lines.len(), 1);
+
+        let usable = 100usize - FIXED_OVERHEAD;
+        let left_content = usable / 2;
+        let sep_start = GUTTER_WIDTH + left_content;
+        for col in sep_start..(sep_start + SEPARATOR_WIDTH) {
+            let style = style_at_column(&lines[0], col);
+            assert!(
+                style.bg.is_none(),
+                "separator column {col} should have no background on context row, got {:?}",
+                style.bg
+            );
         }
     }
 

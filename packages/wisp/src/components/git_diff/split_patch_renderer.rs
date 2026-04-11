@@ -13,7 +13,6 @@ pub fn build_split_patch_base_lines(file: &FileDiff, width: usize, ctx: &ViewCon
     let right_content = usable.saturating_sub(left_content);
     let left_panel_u16 = usize_to_u16_saturating(tui::GUTTER_WIDTH + left_content);
     let right_panel_u16 = usize_to_u16_saturating(tui::GUTTER_WIDTH + right_content);
-    let sep_style = tui::Style::fg(theme.muted()).bg_color(theme.background());
 
     let mut patch_lines = Vec::new();
     let mut patch_refs = Vec::new();
@@ -63,7 +62,7 @@ pub fn build_split_patch_base_lines(file: &FileDiff, width: usize, ctx: &ViewCon
                     let right_frame = tui::split_render_cell(right_cell.as_ref(), right_content, lang_hint, ctx);
                     let height = left_frame.lines().len().max(right_frame.lines().len());
 
-                    let sep_line = Line::with_style(tui::SEPARATOR.to_string(), sep_style);
+                    let sep_line = Line::new(tui::SEPARATOR.to_string());
                     let sep_frame = tui::Frame::new(vec![sep_line; height]);
                     let row_frame = tui::Frame::hstack([
                         tui::FramePart::new(left_frame, left_panel_u16),
