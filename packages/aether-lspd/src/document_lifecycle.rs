@@ -21,6 +21,7 @@ struct DocumentState {
 struct DocumentEntry {
     open_holders: usize,
     content_hash: Option<u64>,
+    needs_refresh: bool,
 }
 
 pub(crate) enum AcquireAction {
@@ -32,6 +33,7 @@ pub(crate) enum AcquireAction {
 
 pub(crate) enum ReleaseAction {
     Close,
+    CloseAndRefresh,
     Unchanged,
 }
 
@@ -79,14 +81,32 @@ impl DocumentLifecycle {
         }
 
         entry.open_holders -= 1;
-        if entry.open_holders == 0 { ReleaseAction::Close } else { ReleaseAction::Unchanged }
+        if entry.open_holders > 0 {
+            return ReleaseAction::Unchanged;
+        }
+
+        if entry.needs_refresh {
+            entry.needs_refresh = false;
+            ReleaseAction::CloseAndRefresh
+        } else {
+            ReleaseAction::Close
+        }
     }
 
     pub(crate) async fn filter_watcher_changes(&self, changes: Vec<FileEvent>) -> Vec<FileEvent> {
-        let state = self.state.read().await;
+        let mut state = self.state.write().await;
         changes
             .into_iter()
-            .filter(|change| state.documents.get(&change.uri).is_none_or(|entry| entry.open_holders == 0))
+            .filter_map(|change| {
+                if let Some(entry) = state.documents.get_mut(&change.uri)
+                    && entry.open_holders > 0
+                {
+                    entry.needs_refresh = true;
+                    None
+                } else {
+                    Some(change)
+                }
+            })
             .collect()
     }
 }
@@ -201,6 +221,42 @@ mod tests {
         let filtered = lifecycle.filter_watcher_changes(changes).await;
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].uri, other_uri);
+    }
+
+    #[tokio::test]
+    async fn suppressed_watcher_change_requests_refresh_after_close() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("main.rs");
+        std::fs::write(&path, "fn main() {}\n").unwrap();
+        let uri = uri_for(&path);
+        let lifecycle = DocumentLifecycle::new();
+
+        assert!(matches!(lifecycle.acquire(&uri).await, AcquireAction::Open { .. }));
+
+        let filtered = lifecycle
+            .filter_watcher_changes(vec![FileEvent { uri: uri.clone(), typ: lsp_types::FileChangeType::CHANGED }])
+            .await;
+        assert!(filtered.is_empty());
+        assert!(matches!(lifecycle.release(&uri).await, ReleaseAction::CloseAndRefresh));
+    }
+
+    #[tokio::test]
+    async fn suppressed_watcher_change_waits_for_last_release() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("main.rs");
+        std::fs::write(&path, "fn main() {}\n").unwrap();
+        let uri = uri_for(&path);
+        let lifecycle = DocumentLifecycle::new();
+
+        assert!(matches!(lifecycle.acquire(&uri).await, AcquireAction::Open { .. }));
+        assert!(matches!(lifecycle.acquire(&uri).await, AcquireAction::Unchanged));
+
+        let filtered = lifecycle
+            .filter_watcher_changes(vec![FileEvent { uri: uri.clone(), typ: lsp_types::FileChangeType::CHANGED }])
+            .await;
+        assert!(filtered.is_empty());
+        assert!(matches!(lifecycle.release(&uri).await, ReleaseAction::Unchanged));
+        assert!(matches!(lifecycle.release(&uri).await, ReleaseAction::CloseAndRefresh));
     }
 
     #[tokio::test]

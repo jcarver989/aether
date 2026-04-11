@@ -19,8 +19,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-const DIAGNOSTICS_TIMEOUT: Duration = Duration::from_secs(10);
-const BACKGROUND_REFRESH_TIMEOUT: Duration = Duration::from_secs(10);
+const DIAGNOSTICS_TIMEOUT: Duration = Duration::from_secs(20);
+const BACKGROUND_REFRESH_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub(crate) struct WorkspaceSession {
     transport: ProcessTransport,
@@ -82,7 +82,7 @@ impl WorkspaceSession {
     }
 
     pub(crate) async fn close_document(&self, uri: &Uri) {
-        release_document(&self.transport, &self.documents, uri).await;
+        release_document(&self.transport, &self.documents, &self.refresh, uri).await;
     }
 
     pub(crate) async fn get_diagnostics(&self, uri: Option<&Uri>) -> Vec<PublishDiagnosticsParams> {
@@ -135,9 +135,21 @@ async fn sync_document(
     Some(version_before)
 }
 
-async fn release_document(transport: &ProcessTransport, documents: &DocumentLifecycle, uri: &Uri) {
-    if matches!(documents.release(uri).await, ReleaseAction::Close) {
-        transport.send_notification(close_notification(uri)).await;
+async fn release_document(
+    transport: &ProcessTransport,
+    documents: &DocumentLifecycle,
+    refresh: &RefreshQueue,
+    uri: &Uri,
+) {
+    match documents.release(uri).await {
+        ReleaseAction::Close => {
+            transport.send_notification(close_notification(uri)).await;
+        }
+        ReleaseAction::CloseAndRefresh => {
+            transport.send_notification(close_notification(uri)).await;
+            refresh.enqueue(vec![uri.clone()]).await;
+        }
+        ReleaseAction::Unchanged => {}
     }
 }
 
@@ -148,7 +160,7 @@ async fn run_background_refresh_worker(
     refresh: RefreshQueue,
 ) {
     while let Some(uri) = refresh.recv().await {
-        refresh_uri(&transport, &documents, &diagnostics, &uri).await;
+        refresh_uri(&transport, &documents, &diagnostics, &refresh, &uri).await;
     }
 }
 
@@ -156,13 +168,15 @@ async fn refresh_uri(
     transport: &ProcessTransport,
     documents: &DocumentLifecycle,
     diagnostics: &DiagnosticsStore,
+    refresh: &RefreshQueue,
     uri: &Uri,
 ) {
-    if let Some(version_before) = sync_document(transport, documents, diagnostics, uri).await {
+    let sync_result = sync_document(transport, documents, diagnostics, uri).await;
+    if let Some(version_before) = sync_result {
         diagnostics.wait_for_uri_fresh(uri, version_before, DIAGNOSTICS_TIMEOUT).await;
     }
 
-    release_document(transport, documents, uri).await;
+    release_document(transport, documents, refresh, uri).await;
 }
 
 async fn bootstrap_workspace_refresh(
