@@ -208,6 +208,7 @@ fn build_response_request(model: &str, context: &Context) -> Result<CreateRespon
                     r#type: MessageType::Message,
                     role: Role::User,
                     content: map_user_content_for_responses(content)?,
+                    phase: None,
                 }));
             }
             ChatMessage::Assistant { content, tool_calls, .. } => {
@@ -216,6 +217,7 @@ fn build_response_request(model: &str, context: &Context) -> Result<CreateRespon
                         r#type: MessageType::Message,
                         role: Role::Assistant,
                         content: EasyInputContent::Text(content.clone()),
+                        phase: None,
                     }));
                 }
                 for tc in tool_calls {
@@ -223,6 +225,7 @@ fn build_response_request(model: &str, context: &Context) -> Result<CreateRespon
                         call_id: tc.id.clone(),
                         name: tc.name.clone(),
                         arguments: tc.arguments.clone(),
+                        namespace: None,
                         id: None,
                         status: None,
                     })));
@@ -245,6 +248,7 @@ fn build_response_request(model: &str, context: &Context) -> Result<CreateRespon
                     r#type: MessageType::Message,
                     role: Role::User,
                     content: EasyInputContent::Text(format!("[Previous conversation handoff]\n\n{content}")),
+                    phase: None,
                 }));
             }
             ChatMessage::Error { .. } => {}
@@ -300,6 +304,7 @@ fn map_tools(tools: &[ToolDefinition]) -> Result<Vec<Tool>> {
                 description: Some(t.description.clone()),
                 parameters: Some(parameters),
                 strict: Some(false),
+                defer_loading: None,
             }))
         })
         .collect()

@@ -208,6 +208,7 @@ mod tests {
                     name: "read_file".to_string(),
                     arguments: String::new(),
                     status: None,
+                    namespace: None,
                 }),
             }),
             ResponseStreamEvent::ResponseFunctionCallArgumentsDelta(ResponseFunctionCallArgumentsDeltaEvent {

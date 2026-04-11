@@ -24,6 +24,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> crate::Result<(Option<String>, 
                     r#type: MessageType::Message,
                     role: Role::User,
                     content: map_user_content_for_responses(content)?,
+                    phase: None,
                 }));
             }
             ChatMessage::Assistant { content, tool_calls, reasoning, .. } => {
@@ -44,6 +45,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> crate::Result<(Option<String>, 
                         call_id: tc.id.clone(),
                         name: tc.name.clone(),
                         arguments: tc.arguments.clone(),
+                        namespace: None,
                         id: None,
                         status: None,
                     })));
@@ -92,6 +94,7 @@ pub fn map_tools(tools: &[ToolDefinition]) -> Result<Vec<Tool>> {
                 description: Some(tool.description.clone()),
                 parameters: Some(parameters),
                 strict: None,
+                defer_loading: None,
             }))
         })
         .collect()
