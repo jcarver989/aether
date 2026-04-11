@@ -1,6 +1,7 @@
 use std::env;
 use std::fmt;
 use std::io;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
@@ -68,7 +69,8 @@ fn try_exec_in_container(image: &str) -> Result<ExitCode, SandboxError> {
     let inner_args = filter_sandbox_arg(&args);
     let env_vars = select_forwarded_vars(env::vars());
 
-    let docker_args = build_docker_args(image, &cwd, &aether_home, &env_vars, &inner_args);
+    let tty = io::stdin().is_terminal();
+    let docker_args = build_docker_args(image, &cwd, &aether_home, &env_vars, &inner_args, tty);
 
     exec_docker(&docker_args)
 }
@@ -147,24 +149,30 @@ fn build_docker_args(
     aether_home: &Path,
     env_vars: &[(String, String)],
     inner_args: &[String],
+    tty: bool,
 ) -> Vec<String> {
-    let mut args = vec![
-        "run".to_string(),
-        "--rm".to_string(),
-        "-i".to_string(),
-        "--network".to_string(),
-        "host".to_string(),
-        "-w".to_string(),
-        "/workspace".to_string(),
-        "-v".to_string(),
-        format!("{}:/workspace", cwd.display()),
-        "-v".to_string(),
-        format!("{}:/root/.aether", aether_home.display()),
-        "-e".to_string(),
-        "AETHER_HOME=/root/.aether".to_string(),
-        "-e".to_string(),
-        "AETHER_INSIDE_SANDBOX=1".to_string(),
-    ];
+    let mut args = vec!["run".to_string(), "--rm".to_string(), "-i".to_string()];
+    if tty {
+        args.push("-t".to_string());
+    }
+    args.extend(
+        [
+            "--network",
+            "host",
+            "-w",
+            "/workspace",
+            "-v",
+            &format!("{}:/workspace", cwd.display()),
+            "-v",
+            &format!("{}:/root/.aether", aether_home.display()),
+            "-e",
+            "AETHER_HOME=/root/.aether",
+            "-e",
+            "AETHER_INSIDE_SANDBOX=1",
+        ]
+        .iter()
+        .map(ToString::to_string),
+    );
 
     for (key, value) in env_vars {
         args.push("-e".to_string());
@@ -307,11 +315,12 @@ mod tests {
         let env_vars = vec![("ANTHROPIC_API_KEY".to_string(), "sk-123".to_string())];
         let inner_args = vec!["aether".to_string(), "headless".to_string(), "-m".to_string(), "gpt-4".to_string()];
 
-        let args = build_docker_args("test-image:latest", cwd, aether_home, &env_vars, &inner_args);
+        let args = build_docker_args("test-image:latest", cwd, aether_home, &env_vars, &inner_args, false);
 
         assert!(args.contains(&"run".to_string()));
         assert!(args.contains(&"--rm".to_string()));
         assert!(args.contains(&"-i".to_string()));
+        assert!(!args.contains(&"-t".to_string()));
         assert!(args.contains(&"--network".to_string()));
         assert!(args.contains(&"host".to_string()));
         assert!(args.contains(&"/workspace".to_string()));
@@ -340,6 +349,7 @@ mod tests {
             aether_home,
             &[],
             &["aether".to_string(), "headless".to_string()],
+            false,
         );
 
         assert!(args.contains(&"my-go-sandbox:v2".to_string()));
@@ -347,10 +357,20 @@ mod tests {
     }
 
     #[test]
+    fn build_docker_args_adds_tty_flag_when_requested() {
+        let cwd = Path::new("/tmp");
+        let aether_home = Path::new("/home/user/.aether");
+        let args = build_docker_args("test-image", cwd, aether_home, &[], &["aether".to_string()], true);
+
+        assert!(args.contains(&"-t".to_string()));
+        assert!(args.contains(&"-i".to_string()));
+    }
+
+    #[test]
     fn build_docker_args_skips_binary_name_only() {
         let cwd = Path::new("/tmp");
         let aether_home = Path::new("/home/user/.aether");
-        let args = build_docker_args("test-image:latest", cwd, aether_home, &[], &["aether".to_string()]);
+        let args = build_docker_args("test-image:latest", cwd, aether_home, &[], &["aether".to_string()], false);
 
         // Only the binary name — nothing after image
         assert_eq!(args.last().unwrap(), "test-image:latest");
