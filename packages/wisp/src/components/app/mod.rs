@@ -18,7 +18,7 @@ use acp_utils::config_option_id::ConfigOptionId;
 use agent_client_protocol::{self as acp, SessionId};
 use attachments::build_attachment_blocks;
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
 use tui::RendererCommand;
 use tui::{Component, Event, Frame, KeyEvent, ViewContext};
@@ -34,6 +34,7 @@ pub struct App {
     agent_name: String,
     context_usage_pct: Option<u8>,
     exit_requested: bool,
+    ctrl_c_pressed_at: Option<Instant>,
     conversation_screen: ConversationScreen,
     prompt_capabilities: acp::PromptCapabilities,
     config_options: Vec<acp::SessionConfigOption>,
@@ -65,6 +66,7 @@ impl App {
             agent_name,
             context_usage_pct: None,
             exit_requested: false,
+            ctrl_c_pressed_at: None,
             conversation_screen: ConversationScreen::new(keybindings.clone(), content_padding),
             prompt_capabilities,
             config_options: config_options.to_vec(),
@@ -84,6 +86,10 @@ impl App {
         self.exit_requested
     }
 
+    pub fn exit_confirmation_active(&self) -> bool {
+        self.ctrl_c_pressed_at.is_some()
+    }
+
     pub fn has_settings_overlay(&self) -> bool {
         self.settings_overlay.is_some()
     }
@@ -93,7 +99,7 @@ impl App {
     }
 
     pub fn wants_tick(&self) -> bool {
-        self.conversation_screen.wants_tick()
+        self.conversation_screen.wants_tick() || self.ctrl_c_pressed_at.is_some()
     }
 
     fn git_diff_mode_mut(&mut self) -> &mut GitDiffMode {
@@ -144,7 +150,14 @@ impl App {
 
     async fn handle_key(&mut self, commands: &mut Vec<RendererCommand>, key_event: KeyEvent) {
         if self.keybindings.exit.matches(key_event) {
-            self.exit_requested = true;
+            match self.ctrl_c_pressed_at {
+                Some(_) => {
+                    self.exit_requested = true;
+                }
+                None => {
+                    self.ctrl_c_pressed_at = Some(Instant::now());
+                }
+            }
             return;
         }
 
@@ -488,6 +501,11 @@ impl Component for App {
                 self.handle_conversation_messages(&mut commands, outcome).await;
             }
             Event::Tick => {
+                if let Some(instant) = self.ctrl_c_pressed_at
+                    && instant.elapsed() > Duration::from_secs(1)
+                {
+                    self.ctrl_c_pressed_at = None;
+                }
                 let now = Instant::now();
                 self.conversation_screen.on_tick(now);
             }
@@ -627,7 +645,7 @@ mod tests {
     use crate::components::conversation_screen::Modal;
     use crate::components::conversation_window::SegmentContent;
     use crate::components::elicitation_form::ElicitationForm;
-    use crate::settings::{ThemeSettings as WispThemeSettings, WispSettings, save_settings};
+    use crate::settings::{DEFAULT_CONTENT_PADDING, ThemeSettings as WispThemeSettings, WispSettings, save_settings};
     use crate::test_helpers::with_wisp_home;
     use std::fs;
     use std::time::Duration;
@@ -868,10 +886,15 @@ mod tests {
         app.keybindings.exit = KeyBinding::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
 
         send_key(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
-        assert!(!app.exit_requested(), "default Ctrl+C should no longer exit");
+        assert!(!app.exit_requested(), "default Ctrl+C should not exit");
+        assert!(!app.exit_confirmation_active(), "Ctrl+C should not trigger exit confirmation when rebound");
 
         send_key(&mut app, KeyCode::Char('q'), KeyModifiers::CONTROL).await;
-        assert!(app.exit_requested(), "custom Ctrl+Q should exit");
+        assert!(!app.exit_requested(), "first Ctrl+Q should trigger confirmation, not exit");
+        assert!(app.exit_confirmation_active(), "first Ctrl+Q should activate confirmation");
+
+        send_key(&mut app, KeyCode::Char('q'), KeyModifiers::CONTROL).await;
+        assert!(app.exit_requested(), "second Ctrl+Q should exit");
     }
 
     #[tokio::test]
@@ -1304,5 +1327,56 @@ mod tests {
             app.conversation_screen.pending_url_elicitations.is_empty(),
             "pending URL elicitations should be cleared on reset"
         );
+    }
+
+    #[tokio::test]
+    async fn first_ctrl_c_does_not_exit() {
+        let mut app = make_app();
+        send_key(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert!(!app.exit_requested(), "first Ctrl-C should not exit");
+        assert!(app.exit_confirmation_active(), "first Ctrl-C should activate confirmation");
+    }
+
+    #[tokio::test]
+    async fn second_ctrl_c_exits() {
+        let mut app = make_app();
+        send_key(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert!(!app.exit_requested());
+        send_key(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        assert!(app.exit_requested(), "second Ctrl-C should exit");
+    }
+
+    #[tokio::test]
+    async fn ctrl_c_confirmation_expires_on_tick() {
+        let mut app = make_app();
+        app.ctrl_c_pressed_at = Some(Instant::now().checked_sub(Duration::from_secs(4)).unwrap());
+        assert!(app.exit_confirmation_active());
+        app.on_event(&Event::Tick).await;
+        assert!(!app.exit_confirmation_active(), "confirmation should expire after timeout");
+    }
+
+    #[test]
+    fn status_line_shows_warning_when_confirmation_active() {
+        use crate::components::status_line::StatusLine;
+        let options = vec![acp::SessionConfigOption::select(
+            "model",
+            "Model",
+            "m1",
+            vec![acp::SessionConfigSelectOption::new("m1", "M1")],
+        )];
+        let status = StatusLine {
+            agent_name: "test-agent",
+            config_options: &options,
+            context_pct_left: None,
+            waiting_for_response: false,
+            unhealthy_server_count: 0,
+            content_padding: DEFAULT_CONTENT_PADDING,
+            exit_confirmation_active: true,
+        };
+        let context = ViewContext::new((120, 40));
+        let frame = status.render(&context);
+        let text = frame.lines()[0].plain_text();
+        assert!(text.contains("Ctrl-C again to exit"), "should show warning, got: {text}");
+        assert!(!text.contains("test-agent"), "should not show agent name during confirmation, got: {text}");
     }
 }

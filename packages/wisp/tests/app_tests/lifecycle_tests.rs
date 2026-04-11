@@ -20,8 +20,10 @@ async fn test_ctrl_c_emits_exit() {
     renderer.initial_render().unwrap();
 
     let action = renderer.on_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)).await.unwrap();
+    assert!(matches!(action, LoopAction::Continue), "first Ctrl-C should not exit");
 
-    assert!(matches!(action, LoopAction::Exit));
+    let action = renderer.on_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)).await.unwrap();
+    assert!(matches!(action, LoopAction::Exit), "second Ctrl-C should exit");
 }
 
 #[tokio::test]

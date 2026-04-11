@@ -145,6 +145,16 @@ async fn test_command_picker_ctrl_c_exits() {
         })
         .await
         .unwrap();
+    assert!(matches!(action, LoopAction::Continue), "first Ctrl-C should not exit");
 
-    assert!(matches!(action, LoopAction::Exit));
+    let action = renderer
+        .on_key_event(KeyEvent {
+            code: KeyCode::Char('c'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        })
+        .await
+        .unwrap();
+    assert!(matches!(action, LoopAction::Exit), "second Ctrl-C should exit");
 }

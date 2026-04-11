@@ -157,7 +157,17 @@ async fn test_settings_menu_ctrl_c_exits() {
         })
         .await
         .unwrap();
-    assert!(matches!(action, LoopAction::Exit));
+    assert!(matches!(action, LoopAction::Continue), "first Ctrl-C should not exit");
+    let action = r
+        .on_key_event(KeyEvent {
+            code: KeyCode::Char('c'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        })
+        .await
+        .unwrap();
+    assert!(matches!(action, LoopAction::Exit), "second Ctrl-C should exit");
 }
 
 #[tokio::test]

@@ -175,6 +175,7 @@ impl Component for StatusLineStory {
             waiting_for_response: false,
             unhealthy_server_count: 0,
             content_padding: wisp::settings::DEFAULT_CONTENT_PADDING,
+            exit_confirmation_active: false,
         };
         status.render(ctx)
     }

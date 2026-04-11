@@ -1,4 +1,5 @@
-use crossterm::event::{Event as CrosstermEvent, read};
+use crossterm::event::{Event as CrosstermEvent, poll, read};
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::spawn_blocking;
 
@@ -9,16 +10,18 @@ pub fn spawn_terminal_event_task() -> mpsc::UnboundedReceiver<CrosstermEvent> {
     let (tx, rx) = mpsc::unbounded_channel();
     spawn_blocking(move || {
         loop {
-            let event = match read() {
-                Ok(event) => event,
-                Err(e) => {
-                    eprintln!("Event read error: {e}");
-                    continue;
-                }
-            };
-
-            if tx.send(event).is_err() {
+            if tx.is_closed() {
                 break;
+            }
+
+            match poll(Duration::from_millis(50)).and_then(|ready| ready.then(read).transpose()) {
+                Ok(Some(event)) => {
+                    if tx.send(event).is_err() {
+                        break;
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => eprintln!("Terminal event error: {e}"),
             }
         }
     });

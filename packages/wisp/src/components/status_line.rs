@@ -15,6 +15,7 @@ pub struct StatusLine<'a> {
     pub waiting_for_response: bool,
     pub unhealthy_server_count: usize,
     pub content_padding: usize,
+    pub exit_confirmation_active: bool,
 }
 
 impl StatusLine<'_> {
@@ -28,16 +29,21 @@ impl StatusLine<'_> {
         let sep = context.theme.text_secondary();
 
         left_line.push_text(" ".repeat(self.content_padding));
-        left_line.push_styled(self.agent_name, context.theme.info());
 
-        if let Some(ref mode) = mode_display {
-            left_line.push_styled(" · ", sep);
-            left_line.push_styled(mode.as_str(), context.theme.secondary());
-        }
+        if self.exit_confirmation_active {
+            left_line.push_styled("Ctrl-C again to exit", context.theme.warning());
+        } else {
+            left_line.push_styled(self.agent_name, context.theme.info());
 
-        if let Some(ref model) = model_display {
-            left_line.push_styled(" · ", sep);
-            left_line.push_styled(model.as_str(), context.theme.success());
+            if let Some(ref mode) = mode_display {
+                left_line.push_styled(" · ", sep);
+                left_line.push_styled(mode.as_str(), context.theme.secondary());
+            }
+
+            if let Some(ref model) = model_display {
+                left_line.push_styled(" · ", sep);
+                left_line.push_styled(model.as_str(), context.theme.success());
+            }
         }
 
         let mut right_parts: Vec<(String, Color)> = Vec::new();
@@ -208,6 +214,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 0,
             content_padding: DEFAULT_CONTENT_PADDING,
+            exit_confirmation_active: false,
         };
 
         let context = ViewContext::new((120, 40));
@@ -229,6 +236,7 @@ mod tests {
             waiting_for_response: false,
             unhealthy_server_count: 0,
             content_padding: DEFAULT_CONTENT_PADDING,
+            exit_confirmation_active: false,
         };
 
         let context = ViewContext::new((120, 40));

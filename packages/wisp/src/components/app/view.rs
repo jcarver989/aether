@@ -26,5 +26,6 @@ fn make_status_line(app: &App) -> StatusLine<'_> {
         waiting_for_response: app.conversation_screen.is_waiting(),
         unhealthy_server_count: settings::unhealthy_server_count(&app.server_statuses),
         content_padding: app.content_padding,
+        exit_confirmation_active: app.exit_confirmation_active(),
     }
 }

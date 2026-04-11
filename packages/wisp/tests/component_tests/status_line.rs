@@ -85,6 +85,7 @@ impl<'a> StatusBuilder<'a> {
             waiting_for_response: self.waiting,
             unhealthy_server_count: self.unhealthy,
             content_padding: DEFAULT_CONTENT_PADDING,
+            exit_confirmation_active: false,
         };
         let ctx = ViewContext::new((self.width, 24));
         let frame = status.render(&ctx);
