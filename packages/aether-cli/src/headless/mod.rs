@@ -17,6 +17,46 @@ pub enum OutputFormat {
     Json,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
+#[clap(rename_all = "snake_case")]
+pub enum CliEventKind {
+    Text,
+    Thought,
+    ToolCall,
+    ToolResult,
+    ToolError,
+    Error,
+    Cancelled,
+    AutoContinue,
+    ModelSwitched,
+    ToolProgress,
+    ContextCompactionStarted,
+    ContextCompactionResult,
+    ContextUsage,
+    ContextCleared,
+}
+
+impl CliEventKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Thought => "thought",
+            Self::ToolCall => "tool_call",
+            Self::ToolResult => "tool_result",
+            Self::ToolError => "tool_error",
+            Self::Error => "error",
+            Self::Cancelled => "cancelled",
+            Self::AutoContinue => "auto_continue",
+            Self::ModelSwitched => "model_switched",
+            Self::ToolProgress => "tool_progress",
+            Self::ContextCompactionStarted => "context_compaction_started",
+            Self::ContextCompactionResult => "context_compaction_result",
+            Self::ContextUsage => "context_usage",
+            Self::ContextCleared => "context_cleared",
+        }
+    }
+}
+
 pub struct RunConfig {
     pub prompt: String,
     pub cwd: PathBuf,
@@ -25,6 +65,7 @@ pub struct RunConfig {
     pub system_prompt: Option<String>,
     pub output: OutputFormat,
     pub verbose: bool,
+    pub events: Vec<CliEventKind>,
 }
 
 pub async fn run_headless(args: HeadlessArgs) -> Result<ExitCode, CliError> {
@@ -46,6 +87,7 @@ pub async fn run_headless(args: HeadlessArgs) -> Result<ExitCode, CliError> {
         system_prompt: args.system_prompt,
         output,
         verbose: args.verbose,
+        events: args.events,
     };
 
     run::run(config).await
@@ -88,9 +130,14 @@ pub struct HeadlessArgs {
     #[arg(long, default_value = "text")]
     pub output: CliOutputFormat,
 
-    /// Verbose logging to stderr
+    /// Verbose diagnostic logging to stderr.
     #[arg(short, long)]
     pub verbose: bool,
+
+    /// Comma-separated list of events to emit (e.g. `tool_call,tool_result`).
+    /// Omit to emit everything. When set, `error` is only shown if explicitly listed.
+    #[arg(long = "events", value_enum, value_delimiter = ',')]
+    pub events: Vec<CliEventKind>,
 }
 
 fn resolve_prompt(args: &HeadlessArgs) -> Result<String, CliError> {

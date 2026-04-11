@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use tokio::sync::mpsc;
 
 use super::error::CliError;
-use super::{OutputFormat, RunConfig};
+use super::{CliEventKind, OutputFormat, RunConfig};
 use crate::runtime::RuntimeBuilder;
 
 pub async fn run(config: RunConfig) -> Result<ExitCode, CliError> {
@@ -22,20 +22,56 @@ pub async fn run(config: RunConfig) -> Result<ExitCode, CliError> {
         .await
         .map_err(|e| CliError::AgentError(format!("Failed to send prompt: {e}")))?;
 
-    Ok(stream_output(agent.agent_rx, &config.output).await)
+    Ok(stream_output(agent.agent_rx, &config.output, &config.events).await)
 }
 
-async fn stream_output(mut rx: mpsc::Receiver<AgentMessage>, format: &OutputFormat) -> ExitCode {
+async fn stream_output(
+    mut rx: mpsc::Receiver<AgentMessage>,
+    format: &OutputFormat,
+    events: &[CliEventKind],
+) -> ExitCode {
     while let Some(msg) = rx.recv().await {
-        match format {
-            OutputFormat::Text => emit_text(&msg),
-            OutputFormat::Pretty | OutputFormat::Json => emit_event(&msg),
+        if should_emit(&msg, events) {
+            match format {
+                OutputFormat::Text => emit_text(&msg),
+                OutputFormat::Pretty | OutputFormat::Json => emit_event(&msg),
+            }
         }
         if matches!(msg, AgentMessage::Done) {
             break;
         }
     }
     ExitCode::SUCCESS
+}
+
+fn should_emit(msg: &AgentMessage, include: &[CliEventKind]) -> bool {
+    if include.is_empty() {
+        return true;
+    }
+    event_kind(msg).is_none_or(|ty| include.contains(&ty))
+}
+
+fn event_kind(msg: &AgentMessage) -> Option<CliEventKind> {
+    match msg {
+        AgentMessage::Text { is_complete: true, .. } => Some(CliEventKind::Text),
+        AgentMessage::Thought { is_complete: true, .. } => Some(CliEventKind::Thought),
+        AgentMessage::ToolCall { .. } => Some(CliEventKind::ToolCall),
+        AgentMessage::ToolResult { .. } => Some(CliEventKind::ToolResult),
+        AgentMessage::ToolError { .. } => Some(CliEventKind::ToolError),
+        AgentMessage::Error { .. } => Some(CliEventKind::Error),
+        AgentMessage::Cancelled { .. } => Some(CliEventKind::Cancelled),
+        AgentMessage::AutoContinue { .. } => Some(CliEventKind::AutoContinue),
+        AgentMessage::ModelSwitched { .. } => Some(CliEventKind::ModelSwitched),
+        AgentMessage::ToolProgress { .. } => Some(CliEventKind::ToolProgress),
+        AgentMessage::ContextCompactionStarted { .. } => Some(CliEventKind::ContextCompactionStarted),
+        AgentMessage::ContextCompactionResult { .. } => Some(CliEventKind::ContextCompactionResult),
+        AgentMessage::ContextUsageUpdate { .. } => Some(CliEventKind::ContextUsage),
+        AgentMessage::ContextCleared => Some(CliEventKind::ContextCleared),
+        AgentMessage::Text { is_complete: false, .. }
+        | AgentMessage::Thought { is_complete: false, .. }
+        | AgentMessage::ToolCallUpdate { .. }
+        | AgentMessage::Done => None,
+    }
 }
 
 fn format_text(msg: &AgentMessage) -> Option<String> {
@@ -60,7 +96,39 @@ fn format_text(msg: &AgentMessage) -> Option<String> {
 
         AgentMessage::ModelSwitched { previous, new } => Some(format!("Model switched: {previous} -> {new}")),
 
-        _ => None,
+        AgentMessage::ToolProgress { request, progress, total, message } => {
+            let bar = match total {
+                Some(t) => format!("{progress}/{t}"),
+                None => format!("{progress}"),
+            };
+            let suffix = message.as_deref().map(|m| format!(" - {m}")).unwrap_or_default();
+            Some(format!("Tool progress [{}]: {bar}{suffix}", request.name))
+        }
+
+        AgentMessage::ContextCompactionStarted { message_count } => {
+            Some(format!("Context compaction started ({message_count} messages)"))
+        }
+
+        AgentMessage::ContextCompactionResult { summary, messages_removed } => {
+            Some(format!("Context compacted: {messages_removed} messages removed. {summary}"))
+        }
+
+        AgentMessage::ContextUsageUpdate {
+            input_tokens,
+            output_tokens,
+            total_input_tokens,
+            total_output_tokens,
+            ..
+        } => Some(format!(
+            "Tokens: {input_tokens} in, {output_tokens} out (total: {total_input_tokens} in, {total_output_tokens} out)"
+        )),
+
+        AgentMessage::ContextCleared => Some("Context cleared".to_string()),
+
+        AgentMessage::ToolCallUpdate { .. }
+        | AgentMessage::Text { .. }
+        | AgentMessage::Thought { .. }
+        | AgentMessage::Done => None,
     }
 }
 
@@ -74,39 +142,144 @@ fn emit_text(msg: &AgentMessage) {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn emit_event(msg: &AgentMessage) {
+    let kind = event_kind(msg).map_or("", CliEventKind::as_str);
     match msg {
-        AgentMessage::Text { chunk, is_complete: true, .. } => tracing::info!(target: "agent", "{chunk}"),
+        AgentMessage::Text { chunk, is_complete: true, .. } => {
+            tracing::info!(target: "agent", kind, "{chunk}");
+        }
 
-        AgentMessage::Thought { chunk, is_complete: true, .. } => tracing::info!(target: "agent", thought = %chunk),
+        AgentMessage::Thought { chunk, is_complete: true, .. } => {
+            tracing::info!(target: "agent", kind, thought = %chunk);
+        }
 
         AgentMessage::ToolCall { request, .. } => {
-            tracing::info!(target: "agent", tool = %request.name, arguments = %request.arguments);
+            tracing::info!(
+                target: "agent",
+                kind,
+                tool = %request.name,
+                arguments = %request.arguments,
+            );
         }
 
         AgentMessage::ToolResult { result, .. } => {
-            tracing::info!(target: "agent", tool = %result.name, result = %result.result);
+            tracing::info!(
+                target: "agent",
+                kind,
+                tool = %result.name,
+                result = %result.result,
+            );
         }
 
         AgentMessage::ToolError { error, .. } => {
-            tracing::warn!(target: "agent", tool = %error.name, error = %error.error);
+            tracing::warn!(
+                target: "agent",
+                kind,
+                tool = %error.name,
+                error = %error.error,
+            );
         }
 
-        AgentMessage::Error { message } => tracing::error!(target: "agent", "{message}"),
+        AgentMessage::Error { message } => {
+            tracing::error!(target: "agent", kind, "{message}");
+        }
 
         AgentMessage::Cancelled { message } => {
-            tracing::info!(target: "agent", cancelled = %message);
+            tracing::info!(target: "agent", kind, cancelled = %message);
         }
 
         AgentMessage::AutoContinue { attempt, max_attempts } => {
-            tracing::info!(target: "agent", "Continuing ({attempt}/{max_attempts})...");
+            tracing::info!(
+                target: "agent",
+                kind,
+                attempt,
+                max_attempts,
+                "Continuing ({attempt}/{max_attempts})..."
+            );
         }
 
         AgentMessage::ModelSwitched { previous, new } => {
-            tracing::info!(target: "agent", "Model switched: {previous} -> {new}");
+            tracing::info!(
+                target: "agent",
+                kind,
+                previous = %previous,
+                new = %new,
+                "Model switched: {previous} -> {new}"
+            );
         }
 
-        _ => {}
+        AgentMessage::ToolProgress { request, progress, total, message } => {
+            tracing::info!(
+                target: "agent",
+                kind,
+                tool = %request.name,
+                progress,
+                total = ?total,
+                message = ?message,
+            );
+        }
+
+        AgentMessage::ContextCompactionStarted { message_count } => {
+            tracing::info!(
+                target: "agent",
+                kind,
+                message_count,
+                "context compaction started"
+            );
+        }
+
+        AgentMessage::ContextCompactionResult { summary, messages_removed } => {
+            tracing::info!(
+                target: "agent",
+                kind,
+                messages_removed,
+                summary = %summary,
+                "context compaction result"
+            );
+        }
+
+        AgentMessage::ContextUsageUpdate {
+            usage_ratio,
+            context_limit,
+            input_tokens,
+            output_tokens,
+            cache_read_tokens,
+            cache_creation_tokens,
+            reasoning_tokens,
+            total_input_tokens,
+            total_output_tokens,
+            total_cache_read_tokens,
+            total_cache_creation_tokens,
+            total_reasoning_tokens,
+        } => {
+            tracing::info!(
+                target: "agent",
+                kind,
+                usage_ratio = ?usage_ratio,
+                context_limit = ?context_limit,
+                input_tokens,
+                output_tokens,
+                cache_read_tokens = cache_read_tokens.unwrap_or(0),
+                cache_creation_tokens = cache_creation_tokens.unwrap_or(0),
+                reasoning_tokens = reasoning_tokens.unwrap_or(0),
+                total_input_tokens,
+                total_output_tokens,
+                total_cache_read_tokens,
+                total_cache_creation_tokens,
+                total_reasoning_tokens,
+                "context usage"
+            );
+        }
+
+        AgentMessage::ContextCleared => {
+            tracing::info!(target: "agent", kind, "context cleared");
+        }
+
+        AgentMessage::ToolCallUpdate { .. }
+        | AgentMessage::Text { .. }
+        | AgentMessage::Thought { .. }
+        | AgentMessage::Done => {}
     }
 }
 
@@ -151,46 +324,6 @@ mod tests {
     use tracing_subscriber::Layer;
     use tracing_subscriber::fmt;
     use tracing_subscriber::layer::SubscriberExt;
-
-    fn with_test_subscriber<F: FnOnce()>(f: F) -> String {
-        let buf = Arc::new(Mutex::new(Vec::new()));
-        let buf_clone = Arc::clone(&buf);
-
-        let writer = move || -> TestWriter { TestWriter { buf: Arc::clone(&buf_clone) } };
-
-        let layer = fmt::layer()
-            .with_writer(writer)
-            .with_ansi(false)
-            .with_level(false)
-            .with_target(false)
-            .with_timer(fmt::time::uptime())
-            .with_filter(tracing_subscriber::filter::filter_fn(|meta| meta.target().starts_with("agent")));
-
-        let subscriber = tracing_subscriber::registry().with(layer);
-
-        tracing::subscriber::with_default(subscriber, f);
-
-        let bytes = buf.lock().unwrap();
-        String::from_utf8(bytes.clone()).unwrap()
-    }
-
-    #[derive(Clone)]
-    struct TestWriter {
-        buf: Arc<Mutex<Vec<u8>>>,
-    }
-
-    impl io::Write for TestWriter {
-        fn write(&mut self, data: &[u8]) -> io::Result<usize> {
-            self.buf.lock().unwrap().extend_from_slice(data);
-            Ok(data.len())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-
-    // --- emit_event tests (Pretty/Json mode) ---
 
     #[test]
     fn emit_event_emits_complete_text() {
@@ -393,5 +526,273 @@ mod tests {
     #[test]
     fn emit_text_skips_done() {
         assert_eq!(format_text(&AgentMessage::Done), None);
+    }
+
+    fn tool_progress(progress: f64, total: Option<f64>, message: Option<&str>) -> AgentMessage {
+        AgentMessage::ToolProgress {
+            request: llm::ToolCallRequest {
+                id: "tc1".to_string(),
+                name: "bash".to_string(),
+                arguments: "{}".to_string(),
+            },
+            progress,
+            total,
+            message: message.map(str::to_string),
+        }
+    }
+
+    fn usage_update() -> AgentMessage {
+        AgentMessage::ContextUsageUpdate {
+            usage_ratio: Some(0.25),
+            context_limit: Some(200_000),
+            input_tokens: 1500,
+            output_tokens: 250,
+            cache_read_tokens: Some(400),
+            cache_creation_tokens: Some(100),
+            reasoning_tokens: Some(50),
+            total_input_tokens: 5000,
+            total_output_tokens: 800,
+            total_cache_read_tokens: 1200,
+            total_cache_creation_tokens: 300,
+            total_reasoning_tokens: 150,
+        }
+    }
+
+    #[test]
+    fn emit_text_formats_tool_progress_with_total() {
+        let msg = tool_progress(50.0, Some(100.0), Some("halfway"));
+        assert_eq!(format_text(&msg), Some("Tool progress [bash]: 50/100 - halfway".to_string()));
+    }
+
+    #[test]
+    fn emit_text_formats_tool_progress_without_total() {
+        let msg = tool_progress(42.0, None, None);
+        assert_eq!(format_text(&msg), Some("Tool progress [bash]: 42".to_string()));
+    }
+
+    #[test]
+    fn emit_text_formats_context_compaction_started() {
+        let msg = AgentMessage::ContextCompactionStarted { message_count: 42 };
+        assert_eq!(format_text(&msg), Some("Context compaction started (42 messages)".to_string()));
+    }
+
+    #[test]
+    fn emit_text_formats_context_compaction_result() {
+        let msg = AgentMessage::ContextCompactionResult { summary: "summary here".to_string(), messages_removed: 10 };
+        assert_eq!(format_text(&msg), Some("Context compacted: 10 messages removed. summary here".to_string()));
+    }
+
+    #[test]
+    fn emit_text_formats_context_usage_update() {
+        assert_eq!(
+            format_text(&usage_update()),
+            Some("Tokens: 1500 in, 250 out (total: 5000 in, 800 out)".to_string())
+        );
+    }
+
+    #[test]
+    fn emit_text_formats_context_cleared() {
+        assert_eq!(format_text(&AgentMessage::ContextCleared), Some("Context cleared".to_string()));
+    }
+
+    #[test]
+    fn emit_event_emits_tool_progress() {
+        let output = with_test_subscriber(|| emit_event(&tool_progress(3.0, Some(10.0), Some("step"))));
+        assert!(output.contains("tool_progress"), "missing type: {output}");
+        assert!(output.contains("bash"), "missing tool name: {output}");
+        assert!(output.contains('3'), "missing progress: {output}");
+    }
+
+    #[test]
+    fn emit_event_emits_context_compaction_started() {
+        let msg = AgentMessage::ContextCompactionStarted { message_count: 7 };
+        let output = with_test_subscriber(|| emit_event(&msg));
+        assert!(output.contains("context_compaction_started"), "missing type: {output}");
+        assert!(output.contains('7'), "missing message_count: {output}");
+    }
+
+    #[test]
+    fn emit_event_emits_context_compaction_result() {
+        let msg = AgentMessage::ContextCompactionResult { summary: "done".to_string(), messages_removed: 5 };
+        let output = with_test_subscriber(|| emit_event(&msg));
+        assert!(output.contains("context_compaction_result"), "missing type: {output}");
+        assert!(output.contains("done"), "missing summary: {output}");
+    }
+
+    #[test]
+    fn emit_event_emits_context_usage_update() {
+        let output = with_test_subscriber(|| emit_event(&usage_update()));
+        assert!(output.contains("context_usage"), "missing type: {output}");
+        assert!(output.contains("1500"), "missing input_tokens: {output}");
+        assert!(output.contains("5000"), "missing total_input_tokens: {output}");
+    }
+
+    #[test]
+    fn emit_event_emits_context_cleared() {
+        let output = with_test_subscriber(|| emit_event(&AgentMessage::ContextCleared));
+        assert!(output.contains("context_cleared"), "missing type: {output}");
+    }
+
+    #[test]
+    fn emit_event_includes_type_for_tool_call() {
+        let msg = AgentMessage::ToolCall {
+            request: llm::ToolCallRequest {
+                id: "tc1".to_string(),
+                name: "bash".to_string(),
+                arguments: "{}".to_string(),
+            },
+            model_name: "test".to_string(),
+        };
+        let output = with_test_subscriber(|| emit_event(&msg));
+        assert!(output.contains("tool_call"), "missing type: {output}");
+    }
+
+    fn tool_call_msg() -> AgentMessage {
+        AgentMessage::ToolCall {
+            request: llm::ToolCallRequest {
+                id: "tc1".to_string(),
+                name: "bash".to_string(),
+                arguments: "{}".to_string(),
+            },
+            model_name: "test".to_string(),
+        }
+    }
+
+    fn tool_result_msg() -> AgentMessage {
+        AgentMessage::ToolResult {
+            result: llm::ToolCallResult {
+                id: "tc1".to_string(),
+                name: "bash".to_string(),
+                arguments: "{}".to_string(),
+                result: "ok".to_string(),
+            },
+            result_meta: None,
+            model_name: "test".to_string(),
+        }
+    }
+
+    #[test]
+    fn event_kind_none_for_non_filterable_variants() {
+        assert_eq!(event_kind(&AgentMessage::Done), None);
+        assert_eq!(event_kind(&AgentMessage::text("id", "x", false, "m")), None);
+        assert_eq!(event_kind(&AgentMessage::thought("id", "x", false, "m")), None);
+        assert_eq!(
+            event_kind(&AgentMessage::ToolCallUpdate {
+                tool_call_id: "tc1".to_string(),
+                chunk: "x".to_string(),
+                model_name: "m".to_string(),
+            }),
+            None,
+        );
+    }
+
+    #[test]
+    fn should_emit_empty_filter_allows_everything() {
+        assert!(should_emit(&tool_call_msg(), &[]));
+        assert!(should_emit(&AgentMessage::Error { message: "e".to_string() }, &[]));
+        assert!(should_emit(&AgentMessage::Done, &[]));
+    }
+
+    #[test]
+    fn should_emit_single_type_whitelist() {
+        let filter = &[CliEventKind::ToolCall];
+        assert!(should_emit(&tool_call_msg(), filter));
+        assert!(!should_emit(&tool_result_msg(), filter));
+        assert!(!should_emit(&AgentMessage::Error { message: "e".to_string() }, filter));
+    }
+
+    #[test]
+    fn should_emit_multi_type_whitelist() {
+        let filter = &[CliEventKind::ToolCall, CliEventKind::ToolResult];
+        assert!(should_emit(&tool_call_msg(), filter));
+        assert!(should_emit(&tool_result_msg(), filter));
+        assert!(!should_emit(&AgentMessage::Error { message: "e".to_string() }, filter));
+    }
+
+    #[test]
+    fn should_emit_none_typed_variants_pass_through_even_with_filter() {
+        let filter = &[CliEventKind::ToolCall];
+        assert!(should_emit(&AgentMessage::Done, filter));
+        assert!(should_emit(&AgentMessage::text("id", "x", false, "m"), filter));
+        assert!(should_emit(
+            &AgentMessage::ToolCallUpdate {
+                tool_call_id: "tc1".to_string(),
+                chunk: "x".to_string(),
+                model_name: "m".to_string(),
+            },
+            filter,
+        ));
+    }
+
+    #[tokio::test]
+    async fn stream_output_filter_only_emits_whitelisted_types() {
+        let (tx, rx) = mpsc::channel(16);
+        tx.send(tool_call_msg()).await.unwrap();
+        tx.send(tool_result_msg()).await.unwrap();
+        tx.send(AgentMessage::Error { message: "boom".to_string() }).await.unwrap();
+        tx.send(AgentMessage::Done).await.unwrap();
+        drop(tx);
+
+        let filter = vec![CliEventKind::ToolCall];
+        let (_guard, buf) = test_subscriber_guard();
+
+        let code = stream_output(rx, &OutputFormat::Pretty, &filter).await;
+        assert_eq!(code, ExitCode::SUCCESS);
+
+        let output = String::from_utf8(buf.lock().unwrap().clone()).unwrap();
+        assert!(output.contains("tool_call"), "tool_call missing: {output}");
+        assert!(!output.contains("tool_result"), "tool_result leaked past filter: {output}");
+        assert!(!output.contains("boom"), "error leaked past filter: {output}");
+    }
+
+    #[tokio::test]
+    async fn stream_output_done_breaks_loop_under_filter() {
+        let (tx, rx) = mpsc::channel(4);
+        tx.send(AgentMessage::Done).await.unwrap();
+        let filter = vec![CliEventKind::ToolCall];
+        let code = stream_output(rx, &OutputFormat::Text, &filter).await;
+        assert_eq!(code, ExitCode::SUCCESS);
+    }
+
+    fn test_subscriber_guard() -> (tracing::subscriber::DefaultGuard, Arc<Mutex<Vec<u8>>>) {
+        let buf = Arc::new(Mutex::new(Vec::new()));
+        let buf_clone = Arc::clone(&buf);
+
+        let writer = move || -> TestWriter { TestWriter { buf: Arc::clone(&buf_clone) } };
+
+        let layer = fmt::layer()
+            .with_writer(writer)
+            .with_ansi(false)
+            .with_level(false)
+            .with_target(false)
+            .with_timer(fmt::time::uptime())
+            .with_filter(tracing_subscriber::filter::filter_fn(|meta| meta.target().starts_with("agent")));
+
+        let subscriber = tracing_subscriber::registry().with(layer);
+        let guard = tracing::subscriber::set_default(subscriber);
+        (guard, buf)
+    }
+
+    fn with_test_subscriber<F: FnOnce()>(f: F) -> String {
+        let (_guard, buf) = test_subscriber_guard();
+        f();
+        let bytes = buf.lock().unwrap();
+        String::from_utf8(bytes.clone()).unwrap()
+    }
+
+    #[derive(Clone)]
+    struct TestWriter {
+        buf: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl io::Write for TestWriter {
+        fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+            self.buf.lock().unwrap().extend_from_slice(data);
+            Ok(data.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
     }
 }
