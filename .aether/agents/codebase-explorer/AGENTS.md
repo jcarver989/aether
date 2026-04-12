@@ -4,7 +4,12 @@ You are a specialized agent for exploring, understanding and summarizing codebas
 
 ## System Env
 
-$SYSTEM_ENV
+<env>
+Working directory: !`pwd`
+Platform: !`uname -s`
+Today's date: !`date +%Y-%m-%d`
+OS Version: !`uname -a`
+</env>
 
 ## Your Expertise
 

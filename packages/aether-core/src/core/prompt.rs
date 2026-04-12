@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
 use tokio::fs;
-use tokio::process::Command;
 use tracing::warn;
+use utils::shell_expander::ShellExpander;
 use utils::substitution::substitute_parameters;
 
 #[derive(Debug, Clone)]
@@ -23,7 +23,6 @@ pub enum Prompt {
         patterns: Vec<String>,
         cwd: PathBuf,
     },
-    SystemEnv(Option<PathBuf>),
     McpInstructions(Vec<ServerInstructions>),
 }
 
@@ -44,14 +43,9 @@ impl Prompt {
         Self::PromptGlobs { patterns, cwd }
     }
 
-    pub fn system_env() -> Self {
-        Self::SystemEnv(None)
-    }
-
     pub fn with_cwd(self, cwd: PathBuf) -> Self {
         match self {
             Self::File { path, args, .. } => Self::File { path, args, cwd: Some(cwd) },
-            Self::SystemEnv(_) => Self::SystemEnv(Some(cwd)),
             Self::PromptGlobs { patterns, .. } => Self::PromptGlobs { patterns, cwd },
             Self::Text(_) | Self::McpInstructions(_) => self,
         }
@@ -68,10 +62,10 @@ impl Prompt {
             Prompt::File { path, args, cwd } => {
                 let content = Self::resolve_file(&PathBuf::from(path)).await?;
                 let substituted = substitute_parameters(&content, args);
-                Self::expand_builtins(&substituted, cwd.as_deref()).await
+                let expander = ShellExpander::new();
+                Self::expand_builtins(&substituted, cwd.as_deref(), &expander).await
             }
             Prompt::PromptGlobs { patterns, cwd } => Self::resolve_prompt_globs(patterns, cwd).await,
-            Prompt::SystemEnv(cwd) => Self::resolve_system_env(cwd.as_deref()).await,
             Prompt::McpInstructions(instructions) => Ok(format_mcp_instructions(instructions)),
         }
     }
@@ -96,6 +90,7 @@ impl Prompt {
 
     async fn resolve_prompt_globs(patterns: &[String], cwd: &Path) -> Result<String> {
         let mut contents = Vec::new();
+        let expander = ShellExpander::new();
 
         for pattern in patterns {
             let full_pattern = if Path::new(pattern).is_absolute() {
@@ -114,7 +109,7 @@ impl Prompt {
                 if path.is_file() {
                     match fs::read_to_string(&path).await {
                         Ok(content) => {
-                            let expanded = Self::expand_builtins(&content, Some(cwd)).await?;
+                            let expanded = Self::expand_builtins(&content, Some(cwd), &expander).await?;
                             contents.push(expanded);
                         }
                         Err(e) => {
@@ -128,53 +123,19 @@ impl Prompt {
         Ok(contents.join("\n\n"))
     }
 
-    /// Expand builtin directives like `$SYSTEM_ENV` in prompt file content.
-    async fn expand_builtins(content: &str, cwd: Option<&Path>) -> Result<String> {
-        if !content.contains("$SYSTEM_ENV") {
-            return Ok(content.to_string());
-        }
-        let env_block = Self::resolve_system_env(cwd).await?;
-        Ok(content.replace("$SYSTEM_ENV", &env_block))
-    }
-
-    async fn resolve_system_env(cwd: Option<&Path>) -> Result<String> {
+    /// Expand `` !`command` `` shell-interpolation markers in prompt content.
+    ///
+    /// Thin wrapper around [`ShellExpander::expand`] that resolves `cwd` from
+    /// the process working directory when `None` and maps failures to
+    /// [`AgentError::IoError`].
+    async fn expand_builtins(content: &str, cwd: Option<&Path>, expander: &ShellExpander) -> Result<String> {
         let cwd = match cwd {
             Some(dir) => dir.to_path_buf(),
             None => {
                 env::current_dir().map_err(|e| AgentError::IoError(format!("Failed to get current directory: {e}")))?
             }
         };
-
-        let os_version = Command::new("uname")
-            .arg("-a")
-            .output()
-            .await
-            .ok()
-            .and_then(|output| String::from_utf8(output.stdout).ok())
-            .and_then(|version| {
-                let version = version.trim();
-                if version.is_empty() { None } else { Some(format!("OS Version: {version}")) }
-            });
-
-        let is_git_repo = fs::metadata(cwd.join(".git")).await.map(|m| m.is_dir()).unwrap_or(false);
-
-        let working_dir = if is_git_repo {
-            format!("Working directory: {} (git repo)", cwd.display())
-        } else {
-            format!("Working directory: {}", cwd.display())
-        };
-
-        let mut lines = vec![
-            working_dir,
-            format!("Platform: {}", env::consts::OS),
-            format!("Today's date: {}", chrono::Local::now().format("%Y-%m-%d")),
-        ];
-
-        if let Some(os) = os_version {
-            lines.push(os);
-        }
-
-        Ok(format!("<env>\n{}\n</env>", lines.join("\n")))
+        expander.expand(content, &cwd).await.map_err(|e| AgentError::IoError(e.to_string()))
     }
 }
 
@@ -210,23 +171,6 @@ mod tests {
         let prompts = vec![Prompt::text("Part one"), Prompt::text("Part two")];
         let result = Prompt::build_all(&prompts).await.unwrap();
         assert_eq!(result, "Part one\n\nPart two");
-    }
-
-    #[tokio::test]
-    async fn resolve_system_env_contains_expected_fields() {
-        let result = Prompt::resolve_system_env(None).await.unwrap();
-        assert!(result.contains("<env>"));
-        assert!(result.contains("</env>"));
-        assert!(result.contains("Working directory:"));
-        assert!(result.contains("Platform:"));
-        assert!(result.contains("Today's date:"));
-    }
-
-    #[tokio::test]
-    async fn resolve_system_env_uses_provided_cwd() {
-        let cwd = std::env::temp_dir();
-        let result = Prompt::resolve_system_env(Some(cwd.as_path())).await.unwrap();
-        assert!(result.contains(&cwd.display().to_string()));
     }
 
     #[tokio::test]
@@ -295,37 +239,65 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn expand_builtins_replaces_system_env() {
-        let result = Prompt::expand_builtins("Before\n$SYSTEM_ENV\nAfter", None).await.unwrap();
-        assert!(result.starts_with("Before\n<env>"));
-        assert!(result.contains("</env>"));
-        assert!(result.ends_with("</env>\nAfter"));
-    }
-
-    #[tokio::test]
     async fn expand_builtins_no_op_without_marker() {
         let content = "Just some plain content with no directives";
-        let result = Prompt::expand_builtins(content, None).await.unwrap();
+        let expander = ShellExpander::new();
+        let result = Prompt::expand_builtins(content, None, &expander).await.unwrap();
         assert_eq!(result, content);
     }
 
     #[tokio::test]
-    async fn expand_builtins_with_cwd() {
-        let cwd = std::env::temp_dir();
-        let result = Prompt::expand_builtins("$SYSTEM_ENV", Some(cwd.as_path())).await.unwrap();
-        assert!(result.contains(&cwd.display().to_string()));
+    async fn expand_builtins_runs_shell_command() {
+        let expander = ShellExpander::new();
+        let result = Prompt::expand_builtins("branch: !`echo main`", None, &expander).await.unwrap();
+        assert_eq!(result, "branch: main");
     }
 
     #[tokio::test]
-    async fn prompt_globs_expands_system_env_in_file() {
+    async fn expand_builtins_runs_command_in_cwd() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("AGENTS.md"), "Instructions\n\n$SYSTEM_ENV\n\nRules").unwrap();
+        std::fs::write(dir.path().join("sentinel.txt"), "").unwrap();
+
+        let expander = ShellExpander::new();
+        let result = Prompt::expand_builtins("files: !`ls`", Some(dir.path()), &expander).await.unwrap();
+        assert!(result.contains("sentinel.txt"), "expected sentinel.txt in output: {result}");
+    }
+
+    #[tokio::test]
+    async fn expand_builtins_handles_multiple_commands() {
+        let expander = ShellExpander::new();
+        let result = Prompt::expand_builtins("a=!`echo one`, b=!`echo two`", None, &expander).await.unwrap();
+        assert_eq!(result, "a=one, b=two");
+    }
+
+    #[tokio::test]
+    async fn expand_builtins_propagates_command_failure() {
+        let expander = ShellExpander::new();
+        let err = Prompt::expand_builtins("!`exit 1`", None, &expander).await.unwrap_err();
+        let AgentError::IoError(msg) = err else {
+            panic!("expected IoError, got {err:?}");
+        };
+        assert!(msg.contains("exit 1"), "message should name the failing command: {msg}");
+        assert!(msg.contains("exit"), "message should describe the exit status: {msg}");
+    }
+
+    #[tokio::test]
+    async fn expand_builtins_trims_trailing_whitespace() {
+        let expander = ShellExpander::new();
+        let result = Prompt::expand_builtins("!`printf 'hi\\n\\n'`", None, &expander).await.unwrap();
+        assert_eq!(result, "hi");
+    }
+
+    #[tokio::test]
+    async fn prompt_globs_expands_shell_in_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("AGENTS.md"), "Instructions\n\nbranch: !`echo main`\n\nRules").unwrap();
 
         let prompt = Prompt::from_globs(vec!["AGENTS.md".to_string()], dir.path().to_path_buf());
         let result = prompt.build().await.unwrap();
         assert!(result.contains("Instructions"));
-        assert!(result.contains("<env>"));
+        assert!(result.contains("branch: main"));
         assert!(result.contains("Rules"));
-        assert!(!result.contains("$SYSTEM_ENV"));
+        assert!(!result.contains("!`"));
     }
 }

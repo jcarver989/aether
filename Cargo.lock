@@ -82,6 +82,7 @@ dependencies = [
  "clap",
  "futures",
  "glob",
+ "regex",
  "reqwest 0.13.2",
  "rmcp",
  "schemars",

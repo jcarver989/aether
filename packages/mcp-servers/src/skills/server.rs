@@ -18,6 +18,7 @@ use std::sync::Arc;
 use std::{collections::HashMap, fmt::Display};
 use std::{fs, path::Path};
 use tokio::sync::RwLock;
+use utils::shell_expander::ShellExpander;
 use utils::substitution::substitute_parameters;
 
 use super::tools::{
@@ -66,6 +67,7 @@ enum SkillFileError {
     FileNotFound(PathBuf),
     IoError(io::Error),
     InvalidUtf8,
+    ShellInterpFailed(String),
 }
 
 impl Display for SkillFileError {
@@ -79,6 +81,7 @@ impl Display for SkillFileError {
             SkillFileError::FileNotFound(path) => write!(f, "File not found: {}", path.display()),
             SkillFileError::IoError(e) => write!(f, "IO error: {e}"),
             SkillFileError::InvalidUtf8 => write!(f, "File content is not valid UTF-8"),
+            SkillFileError::ShellInterpFailed(msg) => write!(f, "Shell interpolation failed: {msg}"),
         }
     }
 }
@@ -214,18 +217,27 @@ impl SkillsMcp {
         files
     }
 
-    fn load_skill_file(&self, request: &SkillRequest) -> SkillFile {
+    async fn load_skill_file(&self, request: &SkillRequest, expander: &ShellExpander) -> SkillFile {
         let name = request.name.clone();
         let path = request.path.clone().unwrap_or_else(|| SKILL_FILENAME.to_string());
 
-        let result = self.resolve_skill_file(request).and_then(|(resolved, _)| {
+        let skill_dir = self.find_skill_dir(&name);
+        let read_result = self.resolve_skill_file(request).and_then(|(resolved, _)| {
             fs::read_to_string(&resolved).map_err(|e| match e.kind() {
                 io::ErrorKind::InvalidData => SkillFileError::InvalidUtf8,
                 _ => SkillFileError::IoError(e),
             })
         });
 
-        match result {
+        let expanded = match (read_result, skill_dir) {
+            (Ok(content), Some(dir)) => {
+                expander.expand(&content, &dir).await.map_err(|e| SkillFileError::ShellInterpFailed(e.to_string()))
+            }
+            (Ok(content), None) => Ok(content),
+            (Err(e), _) => Err(e),
+        };
+
+        match expanded {
             Ok(content) => {
                 let available_files =
                     if path == SKILL_FILENAME { self.list_available_files(&name) } else { Vec::new() };
@@ -293,6 +305,11 @@ impl ServerHandler for SkillsMcp {
         });
 
         let content = substitute_parameters(&body, &arguments);
+        let expander = ShellExpander::new();
+        let cwd = self.roots.read().await.first().cloned().unwrap_or_else(|| PathBuf::from("."));
+        let content = expander.expand(&content, &cwd).await.map_err(|e| {
+            McpError::internal_error(format!("Shell interpolation failed in prompt '{}': {e}", spec.name), None)
+        })?;
         let messages = vec![PromptMessage::new_text(PromptMessageRole::User, content)];
 
         Ok(GetPromptResult::new(messages).with_description(spec.description.clone()))
@@ -305,8 +322,11 @@ impl SkillsMcp {
     #[tool]
     pub async fn get_skills(&self, request: Parameters<LoadSkillsInput>) -> Result<Json<LoadSkillsOutput>, String> {
         let Parameters(args) = request;
-
-        let files: Vec<SkillFile> = args.requests.into_iter().map(|req| self.load_skill_file(&req)).collect();
+        let expander = ShellExpander::new();
+        let mut files = Vec::with_capacity(args.requests.len());
+        for req in args.requests {
+            files.push(self.load_skill_file(&req, &expander).await);
+        }
 
         Ok(Json(LoadSkillsOutput { files }))
     }
@@ -351,8 +371,14 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_load_skill_file_root() {
+    async fn load(server: &SkillsMcp, name: &str, path: Option<&str>) -> SkillFile {
+        let expander = ShellExpander::new();
+        let request = SkillRequest { name: name.to_string(), path: path.map(str::to_string) };
+        server.load_skill_file(&request, &expander).await
+    }
+
+    #[tokio::test]
+    async fn test_load_skill_file_root() {
         let temp_dir = TempDir::new().unwrap();
         create_skill(
             &temp_dir,
@@ -362,7 +388,7 @@ mod tests {
         );
 
         let server = SkillsMcp::new(vec![temp_dir.path().to_path_buf()]);
-        let result = server.load_skill_file(&SkillRequest { name: "test-skill".to_string(), path: None });
+        let result = load(&server, "test-skill", None).await;
 
         assert_eq!(result.name, "test-skill");
         assert_eq!(result.path, "SKILL.md");
@@ -371,8 +397,8 @@ mod tests {
         assert!(result.error.is_none());
     }
 
-    #[test]
-    fn test_load_skill_file_auxiliary() {
+    #[tokio::test]
+    async fn test_load_skill_file_auxiliary() {
         let temp_dir = TempDir::new().unwrap();
         create_skill(
             &temp_dir,
@@ -382,16 +408,15 @@ mod tests {
         );
 
         let server = SkillsMcp::new(vec![temp_dir.path().to_path_buf()]);
-        let result = server
-            .load_skill_file(&SkillRequest { name: "test-skill".to_string(), path: Some("traits.md".to_string()) });
+        let result = load(&server, "test-skill", Some("traits.md")).await;
 
         assert_eq!(result.path, "traits.md");
         assert_eq!(result.content.unwrap(), "# Traits content");
         assert!(result.available_files.is_empty());
     }
 
-    #[test]
-    fn test_load_skill_file_nested() {
+    #[tokio::test]
+    async fn test_load_skill_file_nested() {
         let temp_dir = TempDir::new().unwrap();
         create_skill(
             &temp_dir,
@@ -401,55 +426,47 @@ mod tests {
         );
 
         let server = SkillsMcp::new(vec![temp_dir.path().to_path_buf()]);
-        let result = server.load_skill_file(&SkillRequest {
-            name: "test-skill".to_string(),
-            path: Some("references/REF.md".to_string()),
-        });
+        let result = load(&server, "test-skill", Some("references/REF.md")).await;
 
         assert_eq!(result.path, "references/REF.md");
         assert_eq!(result.content.unwrap(), "# Reference");
     }
 
-    #[test]
-    fn test_reject_absolute_path() {
+    #[tokio::test]
+    async fn test_reject_absolute_path() {
         let temp_dir = TempDir::new().unwrap();
         create_skill(&temp_dir, "test-skill", "---\ndescription: Test\nagent-invocable: true\n---\n# Test", &[]);
 
         let server = SkillsMcp::new(vec![temp_dir.path().to_path_buf()]);
-        let result = server
-            .load_skill_file(&SkillRequest { name: "test-skill".to_string(), path: Some("/etc/passwd".to_string()) });
+        let result = load(&server, "test-skill", Some("/etc/passwd")).await;
 
         assert!(result.error.unwrap().contains("Absolute paths"));
     }
 
-    #[test]
-    fn test_reject_traversal() {
+    #[tokio::test]
+    async fn test_reject_traversal() {
         let temp_dir = TempDir::new().unwrap();
         create_skill(&temp_dir, "test-skill", "---\ndescription: Test\nagent-invocable: true\n---\n# Test", &[]);
 
         let server = SkillsMcp::new(vec![temp_dir.path().to_path_buf()]);
-        let result = server.load_skill_file(&SkillRequest {
-            name: "test-skill".to_string(),
-            path: Some("../other-skill/SKILL.md".to_string()),
-        });
+        let result = load(&server, "test-skill", Some("../other-skill/SKILL.md")).await;
 
         assert!(result.error.unwrap().contains("traversal"));
     }
 
-    #[test]
-    fn test_reject_directory() {
+    #[tokio::test]
+    async fn test_reject_directory() {
         let temp_dir = TempDir::new().unwrap();
         create_skill(&temp_dir, "test-skill", "---\ndescription: Test\nagent-invocable: true\n---\n# Test", &[]);
 
         let server = SkillsMcp::new(vec![temp_dir.path().to_path_buf()]);
-        let result =
-            server.load_skill_file(&SkillRequest { name: "test-skill".to_string(), path: Some(".".to_string()) });
+        let result = load(&server, "test-skill", Some(".")).await;
 
         assert!(result.error.unwrap().contains("directory"));
     }
 
-    #[test]
-    fn test_available_files() {
+    #[tokio::test]
+    async fn test_available_files() {
         let temp_dir = TempDir::new().unwrap();
         create_skill(
             &temp_dir,
@@ -464,7 +481,7 @@ mod tests {
         );
 
         let server = SkillsMcp::new(vec![temp_dir.path().to_path_buf()]);
-        let result = server.load_skill_file(&SkillRequest { name: "test-skill".to_string(), path: None });
+        let result = load(&server, "test-skill", None).await;
 
         assert_eq!(result.available_files.len(), 3);
         assert!(result.available_files.contains(&"error-handling.md".to_string()));
@@ -473,33 +490,30 @@ mod tests {
         assert!(!result.available_files.contains(&"SKILL.md".to_string()));
     }
 
-    #[test]
-    fn test_skill_not_found() {
+    #[tokio::test]
+    async fn test_skill_not_found() {
         let temp_dir = TempDir::new().unwrap();
         fs::create_dir_all(temp_dir.path().join("skills")).unwrap();
 
         let server = SkillsMcp::new(vec![temp_dir.path().to_path_buf()]);
-        let result = server.load_skill_file(&SkillRequest { name: "nonexistent".to_string(), path: None });
+        let result = load(&server, "nonexistent", None).await;
 
         assert!(result.error.unwrap().contains("not found"));
     }
 
-    #[test]
-    fn test_file_not_found() {
+    #[tokio::test]
+    async fn test_file_not_found() {
         let temp_dir = TempDir::new().unwrap();
         create_skill(&temp_dir, "test-skill", "---\ndescription: Test\nagent-invocable: true\n---\n# Test", &[]);
 
         let server = SkillsMcp::new(vec![temp_dir.path().to_path_buf()]);
-        let result = server.load_skill_file(&SkillRequest {
-            name: "test-skill".to_string(),
-            path: Some("nonexistent.md".to_string()),
-        });
+        let result = load(&server, "test-skill", Some("nonexistent.md")).await;
 
         assert!(result.error.unwrap().contains("not found"));
     }
 
-    #[test]
-    fn test_batch_requests() {
+    #[tokio::test]
+    async fn test_batch_requests() {
         let temp_dir = TempDir::new().unwrap();
         create_skill(
             &temp_dir,
@@ -510,15 +524,17 @@ mod tests {
         create_skill(&temp_dir, "python", "---\ndescription: Python skill\nagent-invocable: true\n---\n# Python", &[]);
 
         let server = SkillsMcp::new(vec![temp_dir.path().to_path_buf()]);
-        let input = LoadSkillsInput {
-            requests: vec![
-                SkillRequest { name: "rust".to_string(), path: None },
-                SkillRequest { name: "rust".to_string(), path: Some("traits.md".to_string()) },
-                SkillRequest { name: "python".to_string(), path: None },
-            ],
-        };
+        let expander = ShellExpander::new();
+        let requests = vec![
+            SkillRequest { name: "rust".to_string(), path: None },
+            SkillRequest { name: "rust".to_string(), path: Some("traits.md".to_string()) },
+            SkillRequest { name: "python".to_string(), path: None },
+        ];
 
-        let files: Vec<SkillFile> = input.requests.into_iter().map(|req| server.load_skill_file(&req)).collect();
+        let mut files = Vec::with_capacity(requests.len());
+        for req in requests {
+            files.push(server.load_skill_file(&req, &expander).await);
+        }
 
         assert_eq!(files.len(), 3);
 
@@ -537,21 +553,23 @@ mod tests {
         assert!(files[2].content.is_some());
     }
 
-    #[test]
-    fn test_mixed_success_failure() {
+    #[tokio::test]
+    async fn test_mixed_success_failure() {
         let temp_dir = TempDir::new().unwrap();
         create_skill(&temp_dir, "exists", "---\ndescription: Exists\nagent-invocable: true\n---\n# Exists", &[]);
 
         let server = SkillsMcp::new(vec![temp_dir.path().to_path_buf()]);
-        let input = LoadSkillsInput {
-            requests: vec![
-                SkillRequest { name: "exists".to_string(), path: None },
-                SkillRequest { name: "nonexistent".to_string(), path: None },
-                SkillRequest { name: "exists".to_string(), path: Some("missing.md".to_string()) },
-            ],
-        };
+        let expander = ShellExpander::new();
+        let requests = vec![
+            SkillRequest { name: "exists".to_string(), path: None },
+            SkillRequest { name: "nonexistent".to_string(), path: None },
+            SkillRequest { name: "exists".to_string(), path: Some("missing.md".to_string()) },
+        ];
 
-        let files: Vec<SkillFile> = input.requests.into_iter().map(|req| server.load_skill_file(&req)).collect();
+        let mut files = Vec::with_capacity(requests.len());
+        for req in requests {
+            files.push(server.load_skill_file(&req, &expander).await);
+        }
 
         assert_eq!(files.len(), 3);
 
@@ -565,21 +583,21 @@ mod tests {
         assert!(files[2].error.as_ref().unwrap().contains("not found"));
     }
 
-    #[test]
-    fn test_multi_dir_last_wins() {
+    #[tokio::test]
+    async fn test_multi_dir_last_wins() {
         let dir_a = TempDir::new().unwrap();
         let dir_b = TempDir::new().unwrap();
         create_skill(&dir_a, "rust", "---\ndescription: Rust A\nagent-invocable: true\n---\n# From A", &[]);
         create_skill(&dir_b, "rust", "---\ndescription: Rust B\nagent-invocable: true\n---\n# From B", &[]);
 
         let server = SkillsMcp::new(vec![dir_a.path().to_path_buf(), dir_b.path().to_path_buf()]);
-        let result = server.load_skill_file(&SkillRequest { name: "rust".to_string(), path: None });
+        let result = load(&server, "rust", None).await;
 
         assert!(result.content.as_ref().unwrap().contains("From B"));
     }
 
-    #[test]
-    fn test_multi_dir_union() {
+    #[tokio::test]
+    async fn test_multi_dir_union() {
         let dir_a = TempDir::new().unwrap();
         let dir_b = TempDir::new().unwrap();
         create_skill(&dir_a, "rust", "---\ndescription: Rust\nagent-invocable: true\n---\n# Rust", &[]);
@@ -587,26 +605,57 @@ mod tests {
 
         let server = SkillsMcp::new(vec![dir_a.path().to_path_buf(), dir_b.path().to_path_buf()]);
 
-        let rust = server.load_skill_file(&SkillRequest { name: "rust".to_string(), path: None });
+        let rust = load(&server, "rust", None).await;
         assert!(rust.content.is_some());
         assert!(rust.error.is_none());
 
-        let python = server.load_skill_file(&SkillRequest { name: "python".to_string(), path: None });
+        let python = load(&server, "python", None).await;
         assert!(python.content.is_some());
         assert!(python.error.is_none());
     }
 
-    #[test]
-    fn test_multi_dir_missing_skills_subdir() {
+    #[tokio::test]
+    async fn test_multi_dir_missing_skills_subdir() {
         let dir_a = TempDir::new().unwrap();
         let dir_b = TempDir::new().unwrap();
-        // dir_a has no skills/ subdirectory
         create_skill(&dir_b, "rust", "---\ndescription: Rust\nagent-invocable: true\n---\n# Rust", &[]);
 
         let server = SkillsMcp::new(vec![dir_a.path().to_path_buf(), dir_b.path().to_path_buf()]);
-        let result = server.load_skill_file(&SkillRequest { name: "rust".to_string(), path: None });
+        let result = load(&server, "rust", None).await;
 
         assert!(result.content.is_some());
         assert!(result.error.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_skill_file_expands_shell_interp() {
+        let temp_dir = TempDir::new().unwrap();
+        create_skill(
+            &temp_dir,
+            "test-skill",
+            "---\ndescription: Test\nagent-invocable: true\n---\nvalue: !`echo ok`",
+            &[],
+        );
+
+        let server = SkillsMcp::new(vec![temp_dir.path().to_path_buf()]);
+        let result = load(&server, "test-skill", None).await;
+
+        let content = result.content.expect("content should be present");
+        assert!(content.contains("value: ok"), "expected expanded marker in: {content}");
+        assert!(!content.contains("!`"), "expected no literal marker in: {content}");
+        assert!(result.error.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_skill_file_propagates_shell_failure() {
+        let temp_dir = TempDir::new().unwrap();
+        create_skill(&temp_dir, "test-skill", "---\ndescription: Test\nagent-invocable: true\n---\n!`exit 1`", &[]);
+
+        let server = SkillsMcp::new(vec![temp_dir.path().to_path_buf()]);
+        let result = load(&server, "test-skill", None).await;
+
+        assert!(result.content.is_none());
+        let err = result.error.expect("error should be set");
+        assert!(err.contains("Shell interpolation"), "expected shell interp error, got: {err}");
     }
 }

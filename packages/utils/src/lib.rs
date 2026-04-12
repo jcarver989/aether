@@ -3,6 +3,7 @@
 pub mod markdown_file;
 pub mod reasoning;
 pub mod settings;
+pub mod shell_expander;
 pub mod substitution;
 
 pub use markdown_file::MarkdownFile;

@@ -28,9 +28,10 @@ pub struct AgentSpec {
     /// The prompt stack for this agent.
     ///
     /// For authored `AgentSpec`s resolved from settings, this contains authored prompt
-    /// variants (e.g., `Prompt::PromptGlobs`). Prompt files may include `$SYSTEM_ENV`
-    /// which is expanded to system environment info during resolution.
-    /// `Prompt::McpInstructions` is added separately during agent construction.
+    /// variants (e.g., `Prompt::PromptGlobs`). Prompt files may include
+    /// `` !`<shell command>` `` markers which are replaced by the trimmed stdout of
+    /// the command at prompt-load time. `Prompt::McpInstructions` is added separately
+    /// during agent construction.
     pub prompts: Vec<Prompt>,
     /// Resolved MCP config paths for this agent, applied in order.
     ///
