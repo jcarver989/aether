@@ -13,10 +13,6 @@ pub enum SettingsError {
     #[error("Invalid model '{model}' for agent '{agent}': {error}")]
     InvalidModel { agent: String, model: String, error: String },
 
-    /// An agent entry has an invalid reasoning effort string.
-    #[error("Invalid reasoningEffort '{effort}' for agent '{agent}': {error}")]
-    InvalidReasoningEffort { agent: String, effort: String, error: String },
-
     /// An agent entry is missing required fields.
     #[error("Agent '{agent}' is missing required field: {field}")]
     MissingField { agent: String, field: String },

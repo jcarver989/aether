@@ -8,37 +8,38 @@ use llm::{LlmModel, ReasoningEffort};
 use std::collections::HashSet;
 use std::path::Path;
 
-/// Settings DTO for deserializing `.aether/settings.json`.
-#[derive(Debug, Clone, Default, serde::Deserialize)]
+/// Settings DTO for `.aether/settings.json`.
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 #[serde(default, rename_all = "camelCase")]
-struct Settings {
+pub struct Settings {
     /// Inherited prompts for all agents.
-    prompts: Vec<String>,
+    pub prompts: Vec<String>,
     /// Paths to inherited MCP configs for all agents, applied in order (last wins on collisions).
-    mcp_servers: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub mcp_servers: Vec<String>,
     /// The canonical authored agent registry.
-    agents: Vec<AgentEntry>,
+    pub agents: Vec<AgentEntry>,
 }
 
-/// Agent entry DTO for deserializing from settings.
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct AgentEntry {
-    name: String,
-    description: String,
-    model: String,
+/// Agent entry DTO for `.aether/settings.json`.
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AgentEntry {
+    pub name: String,
+    pub description: String,
+    pub model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<ReasoningEffort>,
     #[serde(default)]
-    reasoning_effort: Option<String>,
+    pub user_invocable: bool,
     #[serde(default)]
-    user_invocable: bool,
+    pub agent_invocable: bool,
     #[serde(default)]
-    agent_invocable: bool,
-    #[serde(default)]
-    prompts: Vec<String>,
-    #[serde(default)]
-    mcp_servers: Vec<String>,
-    #[serde(default)]
-    tools: ToolFilter,
+    pub prompts: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mcp_servers: Vec<String>,
+    #[serde(default, skip_serializing_if = "ToolFilter::is_empty")]
+    pub tools: ToolFilter,
 }
 
 /// Load and resolve the agent catalog from a project root.
@@ -116,7 +117,6 @@ fn resolve_agent_entry(
     }
 
     let model = parse_model(&name, &entry.model)?;
-    let reasoning_effort = parse_reasoning_effort(&name, entry.reasoning_effort)?;
 
     if !entry.user_invocable && !entry.agent_invocable {
         return Err(SettingsError::NoInvocationSurface { agent: name.clone() });
@@ -140,7 +140,7 @@ fn resolve_agent_entry(
         name,
         description,
         model,
-        reasoning_effort,
+        reasoning_effort: entry.reasoning_effort,
         prompts,
         mcp_config_paths,
         exposure: AgentSpecExposure { user_invocable: entry.user_invocable, agent_invocable: entry.agent_invocable },
@@ -173,27 +173,6 @@ fn canonicalize_model_spec(model: &str) -> Result<String, String> {
     }
 
     Ok(canonical_parts.join(","))
-}
-
-fn parse_reasoning_effort(
-    agent: &str,
-    reasoning_effort: Option<String>,
-) -> Result<Option<ReasoningEffort>, SettingsError> {
-    match reasoning_effort {
-        None => Ok(None),
-        Some(value) => {
-            let value = value.trim();
-            if value.is_empty() {
-                return Ok(None);
-            }
-
-            ReasoningEffort::parse(value).map_err(|error| SettingsError::InvalidReasoningEffort {
-                agent: agent.to_string(),
-                effort: value.to_string(),
-                error,
-            })
-        }
-    }
 }
 
 fn validate_prompt_entries(
@@ -358,7 +337,7 @@ mod tests {
     #[test]
     fn invalid_reasoning_effort_rejected() {
         let (_, result) = setup_and_load(&agent_settings(r#""reasoningEffort": "invalid""#));
-        assert!(matches!(result, Err(SettingsError::InvalidReasoningEffort { .. })));
+        assert!(matches!(result, Err(SettingsError::ParseError(_))));
     }
 
     #[test]
