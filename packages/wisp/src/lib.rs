@@ -24,8 +24,7 @@ use tokio::{select, time};
 use tracing_appender::rolling::daily;
 use tracing_subscriber::EnvFilter;
 use tui::{
-    Component, CrosstermEvent, Event, MouseCapture, Renderer, RendererCommand, TerminalSession,
-    spawn_terminal_event_task, terminal_size,
+    Component, CrosstermEvent, Event, MouseCapture, RendererCommand, TerminalConfig, TerminalRuntime, terminal_size,
 };
 
 /// Launch the wisp TUI with the given agent subprocess command.
@@ -75,8 +74,8 @@ pub fn setup_logging(log_dir: Option<&str>) {
         .init();
 }
 
-fn render(renderer: &mut Renderer<impl io::Write>, app: &mut App) -> Result<(), AppError> {
-    renderer.render_frame(|ctx| app.render(ctx))?;
+fn render(terminal: &mut TerminalRuntime<impl io::Write>, app: &mut App) -> Result<(), AppError> {
+    terminal.render_frame(|ctx| app.render(ctx))?;
     Ok(())
 }
 
@@ -86,9 +85,12 @@ async fn run_app(
     mut event_rx: mpsc::UnboundedReceiver<acp_utils::client::AcpEvent>,
 ) -> Result<(), AppError> {
     let size = terminal_size().unwrap_or((80, 24));
-    let mut renderer = Renderer::new(io::stdout(), theme, size);
-    let _session = TerminalSession::new(true, MouseCapture::Disabled)?;
-    let mut event_task = spawn_terminal_event_task();
+    let mut terminal = TerminalRuntime::new(
+        io::stdout(),
+        theme,
+        size,
+        TerminalConfig { bracketed_paste: true, mouse_capture: MouseCapture::Disabled },
+    )?;
     let mut tick_interval = {
         let mut tick = interval(Duration::from_millis(100));
         tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
@@ -96,7 +98,7 @@ async fn run_app(
     };
 
     let mut last_mouse_capture = false;
-    render(&mut renderer, &mut app)?;
+    render(&mut terminal, &mut app)?;
     loop {
         let tick_fut = async {
             if !app.wants_tick() {
@@ -106,18 +108,18 @@ async fn run_app(
         };
 
         select! {
-            terminal_event = event_task.rx().recv() => {
+            terminal_event = terminal.next_event() => {
                 let Some(event) = terminal_event else {
                     return Ok(());
                 };
                 if let CrosstermEvent::Resize(cols, rows) = &event {
-                    renderer.on_resize((*cols, *rows));
+                    terminal.on_resize((*cols, *rows));
                 }
                 if let Ok(tui_event) = Event::try_from(event) {
                     let commands = app.on_event(&tui_event).await.unwrap_or_default();
-                    renderer.apply_commands(commands)?;
+                    terminal.apply_commands(commands)?;
                     if app.exit_requested() { return Ok(()); }
-                    render(&mut renderer, &mut app)?;
+                    render(&mut terminal, &mut app)?;
                 }
             }
 
@@ -126,7 +128,7 @@ async fn run_app(
                     Some(event) => {
                         app.on_acp_event(event);
                         if app.exit_requested() { return Ok(()); }
-                        render(&mut renderer, &mut app)?;
+                        render(&mut terminal, &mut app)?;
                     }
                     None => return Ok(()),
                 }
@@ -135,13 +137,13 @@ async fn run_app(
             () = tick_fut => {
                 app.on_event(&Event::Tick).await;
                 if app.exit_requested() { return Ok(()); }
-                render(&mut renderer, &mut app)?;
+                render(&mut terminal, &mut app)?;
             }
         }
 
         let capture = app.needs_mouse_capture();
         if last_mouse_capture != capture {
-            renderer.apply_commands(vec![RendererCommand::SetMouseCapture(capture)])?;
+            terminal.apply_commands(vec![RendererCommand::SetMouseCapture(capture)])?;
             last_mouse_capture = capture;
         }
     }
