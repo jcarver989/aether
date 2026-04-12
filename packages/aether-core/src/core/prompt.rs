@@ -270,14 +270,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn expand_builtins_propagates_command_failure() {
+    async fn expand_builtins_substitutes_empty_on_failure() {
         let expander = ShellExpander::new();
-        let err = Prompt::expand_builtins("!`exit 1`", None, &expander).await.unwrap_err();
-        let AgentError::IoError(msg) = err else {
-            panic!("expected IoError, got {err:?}");
-        };
-        assert!(msg.contains("exit 1"), "message should name the failing command: {msg}");
-        assert!(msg.contains("exit"), "message should describe the exit status: {msg}");
+        let result = Prompt::expand_builtins("before !`exit 1` after", None, &expander).await.unwrap();
+        assert_eq!(result, "before  after");
     }
 
     #[tokio::test]

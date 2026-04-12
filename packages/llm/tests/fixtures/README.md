@@ -1,3 +1,16 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+
+- [Provider Fixtures](#provider-fixtures)
+  - [Why these exist](#why-these-exist)
+  - [Refreshing fixtures](#refreshing-fixtures)
+  - [Required env vars](#required-env-vars)
+  - [Scenario matrix](#scenario-matrix)
+  - [Adding a new scenario](#adding-a-new-scenario)
+  - [Notes on Bedrock](#notes-on-bedrock)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # Provider Fixtures
 
 Raw byte-for-byte SSE responses captured from each provider's streaming
