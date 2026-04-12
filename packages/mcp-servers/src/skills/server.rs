@@ -229,7 +229,7 @@ impl SkillsMcp {
             })
         });
 
-        let expanded = match (read_result, skill_dir) {
+        let resolved = match (read_result, skill_dir) {
             (Ok(content), Some(dir)) => {
                 expander.expand(&content, &dir).await.map_err(|e| SkillFileError::ShellInterpFailed(e.to_string()))
             }
@@ -237,7 +237,7 @@ impl SkillsMcp {
             (Err(e), _) => Err(e),
         };
 
-        match expanded {
+        match resolved {
             Ok(content) => {
                 let available_files =
                     if path == SKILL_FILENAME { self.list_available_files(&name) } else { Vec::new() };

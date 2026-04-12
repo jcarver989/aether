@@ -32,7 +32,7 @@ impl ShellExpander {
         let spans: Vec<(usize, usize, &str)> = self
             .regex
             .captures_iter(content)
-            .flat_map(|captures| {
+            .filter_map(|captures| {
                 let whole = captures.get(0)?;
                 let cmd = captures.get(1)?;
                 Some((whole.start(), whole.end(), cmd.as_str()))

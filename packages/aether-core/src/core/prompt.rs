@@ -109,8 +109,8 @@ impl Prompt {
                 if path.is_file() {
                     match fs::read_to_string(&path).await {
                         Ok(content) => {
-                            let expanded = Self::expand_builtins(&content, Some(cwd), &expander).await?;
-                            contents.push(expanded);
+                            let resolved = Self::expand_builtins(&content, Some(cwd), &expander).await?;
+                            contents.push(resolved);
                         }
                         Err(e) => {
                             warn!("Failed to read prompt file '{}': {e}", path.display());
