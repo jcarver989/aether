@@ -44,6 +44,7 @@ pub use components::select_list::{SelectItem, SelectList, SelectListMessage};
 pub use components::select_option::SelectOption;
 pub use components::spinner::{BRAILLE_FRAMES, Spinner};
 pub use components::split_panel::{Either, SplitLayout, SplitPanel, SplitWidths};
+pub use components::stepper::{StepVisualState, Stepper, StepperItem};
 pub use components::text_field::TextField;
 
 pub use components::{Component, Cursor, Event, PickerMessage, ViewContext, merge, wrap_selection};

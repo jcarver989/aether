@@ -11,6 +11,7 @@ pub mod select_list;
 pub mod select_option;
 pub mod spinner;
 pub mod split_panel;
+pub mod stepper;
 pub mod text_field;
 
 pub use crate::rendering::frame::Cursor;

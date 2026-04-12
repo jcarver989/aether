@@ -12,6 +12,8 @@ mod radio_select;
 mod spinner;
 #[path = "components/split_panel.rs"]
 mod split_panel;
+#[path = "components/stepper.rs"]
+mod stepper;
 #[path = "components/text_field.rs"]
 mod text_field;
 
