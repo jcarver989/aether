@@ -84,17 +84,21 @@ impl AgentSpec {
 /// Supports `allow` (allowlist) and `deny` (blocklist) with trailing `*` wildcards.
 /// If both are set, allow is applied first, then deny removes from the result.
 /// An empty filter (the default) allows all tools.
-#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub struct ToolFilter {
     /// If non-empty, only tools matching these patterns are allowed.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allow: Vec<String>,
     /// Tools matching these patterns are removed.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub deny: Vec<String>,
 }
 
 impl ToolFilter {
+    pub fn is_empty(&self) -> bool {
+        self.allow.is_empty() && self.deny.is_empty()
+    }
+
     /// Apply this filter to a list of tool definitions.
     pub fn apply(&self, tools: Vec<ToolDefinition>) -> Vec<ToolDefinition> {
         tools.into_iter().filter(|t| self.is_allowed(&t.name)).collect()
