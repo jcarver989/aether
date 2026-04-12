@@ -247,13 +247,19 @@ impl Component for SettingsOverlay {
                             let items: Vec<ModelEntry> = entry
                                 .values
                                 .iter()
-                                .filter(|v| !v.is_disabled)
                                 .map(|v| ModelEntry {
                                     value: v.value.clone(),
                                     name: v.name.clone(),
                                     reasoning_levels: v.meta.reasoning_levels.clone(),
                                     supports_image: v.meta.supports_image,
                                     supports_audio: v.meta.supports_audio,
+                                    disabled_reason: if v.is_disabled {
+                                        v.description
+                                            .as_ref()
+                                            .map(|d| d.strip_prefix("Unavailable: ").unwrap_or(d).to_string())
+                                    } else {
+                                        None
+                                    },
                                 })
                                 .collect();
                             self.active_pane = SettingsPane::ModelSelector(ModelSelector::new(

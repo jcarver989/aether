@@ -84,12 +84,10 @@ pub(crate) fn build_model_config_option(
                 let value = m.to_string();
                 let is_available = available_models.contains(&value);
                 let needs_login = needs_oauth_login(m, credential_store);
-                let name = if is_available && !needs_login {
-                    format!("{display}: {}", m.display_name())
-                } else if needs_login {
-                    format!("{display}: {} (needs login)", m.display_name(),)
+                let name = if needs_login {
+                    format!("{display}: {} (needs login)", m.display_name())
                 } else {
-                    format!("{display}: {} (unavailable)", m.display_name())
+                    format!("{display}: {}", m.display_name())
                 };
                 let mut option = acp::SessionConfigSelectOption::new(value, name);
                 let meta = SelectOptionMeta {
@@ -456,7 +454,8 @@ mod tests {
             !options.iter().any(|o| o.value.0.as_ref() == "__unavailable:gemini"),
             "Gemini should not be collapsed when it has available models"
         );
-        assert!(options.iter().any(|o| o.value.0.starts_with("gemini:") && !o.name.contains("unavailable")));
-        assert!(options.iter().any(|o| o.value.0.starts_with("gemini:") && o.name.contains("unavailable")));
+        assert!(options.iter().any(|o| o.value.0.starts_with("gemini:") && o.description.is_none()));
+        assert!(options.iter().any(|o| o.value.0.starts_with("gemini:")
+            && o.description.as_deref().is_some_and(|d| d.starts_with("Unavailable:"))));
     }
 }

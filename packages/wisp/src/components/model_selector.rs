@@ -12,10 +12,18 @@ pub struct ModelEntry {
     pub reasoning_levels: Vec<ReasoningEffort>,
     pub supports_image: bool,
     pub supports_audio: bool,
+    pub disabled_reason: Option<String>,
 }
 
 impl ModelEntry {
+    pub fn is_disabled(&self) -> bool {
+        self.disabled_reason.is_some()
+    }
+
     fn provider_key(&self) -> &str {
+        if let Some(provider) = self.value.strip_prefix("__unavailable:") {
+            return provider;
+        }
         self.value.split_once(':').map_or("Other", |(provider, _)| provider)
     }
 
@@ -97,7 +105,10 @@ impl ModelSelector {
         let mut combobox = Combobox::new(items);
         combobox.set_match_sort(compare_model_entries);
         if !selected_models.is_empty() {
-            combobox.select_first_where(|item| selected_models.contains(&item.value));
+            combobox.select_first_where(|item| !item.is_disabled() && selected_models.contains(&item.value));
+        }
+        if combobox.selected().is_some_and(ModelEntry::is_disabled) {
+            combobox.select_first_where(|e| !e.is_disabled());
         }
         Self {
             combobox,
@@ -133,7 +144,9 @@ impl ModelSelector {
     }
 
     pub fn toggle_focused(&mut self) {
-        if let Some(entry) = self.combobox.selected() {
+        if let Some(entry) = self.combobox.selected()
+            && !entry.is_disabled()
+        {
             let value = entry.value.clone();
             if !self.selected_models.remove(&value) {
                 self.selected_models.insert(value);
@@ -143,6 +156,7 @@ impl ModelSelector {
 
     pub fn cycle_reasoning_effort_forward(&mut self) {
         if let Some(entry) = self.combobox.selected()
+            && !entry.is_disabled()
             && !entry.reasoning_levels.is_empty()
         {
             self.reasoning_effort = ReasoningEffort::cycle_within(self.reasoning_effort, &entry.reasoning_levels);
@@ -151,6 +165,7 @@ impl ModelSelector {
 
     pub fn cycle_reasoning_effort_back(&mut self) {
         if let Some(entry) = self.combobox.selected()
+            && !entry.is_disabled()
             && !entry.reasoning_levels.is_empty()
         {
             let levels = &entry.reasoning_levels;
@@ -161,6 +176,14 @@ impl ModelSelector {
                     Some(i) => Some(levels[i - 1]),
                 },
             };
+        }
+    }
+
+    fn ensure_selectable(&mut self) {
+        if let Some(entry) = self.combobox.selected()
+            && entry.is_disabled()
+        {
+            self.combobox.select_first_where(|e| !e.is_disabled());
         }
     }
 
@@ -220,12 +243,12 @@ impl Component for ModelSelector {
         if let Event::Mouse(mouse) = event {
             return match mouse.kind {
                 MouseEventKind::ScrollUp => {
-                    self.combobox.move_up();
+                    self.combobox.move_up_where(|e| !e.is_disabled());
                     self.clamp_reasoning_to_focused();
                     Some(vec![])
                 }
                 MouseEventKind::ScrollDown => {
-                    self.combobox.move_down();
+                    self.combobox.move_down_where(|e| !e.is_disabled());
                     self.clamp_reasoning_to_focused();
                     Some(vec![])
                 }
@@ -241,17 +264,18 @@ impl Component for ModelSelector {
                 Some(vec![ModelSelectorMessage::Done(changes)])
             }
             PickerKey::MoveUp => {
-                self.combobox.move_up();
+                self.combobox.move_up_where(|e| !e.is_disabled());
                 self.clamp_reasoning_to_focused();
                 Some(vec![])
             }
             PickerKey::MoveDown => {
-                self.combobox.move_down();
+                self.combobox.move_down_where(|e| !e.is_disabled());
                 self.clamp_reasoning_to_focused();
                 Some(vec![])
             }
             PickerKey::Tab => {
                 if let Some(entry) = self.combobox.selected()
+                    && !entry.is_disabled()
                     && !entry.reasoning_levels.is_empty()
                 {
                     self.reasoning_effort =
@@ -265,10 +289,12 @@ impl Component for ModelSelector {
             }
             PickerKey::Char(c) => {
                 self.combobox.push_query_char(c);
+                self.ensure_selectable();
                 Some(vec![])
             }
             PickerKey::Backspace => {
                 self.combobox.pop_query_char();
+                self.ensure_selectable();
                 Some(vec![])
             }
             PickerKey::MoveLeft
@@ -313,9 +339,15 @@ impl Component for ModelSelector {
                     if !item_lines.is_empty() {
                         item_lines.push(Line::new(String::new()));
                     }
-                    item_lines
-                        .push(Line::styled(format!("  {}", entry.provider_label()), context.theme.text_secondary()));
+                    item_lines.push(Line::styled(entry.provider_label(), context.theme.heading()));
                     last_provider = Some(provider);
+                }
+
+                if entry.is_disabled() {
+                    let reason = entry.disabled_reason.as_deref().unwrap_or("unavailable");
+                    let label = format!("    {}  {}", entry.model_label(), reason);
+                    item_lines.push(Line::styled(label, context.theme.muted()));
+                    continue;
                 }
 
                 let check = if selected.contains(&entry.value) { "[x] " } else { "[ ] " };
@@ -373,6 +405,18 @@ mod tests {
             reasoning_levels: levels,
             supports_image: false,
             supports_audio: false,
+            disabled_reason: None,
+        }
+    }
+
+    fn disabled_entry(value: &str, name: &str, reason: &str) -> ModelEntry {
+        ModelEntry {
+            value: value.to_string(),
+            name: name.to_string(),
+            reasoning_levels: vec![],
+            supports_image: false,
+            supports_audio: false,
+            disabled_reason: Some(reason.to_string()),
         }
     }
 
@@ -682,6 +726,7 @@ mod tests {
             reasoning_levels: vec![],
             supports_image: true,
             supports_audio: true,
+            disabled_reason: None,
         }];
         let mut s = sel(items, None, None);
         let ctx = ViewContext::new((80, 10));
@@ -701,6 +746,7 @@ mod tests {
                 reasoning_levels: vec![],
                 supports_image: true,
                 supports_audio: true,
+                disabled_reason: None,
             },
         ];
         let mut s = sel(items, None, None);
@@ -713,5 +759,61 @@ mod tests {
                 assert!(!text.contains("audio"), "unfocused row should not show audio");
             }
         }
+    }
+
+    #[tokio::test]
+    async fn disabled_entry_not_toggleable() {
+        let items = vec![entry("a:m1", "A / M1", vec![]), disabled_entry("b:m2", "B / M2", "set B_API_KEY")];
+        let mut s = sel(items, None, None);
+        send(&mut s, k(KeyCode::Enter)).await;
+        assert_eq!(s.selected_count(), 1);
+
+        send(&mut s, k(KeyCode::Down)).await;
+        let focused = s.focused_value().unwrap();
+        assert_eq!(focused, "a:m1", "navigation should wrap back to enabled entry");
+        send(&mut s, k(KeyCode::Enter)).await;
+        assert_eq!(s.selected_count(), 0, "toggling the same enabled entry should deselect it");
+    }
+
+    #[tokio::test]
+    async fn navigation_skips_disabled_entries() {
+        let items = vec![
+            entry("a:m1", "A / M1", vec![]),
+            disabled_entry("b:m2", "B / M2", "set B_API_KEY"),
+            entry("c:m3", "C / M3", vec![]),
+        ];
+        let mut s = sel(items, None, None);
+        assert_eq!(s.focused_value().unwrap(), "a:m1");
+
+        send(&mut s, k(KeyCode::Down)).await;
+        assert_eq!(s.focused_value().unwrap(), "c:m3", "should skip disabled entry");
+
+        send(&mut s, k(KeyCode::Up)).await;
+        assert_eq!(s.focused_value().unwrap(), "a:m1", "should skip disabled entry going up");
+    }
+
+    #[test]
+    fn disabled_entry_renders_with_reason() {
+        let items = vec![entry("a:m1", "A / M1", vec![]), disabled_entry("b:m2", "B / M2", "set B_API_KEY")];
+        let mut s = sel(items, None, None);
+        let ctx = ViewContext::new((80, 10));
+        let frame = s.render(&ctx);
+        let lines: Vec<String> = frame.lines().iter().map(tui::Line::plain_text).collect();
+        let disabled_line = lines.iter().find(|l| l.contains("M2")).expect("disabled entry should be rendered");
+        assert!(disabled_line.contains("set B_API_KEY"), "should show reason: {disabled_line}");
+        assert!(!disabled_line.contains('['), "disabled entry should not have checkbox: {disabled_line}");
+    }
+
+    #[test]
+    fn provider_key_handles_unavailable_prefix() {
+        let e = disabled_entry("__unavailable:moonshot", "Moonshot (5 models)", "set MOONSHOT_API_KEY");
+        assert_eq!(e.provider_key(), "moonshot");
+    }
+
+    #[test]
+    fn initial_selection_skips_disabled() {
+        let items = vec![disabled_entry("a:m1", "A / M1", "set A_API_KEY"), entry("b:m2", "B / M2", vec![])];
+        let s = sel(items, None, None);
+        assert_eq!(s.focused_value().unwrap(), "b:m2");
     }
 }

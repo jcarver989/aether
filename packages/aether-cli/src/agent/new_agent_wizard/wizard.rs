@@ -528,6 +528,7 @@ mod tests {
             reasoning_levels: vec![],
             supports_image: false,
             supports_audio: false,
+            disabled_reason: None,
         }]
     }
 
@@ -538,6 +539,7 @@ mod tests {
             reasoning_levels: vec![ReasoningEffort::Low, ReasoningEffort::Medium, ReasoningEffort::High],
             supports_image: false,
             supports_audio: false,
+            disabled_reason: None,
         }]
     }
 
@@ -666,6 +668,7 @@ mod tests {
             reasoning_levels: vec![ReasoningEffort::Medium, ReasoningEffort::High],
             supports_image: false,
             supports_audio: false,
+            disabled_reason: None,
         }];
         let selector = ModelSelector::new(entries, "model".to_string(), Some("test:model-a"), Some("high"));
 

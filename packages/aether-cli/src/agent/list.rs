@@ -42,7 +42,7 @@ fn print_agent(agent: &AgentEntry, settings: &Settings) {
     println!("{}", agent.name);
     println!("  model:       {}", agent.model);
 
-    let reasoning = agent.reasoning_effort.as_ref().map_or("none".to_string(), |e| e.to_string());
+    let reasoning = agent.reasoning_effort.as_ref().map_or("none".to_string(), std::string::ToString::to_string);
     println!("  reasoning:   {reasoning}");
 
     println!("  description: {}", agent.description);
@@ -58,12 +58,18 @@ fn print_agent(agent: &AgentEntry, settings: &Settings) {
 
     let effective_prompts = if agent.prompts.is_empty() { &settings.prompts } else { &agent.prompts };
     if !effective_prompts.is_empty() {
-        println!("  prompts:     {}", effective_prompts.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "));
+        println!(
+            "  prompts:     {}",
+            effective_prompts.iter().map(std::string::String::as_str).collect::<Vec<_>>().join(", ")
+        );
     }
 
     let effective_mcp = if agent.mcp_servers.is_empty() { &settings.mcp_servers } else { &agent.mcp_servers };
     if !effective_mcp.is_empty() {
-        println!("  mcp servers: {}", effective_mcp.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "));
+        println!(
+            "  mcp servers: {}",
+            effective_mcp.iter().map(std::string::String::as_str).collect::<Vec<_>>().join(", ")
+        );
     }
 
     if !agent.tools.allow.is_empty() {
@@ -77,6 +83,7 @@ fn print_agent(agent: &AgentEntry, settings: &Settings) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::new_agent_wizard::{DraftAgentEntry, scaffold};
 
     #[test]
     fn list_empty_project() {
@@ -88,15 +95,15 @@ mod tests {
     #[test]
     fn list_project_with_agents() {
         let dir = tempfile::tempdir().unwrap();
-        crate::agent::new_agent_wizard::scaffold(dir.path(), &test_draft()).unwrap();
+        scaffold(dir.path(), &test_draft()).unwrap();
         let args = super::super::ListArgs { path: dir.path().to_path_buf() };
         run_list(args).unwrap();
     }
 
-    fn test_draft() -> crate::agent::new_agent_wizard::DraftAgentEntry {
+    fn test_draft() -> DraftAgentEntry {
         use crate::agent::new_agent_wizard::build_system_md;
 
-        let mut draft = crate::agent::new_agent_wizard::DraftAgentEntry {
+        let mut draft = DraftAgentEntry {
             entry: AgentEntry {
                 name: "Coder".to_string(),
                 description: "A coding agent".to_string(),

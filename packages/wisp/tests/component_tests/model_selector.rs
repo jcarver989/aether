@@ -23,6 +23,7 @@ fn model_values() -> Vec<ModelEntry> {
             reasoning_levels: vec![],
             supports_image: false,
             supports_audio: false,
+            disabled_reason: None,
         },
         ModelEntry {
             value: "deepseek:deepseek-chat".to_string(),
@@ -30,6 +31,7 @@ fn model_values() -> Vec<ModelEntry> {
             reasoning_levels: vec![],
             supports_image: false,
             supports_audio: false,
+            disabled_reason: None,
         },
         ModelEntry {
             value: "gemini:gemini-2.5-pro".to_string(),
@@ -37,6 +39,7 @@ fn model_values() -> Vec<ModelEntry> {
             reasoning_levels: vec![],
             supports_image: false,
             supports_audio: false,
+            disabled_reason: None,
         },
     ]
 }
@@ -49,6 +52,7 @@ fn model_values_with_groups() -> Vec<ModelEntry> {
             reasoning_levels: vec![],
             supports_image: false,
             supports_audio: false,
+            disabled_reason: None,
         },
         ModelEntry {
             value: "openrouter:google/gemini-2.5-pro".to_string(),
@@ -56,6 +60,7 @@ fn model_values_with_groups() -> Vec<ModelEntry> {
             reasoning_levels: vec![],
             supports_image: false,
             supports_audio: false,
+            disabled_reason: None,
         },
         ModelEntry {
             value: "anthropic:claude-sonnet-4-5".to_string(),
@@ -63,6 +68,7 @@ fn model_values_with_groups() -> Vec<ModelEntry> {
             reasoning_levels: vec![],
             supports_image: false,
             supports_audio: false,
+            disabled_reason: None,
         },
         ModelEntry {
             value: "gemini:gemini-2.5-pro".to_string(),
@@ -70,6 +76,7 @@ fn model_values_with_groups() -> Vec<ModelEntry> {
             reasoning_levels: vec![],
             supports_image: false,
             supports_audio: false,
+            disabled_reason: None,
         },
     ]
 }
@@ -120,6 +127,7 @@ fn model_values_with_reasoning() -> Vec<ModelEntry> {
             ],
             supports_image: false,
             supports_audio: false,
+            disabled_reason: None,
         },
         ModelEntry {
             value: "deepseek:deepseek-chat".to_string(),
@@ -127,6 +135,7 @@ fn model_values_with_reasoning() -> Vec<ModelEntry> {
             reasoning_levels: vec![],
             supports_image: false,
             supports_audio: false,
+            disabled_reason: None,
         },
     ]
 }
@@ -183,6 +192,7 @@ async fn search_does_not_duplicate_provider_headers() {
             reasoning_levels: vec![],
             supports_image: false,
             supports_audio: false,
+            disabled_reason: None,
         },
         ModelEntry {
             value: "openrouter:gpt-5".to_string(),
@@ -190,6 +200,7 @@ async fn search_does_not_duplicate_provider_headers() {
             reasoning_levels: vec![],
             supports_image: false,
             supports_audio: false,
+            disabled_reason: None,
         },
         ModelEntry {
             value: "codex:gpt-5-mini".to_string(),
@@ -197,6 +208,7 @@ async fn search_does_not_duplicate_provider_headers() {
             reasoning_levels: vec![],
             supports_image: false,
             supports_audio: false,
+            disabled_reason: None,
         },
         ModelEntry {
             value: "openrouter:gpt-5-mini".to_string(),
@@ -204,6 +216,7 @@ async fn search_does_not_duplicate_provider_headers() {
             reasoning_levels: vec![],
             supports_image: false,
             supports_audio: false,
+            disabled_reason: None,
         },
     ];
     let mut selector = make_selector(values);
