@@ -49,3 +49,17 @@ fn unfocused_renders_without_highlight() {
     let term = render_lines(&lines, 80, 24);
     assert_buffer_eq(&term, &["[x]"]);
 }
+
+#[test]
+fn with_label_renders_marker_and_label_inline() {
+    let mut cb = Checkbox::new(true).with_label("Include AGENTS.md");
+    let term = render_component(|ctx| cb.render(ctx), 80, 24);
+    assert_buffer_eq(&term, &["[x] Include AGENTS.md"]);
+}
+
+#[test]
+fn with_label_unchecked_renders_empty_marker() {
+    let mut cb = Checkbox::new(false).with_label("Enable feature");
+    let term = render_component(|ctx| cb.render(ctx), 80, 24);
+    assert_buffer_eq(&term, &["[ ] Enable feature"]);
+}

@@ -3,15 +3,22 @@ use crossterm::event::KeyCode;
 use crate::components::{Component, Event, ViewContext};
 use crate::line::Line;
 use crate::rendering::frame::Frame;
+use crate::style::Style;
 
-/// Boolean toggle rendered as `[x]` / `[ ]`.
+/// Boolean toggle rendered as `[x]` / `[ ]`, optionally with an inline label: `[x] Label`.
 pub struct Checkbox {
     pub checked: bool,
+    label: Option<String>,
 }
 
 impl Checkbox {
     pub fn new(checked: bool) -> Self {
-        Self { checked }
+        Self { checked, label: None }
+    }
+
+    pub fn with_label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
     }
 
     pub fn to_json(&self) -> serde_json::Value {
@@ -42,9 +49,13 @@ impl Component for Checkbox {
 
 impl Checkbox {
     pub fn render_field(&self, context: &ViewContext, focused: bool) -> Vec<Line> {
-        let display = if self.checked { "[x]" } else { "[ ]" };
-        let style = if focused { context.theme.primary() } else { context.theme.text_primary() };
-        vec![Line::styled(display, style)]
+        let marker = if self.checked { "[x]" } else { "[ ]" };
+        let marker_color = if focused { context.theme.primary() } else { context.theme.text_primary() };
+        let mut line = Line::styled(marker, marker_color);
+        if let Some(label) = &self.label {
+            line.push_with_style(format!(" {label}"), Style::fg(context.theme.text_primary()));
+        }
+        vec![line]
     }
 }
 
