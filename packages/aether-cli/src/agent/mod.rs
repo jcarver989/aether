@@ -1,4 +1,5 @@
 mod new;
+pub mod new_agent_wizard;
 
 use std::path::PathBuf;
 
@@ -16,3 +17,4 @@ pub struct NewArgs {
 }
 
 pub use new::run_new;
+pub use new_agent_wizard::{NewAgentOutcome, should_run_onboarding};

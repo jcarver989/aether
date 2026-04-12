@@ -13,6 +13,7 @@ use std::path::Path;
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     /// Inherited prompts for all agents.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub prompts: Vec<String>,
     /// Paths to inherited MCP configs for all agents, applied in order (last wins on collisions).
     #[serde(skip_serializing_if = "Vec::is_empty")]

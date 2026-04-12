@@ -246,6 +246,7 @@ dependencies = [
  "nucleo",
  "pulldown-cmark",
  "serde_json",
+ "similar",
  "syntect",
  "tempfile",
  "tokio",

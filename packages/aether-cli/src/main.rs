@@ -1,11 +1,11 @@
-use clap::{Parser, Subcommand};
-use std::process::ExitCode;
-use tokio::runtime::Runtime;
-
 use aether_cli::acp::{AcpArgs, run_acp};
-use aether_cli::agent::{AgentCommand, run_new};
+use aether_cli::agent::{AgentCommand, NewAgentOutcome, NewArgs, run_new, should_run_onboarding};
 use aether_cli::headless::{HeadlessArgs, run_headless};
 use aether_cli::show_prompt::{PromptArgs, run_prompt};
+use clap::{Parser, Subcommand};
+use std::path::PathBuf;
+use std::process::ExitCode;
+use tokio::runtime::Runtime;
 
 #[derive(Parser)]
 #[command(name = "aether")]
@@ -54,12 +54,12 @@ fn main() -> ExitCode {
         }
 
         Some(Command::Agent(AgentCommand::New(args))) => {
-            rt.block_on(run_new(args)).map(|()| ExitCode::SUCCESS).map_err(|e| e.to_string())
+            rt.block_on(run_new(args)).map(|_| ExitCode::SUCCESS).map_err(|e| e.to_string())
         }
 
         Some(Command::Lspd(args)) => aether_lspd::run_lspd(args).map(|()| ExitCode::SUCCESS),
 
-        None => rt.block_on(wisp::run_tui("aether acp")).map(|()| ExitCode::SUCCESS).map_err(|e| e.to_string()),
+        None => rt.block_on(run_default_command()).map_err(|e| e.clone()),
     };
 
     match result {
@@ -68,5 +68,19 @@ fn main() -> ExitCode {
             eprintln!("Error: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+async fn run_default_command() -> Result<ExitCode, String> {
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    if should_run_onboarding(&cwd) {
+        match run_new(NewArgs { path: PathBuf::from(".") }).await.map_err(|e| e.to_string())? {
+            NewAgentOutcome::Applied => {
+                wisp::run_tui("aether acp").await.map(|()| ExitCode::SUCCESS).map_err(|e| e.to_string())
+            }
+            NewAgentOutcome::Cancelled => Ok(ExitCode::SUCCESS),
+        }
+    } else {
+        wisp::run_tui("aether acp").await.map(|()| ExitCode::SUCCESS).map_err(|e| e.to_string())
     }
 }
