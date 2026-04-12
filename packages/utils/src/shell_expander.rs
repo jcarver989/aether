@@ -1,4 +1,4 @@
-use futures::future::try_join_all;
+use futures::future::join_all;
 use regex::Regex;
 use std::fmt::{Display, Formatter};
 use std::path::Path;
@@ -24,9 +24,9 @@ impl ShellExpander {
     ///
     /// Markers are expanded concurrently; the first non-zero exit or spawn
     /// failure short-circuits and surfaces as [`ShellInterpError`].
-    pub async fn expand(&self, content: &str, cwd: &Path) -> Result<String, ShellExpansionError> {
+    pub async fn expand(&self, content: &str, cwd: &Path) -> String {
         if !self.regex.is_match(content) {
-            return Ok(content.to_string());
+            return content.to_string();
         }
 
         let spans: Vec<(usize, usize, &str)> = self
@@ -39,18 +39,21 @@ impl ShellExpander {
             })
             .collect();
 
-        let outputs = try_join_all(spans.iter().map(|(_, _, cmd)| Self::run(cmd, cwd))).await?;
+        let outputs = join_all(spans.iter().map(|(_, _, cmd)| Self::run(cmd, cwd))).await;
         let mut out = String::with_capacity(content.len());
         let mut last = 0;
 
-        for ((start, end, _), output) in spans.iter().zip(outputs.iter()) {
+        for ((start, end, _), result) in spans.iter().zip(outputs.into_iter()) {
             out.push_str(&content[last..*start]);
-            out.push_str(output);
+            match result {
+                Ok(output) => out.push_str(&output),
+                Err(err) => tracing::warn!("{err}"),
+            }
             last = *end;
         }
 
         out.push_str(&content[last..]);
-        Ok(out)
+        out
     }
 
     async fn run(cmd: &str, cwd: &Path) -> Result<String, ShellExpansionError> {
@@ -108,7 +111,7 @@ mod tests {
         let content = "Just some plain content with no directives";
         let expander = ShellExpander::new();
         let cwd = std::env::current_dir().unwrap();
-        let result = expander.expand(content, &cwd).await.unwrap();
+        let result = expander.expand(content, &cwd).await;
         assert_eq!(result, content);
     }
 
@@ -116,7 +119,7 @@ mod tests {
     async fn runs_shell_command() {
         let expander = ShellExpander::new();
         let cwd = std::env::current_dir().unwrap();
-        let result = expander.expand("branch: !`echo main`", &cwd).await.unwrap();
+        let result = expander.expand("branch: !`echo main`", &cwd).await;
         assert_eq!(result, "branch: main");
     }
 
@@ -126,7 +129,7 @@ mod tests {
         std::fs::write(dir.path().join("sentinel.txt"), "").unwrap();
 
         let expander = ShellExpander::new();
-        let result = expander.expand("files: !`ls`", dir.path()).await.unwrap();
+        let result = expander.expand("files: !`ls`", dir.path()).await;
         assert!(result.contains("sentinel.txt"), "expected sentinel.txt in output: {result}");
     }
 
@@ -134,26 +137,23 @@ mod tests {
     async fn handles_multiple_commands() {
         let expander = ShellExpander::new();
         let cwd = std::env::current_dir().unwrap();
-        let result = expander.expand("a=!`echo one`, b=!`echo two`", &cwd).await.unwrap();
+        let result = expander.expand("a=!`echo one`, b=!`echo two`", &cwd).await;
         assert_eq!(result, "a=one, b=two");
     }
 
     #[tokio::test]
-    async fn propagates_command_failure() {
+    async fn failed_command_substitutes_empty_string() {
         let expander = ShellExpander::new();
         let cwd = std::env::current_dir().unwrap();
-        let err = expander.expand("!`exit 1`", &cwd).await.unwrap_err();
-        let ShellExpansionError::NonZeroExit { cmd, .. } = err else {
-            panic!("expected NonZeroExit, got {err:?}");
-        };
-        assert_eq!(cmd, "exit 1");
+        let result = expander.expand("before !`exit 1` after", &cwd).await;
+        assert_eq!(result, "before  after");
     }
 
     #[tokio::test]
     async fn trims_trailing_whitespace() {
         let expander = ShellExpander::new();
         let cwd = std::env::current_dir().unwrap();
-        let result = expander.expand("!`printf 'hi\\n\\n'`", &cwd).await.unwrap();
+        let result = expander.expand("!`printf 'hi\\n\\n'`", &cwd).await;
         assert_eq!(result, "hi");
     }
 }

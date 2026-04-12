@@ -126,8 +126,7 @@ impl Prompt {
     /// Expand `` !`command` `` shell-interpolation markers in prompt content.
     ///
     /// Thin wrapper around [`ShellExpander::expand`] that resolves `cwd` from
-    /// the process working directory when `None` and maps failures to
-    /// [`AgentError::IoError`].
+    /// the process working directory when `None`.
     async fn expand_builtins(content: &str, cwd: Option<&Path>, expander: &ShellExpander) -> Result<String> {
         let cwd = match cwd {
             Some(dir) => dir.to_path_buf(),
@@ -135,7 +134,7 @@ impl Prompt {
                 env::current_dir().map_err(|e| AgentError::IoError(format!("Failed to get current directory: {e}")))?
             }
         };
-        expander.expand(content, &cwd).await.map_err(|e| AgentError::IoError(e.to_string()))
+        Ok(expander.expand(content, &cwd).await)
     }
 }
 

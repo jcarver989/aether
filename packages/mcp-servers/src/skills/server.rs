@@ -67,7 +67,6 @@ enum SkillFileError {
     FileNotFound(PathBuf),
     IoError(io::Error),
     InvalidUtf8,
-    ShellInterpFailed(String),
 }
 
 impl Display for SkillFileError {
@@ -81,7 +80,6 @@ impl Display for SkillFileError {
             SkillFileError::FileNotFound(path) => write!(f, "File not found: {}", path.display()),
             SkillFileError::IoError(e) => write!(f, "IO error: {e}"),
             SkillFileError::InvalidUtf8 => write!(f, "File content is not valid UTF-8"),
-            SkillFileError::ShellInterpFailed(msg) => write!(f, "Shell interpolation failed: {msg}"),
         }
     }
 }
@@ -230,9 +228,7 @@ impl SkillsMcp {
         });
 
         let resolved = match (read_result, skill_dir) {
-            (Ok(content), Some(dir)) => {
-                expander.expand(&content, &dir).await.map_err(|e| SkillFileError::ShellInterpFailed(e.to_string()))
-            }
+            (Ok(content), Some(dir)) => Ok(expander.expand(&content, &dir).await),
             (Ok(content), None) => Ok(content),
             (Err(e), _) => Err(e),
         };
@@ -307,9 +303,7 @@ impl ServerHandler for SkillsMcp {
         let content = substitute_parameters(&body, &arguments);
         let expander = ShellExpander::new();
         let cwd = self.roots.read().await.first().cloned().unwrap_or_else(|| PathBuf::from("."));
-        let content = expander.expand(&content, &cwd).await.map_err(|e| {
-            McpError::internal_error(format!("Shell interpolation failed in prompt '{}': {e}", spec.name), None)
-        })?;
+        let content = expander.expand(&content, &cwd).await;
         let messages = vec![PromptMessage::new_text(PromptMessageRole::User, content)];
 
         Ok(GetPromptResult::new(messages).with_description(spec.description.clone()))
