@@ -132,12 +132,35 @@ impl ModelSelector {
         self.selected_models.len()
     }
 
-    fn toggle_focused(&mut self) {
+    pub fn toggle_focused(&mut self) {
         if let Some(entry) = self.combobox.selected() {
             let value = entry.value.clone();
             if !self.selected_models.remove(&value) {
                 self.selected_models.insert(value);
             }
+        }
+    }
+
+    pub fn cycle_reasoning_effort_forward(&mut self) {
+        if let Some(entry) = self.combobox.selected()
+            && !entry.reasoning_levels.is_empty()
+        {
+            self.reasoning_effort = ReasoningEffort::cycle_within(self.reasoning_effort, &entry.reasoning_levels);
+        }
+    }
+
+    pub fn cycle_reasoning_effort_back(&mut self) {
+        if let Some(entry) = self.combobox.selected()
+            && !entry.reasoning_levels.is_empty()
+        {
+            let levels = &entry.reasoning_levels;
+            self.reasoning_effort = match self.reasoning_effort {
+                None => levels.last().copied(),
+                Some(current) => match levels.iter().position(|&l| l == current) {
+                    Some(0) | None => None,
+                    Some(i) => Some(levels[i - 1]),
+                },
+            };
         }
     }
 
