@@ -648,8 +648,8 @@ mod tests {
         let server = SkillsMcp::new(vec![temp_dir.path().to_path_buf()]);
         let result = load(&server, "test-skill", None).await;
 
-        assert!(result.content.is_none());
-        let err = result.error.expect("error should be set");
-        assert!(err.contains("Shell interpolation"), "expected shell interp error, got: {err}");
+        let content = result.content.expect("content should be present");
+        assert!(!content.contains("!`"), "failed command marker should be removed");
+        assert!(result.error.is_none());
     }
 }
