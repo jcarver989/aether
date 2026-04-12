@@ -1,6 +1,8 @@
-RAII guard for terminal raw mode, bracketed paste, and mouse capture.
+Low-level RAII guard for terminal raw mode, bracketed paste, and mouse capture.
 
 Creating a `TerminalSession` enables raw mode (and optionally bracketed paste and mouse capture). When the session is dropped, all terminal state is restored automatically.
+
+Most callers should use [`TerminalRuntime`](crate::TerminalRuntime) instead of managing a `TerminalSession` directly.
 
 # Usage
 
@@ -23,5 +25,5 @@ let _session = TerminalSession::new(
 
 # Related
 
-- **[`spawn_terminal_event_task()`](crate::spawn_terminal_event_task)** — Spawns a blocking tokio task that reads crossterm events and sends them over an `mpsc::UnboundedReceiver<CrosstermEvent>`. Pair this with a `TerminalSession` to build an event loop.
+- **[`TerminalRuntime`](crate::TerminalRuntime)** — High-level runtime that owns the session, renderer, and event source. Preferred for interactive apps.
 - **[`terminal_size()`](crate::terminal_size)** — Returns the current terminal dimensions as `(columns, rows)`.

@@ -61,7 +61,7 @@ pub use rendering::renderer::{Renderer, RendererCommand};
 // Runtime
 pub use crossterm::event::Event as CrosstermEvent;
 pub use runtime::terminal::terminal_size;
-pub use runtime::{MouseCapture, TerminalSession, spawn_terminal_event_task};
+pub use runtime::{MouseCapture, TerminalConfig, TerminalRuntime, TerminalSession};
 
 // &str text utilities
 pub use rendering::soft_wrap::{display_width_text, pad_text_to_width, soft_wrap_line, truncate_line, truncate_text};

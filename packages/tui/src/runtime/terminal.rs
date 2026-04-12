@@ -16,7 +16,6 @@ pub enum MouseCapture {
 #[doc = include_str!("../docs/terminal_session.md")]
 pub struct TerminalSession {
     enable_bracketed_paste: bool,
-    mouse_capture: MouseCapture,
 }
 
 impl TerminalSession {
@@ -31,16 +30,17 @@ impl TerminalSession {
             execute!(stdout, EnableMouseCapture)?;
         }
 
-        Ok(Self { enable_bracketed_paste, mouse_capture })
+        Ok(Self { enable_bracketed_paste })
     }
 }
 
 impl Drop for TerminalSession {
     fn drop(&mut self) {
         let mut stdout = io::stdout();
-        if self.mouse_capture == MouseCapture::Enabled {
-            let _ = execute!(stdout, DisableMouseCapture);
-        }
+        // Always attempt to disable mouse capture defensively: callers may
+        // toggle capture via RendererCommand after session creation, so the
+        // initial `mouse_capture` field may no longer reflect terminal state.
+        let _ = execute!(stdout, DisableMouseCapture);
         if self.enable_bracketed_paste {
             let _ = execute!(stdout, DisableBracketedPaste);
         }

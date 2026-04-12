@@ -4,29 +4,29 @@ use tokio::sync::mpsc;
 use tokio::task::{JoinHandle, spawn_blocking};
 use tokio_util::sync::CancellationToken;
 
-pub mod external;
 pub mod terminal;
-pub use external::run_external_command;
+pub mod terminal_runtime;
 pub use terminal::{MouseCapture, TerminalSession};
+pub use terminal_runtime::{TerminalConfig, TerminalRuntime};
 
-pub struct EventTaskHandle {
+pub(crate) struct EventTaskHandle {
     rx: mpsc::UnboundedReceiver<CrosstermEvent>,
     cancel: CancellationToken,
     join: JoinHandle<()>,
 }
 
 impl EventTaskHandle {
-    pub fn rx(&mut self) -> &mut mpsc::UnboundedReceiver<CrosstermEvent> {
+    pub(crate) fn rx(&mut self) -> &mut mpsc::UnboundedReceiver<CrosstermEvent> {
         &mut self.rx
     }
 
-    pub async fn stop(self) {
+    pub(crate) async fn stop(self) {
         self.cancel.cancel();
         let _ = self.join.await;
     }
 }
 
-pub fn spawn_terminal_event_task() -> EventTaskHandle {
+pub(crate) fn spawn_terminal_event_task() -> EventTaskHandle {
     let (tx, rx) = mpsc::unbounded_channel();
     let cancel = CancellationToken::new();
     let task_cancel = cancel.clone();

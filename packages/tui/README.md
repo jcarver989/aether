@@ -20,14 +20,14 @@ Your app owns its event loop and state machine. The library provides composable 
 
 ## Minimal app
 
-A complete TUI app has four parts: a [`TerminalSession`] (raw mode guard), a [`Renderer`] (output), an event source, and a loop that wires them together.
+A complete TUI app has three parts: a [`TerminalRuntime`] (terminal lifecycle), a [`Component`] (your UI), and a loop that wires them together.
 
 ```rust,no_run
 use std::io;
 use tui::{
     Component, CrosstermEvent, Event, Frame, KeyCode, Line,
-    MouseCapture, Renderer, TerminalSession, Theme, ViewContext,
-    spawn_terminal_event_task, terminal_size,
+    MouseCapture, TerminalConfig, TerminalRuntime, Theme, ViewContext,
+    terminal_size,
 };
 
 // 1. Define your root component
@@ -57,22 +57,25 @@ impl Component for Counter {
 
 enum CounterMsg { Quit }
 
-// 2. Set up terminal, renderer, and event source
+// 2. Set up the terminal runtime
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let size = terminal_size().unwrap_or((80, 24));
-    let mut renderer = Renderer::new(io::stdout(), Theme::default(), size);
-    let _session = TerminalSession::new(true, MouseCapture::Disabled)?;
-    let mut events = spawn_terminal_event_task();
+    let mut terminal = TerminalRuntime::new(
+        io::stdout(),
+        Theme::default(),
+        size,
+        TerminalConfig { bracketed_paste: true, mouse_capture: MouseCapture::Disabled },
+    )?;
 
     let mut app = Counter { count: 0 };
-    renderer.render_frame(|ctx| app.render(ctx))?; // initial paint
+    terminal.render_frame(|ctx| app.render(ctx))?; // initial paint
 
     // 3. Event loop
     loop {
-        let Some(raw) = events.recv().await else { break };
+        let Some(raw) = terminal.next_event().await else { break };
         if let CrosstermEvent::Resize(c, r) = &raw {
-            renderer.on_resize((*c, *r));
+            terminal.on_resize((*c, *r));
         }
         if let Ok(event) = Event::try_from(raw) {
             if let Some(msgs) = app.on_event(&event).await {
@@ -82,14 +85,14 @@ async fn main() -> io::Result<()> {
                     }
                 }
             }
-            renderer.render_frame(|ctx| app.render(ctx))?;
+            terminal.render_frame(|ctx| app.render(ctx))?;
         }
     }
     Ok(())
 }
 ```
 
-Dropping `_session` automatically restores the terminal (disables raw mode, bracketed paste, and mouse capture).
+Dropping the `TerminalRuntime` automatically restores the terminal (disables raw mode, bracketed paste, and mouse capture).
 
 ## How it works
 
@@ -103,11 +106,11 @@ crossterm::Event ──→ Event::try_from ──→ Component::on_event ──�
                                     Renderer::render_frame (diff → ANSI)
 ```
 
-1. **[`spawn_terminal_event_task()`]** reads raw crossterm events in a blocking tokio task.
+1. **[`TerminalRuntime::next_event()`]** reads raw crossterm events from an internal blocking task.
 2. **[`Event::try_from`]** filters key releases and normalizes resize events.
 3. **[`Component::on_event`]** returns `None` (ignored), `Some(vec![])` (consumed), or `Some(vec![msg])` (messages for the parent).
 4. **[`Component::render`]** returns a [`Frame`] (lines + cursor) given a [`ViewContext`] (size + theme).
-5. **[`Renderer::render_frame`]** diffs against the previous frame and emits only changed ANSI sequences.
+5. **[`TerminalRuntime::render_frame`]** diffs against the previous frame and emits only changed ANSI sequences.
 
 ## Composing components
 

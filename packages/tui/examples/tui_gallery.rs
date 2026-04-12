@@ -122,19 +122,23 @@ fn stories() -> Vec<(String, TuiStory)> {
 async fn main() {
     let mut gallery = Gallery::new(stories());
     let size = terminal_size().unwrap_or((80, 24));
-    let mut renderer = Renderer::new(std::io::stdout(), Theme::default(), size);
-    let _session = TerminalSession::new(true, MouseCapture::Disabled).unwrap();
-    let mut event_task = spawn_terminal_event_task();
+    let mut terminal = TerminalRuntime::new(
+        std::io::stdout(),
+        Theme::default(),
+        size,
+        TerminalConfig { bracketed_paste: true, mouse_capture: MouseCapture::Disabled },
+    )
+    .unwrap();
     let mut tick = tokio::time::interval(Duration::from_millis(100));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    renderer.render_frame(|ctx| gallery.render(ctx)).unwrap();
+    terminal.render_frame(|ctx| gallery.render(ctx)).unwrap();
 
     loop {
         tokio::select! {
-            Some(raw) = event_task.rx().recv() => {
+            Some(raw) = terminal.next_event() => {
                 if let CrosstermEvent::Resize(cols, rows) = &raw {
-                    renderer.on_resize((*cols, *rows));
+                    terminal.on_resize((*cols, *rows));
                 }
                 if let Ok(event) = Event::try_from(raw) {
                     if let Some(msgs) = gallery.on_event(&event).await
@@ -142,12 +146,12 @@ async fn main() {
                     {
                         return;
                     }
-                    renderer.render_frame(|ctx| gallery.render(ctx)).unwrap();
+                    terminal.render_frame(|ctx| gallery.render(ctx)).unwrap();
                 }
             }
             _ = tick.tick() => {
                 gallery.on_event(&Event::Tick).await;
-                renderer.render_frame(|ctx| gallery.render(ctx)).unwrap();
+                terminal.render_frame(|ctx| gallery.render(ctx)).unwrap();
             }
         }
     }
