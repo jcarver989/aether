@@ -32,6 +32,7 @@ pub(crate) mod runtime;
 pub mod testing;
 
 // Core re-exports - always available
+pub use components::bordered_text_field::BorderedTextField;
 pub use components::checkbox::Checkbox;
 pub use components::form::{Form, FormField, FormFieldKind, FormMessage};
 pub use components::gallery::{Gallery, GalleryMessage};

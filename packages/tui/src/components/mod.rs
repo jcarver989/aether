@@ -1,3 +1,4 @@
+pub mod bordered_text_field;
 pub mod checkbox;
 pub mod component;
 pub mod form;

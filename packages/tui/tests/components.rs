@@ -1,3 +1,5 @@
+#[path = "components/bordered_text_field.rs"]
+mod bordered_text_field;
 #[path = "components/checkbox.rs"]
 mod checkbox;
 #[path = "components/multi_select.rs"]
