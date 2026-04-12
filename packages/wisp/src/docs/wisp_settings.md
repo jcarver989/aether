@@ -7,7 +7,7 @@ Serialized as JSON to `~/.wisp/settings.json` (or `$WISP_HOME/settings.json`). C
 ```json
 {
   "theme": {
-    "file": "catppuccin.tmTheme"
+    "file": "sage.tmTheme"
   }
 }
 ```

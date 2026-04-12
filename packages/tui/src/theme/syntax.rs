@@ -2,14 +2,14 @@ use super::{Color, Theme, darken_color};
 use std::path::Path;
 use std::sync::Arc;
 
-/// Parse the embedded Catppuccin Mocha `.tmTheme` into a syntect theme.
+/// Parse the embedded Sage `.tmTheme` into a syntect theme.
 ///
 /// Called once at `Theme` construction time; the result is cached in
 /// `Theme::syntect_theme`.
 pub(super) fn parse_default_syntect_theme() -> syntect::highlighting::Theme {
-    let cursor = std::io::Cursor::new(include_bytes!("../../assets/catppuccin-mocha.tmTheme"));
+    let cursor = std::io::Cursor::new(include_bytes!("../../assets/sage.tmTheme"));
     syntect::highlighting::ThemeSet::load_from_reader(&mut std::io::BufReader::new(cursor))
-        .expect("embedded catppuccin-mocha.tmTheme is valid")
+        .expect("embedded sage.tmTheme is valid")
 }
 
 const DEFAULT_FG: Color = Color::Rgb { r: 0xBF, g: 0xBD, b: 0xB6 };

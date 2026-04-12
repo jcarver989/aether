@@ -353,6 +353,13 @@ impl Theme {
     }
 }
 
+#[cfg(feature = "syntax")]
+impl Default for Theme {
+    fn default() -> Self {
+        Self::from(&syntax::parse_default_syntect_theme())
+    }
+}
+
 /// Darken a color to ~30% brightness for use as a subtle background.
 #[allow(clippy::cast_possible_truncation)]
 fn darken_color(color: Color) -> Color {

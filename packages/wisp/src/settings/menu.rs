@@ -265,7 +265,7 @@ mod tests {
     }
 
     fn theme_files() -> Vec<String> {
-        vec!["catppuccin.tmTheme".into(), "nord.tmTheme".into()]
+        vec!["sage.tmTheme".into(), "nord.tmTheme".into()]
     }
 
     fn theme_menu(current: Option<&str>) -> SettingsMenu {
@@ -424,7 +424,7 @@ mod tests {
         assert_eq!(t.values.len(), 3);
         assert_eq!(t.values[0].name, "Default");
         assert_eq!(t.values[0].value, "");
-        assert_eq!(t.values[1].value, "catppuccin.tmTheme");
+        assert_eq!(t.values[1].value, "sage.tmTheme");
         assert_eq!(t.values[2].value, "nord.tmTheme");
     }
 

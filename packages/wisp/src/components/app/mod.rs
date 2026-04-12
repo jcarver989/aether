@@ -735,14 +735,14 @@ mod tests {
 
     #[test]
     fn settings_overlay_with_themes() {
-        let temp_dir = setup_themes_dir(&["catppuccin.tmTheme"]);
+        let temp_dir = setup_themes_dir(&["sage.tmTheme"]);
         with_wisp_home(temp_dir.path(), || {
             let mut app = make_app();
             app.open_settings_overlay();
             assert!(app.settings_overlay.is_some());
         });
 
-        let temp_dir = setup_themes_dir(&["catppuccin.tmTheme", "nord.tmTheme"]);
+        let temp_dir = setup_themes_dir(&["sage.tmTheme", "nord.tmTheme"]);
         with_wisp_home(temp_dir.path(), || {
             let settings = WispSettings {
                 theme: WispThemeSettings { file: Some("nord.tmTheme".to_string()) },

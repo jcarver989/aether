@@ -317,7 +317,7 @@ mod tests {
         for (input, expected) in [
             ("   ", None),
             ("", None),
-            ("catppuccin.tmTheme", Some("catppuccin.tmTheme")),
+            ("sage.tmTheme", Some("sage.tmTheme")),
             ("  spaced.tmTheme  ", Some("spaced.tmTheme")),
         ] {
             assert_eq!(theme_file_from_picker_value(input), expected.map(String::from), "input: {input:?}");
