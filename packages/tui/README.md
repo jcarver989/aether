@@ -135,16 +135,15 @@ impl Component for MyApp {
         )
     }
     fn render(&mut self, ctx: &ViewContext) -> Frame {
-        // Stack child frames vertically
-        let mut layout = Layout::new();
-        layout.section(self.name.render(ctx));
-        layout.section(self.path.render(ctx));
-        layout.into_frame()
+        Frame::vstack([
+            self.name.render(ctx),
+            self.path.render(ctx),
+        ])
     }
 }
 ```
 
-Use [`FocusRing`] to track which child receives events and `Layout` to stack frames vertically.
+Use [`FocusRing`] to track which child receives events and `Frame::vstack` to stack frames vertically.
 
 ## Built-in widgets
 
