@@ -1,3 +1,5 @@
 shared-version = true
 tag-name = "v{{version}}"
 dependent-version = "upgrade"
+pre-release-hook = ["git", "cliff", "-o", "CHANGELOG.md", "--tag", "v{{version}}"]
+pre-release-commit-message = "release: v{{version}}"
