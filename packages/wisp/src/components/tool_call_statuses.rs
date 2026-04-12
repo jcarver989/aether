@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::components::sub_agent_tracker::SubAgentTracker;
-use crate::components::tool_call_status_view::{ToolCallStatus, compute_diff_preview, render_tool_tree};
+use crate::components::tool_call_status_view::{ToolCallStatus, diff_preview_from_acp, render_tool_tree};
 use crate::components::tracked_tool_call::{TrackedToolCall, raw_input_fragment, upsert_tracked_tool_call};
 use tui::{Frame, ViewContext};
 
@@ -81,7 +81,7 @@ impl ToolCallStatuses {
             if let Some(content) = &update.fields.content {
                 for item in content {
                     if let acp::ToolCallContent::Diff(diff) = item {
-                        tc.diff_preview = Some(compute_diff_preview(diff));
+                        tc.diff_preview = Some(diff_preview_from_acp(diff));
                     }
                 }
             }

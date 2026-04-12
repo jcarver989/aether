@@ -1,15 +1,11 @@
 use agent_client_protocol as acp;
-use similar::{DiffOp, TextDiff};
 use std::collections::HashMap;
 use std::path::Path;
 
 use crate::components::sub_agent_tracker::{SUB_AGENT_VISIBLE_TOOL_LIMIT, SubAgentState, SubAgentTracker};
 use crate::components::tracked_tool_call::TrackedToolCall;
 use tui::BRAILLE_FRAMES as FRAMES;
-use tui::{
-    DiffLine, DiffPreview, DiffTag, FitOptions, Frame, Line, SplitDiffCell, SplitDiffRow, Style, ViewContext,
-    render_diff,
-};
+use tui::{DiffPreview, FitOptions, Frame, Line, Style, ViewContext, render_diff};
 
 pub const MAX_TOOL_ARG_LENGTH: usize = 200;
 
@@ -135,154 +131,10 @@ impl ToolCallStatusView<'_> {
     }
 }
 
-/// Compute a visual diff preview from an ACP `Diff` (full old/new text).
-///
-/// Produces both a flat `lines` list (for the unified renderer) and structurally
-/// paired `rows` (for the split side-by-side renderer) using `similar::TextDiff::ops()`.
-pub(super) fn compute_diff_preview(diff: &acp::Diff) -> DiffPreview {
+pub(super) fn diff_preview_from_acp(diff: &acp::Diff) -> DiffPreview {
     let old_text = diff.old_text.as_deref().unwrap_or("");
-    let new_text = &diff.new_text;
-    let text_diff = TextDiff::from_lines(old_text, new_text);
-
-    let old_lines: Vec<&str> = old_text.lines().collect();
-    let new_lines: Vec<&str> = new_text.lines().collect();
-
-    let mut state = DiffBuildState::default();
-    for op in text_diff.ops() {
-        process_diff_op(*op, &old_lines, &new_lines, &mut state);
-    }
-
-    let DiffBuildState { mut lines, mut rows, mut first_change_line, .. } = state;
-
-    trim_context(&mut lines, &mut rows, &mut first_change_line);
-
     let lang_hint = Path::new(&diff.path).extension().and_then(|ext| ext.to_str()).unwrap_or("").to_lowercase();
-
-    DiffPreview { lines, rows, lang_hint, start_line: first_change_line }
-}
-
-#[derive(Default)]
-struct DiffBuildState {
-    lines: Vec<DiffLine>,
-    rows: Vec<SplitDiffRow>,
-    first_change_line: Option<usize>,
-    old_line_num: usize,
-    new_line_num: usize,
-}
-
-fn get_line<'a>(lines: &[&'a str], index: usize) -> &'a str {
-    lines.get(index).unwrap_or(&"").trim_end_matches('\n')
-}
-
-#[allow(clippy::too_many_lines)]
-fn process_diff_op(op: DiffOp, old: &[&str], new: &[&str], s: &mut DiffBuildState) {
-    match op {
-        DiffOp::Equal { old_index, len, .. } => {
-            for i in 0..len {
-                s.old_line_num += 1;
-                s.new_line_num += 1;
-                let content = get_line(old, old_index + i).to_string();
-                s.lines.push(DiffLine { tag: DiffTag::Context, content: content.clone() });
-                s.rows.push(SplitDiffRow {
-                    left: Some(SplitDiffCell {
-                        tag: DiffTag::Context,
-                        content: content.clone(),
-                        line_number: Some(s.old_line_num),
-                    }),
-                    right: Some(SplitDiffCell { tag: DiffTag::Context, content, line_number: Some(s.new_line_num) }),
-                });
-            }
-        }
-        DiffOp::Delete { old_index, old_len, .. } => {
-            if s.first_change_line.is_none() {
-                s.first_change_line = Some(s.old_line_num + 1);
-            }
-            for i in 0..old_len {
-                s.old_line_num += 1;
-                let content = get_line(old, old_index + i).to_string();
-                s.lines.push(DiffLine { tag: DiffTag::Removed, content: content.clone() });
-                s.rows.push(SplitDiffRow {
-                    left: Some(SplitDiffCell { tag: DiffTag::Removed, content, line_number: Some(s.old_line_num) }),
-                    right: None,
-                });
-            }
-        }
-        DiffOp::Insert { new_index, new_len, .. } => {
-            if s.first_change_line.is_none() {
-                s.first_change_line = Some(s.old_line_num + 1);
-            }
-            for i in 0..new_len {
-                s.new_line_num += 1;
-                let content = get_line(new, new_index + i).to_string();
-                s.lines.push(DiffLine { tag: DiffTag::Added, content: content.clone() });
-                s.rows.push(SplitDiffRow {
-                    left: None,
-                    right: Some(SplitDiffCell { tag: DiffTag::Added, content, line_number: Some(s.new_line_num) }),
-                });
-            }
-        }
-        DiffOp::Replace { old_index, old_len, new_index, new_len } => {
-            if s.first_change_line.is_none() {
-                s.first_change_line = Some(s.old_line_num + 1);
-            }
-            for i in 0..old_len {
-                s.lines.push(DiffLine { tag: DiffTag::Removed, content: get_line(old, old_index + i).to_string() });
-            }
-            for i in 0..new_len {
-                s.lines.push(DiffLine { tag: DiffTag::Added, content: get_line(new, new_index + i).to_string() });
-            }
-            for i in 0..old_len.max(new_len) {
-                let left = (i < old_len).then(|| {
-                    s.old_line_num += 1;
-                    SplitDiffCell {
-                        tag: DiffTag::Removed,
-                        content: get_line(old, old_index + i).to_string(),
-                        line_number: Some(s.old_line_num),
-                    }
-                });
-                let right = (i < new_len).then(|| {
-                    s.new_line_num += 1;
-                    SplitDiffCell {
-                        tag: DiffTag::Added,
-                        content: get_line(new, new_index + i).to_string(),
-                        line_number: Some(s.new_line_num),
-                    }
-                });
-                s.rows.push(SplitDiffRow { left, right });
-            }
-        }
-    }
-}
-
-fn trim_context(lines: &mut Vec<DiffLine>, rows: &mut Vec<SplitDiffRow>, first_change_line: &mut Option<usize>) {
-    const CONTEXT_LINES: usize = 3;
-
-    let first_change_idx = lines.iter().position(|l| l.tag != DiffTag::Context);
-    let last_change_idx = lines.iter().rposition(|l| l.tag != DiffTag::Context);
-
-    if let (Some(first), Some(last)) = (first_change_idx, last_change_idx) {
-        let start = first.saturating_sub(CONTEXT_LINES);
-        let end = (last + CONTEXT_LINES + 1).min(lines.len());
-        lines.drain(..start);
-        lines.truncate(end - start);
-        let trimmed_context = first - start;
-        *first_change_line = first_change_line.map(|l| l - trimmed_context);
-    }
-
-    let first_row = rows.iter().position(|r| !is_context_row(r));
-    let last_row = rows.iter().rposition(|r| !is_context_row(r));
-
-    if let (Some(first), Some(last)) = (first_row, last_row) {
-        let start = first.saturating_sub(CONTEXT_LINES);
-        let end = (last + CONTEXT_LINES + 1).min(rows.len());
-        rows.drain(..start);
-        rows.truncate(end - start);
-    }
-}
-
-fn is_context_row(row: &SplitDiffRow) -> bool {
-    row.left.as_ref().is_none_or(|c| c.tag == DiffTag::Context)
-        && row.right.as_ref().is_none_or(|c| c.tag == DiffTag::Context)
+    DiffPreview::compute_trimmed(old_text, &diff.new_text, &lang_hint)
 }
 
 fn render_agent_header(agent: &SubAgentState, tick: u16, context: &ViewContext) -> Frame {
@@ -314,6 +166,12 @@ fn format_arguments(arguments: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tui::{DiffTag, SplitDiffRow};
+
+    fn is_context_row(row: &SplitDiffRow) -> bool {
+        row.left.as_ref().is_none_or(|c| c.tag == DiffTag::Context)
+            && row.right.as_ref().is_none_or(|c| c.tag == DiffTag::Context)
+    }
 
     fn make_large_file(num_lines: usize) -> String {
         (1..=num_lines).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n")
@@ -333,7 +191,7 @@ mod tests {
         let new = replace_line(&old, 45, "CHANGED LINE 45");
 
         let diff = acp::Diff::new("test.rs", new).old_text(old);
-        let preview = compute_diff_preview(&diff);
+        let preview = diff_preview_from_acp(&diff);
 
         let has_change = preview.lines.iter().any(|l| l.tag != DiffTag::Context);
         assert!(has_change, "preview must contain the changed lines");
@@ -345,7 +203,7 @@ mod tests {
         let new = replace_line(&old, 45, "CHANGED LINE 45");
 
         let diff = acp::Diff::new("test.rs", new).old_text(old);
-        let preview = compute_diff_preview(&diff);
+        let preview = diff_preview_from_acp(&diff);
 
         assert!(
             preview.lines.len() <= 10,
@@ -360,7 +218,7 @@ mod tests {
         let new = replace_line(&old, 45, "CHANGED LINE 45");
 
         let diff = acp::Diff::new("test.rs", new).old_text(old);
-        let preview = compute_diff_preview(&diff);
+        let preview = diff_preview_from_acp(&diff);
 
         let start = preview.start_line.expect("start_line should be set");
         assert!(start >= 42, "start_line should be near the edit (line 45), got {start}");
@@ -371,7 +229,7 @@ mod tests {
         let old = "aaa\nbbb\nccc\n";
         let new = "aaa\nBBB\nccc\n";
         let diff = acp::Diff::new("test.txt", new).old_text(old);
-        let preview = compute_diff_preview(&diff);
+        let preview = diff_preview_from_acp(&diff);
 
         assert!(!preview.rows.is_empty(), "rows should not be empty");
         // The replace op should produce a paired row with both left (removed) and right (added)
@@ -389,7 +247,7 @@ mod tests {
         let old = "aaa\nbbb\nccc\n";
         let new = "aaa\nccc\n";
         let diff = acp::Diff::new("test.txt", new).old_text(old);
-        let preview = compute_diff_preview(&diff);
+        let preview = diff_preview_from_acp(&diff);
 
         let delete_row = preview.rows.iter().find(|r| r.left.as_ref().is_some_and(|c| c.tag == DiffTag::Removed));
         assert!(delete_row.is_some(), "should have a delete row");
@@ -401,7 +259,7 @@ mod tests {
         let old = "aaa\nccc\n";
         let new = "aaa\nbbb\nccc\n";
         let diff = acp::Diff::new("test.txt", new).old_text(old);
-        let preview = compute_diff_preview(&diff);
+        let preview = diff_preview_from_acp(&diff);
 
         let insert_row = preview.rows.iter().find(|r| r.right.as_ref().is_some_and(|c| c.tag == DiffTag::Added));
         assert!(insert_row.is_some(), "should have an insert row");
@@ -413,7 +271,7 @@ mod tests {
         let old = make_large_file(50);
         let new = replace_line(&old, 25, "CHANGED LINE 25");
         let diff = acp::Diff::new("test.rs", new).old_text(old);
-        let preview = compute_diff_preview(&diff);
+        let preview = diff_preview_from_acp(&diff);
 
         // Both should be trimmed to roughly the same size (3 context + changes + 3 context)
         assert!(preview.lines.len() <= 10, "lines should be trimmed, got {}", preview.lines.len());
