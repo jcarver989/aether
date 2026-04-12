@@ -20,6 +20,10 @@ impl EventTaskHandle {
         &mut self.rx
     }
 
+    pub(crate) fn cancel(&self) {
+        self.cancel.cancel();
+    }
+
     pub(crate) async fn stop(self) {
         self.cancel.cancel();
         let _ = self.join.await;

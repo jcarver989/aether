@@ -50,6 +50,13 @@ impl<W: Write> Renderer<W> {
         self.render_frame_internal(frame)
     }
 
+    pub fn cleanup(&mut self) -> io::Result<()> {
+        let visible_rows = self.prev_frame.as_ref().map_or(0, |f| f.visible_lines().len());
+        self.terminal.cleanup(visible_rows)?;
+        self.prev_frame = None;
+        Ok(())
+    }
+
     pub fn clear_screen(&mut self) -> io::Result<()> {
         let commands = vec![TerminalCommand::ClearAll];
         self.terminal.execute_batch(&commands)?;
@@ -441,5 +448,69 @@ mod tests {
         let f = frame_with_cursor(&["abcdef"], 0, 5);
         r.render_frame_internal(f).unwrap();
         assert_has(&output(&r), "\x1b[2C", "cursor should be at col 2 (MoveRight(2))");
+    }
+
+    fn cleanup_output(r: &mut Renderer<FakeWriter>) -> String {
+        r.terminal.writer.bytes.clear();
+        r.cleanup().unwrap();
+        output(r)
+    }
+
+    #[test]
+    fn cleanup_clears_rendered_region() {
+        let mut r = renderer((80, 24));
+        r.render_frame_internal(frame(&["aaa", "bbb", "ccc"])).unwrap();
+        let out = cleanup_output(&mut r);
+        assert_has(&out, "\x1b[2A", "should move up to top of rendered region");
+        assert_has(&out, "\x1b[J", "should clear from cursor down");
+    }
+
+    #[test]
+    fn cleanup_restores_cursor_offset() {
+        let mut r = renderer((80, 24));
+        let f = frame_with_cursor(&["aaa", "bbb", "ccc"], 0, 0);
+        r.render_frame_internal(f).unwrap();
+        let out = cleanup_output(&mut r);
+        assert_has(&out, "\x1b[2B", "should move down past cursor offset");
+        assert_has(&out, "\x1b[2A", "should then move up to top");
+        assert_has(&out, "\x1b[J", "should clear from cursor down");
+    }
+
+    #[test]
+    fn cleanup_shows_hidden_cursor() {
+        let mut r = renderer((80, 24));
+        let f = Frame::new(vec![Line::new("hello")]).with_cursor(Cursor::hidden());
+        r.render_frame_internal(f).unwrap();
+        let out = cleanup_output(&mut r);
+        assert_has(&out, "\x1b[?25h", "should show cursor");
+    }
+
+    #[test]
+    fn cleanup_without_render_does_not_move_cursor() {
+        let mut r = renderer((80, 24));
+        let out = cleanup_output(&mut r);
+        for n in 1..=10 {
+            assert_missing(&out, &format!("\x1b[{n}A"), "should not move up");
+            assert_missing(&out, &format!("\x1b[{n}B"), "should not move down");
+        }
+        assert_missing(&out, "\x1b[?25h", "should not show cursor (already visible)");
+    }
+
+    #[test]
+    fn cleanup_after_clear_screen_is_noop() {
+        let mut r = renderer((80, 24));
+        r.render_frame_internal(frame(&["aaa", "bbb"])).unwrap();
+        r.clear_screen().unwrap();
+        let out = cleanup_output(&mut r);
+        assert_missing(&out, "\x1b[2A", "should not move up");
+        assert_missing(&out, "\x1b[2B", "should not move down");
+    }
+
+    #[test]
+    fn cleanup_resets_prev_frame() {
+        let mut r = renderer((80, 24));
+        r.render_frame_internal(frame(&["hello"])).unwrap();
+        r.cleanup().unwrap();
+        assert!(r.prev_frame.is_none(), "cleanup should reset prev_frame");
     }
 }

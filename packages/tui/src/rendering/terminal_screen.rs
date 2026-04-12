@@ -112,6 +112,24 @@ impl<W: Write> TerminalScreen<W> {
         Ok(())
     }
 
+    pub(crate) fn cleanup(&mut self, visible_rows: usize) -> io::Result<()> {
+        if self.cursor_row_offset > 0 {
+            self.writer.queue(MoveDown(self.cursor_row_offset))?;
+        }
+        let up = visible_rows.saturating_sub(1);
+        if up > 0 {
+            self.writer.queue(MoveUp(u16::try_from(up).unwrap_or(u16::MAX)))?;
+        }
+        write!(self.writer, "\r")?;
+        self.writer.queue(Clear(ClearType::FromCursorDown))?;
+        if !self.cursor_visible {
+            self.writer.queue(Show)?;
+            self.cursor_visible = true;
+        }
+        self.cursor_row_offset = 0;
+        self.writer.flush()
+    }
+
     pub(crate) fn reset_cursor_offset(&mut self) {
         self.cursor_row_offset = 0;
     }

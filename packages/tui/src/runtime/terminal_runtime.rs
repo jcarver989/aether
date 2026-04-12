@@ -67,6 +67,15 @@ impl<T: Write> TerminalRuntime<T> {
     }
 }
 
+impl<T: Write> Drop for TerminalRuntime<T> {
+    fn drop(&mut self) {
+        if let Some(ref handle) = self.event_task {
+            handle.cancel();
+        }
+        let _ = self.renderer.cleanup();
+    }
+}
+
 pub struct SuspendedTerminal<'a, T: Write> {
     runtime: &'a mut TerminalRuntime<T>,
     resumed: bool,
