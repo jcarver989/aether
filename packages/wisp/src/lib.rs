@@ -88,7 +88,7 @@ async fn run_app(
     let size = terminal_size().unwrap_or((80, 24));
     let mut renderer = Renderer::new(io::stdout(), theme, size);
     let _session = TerminalSession::new(true, MouseCapture::Disabled)?;
-    let mut terminal_rx = spawn_terminal_event_task();
+    let mut event_task = spawn_terminal_event_task();
     let mut tick_interval = {
         let mut tick = interval(Duration::from_millis(100));
         tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
@@ -106,7 +106,7 @@ async fn run_app(
         };
 
         select! {
-            terminal_event = terminal_rx.recv() => {
+            terminal_event = event_task.rx().recv() => {
                 let Some(event) = terminal_event else {
                     return Ok(());
                 };

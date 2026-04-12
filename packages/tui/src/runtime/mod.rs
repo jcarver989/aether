@@ -1,20 +1,42 @@
 use crossterm::event::{Event as CrosstermEvent, poll, read};
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tokio::task::spawn_blocking;
+use tokio::task::{JoinHandle, spawn_blocking};
+use tokio_util::sync::CancellationToken;
 
+pub mod external;
 pub mod terminal;
+pub use external::run_external_command;
 pub use terminal::{MouseCapture, TerminalSession};
 
-pub fn spawn_terminal_event_task() -> mpsc::UnboundedReceiver<CrosstermEvent> {
+pub struct EventTaskHandle {
+    rx: mpsc::UnboundedReceiver<CrosstermEvent>,
+    cancel: CancellationToken,
+    join: JoinHandle<()>,
+}
+
+impl EventTaskHandle {
+    pub fn rx(&mut self) -> &mut mpsc::UnboundedReceiver<CrosstermEvent> {
+        &mut self.rx
+    }
+
+    pub async fn stop(self) {
+        self.cancel.cancel();
+        let _ = self.join.await;
+    }
+}
+
+pub fn spawn_terminal_event_task() -> EventTaskHandle {
     let (tx, rx) = mpsc::unbounded_channel();
-    spawn_blocking(move || {
+    let cancel = CancellationToken::new();
+    let task_cancel = cancel.clone();
+    let join = spawn_blocking(move || {
         loop {
-            if tx.is_closed() {
+            if task_cancel.is_cancelled() || tx.is_closed() {
                 break;
             }
 
-            match poll(Duration::from_millis(50)).and_then(|ready| ready.then(read).transpose()) {
+            match poll(Duration::from_millis(10)).and_then(|ready| ready.then(read).transpose()) {
                 Ok(Some(event)) => {
                     if tx.send(event).is_err() {
                         break;
@@ -25,5 +47,5 @@ pub fn spawn_terminal_event_task() -> mpsc::UnboundedReceiver<CrosstermEvent> {
             }
         }
     });
-    rx
+    EventTaskHandle { rx, cancel, join }
 }

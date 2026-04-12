@@ -124,7 +124,7 @@ async fn main() {
     let size = terminal_size().unwrap_or((80, 24));
     let mut renderer = Renderer::new(std::io::stdout(), Theme::default(), size);
     let _session = TerminalSession::new(true, MouseCapture::Disabled).unwrap();
-    let mut events = spawn_terminal_event_task();
+    let mut event_task = spawn_terminal_event_task();
     let mut tick = tokio::time::interval(Duration::from_millis(100));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -132,7 +132,7 @@ async fn main() {
 
     loop {
         tokio::select! {
-            Some(raw) = events.recv() => {
+            Some(raw) = event_task.rx().recv() => {
                 if let CrosstermEvent::Resize(cols, rows) = &raw {
                     renderer.on_resize((*cols, *rows));
                 }
