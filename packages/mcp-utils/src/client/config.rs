@@ -2,7 +2,7 @@ use futures::future::BoxFuture;
 use rmcp::{RoleServer, service::DynService, transport::streamable_http_client::StreamableHttpClientTransportConfig};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 use super::variables::{VarError, expand_env_vars};
@@ -10,7 +10,7 @@ use super::variables::{VarError, expand_env_vars};
 /// Top-level MCP configuration
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawMcpConfig {
-    pub servers: HashMap<String, RawMcpServerConfig>,
+    pub servers: BTreeMap<String, RawMcpServerConfig>,
 }
 
 /// Server connection definition
@@ -193,7 +193,7 @@ impl RawMcpConfig {
     /// Server name collisions are resolved by "last file wins" via `HashMap::extend`,
     /// so the rightmost file in `paths` takes precedence on overlap.
     pub fn from_json_files<T: AsRef<Path>>(paths: &[T]) -> Result<Self, ParseError> {
-        let mut merged = HashMap::new();
+        let mut merged = BTreeMap::new();
         for path in paths {
             let raw = Self::from_json_file(path)?;
             merged.extend(raw.servers);
