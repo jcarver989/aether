@@ -43,7 +43,7 @@
     {
       "name": "Explorer",
       "description": "Explores codebases to find relevant files, patterns, and integration points",
-      "model": "openrouter:minimax/minimax-m2.7",
+      "model": "zai:glm-4.7",
       "userInvocable": false,
       "agentInvocable": true,
       "prompts": [".aether/agents/codebase-explorer/AGENTS.md"],
