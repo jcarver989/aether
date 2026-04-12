@@ -131,11 +131,11 @@ fn resolve_agent_entry(
 
     let mcp_config_paths = resolve_mcp_config_paths(project_root, &entry.mcp_servers)?;
 
-    let mut prompts = Vec::with_capacity(inherited_prompts.len() + entry.prompts.len());
-    prompts.extend_from_slice(inherited_prompts);
-    for pattern in &entry.prompts {
-        prompts.push(Prompt::from_globs(vec![pattern.clone()], project_root.to_path_buf()));
-    }
+    let prompts = if entry.prompts.is_empty() {
+        inherited_prompts.to_vec()
+    } else {
+        entry.prompts.iter().map(|p| Prompt::from_globs(vec![p.clone()], project_root.to_path_buf())).collect()
+    };
 
     Ok(AgentSpec {
         name,
@@ -353,7 +353,7 @@ mod tests {
     }
 
     #[test]
-    fn top_level_prompts_inherited_by_all_agents() {
+    fn agent_prompts_override_inherited() {
         let dir = create_temp_project();
         write_file(dir.path(), "BASE.md", "Base instructions");
         write_file(dir.path(), "AGENTS.md", "Agent instructions");
@@ -363,8 +363,21 @@ mod tests {
         );
 
         let catalog = load_agent_catalog(dir.path()).unwrap();
-        // Should have 2 prompts: 1 inherited + 1 local
-        assert_eq!(catalog.get("planner").unwrap().prompts.len(), 2);
+        // Agent-local prompts override inherited, not additive
+        assert_eq!(catalog.get("planner").unwrap().prompts.len(), 1);
+    }
+
+    #[test]
+    fn agent_without_prompts_inherits_top_level() {
+        let dir = create_temp_project();
+        write_file(dir.path(), "BASE.md", "Base instructions");
+        write_settings(
+            dir.path(),
+            r#"{"prompts": ["BASE.md"], "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true}]}"#,
+        );
+
+        let catalog = load_agent_catalog(dir.path()).unwrap();
+        assert_eq!(catalog.get("planner").unwrap().prompts.len(), 1);
     }
 
     #[test]

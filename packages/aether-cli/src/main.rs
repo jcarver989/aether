@@ -1,5 +1,5 @@
 use aether_cli::acp::{AcpArgs, run_acp};
-use aether_cli::agent::{AgentCommand, NewAgentOutcome, NewArgs, run_new, should_run_onboarding};
+use aether_cli::agent::{AgentCommand, NewAgentOutcome, NewArgs, run_list, run_new, run_remove, should_run_onboarding};
 use aether_cli::headless::{HeadlessArgs, run_headless};
 use aether_cli::show_prompt::{PromptArgs, run_prompt};
 use clap::{Parser, Subcommand};
@@ -55,6 +55,14 @@ fn main() -> ExitCode {
 
         Some(Command::Agent(AgentCommand::New(args))) => {
             rt.block_on(run_new(args)).map(|_| ExitCode::SUCCESS).map_err(|e| e.to_string())
+        }
+
+        Some(Command::Agent(AgentCommand::List(args))) => {
+            run_list(args).map(|()| ExitCode::SUCCESS).map_err(|e| e.to_string())
+        }
+
+        Some(Command::Agent(AgentCommand::Remove(args))) => {
+            run_remove(args).map(|()| ExitCode::SUCCESS).map_err(|e| e.to_string())
         }
 
         Some(Command::Lspd(args)) => aether_lspd::run_lspd(args).map(|()| ExitCode::SUCCESS),
