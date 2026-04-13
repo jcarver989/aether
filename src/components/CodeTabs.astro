@@ -68,6 +68,10 @@ const { labels } = Astro.props;
         border-top-right-radius: 0 !important;
     }
 
+    .code-tabs-panels :global(.expressive-code .frame.is-terminal .header) {
+        display: none !important;
+    }
+
     /* Hidden panels: visually hidden but preserve tallest panel's height */
     .code-tabs-panels :global(.expressive-code[data-hidden]) {
         visibility: hidden;
