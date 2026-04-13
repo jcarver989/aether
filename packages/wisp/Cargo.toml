@@ -1,6 +1,6 @@
 [package]
 name = "aether-wisp"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2024"
 description = "A terminal UI for AI coding agents via the Agent Client Protocol (ACP)"
 license = "MIT"
@@ -24,9 +24,9 @@ rustdoc-args = ["--cfg", "docsrs"]
 workspace = true
 
 [dependencies]
-acp_utils = { package = "aether-acp-utils", path = "../acp-utils", features = ["client"], version = "0.1.5" }
-tui = { package = "aether-tui", path = "../tui", version = "0.1.5" }
-utils = { package = "aether-utils", path = "../utils", version = "0.1.5" }
+acp_utils = { package = "aether-acp-utils", path = "../acp-utils", features = ["client"], version = "0.1.6" }
+tui = { package = "aether-tui", path = "../tui", version = "0.1.6" }
+utils = { package = "aether-utils", path = "../utils", version = "0.1.6" }
 agent-client-protocol = { workspace = true }
 base64 = { workspace = true }
 tokio = { workspace = true }
@@ -44,5 +44,5 @@ similar = { workspace = true }
 chrono = { workspace = true }
 
 [dev-dependencies]
-tui = { package = "aether-tui", path = "../tui", features = ["testing"], version = "0.1.5" }
+tui = { package = "aether-tui", path = "../tui", features = ["testing"], version = "0.1.6" }
 tempfile = { workspace = true }
