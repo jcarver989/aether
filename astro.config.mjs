@@ -127,8 +127,5 @@ export default defineConfig({
       ],
     }),
   ],
-  redirects: {
-    "/install": "https://github.com/jcarver989/aether/releases/latest/download/aether-agent-cli-installer.sh",
-  },
   vite: { plugins: [tailwindcss()] },
 });
