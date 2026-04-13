@@ -2,12 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.3] - 2026-04-13
+## [0.1.4] - 2026-04-13
 
 ### Bug Fixes
 
 - *(lspd)* Flaky test ([a4b1d82](https://github.com/jcarver989/aether/commit/a4b1d82b5c5fc7c51826f8ad7891046e7b1e1336))
 - Fmt ([e404954](https://github.com/jcarver989/aether/commit/e4049540519573049de96594e5a918056b7f7d5e))
+
+### Release
+
+- V0.1.3 ([c024669](https://github.com/jcarver989/aether/commit/c024669671ec935afedd8581b165c20676d376e8))
 ## [0.1.2] - 2026-04-05
 
 ### Bug Fixes

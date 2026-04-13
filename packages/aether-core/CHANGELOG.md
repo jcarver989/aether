@@ -2,13 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.3] - 2026-04-13
+## [0.1.4] - 2026-04-13
 
 ### Features
 
 - *(aether-cli)* Support shell command expansion in prompt files ([f3ea6f5](https://github.com/jcarver989/aether/commit/f3ea6f56142f35354f585082edfd3196a84a6547))
 - *(aether-cli)* Support MCP url elicitation ([09d6787](https://github.com/jcarver989/aether/commit/09d6787bbabe4c99987cd247eda8887f335a660a))
 - *(aether-cli)* Support loading and merging multiple mcp.json files ([31821b3](https://github.com/jcarver989/aether/commit/31821b3809602d46e678876ca0d65cffc0762f10))
+
+### Release
+
+- V0.1.3 ([c024669](https://github.com/jcarver989/aether/commit/c024669671ec935afedd8581b165c20676d376e8))
 ## [0.1.2] - 2026-04-05
 
 ### Bug Fixes

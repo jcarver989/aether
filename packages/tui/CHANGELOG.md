@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.3] - 2026-04-13
+## [0.1.4] - 2026-04-13
 
 ### Bug Fixes
 
@@ -22,6 +22,10 @@ All notable changes to this project will be documented in this file.
 - *(tui)* Add BorderedTextField ([c865977](https://github.com/jcarver989/aether/commit/c865977c16947e4b3877b0ffbed45930295f2492))
 - *(wip)* Double cntrl-c to exit ([09dda29](https://github.com/jcarver989/aether/commit/09dda29f41c85c63a02fd94883895236d3f94d9d))
 - *(tui)* Add Frame::splice to join frames together ([6191722](https://github.com/jcarver989/aether/commit/61917228fc2809463e7a25797ada9f45f150d2f6))
+
+### Release
+
+- V0.1.3 ([c024669](https://github.com/jcarver989/aether/commit/c024669671ec935afedd8581b165c20676d376e8))
 ## [0.1.2] - 2026-04-05
 
 ### Bug Fixes

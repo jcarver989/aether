@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.3] - 2026-04-13
+## [0.1.4] - 2026-04-13
 
 ### Bug Fixes
 
@@ -11,6 +11,10 @@ All notable changes to this project will be documented in this file.
 ### Features
 
 - *(llm)* Improved token usage tracking with reasoning, cached, and multi modal ([d4d6431](https://github.com/jcarver989/aether/commit/d4d6431abce31cfd5c349cfbea8aa502860a34ae))
+
+### Release
+
+- V0.1.3 ([c024669](https://github.com/jcarver989/aether/commit/c024669671ec935afedd8581b165c20676d376e8))
 ## [0.1.2] - 2026-04-05
 
 ### Bug Fixes
