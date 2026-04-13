@@ -1,5 +1,4 @@
-shared-version = true
-tag-name = "v{{version}}"
+tag-name = "{{crate_name}}-v{{version}}"
 dependent-version = "upgrade"
-pre-release-hook = ["sh", "-c", "git cliff -o $CRATE_ROOT/CHANGELOG.md --include-path \"$CRATE_ROOT/**\" --tag v{{version}} && git add $CRATE_ROOT/CHANGELOG.md"]
-pre-release-commit-message = "release: v{{version}}"
+pre-release-hook = ["sh", "-c", "git cliff -o $CRATE_ROOT/CHANGELOG.md --include-path \"$CRATE_ROOT/**\" --tag {{crate_name}}-v{{version}} && git add $CRATE_ROOT/CHANGELOG.md"]
+pre-release-commit-message = "release: {{crate_name}} v{{version}}"
