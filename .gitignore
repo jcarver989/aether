@@ -8,3 +8,4 @@ packages/llm/src/catalog/generated.rs
 .aether-tasks/
 plans/
 sweep.timestamp
+.astro/
