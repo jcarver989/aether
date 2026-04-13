@@ -85,13 +85,41 @@ install:
     cargo install --path packages/aether-cli --force
     cargo install --path packages/wisp --force
 
-# Bump version, tag, publish all crates to crates.io (e.g. just release patch)
+# Release only packages with changes since their last tag
 release LEVEL:
-    cargo release {{LEVEL}} --execute
+    #!/usr/bin/env bash
+    set -euo pipefail
+    pkgs=""
+    while IFS=$'\t' read -r name dir; do
+        tag=$(git tag -l "${name}-v*" --sort=-v:refname | head -1)
+        if [ -z "$tag" ] || [ -n "$(git log "${tag}..HEAD" -- "$dir")" ]; then
+            pkgs="$pkgs -p $name"
+        fi
+    done < <(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | [.name, (.manifest_path | split("/") | .[:-1] | join("/"))] | @tsv')
+    if [ -z "$pkgs" ]; then
+        echo "No packages have changes to release"
+        exit 0
+    fi
+    echo "Releasing:$pkgs"
+    cargo release {{LEVEL}} $pkgs --execute
 
 # Dry-run release (no commits, tags, or publishing)
 release-dry-run LEVEL="patch":
-    cargo release {{LEVEL}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    pkgs=""
+    while IFS=$'\t' read -r name dir; do
+        tag=$(git tag -l "${name}-v*" --sort=-v:refname | head -1)
+        if [ -z "$tag" ] || [ -n "$(git log "${tag}..HEAD" -- "$dir")" ]; then
+            pkgs="$pkgs -p $name"
+        fi
+    done < <(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | [.name, (.manifest_path | split("/") | .[:-1] | join("/"))] | @tsv')
+    if [ -z "$pkgs" ]; then
+        echo "No packages have changes to release"
+        exit 0
+    fi
+    echo "Would release:$pkgs"
+    cargo release {{LEVEL}} $pkgs
 
 # Clean everything
 clean:
