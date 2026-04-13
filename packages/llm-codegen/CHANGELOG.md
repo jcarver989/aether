@@ -2,4 +2,4 @@
 
 All notable changes to this project will be documented in this file.
 
-## [aether-llm-codegen-v0.1.6] - 2026-04-13
+## [aether-llm-codegen-v0.1.7] - 2026-04-13
