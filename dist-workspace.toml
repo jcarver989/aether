@@ -14,7 +14,7 @@ installers = ["shell", "npm", "homebrew"]
 # A GitHub repo to push Homebrew formulas to
 tap = "jcarver989/homebrew-tap"
 # Publish jobs to run in CI
-publish-jobs = ["homebrew"]
+publish-jobs = ["homebrew", "npm"]
 packages = ["aether-agent-cli"]
 # Path that installers should place binaries in
 install-path = "CARGO_HOME"
