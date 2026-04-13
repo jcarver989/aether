@@ -1,11 +1,13 @@
 // @ts-check
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import icon from "astro-icon";
 import tailwindcss from "@tailwindcss/vite";
 import { GITHUB_URL } from "./src/consts.ts";
 
 export default defineConfig({
   integrations: [
+    icon(),
     starlight({
       title: "Aether",
       customCss: [
@@ -125,5 +127,8 @@ export default defineConfig({
       ],
     }),
   ],
+  redirects: {
+    "/install": "https://github.com/jcarver989/aether/releases/latest/download/aether-agent-cli-installer.sh",
+  },
   vite: { plugins: [tailwindcss()] },
 });

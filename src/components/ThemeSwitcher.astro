@@ -3,12 +3,15 @@
  * Theme switcher dropdown. Renders inside the landing page header
  * and replaces Starlight's ThemeSelect on doc pages.
  */
+import { Icon } from "astro-icon/components";
 ---
 
 <aether-theme-switcher>
+    <Icon name="lucide:palette" size={14} class="theme-icon" />
+    <span class="theme-label">Theme:</span>
     <label class="sr-only" for="theme-select">Color theme</label>
     <select id="theme-select">
-        <option value="">GitHub Dark</option>
+        <option value="">Sage</option>
         <option value="dracula">Dracula</option>
         <option value="nord">Nord</option>
         <option value="catppuccin">Catppuccin</option>
@@ -27,6 +30,19 @@
     aether-theme-switcher {
         display: inline-flex;
         align-items: center;
+        gap: 0.375rem;
+    }
+
+    .theme-icon {
+        color: var(--color-gray-400, #6b7280);
+        flex-shrink: 0;
+    }
+
+    .theme-label {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.75rem;
+        color: var(--color-gray-400, #6b7280);
+        white-space: nowrap;
     }
 
     select {
