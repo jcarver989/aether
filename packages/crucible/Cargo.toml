@@ -15,7 +15,7 @@ workspace = true
 clap = { workspace = true }
 
 # Colored output
-owo-colors = { workspace = true }
+crossterm = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true }

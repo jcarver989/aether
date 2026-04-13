@@ -9,7 +9,7 @@ use axum::{
     },
     routing::get,
 };
-use owo_colors::OwoColorize;
+use crossterm::style::Stylize;
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::sync::Arc;

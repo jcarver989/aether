@@ -53,6 +53,7 @@ dependencies = [
  "agent-client-protocol",
  "async-trait",
  "clap",
+ "crossterm",
  "dirs",
  "futures",
  "rmcp",
@@ -1472,8 +1473,8 @@ dependencies = [
  "axum",
  "chrono",
  "clap",
+ "crossterm",
  "futures",
- "owo-colors",
  "schemars",
  "serde",
  "serde_json",
@@ -3394,12 +3395,6 @@ name = "outref"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
-
-[[package]]
-name = "owo-colors"
-version = "4.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d211803b9b6b570f68772237e415a029d5a50c65d382910b879fb19d3271f94d"
 
 [[package]]
 name = "parking"

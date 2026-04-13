@@ -180,14 +180,14 @@ impl EvalAssertionResult {
     }
 
     pub fn print(&self, assertion: &EvalAssertion) {
-        use owo_colors::OwoColorize;
+        use crossterm::style::Stylize;
 
         match self {
             EvalAssertionResult::Success { message } => {
-                println!("{} {}: {}", "✓".green().bold(), assertion.to_string().dimmed(), message.green());
+                println!("{} {}: {}", "✓".green().bold(), assertion.to_string().dim(), message.as_str().green());
             }
             EvalAssertionResult::Failure { message } => {
-                println!("{} {}: {}", "✗".red().bold(), assertion.to_string().dimmed(), message.red());
+                println!("{} {}: {}", "✗".red().bold(), assertion.to_string().dim(), message.as_str().red());
             }
         }
     }

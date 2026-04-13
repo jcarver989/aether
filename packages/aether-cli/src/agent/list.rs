@@ -1,4 +1,5 @@
 use aether_project::{AgentEntry, Settings};
+use crossterm::style::Stylize;
 use std::fs;
 
 use crate::agent::ListArgs;
@@ -39,13 +40,13 @@ pub fn run_list(args: ListArgs) -> Result<(), CliError> {
 }
 
 fn print_agent(agent: &AgentEntry, settings: &Settings) {
-    println!("{}", agent.name);
-    println!("  model:       {}", agent.model);
+    println!("{}", agent.name.as_str().bold().cyan());
+    println!("  {}       {}", "model:".dim(), agent.model);
 
     let reasoning = agent.reasoning_effort.as_ref().map_or("none".to_string(), std::string::ToString::to_string);
-    println!("  reasoning:   {reasoning}");
+    println!("  {}   {reasoning}", "reasoning:".dim());
 
-    println!("  description: {}", agent.description);
+    println!("  {} {}", "description:".dim(), agent.description);
 
     let mut surfaces = Vec::new();
     if agent.user_invocable {
@@ -54,12 +55,13 @@ fn print_agent(agent: &AgentEntry, settings: &Settings) {
     if agent.agent_invocable {
         surfaces.push("agent");
     }
-    println!("  invocable:   {}", surfaces.join(", "));
+    println!("  {}   {}", "invocable:".dim(), surfaces.join(", "));
 
     let effective_prompts = if agent.prompts.is_empty() { &settings.prompts } else { &agent.prompts };
     if !effective_prompts.is_empty() {
         println!(
-            "  prompts:     {}",
+            "  {}     {}",
+            "prompts:".dim(),
             effective_prompts.iter().map(std::string::String::as_str).collect::<Vec<_>>().join(", ")
         );
     }
@@ -67,16 +69,17 @@ fn print_agent(agent: &AgentEntry, settings: &Settings) {
     let effective_mcp = if agent.mcp_servers.is_empty() { &settings.mcp_servers } else { &agent.mcp_servers };
     if !effective_mcp.is_empty() {
         println!(
-            "  mcp servers: {}",
+            "  {} {}",
+            "mcp servers:".dim(),
             effective_mcp.iter().map(std::string::String::as_str).collect::<Vec<_>>().join(", ")
         );
     }
 
     if !agent.tools.allow.is_empty() {
-        println!("  tools allow: {}", agent.tools.allow.join(", "));
+        println!("  {} {}", "tools allow:".dim(), agent.tools.allow.join(", "));
     }
     if !agent.tools.deny.is_empty() {
-        println!("  tools deny:  {}", agent.tools.deny.join(", "));
+        println!("  {}  {}", "tools deny:".dim(), agent.tools.deny.join(", "));
     }
 }
 

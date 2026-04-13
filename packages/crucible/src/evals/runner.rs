@@ -1,6 +1,6 @@
 use crate::agents::AgentRunner;
+use crossterm::style::Stylize;
 use llm::StreamingModelProvider;
-use owo_colors::OwoColorize;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -92,7 +92,7 @@ where
         }
 
         let run_id = Uuid::new_v4();
-        println!("\n{} {}", "Run ID:".bold(), run_id.to_string().bright_cyan());
+        println!("\n{} {}", "Run ID:".bold(), run_id.to_string().cyan());
 
         let agent_prompt = self.agent_prompt;
         let runner = Arc::new(self.runner);

@@ -1,4 +1,5 @@
 use aether_project::Settings;
+use crossterm::style::Stylize;
 use std::fs;
 use std::path::Path;
 
@@ -27,7 +28,7 @@ pub fn run_remove(args: RemoveArgs) -> Result<(), CliError> {
     let json = serde_json::to_string_pretty(&settings).expect("settings serialization cannot fail");
     fs::write(&settings_path, json).map_err(CliError::IoError)?;
 
-    println!("Removed agent '{}'", entry.name);
+    println!("{} Removed agent '{}'", "✓".green().bold(), entry.name);
     Ok(())
 }
 
