@@ -1,4 +1,4 @@
-use aether_project::{AgentEntry, Settings};
+use aether_project::{AgentEntry, McpServerEntry, Settings};
 use std::{
     fs::{create_dir_all, read_to_string, write},
     path::{Path, PathBuf},
@@ -53,9 +53,13 @@ impl DraftAgentEntry {
             }
         }
 
-        let mut mcp_servers =
-            if self.entry.mcp_servers.is_empty() { vec![] } else { vec![paths.mcp_json.to_string_lossy().to_string()] };
-        mcp_servers.extend(self.workspace_mcp_configs.iter().cloned());
+        let mut mcp_servers: Vec<McpServerEntry> = if self.entry.mcp_servers.is_empty() {
+            vec![]
+        } else {
+            vec![McpServerEntry::Path(paths.mcp_json.to_string_lossy().to_string())]
+        };
+
+        mcp_servers.extend(self.workspace_mcp_configs.iter().map(|s| McpServerEntry::Path(s.clone())));
 
         AgentEntry { prompts, mcp_servers, ..self.entry.clone() }
     }
@@ -85,9 +89,10 @@ impl DraftAgentEntry {
             .entry
             .mcp_servers
             .iter()
-            .map(|name| {
+            .map(|entry| {
+                let name = entry.path_str();
                 let args = if name == "skills" { vec!["--dir".into(), "$HOME/.aether".into()] } else { vec![] };
-                (name.clone(), RawMcpServerConfig::InMemory { args, input: None })
+                (name.to_string(), RawMcpServerConfig::InMemory { args, input: None })
             })
             .collect::<BTreeMap<_, _>>();
 
@@ -191,7 +196,7 @@ mod tests {
                 agent_invocable: true,
                 model: "anthropic:claude-sonnet-4-5".to_string(),
                 prompts: vec!["AGENTS.md".to_string()],
-                mcp_servers: vec!["coding".to_string(), "skills".to_string(), "tasks".to_string()],
+                mcp_servers: vec!["coding".into(), "skills".into(), "tasks".into()],
                 ..AgentEntry::default()
             },
             system_md_content: String::new(),
@@ -293,7 +298,7 @@ mod tests {
         assert_eq!(settings.agents.len(), 1);
         assert!(settings.agents[0].prompts.contains(&".aether/DEFAULT.md".to_string()));
         assert!(settings.agents[0].prompts.contains(&"AGENTS.md".to_string()));
-        assert!(settings.agents[0].mcp_servers.contains(&".aether/mcp.json".to_string()));
+        assert!(settings.agents[0].mcp_servers.contains(&".aether/mcp.json".into()));
     }
 
     #[test]
@@ -334,7 +339,7 @@ mod tests {
     fn scaffold_custom_servers() {
         let dir = tempfile::tempdir().unwrap();
         let mut draft = default_draft();
-        draft.entry.mcp_servers = vec!["coding".to_string(), "lsp".to_string()];
+        draft.entry.mcp_servers = vec!["coding".into(), "lsp".into()];
         scaffold(dir.path(), &draft).unwrap();
 
         let raw = RawMcpConfig::from_json_file(dir.path().join(".aether/mcp.json")).unwrap();
@@ -413,7 +418,7 @@ mod tests {
 
         let settings_path = dir.path().join(".aether/settings.json");
         let mut new_draft = researcher_draft();
-        new_draft.entry.mcp_servers = vec!["coding".to_string()];
+        new_draft.entry.mcp_servers = vec!["coding".into()];
         add_agent(&settings_path, &new_draft).unwrap();
 
         assert_eq!(std::fs::read_to_string(&shared_system).unwrap(), "custom shared prompt");
@@ -429,7 +434,7 @@ mod tests {
         let settings_path = dir.path().join(".aether/settings.json");
         let mut new_draft = researcher_draft();
         new_draft.entry.prompts = vec![];
-        new_draft.entry.mcp_servers = vec!["coding".to_string(), "lsp".to_string()];
+        new_draft.entry.mcp_servers = vec!["coding".into(), "lsp".into()];
         add_agent(&settings_path, &new_draft).unwrap();
 
         let agent_mcp = dir.path().join(".aether/agents/researcher/mcp.json");
@@ -450,7 +455,7 @@ mod tests {
         let mut new_draft = researcher_draft();
         new_draft.entry.user_invocable = false;
         new_draft.entry.prompts = vec![];
-        new_draft.entry.mcp_servers = vec!["coding".to_string()];
+        new_draft.entry.mcp_servers = vec!["coding".into()];
         add_agent(&settings_path, &new_draft).unwrap();
 
         let content = std::fs::read_to_string(&settings_path).unwrap();
@@ -461,7 +466,7 @@ mod tests {
         assert!(!researcher.user_invocable);
         assert!(researcher.agent_invocable);
         assert!(researcher.prompts.contains(&".aether/agents/researcher/RESEARCHER.md".to_string()));
-        assert!(researcher.mcp_servers.contains(&".aether/agents/researcher/mcp.json".to_string()));
+        assert!(researcher.mcp_servers.contains(&".aether/agents/researcher/mcp.json".into()));
     }
 
     #[test]
@@ -558,7 +563,7 @@ mod tests {
         let settings: Settings = serde_json::from_str(&content).unwrap();
 
         assert!(settings.mcp_servers.is_empty());
-        assert!(settings.agents[0].mcp_servers.contains(&"mcp.json".to_string()));
+        assert!(settings.agents[0].mcp_servers.contains(&"mcp.json".into()));
     }
 
     #[test]
@@ -568,7 +573,7 @@ mod tests {
 
         let settings_path = dir.path().join(".aether/settings.json");
         let mut new_draft = researcher_draft();
-        new_draft.entry.mcp_servers = vec!["coding".to_string()];
+        new_draft.entry.mcp_servers = vec!["coding".into()];
         new_draft.workspace_mcp_configs = vec![".mcp.json".to_string()];
         add_agent(&settings_path, &new_draft).unwrap();
 
@@ -576,7 +581,7 @@ mod tests {
         let settings: Settings = serde_json::from_str(&content).unwrap();
         let researcher = &settings.agents[1];
 
-        assert!(researcher.mcp_servers.contains(&".mcp.json".to_string()));
+        assert!(researcher.mcp_servers.contains(&".mcp.json".into()));
     }
 
     #[test]

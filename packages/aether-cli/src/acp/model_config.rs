@@ -275,7 +275,7 @@ mod tests {
             model: model.to_string(),
             reasoning_effort: effort,
             prompts: vec![],
-            mcp_config_paths: Vec::new(),
+            mcp_config_refs: Vec::new(),
             exposure: AgentSpecExposure::both(),
             tools: ToolFilter::default(),
         }

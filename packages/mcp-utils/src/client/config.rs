@@ -217,6 +217,25 @@ impl RawMcpConfig {
         }
         Ok(configs)
     }
+
+    /// Convert all servers to flat `ServerConfig`s suitable for a `ToolProxy`.
+    ///
+    /// Rejects `in-memory` entries (same restriction as nested tool-proxy servers).
+    pub async fn into_proxy_server_configs(
+        self,
+        factories: &HashMap<String, ServerFactory>,
+    ) -> Result<Vec<ServerConfig>, ParseError> {
+        let mut configs = Vec::with_capacity(self.servers.len());
+        for (name, raw_config) in self.servers {
+            if matches!(raw_config, RawMcpServerConfig::InMemory { .. }) {
+                return Err(ParseError::InvalidNestedConfig(format!(
+                    "in-memory server '{name}' cannot be used inside a proxy-wrapped config file"
+                )));
+            }
+            configs.push(raw_config.into_server_config(name, factories).await?);
+        }
+        Ok(configs)
+    }
 }
 
 impl RawMcpServerConfig {
@@ -384,5 +403,29 @@ mod tests {
         let bad = write_config(dir.path(), "bad.json", "not valid json");
         let result = RawMcpConfig::from_json_files(&[bad]);
         assert!(matches!(result, Err(ParseError::JsonError(_))));
+    }
+
+    #[tokio::test]
+    async fn into_proxy_server_configs_converts_stdio() {
+        let config = RawMcpConfig::from_json(
+            r#"{"servers": {"alpha": {"type": "stdio", "command": "a"}, "beta": {"type": "stdio", "command": "b"}}}"#,
+        )
+        .unwrap();
+
+        let factories = HashMap::new();
+        let configs = config.into_proxy_server_configs(&factories).await.unwrap();
+        assert_eq!(configs.len(), 2);
+        let names: Vec<&str> = configs.iter().map(ServerConfig::name).collect();
+        assert!(names.contains(&"alpha"));
+        assert!(names.contains(&"beta"));
+    }
+
+    #[tokio::test]
+    async fn into_proxy_server_configs_rejects_in_memory() {
+        let config = RawMcpConfig::from_json(r#"{"servers": {"bad": {"type": "in-memory"}}}"#).unwrap();
+
+        let factories = HashMap::new();
+        let result = config.into_proxy_server_configs(&factories).await;
+        assert!(matches!(result, Err(ParseError::InvalidNestedConfig(_))));
     }
 }

@@ -1,12 +1,46 @@
 //! Settings file parsing and validation.
 
 use crate::error::SettingsError;
-use aether_core::agent_spec::{AgentSpec, AgentSpecExposure, ToolFilter};
+use aether_core::agent_spec::{AgentSpec, AgentSpecExposure, McpJsonFileRef, ToolFilter};
 use aether_core::core::Prompt;
 use glob::glob;
 use llm::{LlmModel, ReasoningEffort};
 use std::collections::HashSet;
 use std::path::Path;
+
+/// An entry in the `mcpServers` array: either a plain path string or an object with options.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(untagged)]
+pub enum McpServerEntry {
+    Path(String),
+    Config {
+        path: String,
+        #[serde(default)]
+        proxy: bool,
+    },
+}
+
+impl McpServerEntry {
+    pub fn path_str(&self) -> &str {
+        match self {
+            McpServerEntry::Path(p) => p,
+            McpServerEntry::Config { path, .. } => path,
+        }
+    }
+
+    pub fn proxy(&self) -> bool {
+        match self {
+            McpServerEntry::Path(_) => false,
+            McpServerEntry::Config { proxy, .. } => *proxy,
+        }
+    }
+}
+
+impl From<&str> for McpServerEntry {
+    fn from(s: &str) -> Self {
+        Self::Path(s.to_string())
+    }
+}
 
 /// Settings DTO for `.aether/settings.json`.
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
@@ -15,9 +49,9 @@ pub struct Settings {
     /// Inherited prompts for all agents.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub prompts: Vec<String>,
-    /// Paths to inherited MCP configs for all agents, applied in order (last wins on collisions).
+    /// Inherited MCP configs for all agents, applied in order (last wins on collisions).
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub mcp_servers: Vec<String>,
+    pub mcp_servers: Vec<McpServerEntry>,
     /// The canonical authored agent registry.
     pub agents: Vec<AgentEntry>,
 }
@@ -38,7 +72,7 @@ pub struct AgentEntry {
     #[serde(default)]
     pub prompts: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub mcp_servers: Vec<String>,
+    pub mcp_servers: Vec<McpServerEntry>,
     #[serde(default, skip_serializing_if = "ToolFilter::is_empty")]
     pub tools: ToolFilter,
 }
@@ -74,7 +108,7 @@ fn resolve_settings(project_root: &Path, settings: Settings) -> Result<super::ca
     let Settings { prompts: inherited_patterns, mcp_servers, agents } = settings;
 
     validate_prompt_entries(project_root, &inherited_patterns, None)?;
-    let inherited_mcp_config_paths = resolve_mcp_config_paths(project_root, &mcp_servers)?;
+    let inherited_mcp_config_refs = resolve_mcp_config_refs(project_root, &mcp_servers)?;
     let inherited_prompts = build_inherited_prompts(&inherited_patterns, project_root);
 
     let mut seen_names = HashSet::new();
@@ -87,7 +121,7 @@ fn resolve_settings(project_root: &Path, settings: Settings) -> Result<super::ca
     Ok(super::catalog::AgentCatalog::new(
         project_root.to_path_buf(),
         inherited_prompts,
-        inherited_mcp_config_paths,
+        inherited_mcp_config_refs,
         specs,
     ))
 }
@@ -129,7 +163,7 @@ fn resolve_agent_entry(
         return Err(SettingsError::NoPrompts { agent: name.clone() });
     }
 
-    let mcp_config_paths = resolve_mcp_config_paths(project_root, &entry.mcp_servers)?;
+    let mcp_config_refs = resolve_mcp_config_refs(project_root, &entry.mcp_servers)?;
 
     let prompts = if entry.prompts.is_empty() {
         inherited_prompts.to_vec()
@@ -143,7 +177,7 @@ fn resolve_agent_entry(
         model,
         reasoning_effort: entry.reasoning_effort,
         prompts,
-        mcp_config_paths,
+        mcp_config_refs,
         exposure: AgentSpecExposure { user_invocable: entry.user_invocable, agent_invocable: entry.agent_invocable },
         tools: entry.tools,
     })
@@ -187,17 +221,17 @@ fn validate_prompt_entries(
     Ok(())
 }
 
-fn resolve_mcp_config_paths(
+fn resolve_mcp_config_refs(
     project_root: &Path,
-    mcp_paths: &[String],
-) -> Result<Vec<std::path::PathBuf>, SettingsError> {
-    let mut resolved = Vec::with_capacity(mcp_paths.len());
-    for path in mcp_paths {
-        let full_path = project_root.join(path);
+    entries: &[McpServerEntry],
+) -> Result<Vec<McpJsonFileRef>, SettingsError> {
+    let mut resolved = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let full_path = project_root.join(entry.path_str());
         if full_path.is_file() {
-            resolved.push(full_path);
+            resolved.push(McpJsonFileRef { path: full_path, proxy: entry.proxy() });
         } else {
-            return Err(SettingsError::InvalidMcpConfigPath { path: path.clone() });
+            return Err(SettingsError::InvalidMcpConfigPath { path: entry.path_str().to_string() });
         }
     }
     Ok(resolved)
@@ -245,6 +279,7 @@ fn build_inherited_prompts(patterns: &[String], project_root: &Path) -> Vec<Prom
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aether_core::agent_spec::McpJsonFileRef;
     use std::fs;
 
     fn create_temp_project() -> tempfile::TempDir {
@@ -517,7 +552,7 @@ mod tests {
 
         let catalog = load_agent_catalog(dir.path()).unwrap();
         let resolved = catalog.resolve("planner", dir.path()).unwrap();
-        assert_eq!(resolved.mcp_config_paths, vec![dir.path().join(".aether/mcp/default.json")]);
+        assert_eq!(resolved.mcp_config_refs, vec![McpJsonFileRef::direct(dir.path().join(".aether/mcp/default.json"))]);
     }
 
     #[test]
@@ -534,8 +569,11 @@ mod tests {
         let catalog = load_agent_catalog(dir.path()).unwrap();
         let resolved = catalog.resolve("planner", dir.path()).unwrap();
         assert_eq!(
-            resolved.mcp_config_paths,
-            vec![dir.path().join(".aether/mcp/a.json"), dir.path().join(".aether/mcp/b.json")]
+            resolved.mcp_config_refs,
+            vec![
+                McpJsonFileRef::direct(dir.path().join(".aether/mcp/a.json")),
+                McpJsonFileRef::direct(dir.path().join(".aether/mcp/b.json")),
+            ]
         );
     }
 
@@ -569,7 +607,10 @@ mod tests {
 
         let catalog = load_agent_catalog(dir.path()).unwrap();
         let resolved = catalog.resolve("planner", dir.path()).unwrap();
-        assert_eq!(resolved.mcp_config_paths, vec![dir.path().join("a.json"), dir.path().join("b.json")]);
+        assert_eq!(
+            resolved.mcp_config_refs,
+            vec![McpJsonFileRef::direct(dir.path().join("a.json")), McpJsonFileRef::direct(dir.path().join("b.json"))]
+        );
     }
 
     #[test]
@@ -585,7 +626,7 @@ mod tests {
 
         let catalog = load_agent_catalog(dir.path()).unwrap();
         let resolved = catalog.resolve("planner", dir.path()).unwrap();
-        assert_eq!(resolved.mcp_config_paths, vec![dir.path().join("override.json")]);
+        assert_eq!(resolved.mcp_config_refs, vec![McpJsonFileRef::direct(dir.path().join("override.json"))]);
     }
 
     #[test]
@@ -600,7 +641,7 @@ mod tests {
 
         let catalog = load_agent_catalog(dir.path()).unwrap();
         let resolved = catalog.resolve("planner", dir.path()).unwrap();
-        assert_eq!(resolved.mcp_config_paths, vec![dir.path().join("mcp.json")]);
+        assert_eq!(resolved.mcp_config_refs, vec![McpJsonFileRef::direct(dir.path().join("mcp.json"))]);
     }
 
     #[test]
@@ -654,5 +695,65 @@ mod tests {
             r#"{"agents": [{"name": "__default__", "description": "Sneaky agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
         );
         assert!(matches!(result, Err(SettingsError::ReservedAgentName { .. })));
+    }
+
+    #[test]
+    fn mcp_server_entry_object_form_with_proxy() {
+        let dir = create_temp_project();
+        write_file(dir.path(), "AGENTS.md", "Be helpful");
+        write_file(dir.path(), ".mcp.json", r#"{"servers": {}}"#);
+        write_settings(
+            dir.path(),
+            r#"{"mcpServers": [{"path": ".mcp.json", "proxy": true}], "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
+        );
+
+        let catalog = load_agent_catalog(dir.path()).unwrap();
+        let resolved = catalog.resolve("planner", dir.path()).unwrap();
+        assert_eq!(resolved.mcp_config_refs, vec![McpJsonFileRef::proxied(dir.path().join(".mcp.json"))]);
+    }
+
+    #[test]
+    fn mcp_server_entry_object_form_proxy_defaults_false() {
+        let dir = create_temp_project();
+        write_file(dir.path(), "AGENTS.md", "Be helpful");
+        write_file(dir.path(), "a.json", r#"{"servers": {}}"#);
+        write_settings(
+            dir.path(),
+            r#"{"mcpServers": [{"path": "a.json"}], "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
+        );
+
+        let catalog = load_agent_catalog(dir.path()).unwrap();
+        let resolved = catalog.resolve("planner", dir.path()).unwrap();
+        assert_eq!(resolved.mcp_config_refs, vec![McpJsonFileRef::direct(dir.path().join("a.json"))]);
+    }
+
+    #[test]
+    fn mcp_server_entry_mixed_string_and_object() {
+        let dir = create_temp_project();
+        write_file(dir.path(), "AGENTS.md", "Be helpful");
+        write_file(dir.path(), "direct.json", r#"{"servers": {}}"#);
+        write_file(dir.path(), "proxied.json", r#"{"servers": {}}"#);
+        write_settings(
+            dir.path(),
+            r#"{"mcpServers": ["direct.json", {"path": "proxied.json", "proxy": true}], "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
+        );
+
+        let catalog = load_agent_catalog(dir.path()).unwrap();
+        let resolved = catalog.resolve("planner", dir.path()).unwrap();
+        assert_eq!(
+            resolved.mcp_config_refs,
+            vec![
+                McpJsonFileRef::direct(dir.path().join("direct.json")),
+                McpJsonFileRef::proxied(dir.path().join("proxied.json")),
+            ]
+        );
+    }
+
+    #[test]
+    fn mcp_server_entry_object_form_invalid_path_rejected() {
+        let (_, result) = setup_and_load(
+            r#"{"mcpServers": [{"path": "nonexistent.json", "proxy": true}], "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
+        );
+        assert!(matches!(result, Err(SettingsError::InvalidMcpConfigPath { .. })));
     }
 }

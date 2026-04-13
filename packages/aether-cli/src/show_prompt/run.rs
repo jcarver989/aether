@@ -4,6 +4,7 @@ use super::PromptArgs;
 use crate::error::CliError;
 use crate::resolve::resolve_agent_spec;
 use crate::runtime::RuntimeBuilder;
+use aether_core::agent_spec::McpJsonFileRef;
 use aether_core::core::Prompt;
 use aether_project::load_agent_catalog;
 use llm::ToolDefinition;
@@ -14,7 +15,8 @@ pub async fn run_prompt(args: PromptArgs) -> Result<(), CliError> {
     let catalog = load_agent_catalog(&cwd).map_err(|e| CliError::AgentError(e.to_string()))?;
     let spec = resolve_agent_spec(&catalog, args.agent.as_deref(), &cwd)?;
 
-    let info = RuntimeBuilder::from_spec(cwd, spec).mcp_configs(args.mcp_configs).build_prompt_info().await?;
+    let mcp_refs = args.mcp_configs.into_iter().map(McpJsonFileRef::direct).collect();
+    let info = RuntimeBuilder::from_spec(cwd, spec).mcp_configs(mcp_refs).build_prompt_info().await?;
 
     let system_prompt = build_prompt(&info.spec.prompts, args.system_prompt.as_deref()).await?;
     let tools_output = build_tools(&info.tool_definitions);

@@ -10,4 +10,4 @@ pub use catalog::AgentCatalog;
 pub use error::SettingsError;
 pub use prompt_catalog::PromptCatalog;
 pub use prompt_file::{PromptFile, PromptFileError, PromptTriggers, SKILL_FILENAME};
-pub use settings::{AgentEntry, Settings, load_agent_catalog};
+pub use settings::{AgentEntry, McpServerEntry, Settings, load_agent_catalog};

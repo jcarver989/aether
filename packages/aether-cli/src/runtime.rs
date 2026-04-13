@@ -1,5 +1,5 @@
 use crate::error::CliError;
-use aether_core::agent_spec::AgentSpec;
+use aether_core::agent_spec::{AgentSpec, McpJsonFileRef};
 use aether_core::core::{AgentBuilder, AgentHandle, Prompt};
 use aether_core::events::{AgentMessage, UserMessage};
 use aether_core::mcp::McpBuilder;
@@ -20,7 +20,7 @@ use tracing::debug;
 pub struct RuntimeBuilder {
     cwd: PathBuf,
     spec: AgentSpec,
-    mcp_configs: Vec<PathBuf>,
+    mcp_configs: Vec<McpJsonFileRef>,
     extra_mcp_servers: Vec<McpServerConfig>,
     oauth_applicator: Option<Box<dyn FnOnce(McpBuilder) -> McpBuilder + Send>>,
     prompt_cache_key: Option<String>,
@@ -74,11 +74,11 @@ impl RuntimeBuilder {
         self
     }
 
-    /// Set the MCP config path overrides. When non-empty, these completely
-    /// replace any paths resolved from the agent's `AgentSpec` (CLI override
+    /// Set the MCP config ref overrides. When non-empty, these completely
+    /// replace any refs resolved from the agent's `AgentSpec` (CLI override
     /// semantics). On collisions across files, the rightmost path wins.
-    pub fn mcp_configs(mut self, paths: Vec<PathBuf>) -> Self {
-        self.mcp_configs = paths;
+    pub fn mcp_configs(mut self, refs: Vec<McpJsonFileRef>) -> Self {
+        self.mcp_configs = refs;
         self
     }
 
@@ -149,13 +149,13 @@ impl RuntimeBuilder {
             builder = apply_oauth(builder);
         }
 
-        let mcp_config_paths: Vec<PathBuf> =
-            if self.mcp_configs.is_empty() { self.spec.mcp_config_paths.clone() } else { self.mcp_configs };
+        let mcp_config_refs: Vec<McpJsonFileRef> =
+            if self.mcp_configs.is_empty() { self.spec.mcp_config_refs.clone() } else { self.mcp_configs };
 
-        if !mcp_config_paths.is_empty() {
-            debug!("Loading MCP configs from: {:?}", mcp_config_paths);
+        if !mcp_config_refs.is_empty() {
+            debug!("Loading MCP configs from: {:?}", mcp_config_refs);
             builder =
-                builder.from_json_files(&mcp_config_paths).await.map_err(|e| CliError::McpError(e.to_string()))?;
+                builder.from_mcp_config_refs(&mcp_config_refs).await.map_err(|e| CliError::McpError(e.to_string()))?;
         }
 
         let McpSpawnResult {

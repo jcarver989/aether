@@ -71,7 +71,7 @@ fn print_agent(agent: &AgentEntry, settings: &Settings) {
         println!(
             "  {} {}",
             "mcp servers:".dim(),
-            effective_mcp.iter().map(std::string::String::as_str).collect::<Vec<_>>().join(", ")
+            effective_mcp.iter().map(aether_project::McpServerEntry::path_str).collect::<Vec<_>>().join(", ")
         );
     }
 
@@ -114,7 +114,7 @@ mod tests {
                 agent_invocable: true,
                 model: "anthropic:claude-sonnet-4-5".to_string(),
                 prompts: vec!["AGENTS.md".to_string()],
-                mcp_servers: vec!["coding".to_string()],
+                mcp_servers: vec!["coding".into()],
                 ..AgentEntry::default()
             },
             system_md_content: String::new(),

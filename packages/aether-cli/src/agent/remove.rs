@@ -46,7 +46,7 @@ fn cleanup_agent_files(project_root: &Path, slug: &str, entry: &aether_project::
     }
 
     for mcp in &entry.mcp_servers {
-        let path = project_root.join(mcp);
+        let path = project_root.join(mcp.path_str());
         if path.starts_with(project_root.join(".aether")) {
             let _ = fs::remove_file(&path);
         }
@@ -121,7 +121,7 @@ mod tests {
                 agent_invocable: true,
                 model: "anthropic:claude-sonnet-4-5".to_string(),
                 prompts: vec!["AGENTS.md".to_string()],
-                mcp_servers: vec!["coding".to_string()],
+                mcp_servers: vec!["coding".into()],
                 ..AgentEntry::default()
             },
             system_md_content: String::new(),

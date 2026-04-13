@@ -6,6 +6,8 @@ use mcp_utils::client::{
     ServerFactory, ServerInstructions, root_from_path,
 };
 
+use crate::agent_spec::McpJsonFileRef;
+
 use super::run_mcp_task::{McpCommand, run_mcp_task};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -90,6 +92,33 @@ impl McpBuilder {
         let raw_config = RawMcpConfig::from_json_files(paths)?;
         let mcp_configs = raw_config.into_configs(&self.factories).await?;
         self.mcp_configs.extend(mcp_configs);
+        Ok(self)
+    }
+
+    /// Load MCP server definitions from config refs, routing proxy-flagged files
+    /// through a single merged `ToolProxy`.
+    ///
+    /// Direct refs are loaded normally. All proxy-flagged refs are merged into
+    /// one `McpServerConfig::ToolProxy` named `"proxy"`.
+    pub async fn from_mcp_config_refs(mut self, refs: &[McpJsonFileRef]) -> Result<Self, ParseError> {
+        if refs.is_empty() {
+            return Ok(self);
+        }
+
+        let (direct, proxied): (Vec<_>, Vec<_>) = refs.iter().partition(|r| !r.proxy);
+
+        if !direct.is_empty() {
+            let paths: Vec<&Path> = direct.iter().map(|r| r.path.as_path()).collect();
+            self = self.from_json_files(&paths).await?;
+        }
+
+        if !proxied.is_empty() {
+            let paths: Vec<&Path> = proxied.iter().map(|r| r.path.as_path()).collect();
+            let raw_config = RawMcpConfig::from_json_files(&paths)?;
+            let servers = raw_config.into_proxy_server_configs(&self.factories).await?;
+            self.mcp_configs.push(McpServerConfig::ToolProxy { name: "proxy".to_string(), servers });
+        }
+
         Ok(self)
     }
 

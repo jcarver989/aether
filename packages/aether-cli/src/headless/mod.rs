@@ -1,7 +1,7 @@
 pub mod error;
 pub mod run;
 
-use aether_core::agent_spec::AgentSpec;
+use aether_core::agent_spec::{AgentSpec, McpJsonFileRef};
 use aether_project::load_agent_catalog;
 use error::CliError;
 use std::io::{IsTerminal, Read as _, stdin};
@@ -60,7 +60,7 @@ impl CliEventKind {
 pub struct RunConfig {
     pub prompt: String,
     pub cwd: PathBuf,
-    pub mcp_configs: Vec<PathBuf>,
+    pub mcp_configs: Vec<McpJsonFileRef>,
     pub spec: AgentSpec,
     pub system_prompt: Option<String>,
     pub output: OutputFormat,
@@ -82,7 +82,7 @@ pub async fn run_headless(args: HeadlessArgs) -> Result<ExitCode, CliError> {
     let config = RunConfig {
         prompt,
         cwd,
-        mcp_configs: args.mcp_configs,
+        mcp_configs: args.mcp_configs.into_iter().map(McpJsonFileRef::direct).collect(),
         spec,
         system_prompt: args.system_prompt,
         output,
