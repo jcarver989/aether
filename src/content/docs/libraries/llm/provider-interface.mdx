@@ -37,9 +37,13 @@ Use `ProviderFactory` to create providers from environment variables:
 ```rust
 use llm::{ProviderFactory, providers::AnthropicProvider};
 
-let provider = AnthropicProvider::from_env()?
+let provider = AnthropicProvider::from_env().await?
     .with_model("claude-sonnet-4-5");
 ```
+
+:::note
+`from_env()` is async — it returns `impl Future<Output = LlmResult<Self>>`. Use `.await?` to unwrap it.
+:::
 
 Available providers: `AnthropicProvider`, `OpenAiProvider`, `OpenRouterProvider`, `GeminiProvider`, `OllamaProvider`, `LlamaCppProvider`, `BedrockProvider` (feature: `bedrock`), `CodexProvider` (feature: `codex`).
 

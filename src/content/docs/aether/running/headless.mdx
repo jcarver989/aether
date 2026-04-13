@@ -23,6 +23,7 @@ aether headless "Explain the main function in this project"
 | `--system-prompt` | `string` | — | Additional system prompt text |
 | `--output` | `string` | `text` | Output format: `text`, `pretty`, `json` |
 | `-v, --verbose` | flag | — | Verbose logging to stderr |
+| `--events` | `string` | — | Comma-separated event filter (e.g. `tool_call,tool_result`). Omit to emit all. |
 
 :::note
 `--model` and `--agent` are mutually exclusive. If neither is set, Aether uses the first `userInvocable` agent from settings.json.
@@ -53,6 +54,37 @@ aether headless "Explain the main function in this project"
     ```
   </TabItem>
 </Tabs>
+
+## Event filtering
+
+By default, headless mode emits all event types. Use `--events` to restrict output to specific event kinds:
+
+```bash
+aether headless --output json --events tool_call,tool_result "Refactor this module"
+```
+
+Available event kinds:
+
+| Event kind | Description |
+|------------|-------------|
+| `text` | Final text output |
+| `thought` | Extended thinking / reasoning |
+| `tool_call` | Tool invocation |
+| `tool_result` | Tool return value |
+| `tool_error` | Tool failure |
+| `error` | Agent-level error |
+| `cancelled` | Operation cancelled |
+| `auto_continue` | Agent auto-continuing |
+| `model_switched` | Model changed (alloying) |
+| `tool_progress` | Tool execution progress |
+| `context_compaction_started` | Compaction beginning |
+| `context_compaction_result` | Compaction completed |
+| `context_usage` | Token usage update |
+| `context_cleared` | Context was cleared |
+
+:::note
+When `--events` is set, `error` events are only shown if explicitly listed.
+:::
 
 ## Reading from stdin
 
@@ -109,12 +141,35 @@ aether show-prompt
 aether show-prompt --agent researcher
 ```
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `-C, --cwd` | `path` | `.` | Working directory |
+| `--mcp-config` | `path` | — | Path to MCP config file (repeatable) |
+| `--system-prompt` | `string` | — | Additional system prompt text |
+| `-a, --agent` | `string` | — | Named agent to inspect |
+
 ### agent new
 
 Initialize a new Aether project:
 
 ```bash
-aether agent new [--path <dir>]
+aether agent new [path]
 ```
 
 See [Getting Started](/getting-started/overview/) for details.
+
+### agent list
+
+List all agents in the project:
+
+```bash
+aether agent list [path]
+```
+
+### agent remove
+
+Remove an agent from the project:
+
+```bash
+aether agent remove <name> [path]
+```

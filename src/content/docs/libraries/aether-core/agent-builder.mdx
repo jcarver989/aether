@@ -17,7 +17,7 @@ llm = "0.1"
 use aether_core::core::agent;
 use llm::{ProviderFactory, providers::AnthropicProvider};
 
-let provider = AnthropicProvider::from_env()?.with_model("claude-sonnet-4-5");
+let provider = AnthropicProvider::from_env().await?.with_model("claude-sonnet-4-5");
 
 let (user_tx, agent_rx, handle) = agent(provider)
     .system_prompt(Prompt::text("You are a helpful assistant."))
@@ -44,12 +44,12 @@ Builder methods (all chainable):
 
 ### `from_spec`
 
-Build an agent from an `AgentSpec` (loaded from `.aether/settings.json`):
+Build an agent from an `AgentSpec` (loaded from `.aether/settings.json`). This is async because it parses the model spec and may perform provider setup:
 
 ```rust
 use aether_core::core::AgentBuilder;
 
-let builder = AgentBuilder::from_spec(&agent_spec, base_prompts)?;
+let builder = AgentBuilder::from_spec(&agent_spec, base_prompts).await?;
 ```
 
 ### `spawn`
@@ -106,7 +106,7 @@ use llm::{ProviderFactory, providers::AnthropicProvider};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let provider = AnthropicProvider::from_env()?.with_model("claude-sonnet-4-5");
+    let provider = AnthropicProvider::from_env().await?.with_model("claude-sonnet-4-5");
 
     let (user_tx, mut agent_rx, handle) = agent(provider)
         .system_prompt(Prompt::text("You are a concise assistant."))

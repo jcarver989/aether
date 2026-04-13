@@ -9,23 +9,9 @@ The `survey` server lets agents collect structured input from you during a workf
 
 | Tool | Description |
 |------|-------------|
-| `ask_user` | Present a form to the user and collect structured responses |
+| `ask_user` | Present a form defined by a JSON Schema and collect structured responses |
 
-### ask_user
-
-Ask a structured question and collect the response via a form. The form fields are defined using a JSON Schema.
-
-**`ask_user(message, schema)`**
-
-- `message` — The question or prompt shown to the user
-- `schema` — A JSON Schema object defining the form fields (must have `properties`)
-
-Returns:
-
-- `accepted` — `true` if the user submitted the form, `false` if they cancelled
-- `data` — The structured response data (if accepted)
-
-### Example
+## Examples
 
 An agent might call `ask_user` to confirm a destructive operation:
 

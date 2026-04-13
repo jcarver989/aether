@@ -115,7 +115,7 @@ If you want your provider to be loadable from environment variables:
 use llm::ProviderFactory;
 
 impl ProviderFactory for MyProvider {
-    fn from_env() -> llm::Result<Self> {
+    async fn from_env() -> llm::Result<Self> {
         let api_key = std::env::var("MY_API_KEY")
             .map_err(|_| LlmError::MissingApiKey("MY_API_KEY".into()))?;
         Ok(Self::new(api_key, String::new()))

@@ -53,6 +53,10 @@ pub enum Event {
 | `Form` | — | Multi-field form container |
 | `Spinner` | — | Loading indicator |
 | `Panel` | — | Bordered container |
+| `BorderedTextField` | — | Single-line input with labeled border |
+| `Stepper` | — | Horizontal multi-step progress indicator |
+| `SplitPanel` | — | Two-panel layout with vertical divider |
+| `Gallery` | — | Browseable component list with preview pane |
 | `Combobox` | `picker` | Fuzzy-searchable dropdown |
 
 ### TextField
@@ -74,6 +78,58 @@ let items = vec![
     SelectItem::new("opt2", "Option Two"),
 ];
 let mut list = SelectList::new(items);
+```
+
+### BorderedTextField
+
+A single-line text input rendered inside a box with the label intersecting the top border:
+
+```rust
+use tui::components::bordered_text_field::BorderedTextField;
+
+let mut field = BorderedTextField::new("Name", "my-agent".into());
+field.set_width(40);
+```
+
+### Stepper
+
+A horizontal multi-step progress indicator showing complete, current, and upcoming steps. Renders a single `Line`, not a full `Component`:
+
+```rust
+use tui::components::stepper::{Stepper, StepperItem, StepVisualState};
+
+let items = vec![
+    StepperItem { label: "Configure", state: StepVisualState::Complete },
+    StepperItem { label: "Install", state: StepVisualState::Current },
+    StepperItem { label: "Finish", state: StepVisualState::Upcoming },
+];
+let stepper = Stepper { items: &items, separator: " > ", leading_padding: 2 };
+let line = stepper.render(&ctx);
+```
+
+### SplitPanel
+
+A two-panel layout with a vertical divider:
+
+```rust
+use tui::components::split_panel::{SplitPanel, SplitLayout};
+
+let layout = SplitLayout::fraction(1, 3, 20, 60); // 1/3 of width, clamped [20, 60]
+let split = SplitPanel::new(left_component, right_component, layout);
+```
+
+### Gallery
+
+A browseable list of named components with a live preview pane (built on `SplitPanel`):
+
+```rust
+use tui::components::gallery::Gallery;
+
+let entries = vec![
+    ("TextField".into(), text_field_demo),
+    ("Checkbox".into(), checkbox_demo),
+];
+let gallery = Gallery::new(entries);
 ```
 
 ### Combobox (feature: `picker`)

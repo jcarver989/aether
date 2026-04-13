@@ -20,11 +20,28 @@ When you spawn an agent, you get a `Receiver<AgentMessage>` channel. The agent p
 | `Cancelled` | `message` | Operation was cancelled |
 | `ContextCompactionStarted` | `message_count` | Context compaction beginning |
 | `ContextCompactionResult` | `summary`, `messages_removed` | Compaction completed |
-| `ContextUsageUpdate` | `usage_ratio`, `tokens_used`, `context_limit` | Token usage update |
+| `ContextUsageUpdate` | _see below_ | Token usage update |
 | `AutoContinue` | `attempt`, `max_attempts` | Agent auto-continuing after tool calls |
 | `ModelSwitched` | `previous`, `new` | Model changed (alloying) |
 | `ContextCleared` | — | Context was cleared |
 | `Done` | — | Agent finished processing |
+
+### ContextUsageUpdate fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `usage_ratio` | `Option<f64>` | Current usage ratio (0.0-1.0), if context window is known |
+| `context_limit` | `Option<u32>` | Maximum context limit, if known |
+| `input_tokens` | `u32` | Input tokens on the most recent API call |
+| `output_tokens` | `u32` | Output tokens on the most recent API call |
+| `cache_read_tokens` | `Option<u32>` | Prompt tokens served from cache |
+| `cache_creation_tokens` | `Option<u32>` | Prompt tokens written to cache |
+| `reasoning_tokens` | `Option<u32>` | Reasoning tokens spent |
+| `total_input_tokens` | `u64` | Cumulative input tokens since agent start |
+| `total_output_tokens` | `u64` | Cumulative output tokens since agent start |
+| `total_cache_read_tokens` | `u64` | Cumulative cache-read tokens |
+| `total_cache_creation_tokens` | `u64` | Cumulative cache-creation tokens |
+| `total_reasoning_tokens` | `u64` | Cumulative reasoning tokens |
 
 ## Receiving events
 

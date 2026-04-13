@@ -11,38 +11,8 @@ The `tasks` server gives agents a structured way to break down complex work into
 |------|-------------|
 | `task_create` | Create a new task or subtask |
 | `task_get` | Get a task by ID |
-| `task_list` | List tasks with filters |
-| `task_update` | Update task status, title, or other fields |
-
-### task_create
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `title` | `string` | Task title (required) |
-| `description` | `string` | Detailed description |
-| `parent` | `string` | Parent task ID (creates a subtask) |
-| `assignee` | `string` | Agent or user name |
-| `dependencies` | `string[]` | Task IDs that must complete first |
-
-### task_list
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `assignee` | `string` | Filter by assignee |
-| `status` | `string` | Filter by status |
-| `tree_id` | `string` | Filter by root task tree |
-| `ready_only` | `boolean` | Only tasks with all dependencies met |
-
-### task_update
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `id` | `string` | Task ID (required) |
-| `title` | `string` | New title |
-| `description` | `string` | New description |
-| `status` | `string` | New status |
-| `assignee` | `string` | New assignee |
-| `dependencies` | `string[]` | Updated dependencies |
+| `task_list` | List tasks with filters (by assignee, status, tree, or ready-only) |
+| `task_update` | Update task status, title, description, assignee, or dependencies |
 
 ## Task IDs
 

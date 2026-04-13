@@ -11,14 +11,6 @@ The `subagents` server lets agents spawn other agents as children, enabling para
 |------|-------------|
 | `spawn_subagent` | Spawn one or more child agents in parallel |
 
-### spawn_subagent
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `tasks` | `array` | List of tasks to spawn |
-| `tasks[].agent_name` | `string` | Name of the agent to spawn (must have `agentInvocable: true`) |
-| `tasks[].prompt` | `string` | The prompt/instructions for the child agent |
-
 ## Configuration
 
 Agents available for spawning must have `agentInvocable: true` in [settings.json](/aether/configuration/agent-settings/):
