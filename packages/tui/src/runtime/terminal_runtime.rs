@@ -57,11 +57,12 @@ impl<T: Write> TerminalRuntime<T> {
     }
 
     pub async fn suspend(&mut self) -> io::Result<SuspendedTerminal<'_, T>> {
+        let was_headless = self.session.is_none();
         if let Some(handle) = self.event_task.take() {
             handle.stop().await;
         }
         drop(self.session.take());
-        Ok(SuspendedTerminal { runtime: self, resumed: false })
+        Ok(SuspendedTerminal { runtime: self, resumed: false, was_headless })
     }
 
     pub async fn run_external(&mut self, mut command: Command) -> io::Result<ExitStatus> {
@@ -84,11 +85,17 @@ impl<T: Write> Drop for TerminalRuntime<T> {
 pub struct SuspendedTerminal<'a, T: Write> {
     runtime: &'a mut TerminalRuntime<T>,
     resumed: bool,
+    was_headless: bool,
 }
 
 impl<T: Write> SuspendedTerminal<'_, T> {
     pub fn resume(&mut self) -> io::Result<()> {
         if self.resumed {
+            return Ok(());
+        }
+
+        if self.was_headless {
+            self.resumed = true;
             return Ok(());
         }
 
@@ -104,6 +111,11 @@ impl<T: Write> SuspendedTerminal<'_, T> {
 impl<T: Write> Drop for SuspendedTerminal<'_, T> {
     fn drop(&mut self) {
         if self.resumed {
+            return;
+        }
+
+        if self.was_headless {
+            self.resumed = true;
             return;
         }
 
