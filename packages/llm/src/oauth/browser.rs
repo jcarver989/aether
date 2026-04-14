@@ -2,8 +2,10 @@ use super::error::OAuthError;
 use super::handler::{OAuthCallback, OAuthHandler};
 use futures::future::BoxFuture;
 use std::process::Command;
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
+use tokio::time::timeout;
 
 /// Default `OAuthHandler` that opens the system browser and listens
 /// for the OAuth callback on a dynamically-assigned local port.
@@ -50,22 +52,35 @@ impl OAuthHandler for BrowserOAuthHandler {
     }
 }
 
-/// Accept a single OAuth callback on an already-bound listener.
+/// Accept an OAuth callback on an already-bound listener.
 ///
-/// Waits for one HTTP request, parses the authorization code and state,
-/// sends a success response, and returns the callback data.
+/// Loops until it receives a valid OAuth callback, skipping stale connections
+/// left over from previous flows (e.g. browser favicon requests, preconnect
+/// sockets, or closed connections).
 pub async fn accept_oauth_callback(listener: &TcpListener) -> Result<OAuthCallback, OAuthError> {
-    let (mut socket, _) = listener.accept().await?;
+    loop {
+        let (mut socket, _) = listener.accept().await?;
+        let request_line = {
+            let mut reader = BufReader::new(&mut socket);
+            let mut line = String::new();
+            match timeout(Duration::from_secs(2), reader.read_line(&mut line)).await {
+                Ok(Ok(1..)) => line,
+                _ => continue,
+            }
+        };
 
-    let mut reader = BufReader::new(&mut socket);
-    let mut request_line = String::new();
-    reader.read_line(&mut request_line).await?;
-
-    let callback = parse_callback_from_request(&request_line)?;
-
-    socket.write_all(create_success_response().as_bytes()).await?;
-
-    Ok(callback)
+        match parse_callback_from_request(&request_line) {
+            Ok(callback) => {
+                let _ = socket.write_all(create_success_response().as_bytes()).await;
+                return Ok(callback);
+            }
+            Err(e) => {
+                if request_line.contains('?') {
+                    return Err(e);
+                }
+            }
+        }
+    }
 }
 
 /// Start a local callback server to capture the OAuth authorization code and state
@@ -242,5 +257,42 @@ mod tests {
     #[test]
     fn urlencoding_decode_handles_plus() {
         assert_eq!(urlencoding_decode("hello+world"), "hello world");
+    }
+
+    #[tokio::test]
+    async fn accept_oauth_callback_skips_stale_favicon_request() {
+        use tokio::io::AsyncWriteExt;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = tokio::spawn(async move { accept_oauth_callback(&listener).await });
+
+        let mut stale = tokio::net::TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+        stale.write_all(b"GET /favicon.ico HTTP/1.1\r\n").await.unwrap();
+
+        let mut real = tokio::net::TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+        real.write_all(b"GET /oauth2callback?code=abc&state=xyz HTTP/1.1\r\n").await.unwrap();
+
+        let callback = handle.await.unwrap().unwrap();
+        assert_eq!(callback.code, "abc");
+        assert_eq!(callback.state, "xyz");
+    }
+
+    #[tokio::test]
+    async fn accept_oauth_callback_skips_closed_connection() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = tokio::spawn(async move { accept_oauth_callback(&listener).await });
+
+        {
+            let _stream = tokio::net::TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+        }
+
+        let mut real = tokio::net::TcpStream::connect(format!("127.0.0.1:{port}")).await.unwrap();
+        real.write_all(b"GET /oauth2callback?code=def&state=uvw HTTP/1.1\r\n").await.unwrap();
+
+        let callback = handle.await.unwrap().unwrap();
+        assert_eq!(callback.code, "def");
+        assert_eq!(callback.state, "uvw");
     }
 }
