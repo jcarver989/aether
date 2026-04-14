@@ -1,19 +1,47 @@
+use super::variables::{VarError, expand_env_vars};
 use futures::future::BoxFuture;
 use rmcp::{RoleServer, service::DynService, transport::streamable_http_client::StreamableHttpClientTransportConfig};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::{Value, from_value};
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::{Debug, Display, Formatter};
 use std::path::Path;
 
-use super::variables::{VarError, expand_env_vars};
-
 /// Top-level MCP configuration
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct RawMcpConfig {
     pub servers: BTreeMap<String, RawMcpServerConfig>,
 }
 
-/// Server connection definition
+impl<'a> Deserialize<'a> for RawMcpConfig {
+    fn deserialize<T: Deserializer<'a>>(deserializer: T) -> Result<Self, T::Error> {
+        #[derive(Deserialize)]
+        struct Raw {
+            #[serde(alias = "mcpServers")]
+            servers: BTreeMap<String, Value>,
+        }
+
+        let raw = Raw::deserialize(deserializer)?;
+        let mut servers = BTreeMap::new();
+
+        for (name, mut value) in raw.servers {
+            if let Some(map) = value.as_object_mut()
+                && !map.contains_key("type")
+            {
+                map.insert("type".to_string(), Value::String("stdio".to_string()));
+            }
+            let config: RawMcpServerConfig = from_value(value).map_err(serde::de::Error::custom)?;
+            servers.insert(name, config);
+        }
+
+        Ok(Self { servers })
+    }
+}
+
+/// Server connection definition.
+///
+/// When `"type"` is omitted, defaults to `"stdio"` for compatibility with
+/// Claude Code's `.mcp.json` format.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum RawMcpServerConfig {
@@ -76,8 +104,8 @@ impl ServerConfig {
     }
 }
 
-impl std::fmt::Debug for ServerConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Debug for ServerConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             ServerConfig::Http { name, config } => {
                 f.debug_struct("Http").field("name", name).field("config", config).finish()
@@ -117,8 +145,8 @@ impl From<ServerConfig> for McpServerConfig {
     }
 }
 
-impl std::fmt::Debug for McpServerConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Debug for McpServerConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             McpServerConfig::Server(cfg) => cfg.fmt(f),
             McpServerConfig::ToolProxy { name, servers } => f
@@ -145,8 +173,8 @@ pub enum ParseError {
     InvalidNestedConfig(String),
 }
 
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for ParseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             ParseError::IoError(e) => write!(f, "Failed to read config file: {e}"),
             ParseError::JsonError(e) => write!(f, "Invalid JSON: {e}"),
@@ -338,6 +366,29 @@ mod tests {
 
     fn stdio_config(command: &str) -> String {
         format!(r#"{{"servers": {{"coding": {{"type": "stdio", "command": "{command}"}}}}}}"#)
+    }
+
+    #[test]
+    fn from_json_accepts_mcp_servers_key() {
+        let config =
+            RawMcpConfig::from_json(r#"{"mcpServers": {"alpha": {"type": "stdio", "command": "a"}}}"#).unwrap();
+        assert_eq!(config.servers.len(), 1);
+        assert!(config.servers.contains_key("alpha"));
+    }
+
+    #[test]
+    fn from_json_defaults_missing_type_to_stdio() {
+        let config = RawMcpConfig::from_json(
+            r#"{"mcpServers": {"devtools": {"command": "npx", "args": ["-y", "chrome-devtools-mcp"]}}}"#,
+        )
+        .unwrap();
+        match config.servers.get("devtools").unwrap() {
+            RawMcpServerConfig::Stdio { command, args, .. } => {
+                assert_eq!(command, "npx");
+                assert_eq!(args, &["-y", "chrome-devtools-mcp"]);
+            }
+            other => panic!("expected Stdio, got {other:?}"),
+        }
     }
 
     #[test]
