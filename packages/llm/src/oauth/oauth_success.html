@@ -1,33 +1,92 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-    <title>Authentication Successful</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-        .container {
-            text-align: center;
-            padding: 40px;
-            background: rgba(255,255,255,0.1);
-            border-radius: 16px;
-            backdrop-filter: blur(10px);
-        }
-        h1 { margin-bottom: 16px; }
-        p { opacity: 0.9; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Authentication Successful!</h1>
-        <p>You can close this window and return to your terminal.</p>
-    </div>
-</body>
+    <head>
+        <title>authentication successful</title>
+        <style>
+            :root {
+                --bg: #101010;
+                --bg-surface: #0c1214;
+                --fg: #d4ddd6;
+                --comment: #5c6e65;
+                --gutter: #4a5e56;
+                --teal: #8fbcb0;
+                --green: #a7c080;
+                --gold: #dfc296;
+            }
+
+            body {
+                font-family: ui-monospace, monospace;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+                background: var(--bg);
+                color: var(--fg);
+                position: relative;
+                overflow: hidden;
+            }
+
+            .box {
+                position: relative;
+                z-index: 1;
+                border: 1px solid var(--gutter);
+                padding: 40px;
+            }
+
+            .box-title {
+                position: absolute;
+                top: -12px;
+                left: 16px;
+                background: var(--bg-surface);
+                padding: 0 8px;
+                font-size: 16px;
+                line-height: 24px;
+                color: var(--teal);
+            }
+
+            h1 {
+                font-size: 24px;
+                font-weight: normal;
+                line-height: 32px;
+                margin: 0 0 8px 0;
+                letter-spacing: 3px;
+                color: var(--fg);
+            }
+
+            .check {
+                color: var(--green);
+            }
+
+            p {
+                font-size: 16px;
+                line-height: 24px;
+                color: var(--comment);
+                margin: 0;
+            }
+
+            .accent {
+                color: var(--gold);
+            }
+
+            @keyframes flicker {
+                0%, 92%, 100% { color: var(--fg); }
+                93% { color: var(--comment); }
+                95% { color: var(--fg); }
+                96% { color: var(--comment); }
+                97.5% { color: var(--fg); }
+            }
+
+            .flicker {
+                animation: flicker 4s infinite;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="box">
+            <div class="box-title">aether</div>
+            <h1 class="flicker">AUTHENTICATION SUCCESSFUL</h1>
+            <p>Close this window and return to your terminal.</p>
+        </div>
+    </body>
 </html>
