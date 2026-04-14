@@ -9,6 +9,7 @@ pub const SKILL_FILENAME: &str = "SKILL.md";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub(crate) struct PromptFrontmatter {
+    #[serde(default)]
     pub description: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -22,6 +23,12 @@ pub(crate) struct PromptFrontmatter {
     pub tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub triggers: Option<Triggers>,
+    /// Claude Code compatibility: top-level glob patterns (alias for `triggers.read`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub globs: Vec<String>,
+    /// Cursor compatibility: top-level path patterns (alias for `triggers.read`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub paths: Vec<String>,
     #[serde(default, skip_serializing_if = "not")]
     pub agent_authored: bool,
     #[serde(default, skip_serializing_if = "zero")]
@@ -62,23 +69,24 @@ impl PromptFile {
 
         let (frontmatter, body) = Self::parse_frontmatter(raw.trim())?;
 
-        let dir_name =
-            path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let default_name = if path.file_name().is_some_and(|n| n == SKILL_FILENAME) {
+            path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+        } else {
+            path.file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+        };
 
-        let name = frontmatter.name.unwrap_or(dir_name);
+        let name = frontmatter.name.unwrap_or(default_name);
         let description = frontmatter.description.trim().to_string();
+        let description = if description.is_empty() { name.clone() } else { description };
 
-        if description.is_empty() {
-            return Err(PromptFileError::MissingDescription { name });
-        }
+        let mut read_globs = frontmatter.triggers.map(|t| t.read).unwrap_or_default();
+        read_globs.extend(frontmatter.globs);
+        read_globs.extend(frontmatter.paths);
 
-        let has_read_triggers = frontmatter.triggers.as_ref().is_some_and(|t| !t.read.is_empty());
-
-        if !frontmatter.user_invocable && !frontmatter.agent_invocable && !has_read_triggers {
+        if !frontmatter.user_invocable && !frontmatter.agent_invocable && read_globs.is_empty() {
             return Err(PromptFileError::NoActivationSurface { name });
         }
 
-        let read_globs = frontmatter.triggers.map(|t| t.read).unwrap_or_default();
         let triggers = PromptTriggers::new(read_globs)?;
 
         Ok(Self {
@@ -130,6 +138,8 @@ impl PromptFile {
             argument_hint: self.argument_hint.clone(),
             tags: self.tags.clone(),
             triggers,
+            globs: vec![],
+            paths: vec![],
             agent_authored: self.agent_authored,
             helpful: self.helpful,
             harmful: self.harmful,
@@ -224,7 +234,10 @@ impl Display for PromptFileError {
                 write!(f, "skill '{name}' has an empty description")
             }
             PromptFileError::NoActivationSurface { name } => {
-                write!(f, "skill '{name}' must have at least one of: user-invocable, agent-invocable, or triggers.read")
+                write!(
+                    f,
+                    "skill '{name}' must have at least one of: user-invocable, agent-invocable, triggers, globs, or paths"
+                )
             }
             PromptFileError::InvalidTriggerGlob { pattern, error } => {
                 write!(f, "invalid trigger glob '{pattern}': {error}")
@@ -276,6 +289,8 @@ mod tests {
             argument_hint: None,
             tags: vec![],
             triggers: None,
+            globs: vec![],
+            paths: vec![],
             agent_authored: false,
             helpful: 0,
             harmful: 0,
@@ -501,5 +516,118 @@ mod tests {
         assert!(!yaml.contains("agent_authored"));
         assert!(!yaml.contains("helpful"));
         assert!(!yaml.contains("harmful"));
+    }
+
+    #[test]
+    fn parse_globs_key() {
+        let content = r#"---
+description: TS conventions
+globs:
+  - "src/**/*.ts"
+  - "src/**/*.tsx"
+---
+Use strict TypeScript."#;
+        let (fm, body) = PromptFile::parse_frontmatter(content).unwrap();
+        assert_eq!(fm.globs, vec!["src/**/*.ts", "src/**/*.tsx"]);
+        assert!(fm.triggers.is_none());
+        assert!(body.contains("Use strict TypeScript."));
+    }
+
+    #[test]
+    fn parse_paths_key() {
+        let content = r#"---
+description: Rust rules
+paths:
+  - "**/*.rs"
+---
+Follow Rust conventions."#;
+        let (fm, _) = PromptFile::parse_frontmatter(content).unwrap();
+        assert_eq!(fm.paths, vec!["**/*.rs"]);
+        assert!(fm.triggers.is_none());
+    }
+
+    #[test]
+    fn parse_merges_all_glob_sources() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("merged-rules").join(SKILL_FILENAME);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r#"---
+description: Merged
+triggers:
+  read:
+    - "src/**/*.rs"
+globs:
+  - "lib/**/*.ts"
+paths:
+  - "app/**/*.py"
+---
+Merged rules."#,
+        )
+        .unwrap();
+
+        let parsed = PromptFile::parse(&path).unwrap();
+        assert!(parsed.triggers.matches_read("src/main.rs"));
+        assert!(parsed.triggers.matches_read("lib/index.ts"));
+        assert!(parsed.triggers.matches_read("app/main.py"));
+    }
+
+    #[test]
+    fn parse_globs_as_activation_surface() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("globs-only.md");
+        std::fs::write(
+            &path,
+            r#"---
+description: TS rules
+globs:
+  - "**/*.ts"
+---
+TypeScript rules."#,
+        )
+        .unwrap();
+
+        let parsed = PromptFile::parse(&path).unwrap();
+        assert_eq!(parsed.name, "globs-only");
+        assert!(parsed.triggers.matches_read("src/index.ts"));
+    }
+
+    #[test]
+    fn name_from_file_stem_for_non_skill_md() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("rust-conventions.md");
+        std::fs::write(
+            &path,
+            r#"---
+description: Rust conventions
+globs:
+  - "**/*.rs"
+---
+Follow Rust conventions."#,
+        )
+        .unwrap();
+
+        let parsed = PromptFile::parse(&path).unwrap();
+        assert_eq!(parsed.name, "rust-conventions");
+    }
+
+    #[test]
+    fn empty_description_defaults_to_name() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("my-rule.md");
+        std::fs::write(
+            &path,
+            r#"---
+globs:
+  - "**/*.rs"
+---
+Rule body."#,
+        )
+        .unwrap();
+
+        let parsed = PromptFile::parse(&path).unwrap();
+        assert_eq!(parsed.name, "my-rule");
+        assert_eq!(parsed.description, "my-rule");
     }
 }

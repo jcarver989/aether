@@ -9,7 +9,7 @@
 use crate::error::SettingsError;
 use crate::prompt_file::{PromptFile, SKILL_FILENAME};
 use std::collections::{HashMap, HashSet};
-use std::fs::read_dir;
+use std::fs::{DirEntry, read_dir};
 use std::path::{Path, PathBuf};
 
 /// A catalog of prompt artifacts discovered from `.aether/skills/`.
@@ -23,19 +23,16 @@ impl PromptCatalog {
     ///
     /// `skills_dir` is typically `<project_root>/.aether/skills` or `<base_dir>/skills`.
     pub fn from_dir(skills_dir: &Path) -> Result<Self, SettingsError> {
-        let prompts: Vec<PromptFile> = read_dir(skills_dir)
-            .map_err(|e| SettingsError::IoError(e.to_string()))?
-            .filter_map(Result::ok)
-            .filter(|e| e.path().is_dir() && !e.file_name().to_string_lossy().starts_with('.'))
-            .filter(|e| e.path().join(SKILL_FILENAME).is_file())
-            .filter_map(|e| match PromptFile::parse(&e.path().join(SKILL_FILENAME)) {
-                Ok(spec) => Some(spec),
-                Err(err) => {
-                    tracing::warn!("Skipping invalid skill at {}: {err}", e.path().display());
-                    None
+        let mut prompts = Vec::new();
+
+        for entry in read_dir(skills_dir).map_err(|e| SettingsError::IoError(e.to_string()))?.filter_map(Result::ok) {
+            if let Some(p) = get_path(&entry) {
+                match PromptFile::parse(&p) {
+                    Ok(spec) => prompts.push(spec),
+                    Err(err) => tracing::warn!("Skipping invalid skill at {}: {err}", p.display()),
                 }
-            })
-            .collect();
+            }
+        }
 
         validate_catalog(&prompts)?;
 
@@ -54,17 +51,15 @@ impl PromptCatalog {
                 continue;
             };
 
-            for entry in entries
-                .filter_map(Result::ok)
-                .filter(|e| e.path().is_dir() && !e.file_name().to_string_lossy().starts_with('.'))
-                .filter(|e| e.path().join(SKILL_FILENAME).is_file())
-            {
-                match PromptFile::parse(&entry.path().join(SKILL_FILENAME)) {
-                    Ok(spec) => {
-                        seen.insert(spec.name.clone(), spec);
-                    }
-                    Err(err) => {
-                        tracing::warn!("Skipping invalid skill at {}: {err}", entry.path().display());
+            for entry in entries.filter_map(Result::ok) {
+                if let Some(p) = get_path(&entry) {
+                    match PromptFile::parse(&p) {
+                        Ok(spec) => {
+                            seen.insert(spec.name.clone(), spec);
+                        }
+                        Err(err) => {
+                            tracing::warn!("Skipping invalid skill at {}: {err}", p.display());
+                        }
                     }
                 }
             }
@@ -96,6 +91,20 @@ impl PromptCatalog {
     /// Find all prompt specs whose read triggers match the given project-relative path.
     pub fn matching_rules(&self, relative_path: &str) -> Vec<&PromptFile> {
         self.specs.iter().filter(|s| s.triggers.matches_read(relative_path)).collect()
+    }
+}
+
+fn get_path(entry: &DirEntry) -> Option<PathBuf> {
+    let path = entry.path();
+    if entry.file_name().to_string_lossy().starts_with('.') {
+        return None;
+    }
+    if path.is_dir() && path.join(SKILL_FILENAME).is_file() {
+        Some(path.join(SKILL_FILENAME))
+    } else if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
+        Some(path)
+    } else {
+        None
     }
 }
 
@@ -221,13 +230,13 @@ mod tests {
     }
 
     #[test]
-    fn reject_missing_description() {
+    fn empty_description_defaults_to_name() {
         let dir = create_temp_project();
         write_skill(dir.path(), "bad", "---\ndescription: \"\"\nuser-invocable: true\n---\nContent.");
 
-        let catalog = PromptCatalog::from_dir(dir.path());
-        // Should be skipped with a warning (parsed OK but validation fails in parse_skill_file)
-        assert!(catalog.unwrap().all().is_empty());
+        let catalog = PromptCatalog::from_dir(dir.path()).unwrap();
+        assert_eq!(catalog.all().len(), 1);
+        assert_eq!(catalog.all()[0].description, "bad");
     }
 
     #[test]
@@ -373,5 +382,114 @@ mod tests {
         let catalog = PromptCatalog::from_dirs(&[missing, dir_a.path().to_path_buf()]);
         assert_eq!(catalog.all().len(), 1);
         assert_eq!(catalog.all()[0].name, "rust");
+    }
+
+    fn write_flat_rule(dir: &Path, filename: &str, content: &str) {
+        fs::write(dir.join(filename), content).unwrap();
+    }
+
+    #[test]
+    fn discover_flat_md_rule_with_globs() {
+        let dir = create_temp_project();
+        write_flat_rule(
+            dir.path(),
+            "rust-conventions.md",
+            "---\ndescription: Rust conventions\nglobs:\n  - \"**/*.rs\"\n---\nFollow Rust conventions.",
+        );
+
+        let catalog = PromptCatalog::from_dir(dir.path()).unwrap();
+        assert_eq!(catalog.all().len(), 1);
+
+        let spec = &catalog.all()[0];
+        assert_eq!(spec.name, "rust-conventions");
+        assert_eq!(spec.description, "Rust conventions");
+        assert!(spec.triggers.matches_read("src/main.rs"));
+        assert!(!spec.triggers.matches_read("README.md"));
+    }
+
+    #[test]
+    fn discover_flat_md_rule_with_paths() {
+        let dir = create_temp_project();
+        write_flat_rule(
+            dir.path(),
+            "ts-rules.md",
+            "---\ndescription: TS rules\npaths:\n  - \"**/*.ts\"\n---\nTypeScript rules.",
+        );
+
+        let catalog = PromptCatalog::from_dir(dir.path()).unwrap();
+        assert_eq!(catalog.all().len(), 1);
+
+        let spec = &catalog.all()[0];
+        assert_eq!(spec.name, "ts-rules");
+        assert!(spec.triggers.matches_read("src/index.ts"));
+    }
+
+    #[test]
+    fn discover_mixed_skill_md_and_flat_rules() {
+        let dir = create_temp_project();
+        write_skill(dir.path(), "commit", "---\ndescription: Commit\nuser-invocable: true\n---\nCommit message.");
+        write_flat_rule(
+            dir.path(),
+            "rust-rules.md",
+            "---\ndescription: Rust rules\nglobs:\n  - \"**/*.rs\"\n---\nRust conventions.",
+        );
+
+        let catalog = PromptCatalog::from_dir(dir.path()).unwrap();
+        assert_eq!(catalog.all().len(), 2);
+
+        let names: Vec<&str> = catalog.all().iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"commit"));
+        assert!(names.contains(&"rust-rules"));
+    }
+
+    #[test]
+    fn from_dirs_merges_flat_rules() {
+        let dir_a = create_temp_project();
+        let dir_b = create_temp_project();
+        write_skill(dir_a.path(), "commit", "---\ndescription: Commit\nuser-invocable: true\n---\nCommit.");
+        write_flat_rule(
+            dir_b.path(),
+            "rust-rules.md",
+            "---\ndescription: Rust rules\nglobs:\n  - \"**/*.rs\"\n---\nRust conventions.",
+        );
+
+        let catalog = PromptCatalog::from_dirs(&[dir_a.path().to_path_buf(), dir_b.path().to_path_buf()]);
+        assert_eq!(catalog.all().len(), 2);
+
+        let names: Vec<&str> = catalog.all().iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"commit"));
+        assert!(names.contains(&"rust-rules"));
+    }
+
+    #[test]
+    fn flat_rule_without_description_uses_name() {
+        let dir = create_temp_project();
+        write_flat_rule(dir.path(), "my-rule.md", "---\nglobs:\n  - \"**/*.rs\"\n---\nRule body.");
+
+        let catalog = PromptCatalog::from_dir(dir.path()).unwrap();
+        assert_eq!(catalog.all().len(), 1);
+
+        let spec = &catalog.all()[0];
+        assert_eq!(spec.name, "my-rule");
+        assert_eq!(spec.description, "my-rule");
+    }
+
+    #[test]
+    fn skips_hidden_flat_md_files() {
+        let dir = create_temp_project();
+        write_flat_rule(
+            dir.path(),
+            ".hidden-rule.md",
+            "---\ndescription: Hidden\nglobs:\n  - \"**/*.rs\"\n---\nHidden.",
+        );
+        write_flat_rule(
+            dir.path(),
+            "visible-rule.md",
+            "---\ndescription: Visible\nglobs:\n  - \"**/*.ts\"\n---\nVisible.",
+        );
+
+        let catalog = PromptCatalog::from_dir(dir.path()).unwrap();
+        assert_eq!(catalog.all().len(), 1);
+        assert_eq!(catalog.all()[0].name, "visible-rule");
     }
 }
