@@ -24,6 +24,7 @@ pub struct NewAgentWizard {
     model: ModelStep,
     prompts: PromptsStep,
     tools: ToolsStep,
+    editor_error: Option<String>,
 }
 
 impl NewAgentWizard {
@@ -53,6 +54,7 @@ impl NewAgentWizard {
             model: ModelStep::new(model_entries),
             prompts,
             tools: ToolsStep::new(mcp_configs),
+            editor_error: None,
         }
     }
 
@@ -248,6 +250,9 @@ impl NewAgentWizard {
             NewAgentStep::Prompts => {
                 let system_md_path = self.draft.generated_paths(&self.mode).system_md.display().to_string();
                 lines.extend(self.prompts.render(ctx, pane_w, &self.draft.system_md_content, &system_md_path));
+                if let Some(err) = &self.editor_error {
+                    lines.push(Line::styled(format!("  \u{26a0} {err}"), ctx.theme.warning()));
+                }
             }
             NewAgentStep::Tools => {
                 lines.extend(self.tools.render(ctx));
@@ -275,7 +280,10 @@ pub async fn run_wizard_loop<W: io::Write>(
             match wizard.handle_event(&tui_event).await {
                 Some(NewAgentAction::Done(outcome)) => return Ok(outcome),
                 Some(NewAgentAction::EditSystemMd) => {
-                    edit_system_md(wizard, terminal).await?;
+                    let editor = std::env::var("VISUAL")
+                        .or_else(|_| std::env::var("EDITOR"))
+                        .unwrap_or_else(|_| "vi".to_string());
+                    edit_system_md(wizard, terminal, &editor).await?;
                 }
                 None => {}
             }
@@ -287,6 +295,7 @@ pub async fn run_wizard_loop<W: io::Write>(
 async fn edit_system_md<W: io::Write>(
     wizard: &mut NewAgentWizard,
     terminal: &mut TerminalRuntime<W>,
+    editor: &str,
 ) -> Result<(), CliError> {
     let mut tmp =
         tempfile::Builder::new().prefix("aether-system-").suffix(".md").tempfile().map_err(CliError::IoError)?;
@@ -294,11 +303,16 @@ async fn edit_system_md<W: io::Write>(
     tmp.flush().map_err(CliError::IoError)?;
     let path = tmp.path().to_path_buf();
 
-    let editor = std::env::var("VISUAL").or_else(|_| std::env::var("EDITOR")).unwrap_or_else(|_| "vi".to_string());
     let mut command = Command::new(editor);
     command.arg(&path).stdin(Stdio::inherit()).stdout(Stdio::inherit()).stderr(Stdio::inherit());
 
-    terminal.run_external(command).await.map_err(CliError::IoError)?;
+    if let Err(err) = terminal.run_external(command).await {
+        tracing::warn!(%editor, %err, "failed to open editor");
+        wizard.editor_error = Some(format!("Could not open editor '{editor}': {err}"));
+        return Ok(());
+    }
+
+    wizard.editor_error = None;
 
     let edited = std::fs::read_to_string(&path).map_err(CliError::IoError)?;
     wizard.draft.system_md_content = edited;
@@ -738,5 +752,33 @@ mod tests {
         wizard.handle_event(&key_event(KeyCode::Char(' '))).await;
 
         assert!(wizard.draft.workspace_mcp_configs.contains(&"mcp.json".to_string()));
+    }
+
+    #[tokio::test]
+    async fn edit_system_md_with_missing_editor_sets_error() {
+        let (w, h) = (80, 24);
+        let mut wizard = {
+            let mut wizard = make_wizard(NewAgentMode::ScaffoldProject);
+            wizard.step = NewAgentStep::Prompts;
+            wizard.draft.system_md_content = "original content".to_string();
+            wizard
+        };
+
+        let mut terminal = TerminalRuntime::headless(Vec::<u8>::new(), (w, h));
+        let result = edit_system_md(&mut wizard, &mut terminal, "__nonexistent_editor__").await;
+
+        assert!(result.is_ok(), "edit_system_md should not return an error");
+        assert_eq!(wizard.draft.system_md_content, "original content", "content should be unchanged");
+        assert!(!wizard.draft.system_md_edited, "edited flag should remain false");
+        assert!(wizard.editor_error.is_some(), "editor_error should be set");
+        assert!(wizard.editor_error.as_ref().unwrap().contains("__nonexistent_editor__"));
+
+        let ctx = ViewContext::new((w, h));
+        let lines = wizard.render_body(&ctx, w);
+        let text: Vec<String> = lines.iter().map(Line::plain_text).collect();
+        assert!(
+            text.iter().any(|l| l.contains("Could not open editor")),
+            "expected editor error in rendered output, got: {text:?}"
+        );
     }
 }

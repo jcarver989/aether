@@ -30,6 +30,11 @@ impl<T: Write> TerminalRuntime<T> {
         Ok(Self { renderer, session, event_task, config })
     }
 
+    pub fn headless(writer: T, size: (u16, u16)) -> Self {
+        let config = TerminalConfig { bracketed_paste: false, mouse_capture: MouseCapture::Disabled };
+        Self { renderer: Renderer::new(writer, Theme::default(), size), session: None, event_task: None, config }
+    }
+
     pub async fn next_event(&mut self) -> Option<CrosstermEvent> {
         let task = self.event_task.as_mut()?;
         task.rx().recv().await
@@ -109,7 +114,7 @@ impl<T: Write> Drop for SuspendedTerminal<'_, T> {
             self.runtime.session = Some(session);
         }
 
-        if self.runtime.event_task.is_none() {
+        if self.runtime.session.is_some() && self.runtime.event_task.is_none() {
             self.runtime.event_task = Some(spawn_terminal_event_task());
         }
 
