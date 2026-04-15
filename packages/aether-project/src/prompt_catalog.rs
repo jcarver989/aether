@@ -78,6 +78,11 @@ impl PromptCatalog {
         &self.specs
     }
 
+    /// Find a prompt by its resolved prompt name.
+    pub fn find(&self, name: &str) -> Option<&PromptFile> {
+        self.specs.iter().find(|spec| spec.name == name)
+    }
+
     /// Iterate over user-invocable prompts (slash commands).
     pub fn slash_commands(&self) -> impl Iterator<Item = &PromptFile> {
         self.specs.iter().filter(|s| s.user_invocable)

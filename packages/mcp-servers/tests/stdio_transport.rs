@@ -107,6 +107,17 @@ async fn coding_server_lists_tools_over_stdio() {
 }
 
 #[tokio::test]
+async fn coding_server_accepts_rules_dir_over_stdio() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+
+    let tools = connect_and_list_tools("coding", &["--", "--rules-dir", tmp.path().to_str().unwrap()]).await;
+    let names = tool_names(&tools);
+
+    assert!(names.contains(&"grep"), "expected grep tool, got: {names:?}");
+    assert!(names.contains(&"read_file"), "expected read_file tool, got: {names:?}");
+}
+
+#[tokio::test]
 async fn lsp_server_lists_tools_over_stdio() {
     let tmp = tempfile::tempdir().expect("create temp dir");
 
@@ -124,8 +135,13 @@ async fn lsp_server_lists_tools_over_stdio() {
 #[tokio::test]
 async fn skills_server_lists_tools_over_stdio() {
     let tmp = tempfile::tempdir().expect("create temp dir");
+    let notes_dir = tmp.path().join("notes");
 
-    let tools = connect_and_list_tools("skills", &["--", "--dir", tmp.path().to_str().unwrap()]).await;
+    let tools = connect_and_list_tools(
+        "skills",
+        &["--", "--dir", tmp.path().to_str().unwrap(), "--notes-dir", notes_dir.to_str().unwrap()],
+    )
+    .await;
     let names = tool_names(&tools);
 
     assert!(names.contains(&"get_skills"), "expected get_skills, got: {names:?}");

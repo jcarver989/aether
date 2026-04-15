@@ -102,18 +102,23 @@ The `mcp.json` file configures MCP tool servers:
 {
   "servers": {
     "coding": {
-      "type": "in-memory"
+      "type": "in-memory",
+      "args": ["--rules-dir", ".aether/skills", "--rules-dir", ".claude/rules"]
     },
     "skills": {
       "type": "in-memory",
-      "args": ["--dir", "$HOME/.aether"]
+      "args": [
+        "--dir", ".aether/skills",
+        "--dir", ".claude/skills",
+        "--notes-dir", ".aether/notes"
+      ]
     }
   }
 }
 ```
 
-- **coding** — Filesystem tools (read, write, bash, etc.)
-- **skills** — Slash commands and reusable skill prompts from `~/.aether/`
+- **coding** — Filesystem tools (read, write, bash, etc.) + optional automatic read rules from configured `--rules-dir` paths
+- **skills** — Slash commands and reusable prompts from configured prompt directories
 
 ## Slash Commands
 

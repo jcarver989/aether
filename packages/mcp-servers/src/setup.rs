@@ -26,11 +26,17 @@ impl McpBuilderExt for McpBuilder {
                             CodingMcpArgs::default()
                         }
                     };
-                    debug!("CodingMcp created with LSP, permission_mode={:?}", parsed.permission_mode);
+                    let CodingMcpArgs { permission_mode, rules_dirs, .. } = parsed;
+                    debug!(
+                        "CodingMcp created with LSP, permission_mode={:?}, rules_dirs={}",
+                        permission_mode,
+                        rules_dirs.len()
+                    );
                     CodingMcp::with_tools(DefaultCodingTools::new())
                         .with_lsp(project_path.clone())
+                        .with_rules_dirs(rules_dirs)
                         .with_root_dir(project_path)
-                        .with_permission_mode(parsed.permission_mode)
+                        .with_permission_mode(permission_mode)
                         .into_dyn()
                 }
                 .boxed()

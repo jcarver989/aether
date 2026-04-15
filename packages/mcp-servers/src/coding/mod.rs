@@ -1,3 +1,4 @@
+use aether_project::PromptCatalog;
 use clap::Parser;
 use mcp_utils::client::{RawMcpConfig, RawMcpServerConfig};
 use rmcp::{
@@ -34,13 +35,13 @@ pub mod tools_trait;
 pub use default_tools::DefaultCodingTools;
 pub use tools_trait::CodingTools;
 
-use crate::lsp::registry::LspRegistry;
 use crate::lsp::tools::check_errors::{
     LspDiagnosticsInput, LspDiagnosticsOutput, LspDiagnosticsRequest, execute_lsp_diagnostics,
 };
 use crate::lsp::tools::document_info::{LspDocumentInput, LspDocumentOutput, execute_lsp_document};
 use crate::lsp::tools::rename::{LspRenameInput, LspRenameOutput, execute_lsp_rename};
 use crate::lsp::tools::symbol_lookup::{LspSymbolInput, LspSymbolOutput, execute_lsp_symbol};
+use crate::{coding::prompt_rule_matcher::PromptRuleMatcher, lsp::registry::LspRegistry};
 
 use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta, basename, truncate};
 use tools::bash::{
@@ -86,6 +87,11 @@ pub struct CodingMcpArgs {
     /// Root directory for workspace (used for LSP initialization)
     #[arg(long = "root-dir")]
     pub root_dir: Option<PathBuf>,
+
+    /// Prompt directories to scan for automatic read-triggered rules.
+    /// Can be specified multiple times: --rules-dir .aether/skills --rules-dir .claude/rules
+    #[arg(long = "rules-dir")]
+    pub rules_dirs: Vec<PathBuf>,
 
     /// Permission mode controlling user approval for tool calls
     #[arg(long = "permission-mode", default_value = "always-allow")]
@@ -141,8 +147,18 @@ pub struct CodingMcp<T: CodingTools = DefaultCodingTools> {
     roots: RwLock<Vec<PathBuf>>,
     /// Read rules discovered from skill files (activated on file reads)
     read_rule_state: prompt_rule_matcher::PromptRuleMatcher,
+    /// Configured prompt directories used to build read rules.
+    configured_rules_dirs: Vec<PathBuf>,
     /// Permission mode controlling user approval for tool calls
     permission_mode: PermissionMode,
+}
+
+fn build_rule_catalog(configured_rules_dirs: &[PathBuf]) -> aether_project::PromptCatalog {
+    if configured_rules_dirs.is_empty() {
+        return aether_project::PromptCatalog::empty();
+    }
+
+    PromptCatalog::from_dirs(configured_rules_dirs)
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -230,6 +246,7 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
             web_searcher: WebSearcher::try_new().ok(),
             roots: RwLock::new(Vec::new()),
             read_rule_state: prompt_rule_matcher::PromptRuleMatcher::default(),
+            configured_rules_dirs: Vec::new(),
             permission_mode: PermissionMode::AlwaysAllow,
         }
     }
@@ -245,18 +262,17 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
 
     /// Set workspace roots.
     pub fn with_roots(mut self, roots: Vec<PathBuf>) -> Self {
-        let catalog = match roots.first() {
-            Some(root) => {
-                let skills_dir = root.join(".aether").join("skills");
-                aether_project::PromptCatalog::from_dir(&skills_dir).unwrap_or_else(|e| {
-                    tracing::warn!("Failed to load skill catalog: {e}");
-                    aether_project::PromptCatalog::empty()
-                })
-            }
-            None => aether_project::PromptCatalog::empty(),
-        };
+        let catalog = build_rule_catalog(&self.configured_rules_dirs);
         self.read_rule_state = prompt_rule_matcher::PromptRuleMatcher::new(catalog);
         self.roots = RwLock::new(roots);
+        self
+    }
+
+    /// Set prompt directories used for read-triggered rule activation.
+    pub fn with_rules_dirs(mut self, rules_dirs: Vec<PathBuf>) -> Self {
+        self.configured_rules_dirs = rules_dirs;
+        let catalog = build_rule_catalog(&self.configured_rules_dirs);
+        self.read_rule_state = PromptRuleMatcher::new(catalog);
         self
     }
 
@@ -760,6 +776,19 @@ mod tests {
     #[test]
     fn args_rejects_invalid_permission_mode() {
         assert!(CodingMcpArgs::from_args(vec!["--permission-mode".into(), "yolo".into()]).is_err());
+    }
+
+    #[test]
+    fn args_parses_repeated_rules_dirs() {
+        let args = CodingMcpArgs::from_args(vec![
+            "--rules-dir".into(),
+            ".aether/skills".into(),
+            "--rules-dir".into(),
+            ".claude/rules".into(),
+        ])
+        .unwrap();
+
+        assert_eq!(args.rules_dirs, vec![PathBuf::from(".aether/skills"), PathBuf::from(".claude/rules")]);
     }
 
     #[test]

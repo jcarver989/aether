@@ -33,7 +33,7 @@ async fn create_test_client(
     rmcp::service::RunningService<rmcp::RoleServer, SkillsMcp>,
     rmcp::service::RunningService<rmcp::RoleClient, rmcp::model::ClientInfo>,
 ) {
-    let server_service = SkillsMcp::new(vec![test_dir.to_path_buf()]);
+    let server_service = SkillsMcp::new(&[test_dir.join("skills")], test_dir.join("notes"));
     let client_info = ClientInfo::new(ClientCapabilities::default(), Implementation::new("test-client", "0.1.0"));
 
     let (server_handle, client) =

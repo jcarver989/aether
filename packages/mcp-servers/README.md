@@ -46,11 +46,12 @@ These servers use Aether's `in-memory` transport type -- they run inside your ag
 {
   "servers": {
     "coding": {
-      "type": "in-memory"
+      "type": "in-memory",
+      "args": ["--rules-dir", ".aether/skills"]
     },
     "skills": {
       "type": "in-memory",
-      "args": ["--dir", "$HOME/.aether"]
+      "args": ["--dir", ".aether/skills", "--notes-dir", ".aether/notes"]
     },
     "tasks": {
       "type": "in-memory"
@@ -68,7 +69,8 @@ Each server key must match a factory registered with `McpBuilder::register_in_me
 | Server | Flag | Default | Description |
 |--------|------|---------|-------------|
 | `coding` | `--root-dir <path>` | cwd | Workspace root for LSP and file operations |
-| `skills` | `--dir <path>` | none | Base directory containing `commands/` and `skills/` subdirectories |
+| `coding` | `--rules-dir <path>` (repeatable) | none | Explicit prompt directories for automatic read-triggered rules |
+| `skills` | `--dir <path>` (repeatable) + `--notes-dir <path>` | required | Prompt directories to scan and directory for persisted notes |
 | `tasks` | `--dir <path>` | `.` | Base directory for task storage (creates `.aether-tasks/` inside) |
 | `subagents` | `--project-root <path>` (alias: `--dir`) | `.` | Project root containing optional `.aether/settings.json` authored agents |
 

@@ -91,7 +91,13 @@ impl DraftAgentEntry {
             .iter()
             .map(|entry| {
                 let name = entry.path_str();
-                let args = if name == "skills" { vec!["--dir".into(), "$HOME/.aether".into()] } else { vec![] };
+                let args = match name {
+                    "coding" => vec!["--rules-dir".into(), ".aether/skills".into()],
+                    "skills" => {
+                        vec!["--dir".into(), ".aether/skills".into(), "--notes-dir".into(), ".aether/notes".into()]
+                    }
+                    _ => vec![],
+                };
                 (name.to_string(), RawMcpServerConfig::InMemory { args, input: None })
             })
             .collect::<BTreeMap<_, _>>();

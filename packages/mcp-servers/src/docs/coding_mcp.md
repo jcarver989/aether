@@ -10,8 +10,9 @@ use mcp_servers::CodingMcp;
 // Default: local filesystem tools, no LSP
 let server = CodingMcp::new();
 
-// With LSP code intelligence
+// With LSP code intelligence and explicit read-rule directories
 let server = CodingMcp::new()
+    .with_rules_dirs(vec!["/my/project/.aether/skills".into(), "/my/project/.claude/rules".into()])
     .with_lsp("/my/project".into())
     .with_root_dir("/my/project".into())
     .with_permission_mode(mcp_servers::PermissionMode::Auto);

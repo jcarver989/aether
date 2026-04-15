@@ -2,7 +2,7 @@
 
 File operations, code search, bash execution, LSP integration, and web tools. This is the workhorse server for coding tasks.
 
-**Flag:** `--root-dir <path>` (defaults to cwd)
+**Flags:** `--root-dir <path>` (optional workspace root) and `--rules-dir <path>` (repeatable read-rule directories)
 
 ## Table of Contents
 

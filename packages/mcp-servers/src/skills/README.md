@@ -2,7 +2,7 @@
 
 Slash commands and reusable skill prompts. Skills teach the agent domain-specific knowledge; commands trigger multi-step workflows.
 
-**Flag:** `--dir <path>` (base directory containing `commands/` and `skills/` subdirectories)
+**Flags:** `--dir <path>` (repeatable prompt directories) and `--notes-dir <path>` (notes storage)
 
 ## Table of Contents
 
