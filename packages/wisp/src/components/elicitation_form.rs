@@ -602,6 +602,53 @@ mod tests {
         }
     }
 
+    fn permission_like_params() -> ElicitationParams {
+        ElicitationParams {
+            server_name: "coding".to_string(),
+            request: CreateElicitationRequestParams::FormElicitationParams {
+                meta: None,
+                message: "Allow bash: rm -rf /tmp?".to_string(),
+                requested_schema: ElicitationSchema::builder()
+                    .required_enum_schema(
+                        "decision",
+                        EnumSchema::builder(vec!["allow".into(), "deny".into()])
+                            .untitled()
+                            .with_default("deny")
+                            .unwrap()
+                            .build(),
+                    )
+                    .build()
+                    .unwrap(),
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn single_field_permission_like_form_submits_on_first_enter() {
+        let (tx, mut rx) = oneshot::channel();
+        let mut form = ElicitationForm::from_params(permission_like_params(), tx);
+
+        let outcome =
+            form.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Enter, tui::KeyModifiers::NONE))).await;
+        let messages = outcome.expect("enter should be handled");
+
+        assert!(messages.iter().any(|m| matches!(m, ElicitationMessage::Responded)));
+
+        let response = rx.try_recv().expect("first enter should produce an immediate response");
+        assert_eq!(response.action, ElicitationAction::Accept);
+        assert_eq!(response.content.unwrap()["decision"], "deny");
+    }
+
+    #[test]
+    fn single_field_permission_like_form_respects_default_deny() {
+        let (tx, _rx) = oneshot::channel();
+        let form = ElicitationForm::from_params(permission_like_params(), tx);
+
+        let response = form.confirm();
+        assert_eq!(response.action, ElicitationAction::Accept);
+        assert_eq!(response.content.unwrap()["decision"], "deny");
+    }
+
     #[tokio::test]
     async fn url_modal_enter_returns_accept_with_carried_id() {
         let opened_urls = Arc::new(Mutex::new(Vec::new()));

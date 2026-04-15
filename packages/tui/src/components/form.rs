@@ -17,10 +17,22 @@ pub enum FormMessage {
     Submit,
 }
 
+enum FormMode {
+    SingleStep,
+    MultiStep,
+}
+
+impl FormMode {
+    fn from_field_count(count: usize) -> Self {
+        if count <= 1 { Self::SingleStep } else { Self::MultiStep }
+    }
+}
+
 #[doc = include_str!("../docs/form.md")]
 pub struct Form {
     pub message: String,
     pub fields: Vec<FormField>,
+    mode: FormMode,
     focus: FocusRing,
 }
 
@@ -44,12 +56,12 @@ pub enum FormFieldKind {
 
 impl Form {
     pub fn new(message: String, fields: Vec<FormField>) -> Self {
-        let len = fields.len();
-        Self {
-            message,
-            fields,
-            focus: FocusRing::new(len + 1), // +1 for virtual Submit tab
-        }
+        let mode = FormMode::from_field_count(fields.len());
+        let focus_len = match mode {
+            FormMode::SingleStep => fields.len(),
+            FormMode::MultiStep => fields.len() + 1,
+        };
+        Self { message, fields, mode, focus: FocusRing::new(focus_len) }
     }
 
     pub fn to_json(&self) -> serde_json::Value {
@@ -60,8 +72,16 @@ impl Form {
         serde_json::Value::Object(map)
     }
 
+    fn is_single_step(&self) -> bool {
+        matches!(self.mode, FormMode::SingleStep)
+    }
+
+    fn is_multi_step(&self) -> bool {
+        matches!(self.mode, FormMode::MultiStep)
+    }
+
     fn is_on_submit_tab(&self) -> bool {
-        self.focus.focused() == self.fields.len()
+        self.is_multi_step() && self.focus.focused() == self.fields.len()
     }
 
     fn active_field_uses_horizontal_arrows(&self) -> bool {
@@ -157,19 +177,36 @@ impl Form {
     fn render_footer(&self, context: &ViewContext) -> Line {
         let muted = context.theme.muted();
 
-        if self.is_on_submit_tab() {
+        if self.is_multi_step() && self.is_on_submit_tab() {
             return Line::styled("Enter to submit · Esc to cancel", muted);
         }
 
         let Some(field) = self.fields.get(self.focus.focused()) else {
-            return Line::default();
+            return if self.is_single_step() {
+                Line::styled("Enter to submit · Esc to cancel", muted)
+            } else {
+                Line::default()
+            };
         };
 
-        let hints = match &field.kind {
-            FormFieldKind::Text(_) | FormFieldKind::Number(_) => "Type your answer · Tab to navigate · Esc to cancel",
-            FormFieldKind::Boolean(_) => "Space to toggle · Tab to navigate · Esc to cancel",
-            FormFieldKind::SingleSelect(_) => "↑↓ to select · Tab to navigate · Enter to confirm · Esc to cancel",
-            FormFieldKind::MultiSelect(_) => "Space to toggle · ↑↓ to move · Tab to navigate · Esc to cancel",
+        let hints = if self.is_single_step() {
+            match &field.kind {
+                FormFieldKind::Text(_) | FormFieldKind::Number(_) => {
+                    "Type your answer · Enter to submit · Esc to cancel"
+                }
+                FormFieldKind::Boolean(_) => "Space to toggle · Enter to submit · Esc to cancel",
+                FormFieldKind::SingleSelect(_) => "↑↓ to select · Enter to submit · Esc to cancel",
+                FormFieldKind::MultiSelect(_) => "Space to toggle · ↑↓ to move · Enter to submit · Esc to cancel",
+            }
+        } else {
+            match &field.kind {
+                FormFieldKind::Text(_) | FormFieldKind::Number(_) => {
+                    "Type your answer · Tab to navigate · Esc to cancel"
+                }
+                FormFieldKind::Boolean(_) => "Space to toggle · Tab to navigate · Esc to cancel",
+                FormFieldKind::SingleSelect(_) => "↑↓ to select · Tab to navigate · Enter to confirm · Esc to cancel",
+                FormFieldKind::MultiSelect(_) => "Space to toggle · ↑↓ to move · Tab to navigate · Esc to cancel",
+            }
         };
 
         Line::styled(hints, muted)
@@ -232,10 +269,9 @@ impl Component for Form {
         };
         match key.code {
             KeyCode::Esc => return Some(vec![FormMessage::Close]),
+            KeyCode::Enter if self.is_single_step() => return Some(vec![FormMessage::Submit]),
+            KeyCode::Enter if self.is_on_submit_tab() => return Some(vec![FormMessage::Submit]),
             KeyCode::Enter => {
-                if self.is_on_submit_tab() {
-                    return Some(vec![FormMessage::Submit]);
-                }
                 self.focus.focus_next();
                 return Some(vec![]);
             }
@@ -267,8 +303,12 @@ impl Component for Form {
     fn render(&mut self, context: &ViewContext) -> Frame {
         let mut lines = vec![Line::with_style(&self.message, Style::fg(context.theme.text_primary()).bold())];
         lines.push(Line::default());
-        lines.push(self.render_tab_bar(context));
-        lines.push(Line::default());
+
+        if self.is_multi_step() {
+            lines.push(self.render_tab_bar(context));
+            lines.push(Line::default());
+        }
+
         lines.extend(self.render_active_field(context));
         lines.push(Line::default());
         lines.push(self.render_footer(context));
@@ -325,6 +365,22 @@ mod tests {
         ]
     }
 
+    fn single_select_field() -> Vec<FormField> {
+        vec![FormField {
+            name: "decision".to_string(),
+            label: "Decision".to_string(),
+            description: None,
+            required: true,
+            kind: FormFieldKind::SingleSelect(RadioSelect::new(
+                vec![
+                    SelectOption { value: "allow".into(), title: "allow".into(), description: None },
+                    SelectOption { value: "deny".into(), title: "deny".into(), description: None },
+                ],
+                0,
+            )),
+        }]
+    }
+
     #[test]
     fn render_does_not_panic_when_title_wider_than_terminal() {
         let mut form = Form::new(
@@ -354,6 +410,16 @@ mod tests {
         assert!(text.contains("Name"), "tab bar missing 'Name'");
         assert!(text.contains("Features"), "tab bar missing 'Features'");
         assert!(text.contains("Submit"), "tab bar missing 'Submit'");
+    }
+
+    #[test]
+    fn single_field_form_does_not_render_submit_tab() {
+        let mut form = Form::new("Survey".to_string(), single_select_field());
+        let context = ViewContext::new((80, 24));
+        let frame = form.render(&context);
+        let text: String = frame.lines().iter().map(Line::plain_text).collect::<Vec<_>>().join("\n");
+
+        assert!(!text.contains("Submit"));
     }
 
     #[test]
@@ -400,6 +466,43 @@ mod tests {
         let mut form = Form::new("Survey".to_string(), sample_fields());
         assert_eq!(form.focus.focused(), 0);
         form.on_event(&Event::Key(key(KeyCode::Enter))).await;
+        assert_eq!(form.focus.focused(), 1);
+    }
+
+    #[tokio::test]
+    async fn single_field_form_enter_emits_submit() {
+        let mut form = Form::new("Survey".to_string(), single_select_field());
+        let msgs = form.on_event(&Event::Key(key(KeyCode::Enter))).await.unwrap();
+
+        assert!(msgs.iter().any(|m| matches!(m, FormMessage::Submit)));
+    }
+
+    #[tokio::test]
+    async fn empty_form_enter_emits_submit() {
+        let mut form = Form::new("Survey".to_string(), vec![]);
+        let msgs = form.on_event(&Event::Key(key(KeyCode::Enter))).await.unwrap();
+
+        assert!(msgs.iter().any(|m| matches!(m, FormMessage::Submit)));
+    }
+
+    #[test]
+    fn multi_field_form_still_has_submit_tab() {
+        let mut form = Form::new("Survey".to_string(), sample_fields());
+        let context = ViewContext::new((80, 24));
+        let frame = form.render(&context);
+        let text: String = frame.lines().iter().map(Line::plain_text).collect::<Vec<_>>().join("\n");
+
+        assert!(text.contains("Submit"));
+    }
+
+    #[tokio::test]
+    async fn multi_field_form_enter_before_submit_still_advances_focus() {
+        let mut form = Form::new("Survey".to_string(), sample_fields());
+        assert_eq!(form.focus.focused(), 0);
+
+        let msgs = form.on_event(&Event::Key(key(KeyCode::Enter))).await.unwrap();
+
+        assert!(msgs.is_empty());
         assert_eq!(form.focus.focused(), 1);
     }
 

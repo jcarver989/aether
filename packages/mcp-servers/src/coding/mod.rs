@@ -326,7 +326,11 @@ When using tools that take file paths, always use absolute paths from:
                 requested_schema: ElicitationSchema::builder()
                     .required_enum_schema(
                         "decision",
-                        EnumSchema::builder(vec!["allow".into(), "deny".into()]).untitled().build(),
+                        EnumSchema::builder(vec!["allow".into(), "deny".into()])
+                            .untitled()
+                            .with_default("deny")
+                            .unwrap()
+                            .build(),
                     )
                     .build()
                     .unwrap(),

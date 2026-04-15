@@ -1,40 +1,47 @@
-A multi-field form rendered as a tabbed pane with a virtual "Submit" tab.
+`Form` supports two interaction modes based on field count:
 
-Each [`FormField`] gets its own full pane. A tab bar at the top shows all fields plus a final Submit tab. Navigate between tabs with Tab/BackTab or arrow keys (for non-text fields). The active field's widget receives all other input.
+- **Single-step mode** (`0` or `1` fields)
+- **Multi-step mode** (`2+` fields)
 
-# Construction
+In both modes, each [`FormField`] renders through its backing widget and all values can be serialized with [`to_json()`](Form::to_json).
 
-```rust,no_run
-use tui::{Form, FormField, FormFieldKind, TextField, SelectOption, RadioSelect};
+# Modes
 
-let form = Form::new("Configure project".to_string(), vec![
-    FormField {
-        name: "name".to_string(),
-        label: "Project name".to_string(),
-        description: Some("The directory name for your project".to_string()),
-        required: true,
-        kind: FormFieldKind::Text(TextField::new(String::new())),
-    },
-]);
-```
+## Single-step mode (`0` or `1` fields)
+
+The form renders only the active prompt content and footer hints.
+
+- No tab bar
+- No review/submit pane
+- `Enter` submits immediately
+
+This mode is ideal for yes/no confirmations and other one-question prompts.
+
+## Multi-step mode (`2+` fields)
+
+A tab bar is shown with all fields plus a virtual **Submit** tab.
+
+- Navigate with `Tab` / `BackTab` or arrows (for non-text fields)
+- `Enter` advances to the next tab while editing fields
+- `Enter` on the **Submit** tab emits submit
+
+The Submit tab shows a review summary of all field values.
 
 # Messages
 
 `Form` implements [`Component`](crate::Component) with `Message = FormMessage`:
 
-- **`FormMessage::Close`** — Emitted on Esc.
-- **`FormMessage::Submit`** — Emitted on Enter while the Submit tab is focused.
-
-# Serialization
-
-[`to_json()`](Form::to_json) serializes all field values to a `serde_json::Value` object, keyed by each field's `name`.
+- **`FormMessage::Close`** — Emitted on `Esc`.
+- **`FormMessage::Submit`** — Emitted on `Enter`:
+  - immediately in single-step mode
+  - only from the Submit tab in multi-step mode
 
 # `FormField`
 
 A single field within the form:
 
 - **`name`** — Machine-readable key (used in JSON output).
-- **`label`** — Human-readable label shown in the tab bar and pane header.
+- **`label`** — Human-readable label shown in UI.
 - **`description`** — Optional help text shown below the field.
 - **`required`** — If `true`, an asterisk is shown next to the label.
 - **`kind`** — The backing widget, as a [`FormFieldKind`].
@@ -49,8 +56,8 @@ A single field within the form:
 
 # See also
 
-- [`TextField`](crate::TextField) — Text input widget.
-- [`Checkbox`](crate::Checkbox) — Boolean toggle.
-- [`RadioSelect`](crate::RadioSelect) — Single-select list.
-- [`MultiSelect`](crate::MultiSelect) — Multi-select list.
-- [`FocusRing`](crate::FocusRing) — Used internally for tab navigation.
+- [`TextField`](crate::TextField)
+- [`Checkbox`](crate::Checkbox)
+- [`RadioSelect`](crate::RadioSelect)
+- [`MultiSelect`](crate::MultiSelect)
+- [`FocusRing`](crate::FocusRing)
