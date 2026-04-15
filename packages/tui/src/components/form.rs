@@ -271,11 +271,7 @@ impl Component for Form {
             KeyCode::Esc => return Some(vec![FormMessage::Close]),
             KeyCode::Enter if self.is_single_step() => return Some(vec![FormMessage::Submit]),
             KeyCode::Enter if self.is_on_submit_tab() => return Some(vec![FormMessage::Submit]),
-            KeyCode::Enter => {
-                self.focus.focus_next();
-                return Some(vec![]);
-            }
-            KeyCode::Tab => {
+            KeyCode::Enter | KeyCode::Tab => {
                 self.focus.focus_next();
                 return Some(vec![]);
             }
