@@ -28,14 +28,14 @@ pub(crate) fn slot_bar(filled: usize, total: usize) -> String {
     format!("[{slots}]")
 }
 
-/// Renders a compact 5-slot context gauge with label and nominal usage.
+/// Renders a compact 3-slot context gauge with label and nominal usage.
 ///
-/// Each slot represents 20% of context used. Visual mapping:
-/// - `200k / 200k` => `ctx [■■■■■] 200k / 200k`
-/// - `100k / 200k` => `ctx [■■■··] 100k / 200k`
-/// - `1.2k / 200k` => `ctx [·····] 1.2k / 200k`
+/// Each slot represents ~33% of context used. Visual mapping:
+/// - `200k / 200k` => `ctx [■■■] 200k / 200k`
+/// - `100k / 200k` => `ctx [■■·] 100k / 200k`
+/// - `1.2k / 200k` => `ctx [···] 1.2k / 200k`
 pub(crate) fn context_bar(usage: ContextUsageDisplay) -> String {
-    const TOTAL: u32 = 5;
+    const TOTAL: u32 = 3;
     let filled = (usage.used_tokens.saturating_mul(TOTAL) + usage.limit_tokens / 2) / usage.limit_tokens.max(1);
     let filled = (filled as usize).min(TOTAL as usize);
     format!(
@@ -106,27 +106,27 @@ mod tests {
 
     #[test]
     fn bar_full() {
-        assert_eq!(context_bar(usage(200_000, 200_000)), "ctx [■■■■■] 200k / 200k");
+        assert_eq!(context_bar(usage(200_000, 200_000)), "ctx [■■■] 200k / 200k");
     }
 
     #[test]
     fn bar_empty() {
-        assert_eq!(context_bar(usage(0, 200_000)), "ctx [·····] 0 / 200k");
+        assert_eq!(context_bar(usage(0, 200_000)), "ctx [···] 0 / 200k");
     }
 
     #[test]
     fn bar_low() {
-        assert_eq!(context_bar(usage(1_200, 200_000)), "ctx [·····] 1.2k / 200k");
+        assert_eq!(context_bar(usage(1_200, 200_000)), "ctx [···] 1.2k / 200k");
     }
 
     #[test]
     fn bar_half() {
-        assert_eq!(context_bar(usage(100_000, 200_000)), "ctx [■■■··] 100k / 200k");
+        assert_eq!(context_bar(usage(100_000, 200_000)), "ctx [■■·] 100k / 200k");
     }
 
     #[test]
     fn bar_near_full() {
-        assert_eq!(context_bar(usage(190_000, 200_000)), "ctx [■■■■■] 190k / 200k");
+        assert_eq!(context_bar(usage(190_000, 200_000)), "ctx [■■■] 190k / 200k");
     }
 
     #[test]
@@ -134,9 +134,9 @@ mod tests {
         let empty = context_bar(usage(0, 200_000));
         let half = context_bar(usage(100_000, 200_000));
         let full = context_bar(usage(200_000, 200_000));
-        assert!(empty.contains("[·····]"));
-        assert!(half.contains("[■■■··]"));
-        assert!(full.contains("[■■■■■]"));
+        assert!(empty.contains("[···]"));
+        assert!(half.contains("[■■·]"));
+        assert!(full.contains("[■■■]"));
     }
 
     #[test]
