@@ -21,7 +21,7 @@ dependencies = [
 
 [[package]]
 name = "aether-acp-utils"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "aether-mcp-utils",
  "aether-utils",
@@ -39,7 +39,7 @@ dependencies = [
 
 [[package]]
 name = "aether-agent-cli"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "aether-acp-utils",
  "aether-agent-core",
@@ -166,7 +166,7 @@ dependencies = [
 
 [[package]]
 name = "aether-mcp-servers"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "aether-agent-core",
  "aether-llm",
@@ -222,7 +222,7 @@ dependencies = [
 
 [[package]]
 name = "aether-project"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "aether-agent-core",
  "aether-llm",
@@ -240,7 +240,7 @@ dependencies = [
 
 [[package]]
 name = "aether-tui"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "aether-tui",
  "crossterm",
@@ -273,7 +273,7 @@ dependencies = [
 
 [[package]]
 name = "aether-wisp"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "aether-acp-utils",
  "aether-tui",
