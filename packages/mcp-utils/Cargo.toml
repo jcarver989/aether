@@ -44,7 +44,7 @@ tracing = { workspace = true }
 utils = { package = "aether-utils", path = "../utils", version = "0.1.7" }
 
 # client-only deps
-llm = { package = "aether-llm", path = "../llm", optional = true, version = "0.1.8" }
+llm = { package = "aether-llm", path = "../llm", optional = true, version = "0.1.9" }
 serde_json = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, optional = true }
