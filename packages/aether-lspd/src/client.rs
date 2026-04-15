@@ -355,6 +355,11 @@ async fn run_reader(
             _ => {}
         }
     }
+
+    let mut pending = pending.lock().await;
+    for (_, tx) in pending.drain() {
+        let _ = tx.send(Err(ClientError::ProtocolError("Daemon disconnected".into())));
+    }
 }
 
 async fn spawn_daemon(socket_path: &Path) -> ClientResult<()> {

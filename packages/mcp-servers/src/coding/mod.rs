@@ -370,6 +370,16 @@ When using tools that take file paths, always use absolute paths from:
         }
     }
 
+    fn spawn_diagnostic_refresh(&self, file_path: &str) {
+        if let Some(lsp) = &self.lsp {
+            let lsp = Arc::clone(lsp);
+            let file_path = file_path.to_string();
+            tokio::spawn(async move {
+                lsp.queue_diagnostic_refresh(&file_path).await;
+            });
+        }
+    }
+
     #[doc = include_str!("tools/grep/description.md")]
     #[tool]
     pub async fn grep(
@@ -452,9 +462,7 @@ When using tools that take file paths, always use absolute paths from:
 
         let response = self.tools.write_file(args).await.map_err(|e| e.to_string())?;
 
-        if let Some(lsp) = &self.lsp {
-            lsp.queue_diagnostic_refresh(&response.file_path).await;
-        }
+        self.spawn_diagnostic_refresh(&response.file_path);
 
         Ok(Json(response))
     }
@@ -484,9 +492,7 @@ When using tools that take file paths, always use absolute paths from:
 
         let response = self.tools.edit_file(args).await.map_err(|e| e.to_string())?;
 
-        if let Some(lsp) = &self.lsp {
-            lsp.queue_diagnostic_refresh(&response.file_path).await;
-        }
+        self.spawn_diagnostic_refresh(&response.file_path);
 
         Ok(Json(response))
     }
