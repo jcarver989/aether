@@ -39,7 +39,7 @@ dependencies = [
 
 [[package]]
 name = "aether-agent-cli"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "aether-acp-utils",
  "aether-agent-core",
