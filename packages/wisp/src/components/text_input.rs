@@ -1,12 +1,13 @@
 use crate::keybindings::Keybindings;
 use std::path::PathBuf;
-use tui::{Component, Event, Frame, KeyEvent, Line, TextField, ViewContext};
+use tui::{Component, Event, Frame, KeyCode, KeyEvent, Line, TextField, ViewContext};
 
 #[doc = include_str!("../docs/text_input.md")]
 pub struct TextInput {
     field: TextField,
     mentions: Vec<SelectedFileMention>,
     keybindings: Keybindings,
+    history: PromptHistory,
 }
 
 pub enum TextInputMessage {
@@ -22,6 +23,72 @@ pub struct SelectedFileMention {
     pub display_name: String,
 }
 
+const MAX_HISTORY_ENTRIES: usize = 500;
+
+struct PromptHistory {
+    prompts: Vec<String>,
+    index: Option<usize>,
+    draft: Option<String>,
+}
+
+impl PromptHistory {
+    fn new() -> Self {
+        Self { prompts: Vec::new(), index: None, draft: None }
+    }
+
+    fn record(&mut self, prompt: &str) {
+        if prompt.is_empty() {
+            return;
+        }
+
+        self.prompts.push(prompt.to_string());
+        if self.prompts.len() > MAX_HISTORY_ENTRIES {
+            self.prompts.remove(0);
+        }
+    }
+
+    fn previous(&mut self, current_text: &str) -> Option<String> {
+        if self.prompts.is_empty() {
+            return None;
+        }
+
+        let next_index = match self.index {
+            None => {
+                self.draft = Some(current_text.to_string());
+                self.prompts.len() - 1
+            }
+            Some(index) if index > 0 => index - 1,
+            Some(_) => return None,
+        };
+
+        self.index = Some(next_index);
+        Some(self.prompts[next_index].clone())
+    }
+
+    fn next(&mut self) -> Option<String> {
+        let index = self.index?;
+
+        if index + 1 < self.prompts.len() {
+            let next_index = index + 1;
+            self.index = Some(next_index);
+            Some(self.prompts[next_index].clone())
+        } else {
+            let value = self.draft.take().unwrap_or_default();
+            self.index = None;
+            Some(value)
+        }
+    }
+
+    fn reset(&mut self) {
+        self.index = None;
+        self.draft = None;
+    }
+
+    fn is_navigating(&self) -> bool {
+        self.index.is_some()
+    }
+}
+
 impl Default for TextInput {
     fn default() -> Self {
         Self::new(Keybindings::default())
@@ -30,7 +97,7 @@ impl Default for TextInput {
 
 impl TextInput {
     pub fn new(keybindings: Keybindings) -> Self {
-        Self { field: TextField::new(String::new()), mentions: Vec::new(), keybindings }
+        Self { field: TextField::new(String::new()), mentions: Vec::new(), keybindings, history: PromptHistory::new() }
     }
 
     pub fn set_content_width(&mut self, width: usize) {
@@ -62,6 +129,7 @@ impl TextInput {
     }
 
     pub fn set_input(&mut self, s: String) {
+        self.history.reset();
         self.field.set_value(s);
     }
 
@@ -71,18 +139,22 @@ impl TextInput {
     }
 
     pub fn clear(&mut self) {
+        self.history.reset();
         self.field.clear();
     }
 
     pub fn insert_char_at_cursor(&mut self, c: char) {
+        self.history.reset();
         self.field.insert_at_cursor(c);
     }
 
     pub fn delete_char_before_cursor(&mut self) -> bool {
+        self.history.reset();
         self.field.delete_before_cursor()
     }
 
     pub fn insert_paste(&mut self, text: &str) {
+        self.history.reset();
         let filtered: String = text.chars().filter(|c| !c.is_control()).collect();
         self.field.insert_str_at_cursor(&filtered);
     }
@@ -101,6 +173,30 @@ impl TextInput {
 
     fn active_mention_start(&self) -> Option<usize> {
         mention_start(&self.field.value)
+    }
+
+    pub fn record_submission(&mut self, prompt: &str) {
+        self.history.record(prompt);
+    }
+
+    fn recall_older(&mut self) -> bool {
+        let Some(value) = self.history.previous(&self.field.value) else {
+            return false;
+        };
+        self.mentions.clear();
+        self.field.value = value;
+        self.field.set_cursor_pos(0);
+        true
+    }
+
+    fn recall_newer(&mut self) -> bool {
+        let Some(value) = self.history.next() else {
+            return false;
+        };
+        self.mentions.clear();
+        self.field.value = value;
+        self.field.set_cursor_pos(self.field.value.len());
+        true
     }
 }
 
@@ -130,6 +226,7 @@ impl TextInput {
         }
 
         if self.keybindings.open_command_picker.matches(*key_event) && self.field.value.is_empty() {
+            self.history.reset();
             if let Some(c) = self.keybindings.open_command_picker.char() {
                 self.field.insert_at_cursor(c);
             }
@@ -137,14 +234,33 @@ impl TextInput {
         }
 
         if self.keybindings.open_file_picker.matches(*key_event) {
+            self.history.reset();
             if let Some(c) = self.keybindings.open_file_picker.char() {
                 self.field.insert_at_cursor(c);
             }
             return Some(vec![TextInputMessage::OpenFilePicker]);
         }
 
-        // Delegate cursor navigation, char input, and backspace to TextField
-        self.field.on_event(&Event::Key(*key_event)).await.map(|_| vec![])
+        match key_event.code {
+            KeyCode::Up if self.field.is_cursor_on_first_visual_line() => {
+                if self.recall_older() {
+                    return Some(vec![]);
+                }
+            }
+            KeyCode::Down if self.field.is_cursor_on_last_visual_line() => {
+                if self.recall_newer() {
+                    return Some(vec![]);
+                }
+            }
+            _ => {}
+        }
+
+        let before_len = self.field.value.len();
+        let result = self.field.on_event(&Event::Key(*key_event)).await;
+        if self.history.is_navigating() && self.field.value.len() != before_len {
+            self.history.reset();
+        }
+        result.map(|_| vec![])
     }
 }
 
@@ -328,5 +444,187 @@ mod tests {
             input.on_event(&key(code)).await;
             assert_eq!(cursor(&input), expected, "{label}");
         }
+    }
+
+    fn input_with_history(history: &[&str]) -> TextInput {
+        let mut input = TextInput::default();
+        for entry in history {
+            input.record_submission(entry);
+        }
+        input
+    }
+
+    #[tokio::test]
+    async fn up_recalls_older_history_entry() {
+        let mut input = input_with_history(&["first", "second", "third"]);
+        assert_eq!(input.buffer(), "");
+
+        input.on_event(&key(KeyCode::Up)).await;
+        assert_eq!(input.buffer(), "third");
+        assert_eq!(cursor(&input), 0);
+    }
+
+    #[tokio::test]
+    async fn repeated_up_pages_to_older_entries() {
+        let mut input = input_with_history(&["first", "second", "third"]);
+
+        input.on_event(&key(KeyCode::Up)).await;
+        assert_eq!(input.buffer(), "third");
+
+        input.on_event(&key(KeyCode::Up)).await;
+        assert_eq!(input.buffer(), "second");
+
+        input.on_event(&key(KeyCode::Up)).await;
+        assert_eq!(input.buffer(), "first");
+    }
+
+    #[tokio::test]
+    async fn up_stops_at_oldest_entry() {
+        let mut input = input_with_history(&["first", "second"]);
+
+        input.on_event(&key(KeyCode::Up)).await;
+        assert_eq!(input.buffer(), "second");
+
+        input.on_event(&key(KeyCode::Up)).await;
+        assert_eq!(input.buffer(), "first");
+
+        let before = input.buffer().to_string();
+        input.on_event(&key(KeyCode::Up)).await;
+        assert_eq!(input.buffer(), before);
+    }
+
+    #[tokio::test]
+    async fn down_recalls_newer_entry() {
+        let mut input = input_with_history(&["first", "second", "third"]);
+
+        input.on_event(&key(KeyCode::Up)).await;
+        input.on_event(&key(KeyCode::Up)).await;
+        input.on_event(&key(KeyCode::Up)).await;
+        assert_eq!(input.buffer(), "first");
+
+        input.on_event(&key(KeyCode::Down)).await;
+        assert_eq!(input.buffer(), "second");
+        assert_eq!(cursor(&input), 6);
+    }
+
+    #[tokio::test]
+    async fn down_past_newest_restores_draft() {
+        let mut input = input_with_history(&["first", "second"]);
+        input.set_input("my draft".to_string());
+        input.on_event(&key(KeyCode::Up)).await;
+        assert_eq!(input.buffer(), "second");
+
+        input.on_event(&key(KeyCode::Down)).await;
+        assert_eq!(input.buffer(), "my draft");
+        assert_eq!(cursor(&input), 8);
+    }
+
+    #[tokio::test]
+    async fn down_on_live_prompt_does_nothing() {
+        let mut input = input_with_history(&["first"]);
+        let outcome = input.on_event(&key(KeyCode::Down)).await;
+        assert_eq!(input.buffer(), "");
+        assert!(outcome.is_some());
+    }
+
+    #[tokio::test]
+    async fn empty_history_up_does_nothing_special() {
+        let mut input = TextInput::default();
+        input.on_event(&key(KeyCode::Up)).await;
+        assert_eq!(input.buffer(), "");
+        assert_eq!(cursor(&input), 0);
+    }
+
+    #[tokio::test]
+    async fn typing_resets_history_navigation() {
+        let mut input = input_with_history(&["first", "second"]);
+        input.on_event(&key(KeyCode::Up)).await;
+        assert_eq!(input.buffer(), "second");
+
+        input.on_event(&key(KeyCode::Char('x'))).await;
+        assert_eq!(input.buffer(), "xsecond");
+
+        input.on_event(&key(KeyCode::Down)).await;
+        assert_eq!(cursor(&input), 7);
+    }
+
+    #[tokio::test]
+    async fn up_on_first_row_of_wrapped_text_navigates_history() {
+        let mut input = TextInput::default();
+        input.set_content_width(5);
+        input.record_submission("old entry");
+        input.set_input("hello world".to_string());
+        input.set_cursor_pos(3); // on row 0
+        input.on_event(&key(KeyCode::Up)).await;
+        assert_eq!(input.buffer(), "old entry");
+    }
+
+    #[tokio::test]
+    async fn up_on_middle_row_of_wrapped_text_keeps_normal_navigation() {
+        let mut input = TextInput::default();
+        input.set_content_width(5);
+        input.record_submission("old entry");
+        input.set_input("hello world".to_string());
+        input.set_cursor_pos(8); // on row 1
+        input.on_event(&key(KeyCode::Up)).await;
+
+        assert_eq!(input.buffer(), "hello world");
+        assert_eq!(cursor(&input), 3); // moved up to row 0, same column
+    }
+
+    #[tokio::test]
+    async fn down_on_last_row_of_recalled_single_line_navigates_history() {
+        let mut input = TextInput::default();
+        input.set_content_width(20);
+        input.record_submission("old entry");
+        input.record_submission("newer entry");
+        input.set_input("current draft".to_string());
+
+        input.on_event(&key(KeyCode::Up)).await;
+        assert_eq!(input.buffer(), "newer entry");
+
+        input.on_event(&key(KeyCode::Up)).await;
+        assert_eq!(input.buffer(), "old entry");
+
+        input.on_event(&key(KeyCode::Down)).await;
+        assert_eq!(input.buffer(), "newer entry");
+
+        input.on_event(&key(KeyCode::Down)).await;
+        assert_eq!(input.buffer(), "current draft");
+    }
+
+    #[tokio::test]
+    async fn down_on_non_last_row_of_wrapped_text_keeps_normal_navigation() {
+        let mut input = TextInput::default();
+        input.set_content_width(5);
+        input.set_input("hello world".to_string());
+        input.set_cursor_pos(3); // on row 0
+        input.on_event(&key(KeyCode::Down)).await;
+
+        assert_eq!(input.buffer(), "hello world");
+        assert_eq!(cursor(&input), 8); // moved down to row 1
+    }
+
+    #[tokio::test]
+    async fn recalling_history_clears_mentions() {
+        let mut input = TextInput::default();
+        input.apply_file_selection(PathBuf::from("foo.rs"), "foo.rs".to_string());
+        assert_eq!(input.mentions().len(), 1);
+
+        input.record_submission("some prompt");
+        input.set_input(String::new());
+
+        input.on_event(&key(KeyCode::Up)).await;
+        assert_eq!(input.mentions().len(), 0);
+        assert_eq!(input.buffer(), "some prompt");
+    }
+
+    #[test]
+    fn record_submission_adds_to_history() {
+        let mut input = TextInput::default();
+        input.record_submission("first");
+        input.record_submission("second");
+        input.record_submission("third");
+        assert_eq!(input.history.prompts, vec!["first", "second", "third"]);
     }
 }

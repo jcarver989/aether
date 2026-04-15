@@ -239,6 +239,7 @@ impl PromptComposer {
         }
 
         let user_input = self.text_input.buffer().trim().to_string();
+        self.text_input.record_submission(&user_input);
         let mut attachments = collect_submit_attachments(&user_input, self.text_input.take_mentions());
         attachments.extend(std::mem::take(&mut self.pending_media));
         self.text_input.clear();
@@ -662,5 +663,34 @@ mod tests {
         let text: String = output.lines().iter().map(tui::Line::plain_text).collect::<Vec<_>>().join("\n");
         assert!(text.contains("attached image: photo.png"));
         assert!(text.contains("attached audio: note.wav"));
+    }
+
+    #[tokio::test]
+    async fn submit_records_prompt_in_history() {
+        let mut composer = PromptComposer::default();
+        type_chars(&mut composer, "hello").await;
+        composer.on_event(&key(KeyCode::Enter)).await;
+
+        type_chars(&mut composer, "world").await;
+        composer.on_event(&key(KeyCode::Enter)).await;
+
+        composer.on_event(&key(KeyCode::Up)).await;
+        assert_eq!(composer.buffer(), "world");
+
+        composer.on_event(&key(KeyCode::Up)).await;
+        assert_eq!(composer.buffer(), "hello");
+    }
+
+    #[tokio::test]
+    async fn submit_with_only_media_does_not_record_empty_text() {
+        let tmp = TempDir::new().unwrap();
+        let img = create_temp_media(&tmp, "photo.png");
+
+        let mut composer = PromptComposer::default();
+        composer.on_event(&Event::Paste(img.to_str().unwrap().into())).await;
+        composer.on_event(&key(KeyCode::Enter)).await;
+
+        composer.on_event(&key(KeyCode::Up)).await;
+        assert_eq!(composer.buffer(), "");
     }
 }

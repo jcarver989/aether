@@ -154,6 +154,28 @@ impl TextField {
         pos
     }
 
+    pub fn is_cursor_on_first_visual_line(&self) -> bool {
+        self.cursor_visual_row() == 0
+    }
+
+    pub fn is_cursor_on_last_visual_line(&self) -> bool {
+        self.cursor_visual_row() >= self.max_visual_row()
+    }
+
+    fn cursor_visual_row(&self) -> usize {
+        if self.content_width == 0 {
+            return 0;
+        }
+        self.display_width_up_to(self.cursor_pos) / self.content_width
+    }
+
+    fn max_visual_row(&self) -> usize {
+        if self.content_width == 0 {
+            return 0;
+        }
+        self.display_width_up_to(self.value.len()) / self.content_width
+    }
+
     fn display_width_up_to(&self, byte_pos: usize) -> usize {
         display_width_text(&self.value[..byte_pos])
     }
@@ -539,5 +561,49 @@ mod tests {
             f.move_cursor_down(width);
             assert_eq!(f.cursor_pos(), expected, "down failed: {text:?} cursor={cursor:?} w={width}");
         }
+    }
+
+    #[test]
+    fn is_cursor_on_first_visual_line() {
+        // "hello world" with width 5 → row 0: "hello", row 1: " worl", row 2: "d"
+        let mut f = field_at("hello world", 3);
+        f.set_content_width(5);
+        assert!(f.is_cursor_on_first_visual_line()); // cursor on row 0
+
+        let mut f = field_at("hello world", 8);
+        f.set_content_width(5);
+        assert!(!f.is_cursor_on_first_visual_line()); // cursor on row 1
+    }
+
+    #[test]
+    fn is_cursor_on_last_visual_line() {
+        // "hello world" with width 5 → row 0: "hello", row 1: " worl", row 2: "d"
+        let mut f = field_at("hello world", 11);
+        f.set_content_width(5);
+        assert!(f.is_cursor_on_last_visual_line()); // cursor at end, row 2
+
+        let mut f = field_at("hello world", 3);
+        f.set_content_width(5);
+        assert!(!f.is_cursor_on_last_visual_line()); // cursor on row 0
+
+        let mut f = field_at("hello world", 8);
+        f.set_content_width(5);
+        assert!(!f.is_cursor_on_last_visual_line()); // cursor on row 1
+    }
+
+    #[test]
+    fn single_line_is_both_first_and_last() {
+        let mut f = field_at("hello", 3);
+        f.set_content_width(20);
+        assert!(f.is_cursor_on_first_visual_line());
+        assert!(f.is_cursor_on_last_visual_line());
+    }
+
+    #[test]
+    fn empty_field_is_both_first_and_last() {
+        let mut f = field("");
+        f.set_content_width(20);
+        assert!(f.is_cursor_on_first_visual_line());
+        assert!(f.is_cursor_on_last_visual_line());
     }
 }
