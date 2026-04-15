@@ -13,8 +13,8 @@ pub(crate) struct PromptFrontmatter {
     pub description: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(default, rename = "user-invocable", skip_serializing_if = "not")]
-    pub user_invocable: bool,
+    #[serde(default, rename = "user-invocable", skip_serializing_if = "Option::is_none")]
+    pub user_invocable: Option<bool>,
     #[serde(default, rename = "agent-invocable", skip_serializing_if = "not")]
     pub agent_invocable: bool,
     #[serde(default, rename = "argument-hint", skip_serializing_if = "Option::is_none")]
@@ -66,10 +66,11 @@ impl PromptFile {
     /// The name defaults to the parent directory name unless overridden in frontmatter.
     pub fn parse(path: &Path) -> Result<Self, PromptFileError> {
         let raw = fs::read_to_string(path)?;
+        let is_skill_file = path.file_name().is_some_and(|n| n == SKILL_FILENAME);
 
         let (frontmatter, body) = Self::parse_frontmatter(raw.trim())?;
 
-        let default_name = if path.file_name().is_some_and(|n| n == SKILL_FILENAME) {
+        let default_name = if is_skill_file {
             path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
         } else {
             path.file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
@@ -78,12 +79,13 @@ impl PromptFile {
         let name = frontmatter.name.unwrap_or(default_name);
         let description = frontmatter.description.trim().to_string();
         let description = if description.is_empty() { name.clone() } else { description };
+        let user_invocable = frontmatter.user_invocable.unwrap_or(is_skill_file);
 
         let mut read_globs = frontmatter.triggers.map(|t| t.read).unwrap_or_default();
         read_globs.extend(frontmatter.globs);
         read_globs.extend(frontmatter.paths);
 
-        if !frontmatter.user_invocable && !frontmatter.agent_invocable && read_globs.is_empty() {
+        if !user_invocable && !frontmatter.agent_invocable && read_globs.is_empty() {
             return Err(PromptFileError::NoActivationSurface { name });
         }
 
@@ -94,7 +96,7 @@ impl PromptFile {
             description,
             body,
             path: path.to_path_buf(),
-            user_invocable: frontmatter.user_invocable,
+            user_invocable,
             agent_invocable: frontmatter.agent_invocable,
             argument_hint: frontmatter.argument_hint,
             tags: frontmatter.tags,
@@ -133,7 +135,7 @@ impl PromptFile {
         let frontmatter = PromptFrontmatter {
             description: self.description.clone(),
             name: Some(self.name.clone()),
-            user_invocable: self.user_invocable,
+            user_invocable: self.user_invocable.then_some(true),
             agent_invocable: self.agent_invocable,
             argument_hint: self.argument_hint.clone(),
             tags: self.tags.clone(),
@@ -284,7 +286,7 @@ mod tests {
         PromptFrontmatter {
             description: description.to_string(),
             name: None,
-            user_invocable: false,
+            user_invocable: None,
             agent_invocable: false,
             argument_hint: None,
             tags: vec![],
@@ -629,5 +631,41 @@ Rule body."#,
         let parsed = PromptFile::parse(&path).unwrap();
         assert_eq!(parsed.name, "my-rule");
         assert_eq!(parsed.description, "my-rule");
+    }
+
+    #[test]
+    fn skill_file_defaults_user_invocable_true_when_missing() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("compat-skill").join(SKILL_FILENAME);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r"---
+description: Claude-style skill
+---
+Skill body.",
+        )
+        .unwrap();
+
+        let parsed = PromptFile::parse(&path).unwrap();
+        assert!(parsed.user_invocable);
+        assert!(!parsed.agent_invocable);
+    }
+
+    #[test]
+    fn non_skill_md_without_activation_surface_still_rejected() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("noop.md");
+        std::fs::write(
+            &path,
+            r"---
+description: No activation
+---
+Rule body.",
+        )
+        .unwrap();
+
+        let result = PromptFile::parse(&path);
+        assert!(matches!(result, Err(PromptFileError::NoActivationSurface { .. })));
     }
 }

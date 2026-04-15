@@ -174,7 +174,7 @@ mod tests {
 
         let spec = &catalog.all()[0];
         assert!(spec.agent_invocable);
-        assert!(!spec.user_invocable);
+        assert!(spec.user_invocable);
     }
 
     #[test]
@@ -190,7 +190,7 @@ mod tests {
         assert_eq!(catalog.all().len(), 1);
 
         let spec = &catalog.all()[0];
-        assert!(!spec.user_invocable);
+        assert!(spec.user_invocable);
         assert!(!spec.agent_invocable);
         assert!(!spec.triggers.is_empty());
         assert!(spec.triggers.matches_read("packages/foo/bar.rs"));
@@ -240,13 +240,22 @@ mod tests {
     }
 
     #[test]
-    fn reject_no_activation_surface() {
+    fn skill_without_activation_surface_defaults_to_user_invocable() {
         let dir = create_temp_project();
         write_skill(dir.path(), "noop", "---\ndescription: Does nothing\n---\nContent.");
 
-        let catalog = PromptCatalog::from_dir(dir.path());
-        // Should be skipped with a warning
-        assert!(catalog.unwrap().all().is_empty());
+        let catalog = PromptCatalog::from_dir(dir.path()).unwrap();
+        assert_eq!(catalog.all().len(), 1);
+        assert!(catalog.all()[0].user_invocable);
+    }
+
+    #[test]
+    fn flat_md_without_activation_surface_is_skipped() {
+        let dir = create_temp_project();
+        write_flat_rule(dir.path(), "noop.md", "---\ndescription: Does nothing\n---\nContent.");
+
+        let catalog = PromptCatalog::from_dir(dir.path()).unwrap();
+        assert!(catalog.all().is_empty());
     }
 
     #[test]
@@ -300,11 +309,11 @@ mod tests {
     }
 
     #[test]
-    fn pure_rule_not_in_user_or_agent_invocable() {
+    fn pure_flat_rule_not_in_user_or_agent_invocable() {
         let dir = create_temp_project();
-        write_skill(
+        write_flat_rule(
             dir.path(),
-            "rule",
+            "rule.md",
             "---\ndescription: A rule\ntriggers:\n  read:\n    - \"*.rs\"\n---\nRule content.",
         );
 
