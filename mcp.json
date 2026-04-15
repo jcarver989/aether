@@ -1,11 +1,12 @@
 {
   "servers": {
     "coding": {
-      "type": "in-memory"
+      "type": "in-memory",
+      "args": ["--rules-dir", "./.aether/skills"]
     },
     "skills": {
       "type": "in-memory",
-      "args": ["--dir", "./.aether"]
+      "args": ["--dir", "./.aether/skills", "--notes-dir", "./.aether/notes"]
     },
     "tasks": {
       "type": "in-memory"
