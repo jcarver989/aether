@@ -26,8 +26,8 @@ workspace = true
 [features]
 default = []
 bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types", "dep:base64"]
-oauth = ["dep:rmcp", "dep:oauth2", "dep:async-trait", "dep:keyring"]
-codex = ["oauth", "dep:base64", "dep:url"]
+oauth = ["dep:rmcp", "dep:oauth2", "dep:async-trait", "dep:keyring", "dep:url"]
+codex = ["oauth", "dep:base64"]
 
 [dependencies]
 async-openai = { workspace = true }

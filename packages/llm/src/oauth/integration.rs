@@ -3,6 +3,8 @@ use super::credential_store::OAuthCredentialStore;
 use super::handler::OAuthHandler;
 use rmcp::transport::auth::{AuthClient, AuthorizationManager, OAuthState};
 
+const OAUTH_CLIENT_NAME: &str = "Aether MCP Client";
+
 fn create_credential_store(server_id: &str) -> OAuthCredentialStore {
     OAuthCredentialStore::new(server_id)
 }
@@ -44,7 +46,7 @@ pub async fn perform_oauth_flow(
     }
 
     oauth_state
-        .start_authorization(&[], handler.redirect_uri(), Some(server_id))
+        .start_authorization(&[], handler.redirect_uri(), Some(OAUTH_CLIENT_NAME))
         .await
         .map_err(|e| OAuthError::Rmcp(format!("start_authorization failed: {e}")))?;
 
@@ -52,6 +54,11 @@ pub async fn perform_oauth_flow(
         .get_authorization_url()
         .await
         .map_err(|e| OAuthError::Rmcp(format!("get_authorization_url failed: {e}")))?;
+
+    // Some authorization servers (e.g. Sentry) bake `resource` into their
+    // authorization_endpoint metadata. rmcp then adds its own `resource` param,
+    // producing a duplicate that the server rejects with "invalid_target".
+    let auth_url = dedupe_query_params(&auth_url);
 
     let callback = handler.authorize(&auth_url).await?;
 
@@ -65,4 +72,40 @@ pub async fn perform_oauth_flow(
         .ok_or_else(|| OAuthError::Rmcp("OAuth flow did not produce an AuthorizationManager".into()))?;
 
     Ok(AuthClient::new(reqwest::Client::default(), auth_manager))
+}
+
+fn dedupe_query_params(url_str: &str) -> String {
+    let Ok(mut url) = url::Url::parse(url_str) else {
+        return url_str.to_string();
+    };
+    let pairs: std::collections::HashMap<String, String> =
+        url.query_pairs().map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+    url.query_pairs_mut().clear().extend_pairs(&pairs);
+    url.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dedupes_duplicate_resource_param() {
+        let input = "https://example.com/oauth/authorize?resource=https%3A%2F%2Fa%2Fb&response_type=code&client_id=x&resource=https%3A%2F%2Fa%2Fb";
+        let out = dedupe_query_params(input);
+        let url = url::Url::parse(&out).unwrap();
+        let resources: Vec<_> = url.query_pairs().filter(|(k, _)| k == "resource").collect();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].1, "https://a/b");
+        assert!(url.query_pairs().any(|(k, _)| k == "response_type"));
+        assert!(url.query_pairs().any(|(k, _)| k == "client_id"));
+    }
+
+    #[test]
+    fn preserves_unique_params() {
+        let input = "https://example.com/?resource=x&other=y";
+        let out = dedupe_query_params(input);
+        let url = url::Url::parse(&out).unwrap();
+        let pairs: Vec<_> = url.query_pairs().collect();
+        assert_eq!(pairs.len(), 2);
+    }
 }
