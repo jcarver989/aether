@@ -137,6 +137,38 @@ fn push_to_scrollback_resets_flushed_count() {
     );
 }
 
+#[test]
+fn reflow_above_overflow_boundary_does_not_duplicate_a_line_in_the_transcript() {
+    let mut renderer = create_renderer(10, 3);
+
+    render_frame(
+        &mut renderer,
+        vec![
+            Line::new("hello worl"),
+            Line::new("L2"),
+            Line::new("L3"),
+            Line::new("L4"),
+            Line::new("L5"),
+            Line::new("L6"),
+        ],
+        Cursor { row: 5, col: 0, is_visible: true },
+    );
+
+    render_frame(
+        &mut renderer,
+        vec![Line::new("hello world"), Line::new("L2"), Line::new("L3"), Line::new("L4"), Line::new("L5")],
+        Cursor { row: 4, col: 0, is_visible: true },
+    );
+
+    let transcript = renderer.writer().get_transcript_lines();
+    let visible = renderer.writer().get_lines();
+    assert_eq!(visible, vec!["L3", "L4", "L5"], "viewport should show the last three lines");
+    for line in ["L2", "L3", "L4", "L5"] {
+        let count = transcript.iter().filter(|l| *l == line).count();
+        assert_eq!(count, 1, "{line} should appear exactly once in transcript: {transcript:?}");
+    }
+}
+
 fn create_renderer(cols: u16, rows: u16) -> Renderer<TestTerminal> {
     let terminal = TestTerminal::new(cols, rows);
     Renderer::new(terminal, Theme::default(), (cols, rows))

@@ -113,35 +113,31 @@ impl<W: Write> Renderer<W> {
     }
 
     #[cfg(test)]
-    fn flushed_visual_count(&self) -> usize {
-        self.prev_frame.as_ref().map_or(0, super::visual_frame::VisualFrame::overflow)
+    fn committed_scrollback_count(&self) -> usize {
+        self.prev_frame.as_ref().map_or(0, |f| f.scrollback_lines().len())
     }
 
     fn render_frame_internal(&mut self, frame: Frame) -> io::Result<()> {
-        let next_frame = {
-            let flushed = self.prev_frame.as_ref().map_or(0, super::visual_frame::VisualFrame::overflow);
-            VisualFrame::from_frame(frame, self.size, flushed)
-        };
-
-        // When resized, the previous frame layout is invalid — start fresh.
-        // ClearAll purges both viewport and scrollback so that the full
-        // conversation can be re-rendered at the new width.
-        let (mut commands, mut prev_frame) = if self.resized {
-            (vec![TerminalCommand::ClearAll], None)
+        let next_frame = VisualFrame::from_frame(frame, self.size);
+        let next_scrollback = next_frame.scrollback_lines();
+        let prev = self.prev_frame.as_ref();
+        let prev_scrollback = prev.map_or(&[][..], VisualFrame::scrollback_lines);
+        let can_incremental = !self.resized && next_scrollback.starts_with(prev_scrollback);
+        let (mut commands, mut prev_for_diff, new_scrollback) = if can_incremental {
+            (vec![TerminalCommand::RestoreCursorPosition], prev, &next_scrollback[prev_scrollback.len()..])
         } else {
-            (vec![TerminalCommand::RestoreCursorPosition], self.prev_frame.as_ref())
+            (vec![TerminalCommand::ClearAll], None, next_scrollback)
         };
 
-        if !next_frame.scrollback_lines().is_empty() {
+        if !new_scrollback.is_empty() {
             commands.push(TerminalCommand::PushScrollbackLines {
-                previous_visible_rows: prev_frame.map_or(0, |f| f.visible_lines().len()),
-                lines: next_frame.scrollback_lines(),
+                previous_visible_rows: prev_for_diff.map_or(0, |f| f.visible_lines().len()),
+                lines: new_scrollback,
             });
-            prev_frame = None;
+            prev_for_diff = None;
         }
 
-        let empty = VisualFrame::empty();
-        if let Some(diff) = prev_frame.unwrap_or(&empty).diff(&next_frame) {
+        if let Some(diff) = VisualFrame::diff(prev_for_diff, &next_frame) {
             commands.push(Self::rewrite_command(&diff));
         }
 
@@ -174,28 +170,17 @@ impl<W: Write> Renderer<W> {
         use super::visual_frame::prepare_lines_for_scrollback;
 
         let visual = prepare_lines_for_scrollback(lines, width);
+        let previous_visible_rows = self.prev_frame.as_ref().map_or(0, |f| f.visible_lines().len());
+        self.prev_frame = None;
 
         if visual.is_empty() {
-            self.prev_frame = None;
             return Ok(());
         }
 
-        let flushed = self.prev_frame.as_ref().map_or(0, super::visual_frame::VisualFrame::overflow);
-        let remaining = &visual[flushed.min(visual.len())..];
-        let mut commands = vec![TerminalCommand::RestoreCursorPosition];
-
-        if remaining.is_empty() {
-            self.prev_frame = None;
-            self.terminal.execute_batch(&commands)?;
-            return Ok(());
-        }
-
-        let previous_visible_rows = self.prev_frame.as_ref().map_or(0, |f| f.visible_lines().len());
-        commands.push(TerminalCommand::PushScrollbackLines { previous_visible_rows, lines: remaining });
-
-        self.terminal.execute_batch(&commands)?;
-        self.prev_frame = None;
-        Ok(())
+        self.terminal.execute_batch(&[
+            TerminalCommand::RestoreCursorPosition,
+            TerminalCommand::PushScrollbackLines { previous_visible_rows, lines: &visual },
+        ])
     }
 }
 
@@ -439,7 +424,7 @@ mod tests {
         let mut r = renderer((80, 2));
         let f = frame_with_cursor(&["L1", "L2", "L3", "L4"], 3, 0);
         r.render_frame_internal(f).unwrap();
-        assert_eq!(r.flushed_visual_count(), 2);
+        assert_eq!(r.committed_scrollback_count(), 2);
     }
 
     #[test]

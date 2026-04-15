@@ -368,6 +368,9 @@ impl TestTerminal {
                         2 => {
                             self.clear();
                         }
+                        3 => {
+                            self.scrollback.clear();
+                        }
                         _ => {}
                     }
                 }
