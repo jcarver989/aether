@@ -113,6 +113,58 @@ fn list_items_render() {
 }
 
 #[test]
+fn tight_list_items_are_not_double_spaced() {
+    let term = render("1. first\n2. second\n3. third");
+
+    let first_row = find_row(&term, "1. first").expect("first list item row not found");
+    let second_row = find_row(&term, "2. second").expect("second list item row not found");
+    let third_row = find_row(&term, "3. third").expect("third list item row not found");
+
+    assert_eq!(second_row - first_row, 1);
+    assert_eq!(third_row - second_row, 1);
+}
+
+#[test]
+fn loose_list_item_with_nested_list_has_matching_spacing_before_next_sibling() {
+    let term = render("1. first\n\n   - nested a\n   - nested b\n2. second");
+    let output = term.get_lines();
+
+    let first_row = find_row(&term, "1. first").expect("first list item row not found");
+    let nested_first_item_row = find_row(&term, "nested a").expect("nested list item row not found");
+    let nested_second_item_row = find_row(&term, "nested b").expect("nested list item row not found");
+    let second_row = find_row(&term, "2. second").expect("second list item row not found");
+
+    assert_eq!(nested_first_item_row - first_row, 2);
+    assert!(output[first_row + 1].is_empty());
+    assert_eq!(second_row - nested_second_item_row, 2);
+    assert!(output[nested_second_item_row + 1].is_empty());
+}
+
+#[test]
+fn tight_nested_list_keeps_next_sibling_compact() {
+    let term = render("- outer\n  - inner\n- sibling");
+
+    let inner_row = find_row(&term, "inner").expect("nested list item row not found");
+    let sibling_row = find_row(&term, "sibling").expect("sibling list item row not found");
+
+    assert_eq!(sibling_row - inner_row, 1);
+}
+
+#[test]
+fn list_followed_by_paragraph_has_single_blank_row() {
+    let term = render("- one\n- two\n\nafter");
+    let output = term.get_lines();
+
+    let one_row = find_row(&term, "- one").expect("first list item row not found");
+    let two_row = find_row(&term, "- two").expect("second list item row not found");
+    let after_row = find_row(&term, "after").expect("paragraph row not found");
+
+    assert_eq!(two_row - one_row, 1);
+    assert_eq!(after_row - two_row, 2);
+    assert!(output[two_row + 1].is_empty());
+}
+
+#[test]
 fn blockquote_is_indented() {
     let theme = Theme::default();
     let term = render_themed("> quoted text", &theme);
@@ -144,13 +196,15 @@ fn empty_input_returns_empty() {
 }
 
 #[test]
-fn multiple_paragraphs_have_spacing() {
+fn multiple_paragraphs_have_single_blank_row() {
     let term = render("para one\n\npara two");
     let output = term.get_lines();
-    let last_non_empty = output.iter().rposition(|l| !l.is_empty()).unwrap_or(0);
-    let non_trailing: Vec<&String> = output[..=last_non_empty].iter().collect();
-    assert!(non_trailing.len() >= 3);
-    assert!(non_trailing.iter().any(|t| t.is_empty()));
+
+    let para_one_row = find_row(&term, "para one").expect("first paragraph row not found");
+    let para_two_row = find_row(&term, "para two").expect("second paragraph row not found");
+
+    assert_eq!(para_two_row - para_one_row, 2);
+    assert!(output[para_one_row + 1].is_empty());
 }
 
 #[test]

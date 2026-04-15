@@ -24,6 +24,7 @@ struct MarkdownRenderer<'a> {
     style_stack: Vec<Style>,
     /// Stack of list counters: None = unordered, Some(n) = ordered at n
     list_stack: Vec<Option<u64>>,
+    list_item_stack: Vec<ListItemState>,
     /// Accumulated code block text
     code_buffer: String,
     /// Language hint for the current code block
@@ -38,6 +39,17 @@ struct MarkdownRenderer<'a> {
     active_cell: Option<CellBuilder>,
 }
 
+#[derive(Default)]
+struct ListItemState {
+    is_loose: bool,
+}
+
+#[derive(Clone, Copy)]
+enum BlockSpacing {
+    None,
+    BlankLineAfter,
+}
+
 impl<'a> MarkdownRenderer<'a> {
     fn new(context: &'a ViewContext) -> Self {
         Self {
@@ -47,6 +59,7 @@ impl<'a> MarkdownRenderer<'a> {
             current_line: Line::default(),
             style_stack: Vec::new(),
             list_stack: Vec::new(),
+            list_item_stack: Vec::new(),
             code_buffer: String::new(),
             code_lang: String::new(),
             in_code_block: false,
@@ -85,7 +98,7 @@ impl<'a> MarkdownRenderer<'a> {
             Event::Rule => {
                 self.finish_current_line();
                 self.lines.push(Line::with_style("───────────────", Style::fg(self.theme.muted())));
-                self.lines.push(Line::default());
+                self.finish_rendered_block(BlockSpacing::BlankLineAfter);
             }
             _ => {}
         }
@@ -149,7 +162,8 @@ impl<'a> MarkdownRenderer<'a> {
                 self.list_stack.push(*start);
             }
             Tag::Item => {
-                self.flush_line();
+                self.list_item_stack.push(ListItemState::default());
+                self.finish_current_line();
                 let indent = "  ".repeat(self.list_stack.len().saturating_sub(1));
                 let marker = match self.list_stack.last_mut() {
                     Some(Some(n)) => {
@@ -167,32 +181,29 @@ impl<'a> MarkdownRenderer<'a> {
 
     fn handle_block_end(&mut self, tag_end: TagEnd) {
         match tag_end {
-            TagEnd::Paragraph => {
-                self.flush_line();
-                self.lines.push(Line::default());
-            }
+            TagEnd::Paragraph => self.finish_block(BlockSpacing::BlankLineAfter),
             TagEnd::Heading(_) => {
                 self.style_stack.pop();
-                self.flush_line();
-                self.lines.push(Line::default());
+                self.finish_block(BlockSpacing::BlankLineAfter);
             }
             TagEnd::BlockQuote(_) => {
                 self.style_stack.pop();
                 self.blockquote_depth -= 1;
-                self.flush_line();
-                if self.blockquote_depth == 0 {
-                    self.lines.push(Line::default());
-                }
+                let spacing =
+                    if self.blockquote_depth == 0 { BlockSpacing::BlankLineAfter } else { BlockSpacing::None };
+                self.finish_block(spacing);
             }
             TagEnd::List(_) => {
                 self.list_stack.pop();
                 if self.list_stack.is_empty() {
-                    self.flush_line();
-                    self.lines.push(Line::default());
+                    self.finish_block(BlockSpacing::BlankLineAfter);
                 }
             }
             TagEnd::Item => {
-                self.flush_line();
+                self.finish_current_line();
+                if self.list_item_stack.pop().is_some_and(|state| state.is_loose) {
+                    self.push_blank_line();
+                }
             }
             _ => {}
         }
@@ -240,7 +251,7 @@ impl<'a> MarkdownRenderer<'a> {
         let lang = std::mem::take(&mut self.code_lang);
         let code_lines = self.context.highlighter().highlight(&code, &lang, self.theme);
         self.lines.extend(code_lines);
-        self.lines.push(Line::default());
+        self.finish_rendered_block(BlockSpacing::BlankLineAfter);
     }
 
     fn handle_table_start(&mut self, tag: Tag<'_>) {
@@ -267,7 +278,7 @@ impl<'a> MarkdownRenderer<'a> {
                 if let Some(table) = self.table_state.take() {
                     let rendered = table.render(self.theme);
                     self.lines.extend(rendered);
-                    self.lines.push(Line::default());
+                    self.finish_rendered_block(BlockSpacing::BlankLineAfter);
                 }
             }
             TagEnd::TableRow | TagEnd::TableHead => {
@@ -380,6 +391,32 @@ impl<'a> MarkdownRenderer<'a> {
         if !self.current_line.is_empty() {
             self.flush_line();
         }
+    }
+
+    fn finish_block(&mut self, spacing: BlockSpacing) {
+        self.finish_current_line();
+        self.finish_rendered_block(spacing);
+    }
+
+    fn finish_rendered_block(&mut self, spacing: BlockSpacing) {
+        if matches!(spacing, BlockSpacing::BlankLineAfter) {
+            if let Some(item_state) = self.list_item_stack.last_mut() {
+                item_state.is_loose = true;
+            }
+            self.push_blank_line();
+        }
+    }
+
+    fn push_blank_line(&mut self) {
+        if self.lines.is_empty() {
+            return;
+        }
+
+        if self.lines.last().is_some_and(Line::is_empty) {
+            return;
+        }
+
+        self.lines.push(Line::default());
     }
 
     fn flush_line(&mut self) {
