@@ -1,6 +1,6 @@
 Matches file reads against glob-triggered prompt rules and injects them as system reminders.
 
-When a file is read through [`CodingMcp`](crate::CodingMcp), the matcher checks rules from the directories configured via `--rules-dir` / [`CodingMcp::with_rules_dirs`]. Any prompt whose `triggers.read` (or flat-rule `paths`/`globs`) matches the file path is returned as additional context.
+When a file is read through [`CodingMcp`](crate::CodingMcp), the matcher checks rules from the directories configured via `--rules-dir` / [`CodingMcp::with_rules_dirs`](crate::CodingMcp::with_rules_dirs). Any prompt whose `triggers.read` (or flat-rule `paths`/`globs`) matches the file path is returned as additional context.
 
 # How it works
 
