@@ -23,6 +23,9 @@ pub mod subagents;
 #[cfg(feature = "survey")]
 pub mod survey;
 
+#[cfg(feature = "plan")]
+pub mod plan;
+
 // Re-export primary types for convenience
 #[cfg(feature = "coding")]
 pub use coding::{CodingMcp, CodingMcpArgs, CodingTools, DefaultCodingTools, PermissionMode};
@@ -41,3 +44,6 @@ pub use subagents::{SubAgentsMcp, SubAgentsMcpArgs};
 
 #[cfg(feature = "survey")]
 pub use survey::SurveyMcp;
+
+#[cfg(feature = "plan")]
+pub use plan::{PlanMcp, PlanMcpArgs};

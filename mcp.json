@@ -17,6 +17,10 @@
     "survey": {
       "type": "in-memory"
     },
+    "plan": {
+      "type": "in-memory",
+      "args": ["--command", "./scripts/plannotator-mcp-adapter"]
+    },
     "proxy": {
       "type": "in-memory",
       "input": {

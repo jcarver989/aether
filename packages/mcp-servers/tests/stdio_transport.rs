@@ -170,6 +170,15 @@ async fn survey_server_lists_tools_over_stdio() {
 }
 
 #[tokio::test]
+async fn plan_server_lists_tools_over_stdio() {
+    let tools = connect_and_list_tools("plan", &[]).await;
+    let names = tool_names(&tools);
+
+    assert!(names.contains(&"submit_plan"), "expected submit_plan, got: {names:?}");
+    assert_eq!(names.len(), 1, "expected exactly 1 tool, got: {names:?}");
+}
+
+#[tokio::test]
 async fn unknown_server_exits_with_error() {
     let mut cmd = stdio_binary();
     cmd.arg("--server").arg("nonexistent");

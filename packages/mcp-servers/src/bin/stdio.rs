@@ -1,4 +1,5 @@
 use clap::Parser;
+use mcp_servers::{CodingMcp, CodingMcpArgs, LspMcp, PlanMcp, SkillsMcp, SubAgentsMcp, SurveyMcp, TasksMcp};
 use mcp_utils::ServiceExt;
 use rmcp::ServerHandler;
 use rmcp::transport::io::stdio;
@@ -6,7 +7,7 @@ use rmcp::transport::io::stdio;
 #[derive(Parser)]
 #[command(name = "mcp-servers-stdio", about = "Run an MCP server over stdio")]
 struct Cli {
-    /// Which server to run: coding, lsp, skills, tasks, subagents, survey
+    /// Which server to run: coding, lsp, skills, tasks, subagents, survey, plan
     #[arg(long)]
     server: String,
 
@@ -27,7 +28,7 @@ impl std::fmt::Display for StdioError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             StdioError::UnknownServer(name) => {
-                write!(f, "Unknown server: '{name}'. Available: coding, lsp, skills, tasks, subagents, survey")
+                write!(f, "Unknown server: '{name}'. Available: coding, lsp, skills, tasks, subagents, survey, plan")
             }
             StdioError::ServerArgs(msg) => write!(f, "{msg}"),
             StdioError::Serve(msg) => write!(f, "Failed to start server: {msg}"),
@@ -48,10 +49,9 @@ async fn main() -> Result<(), StdioError> {
 
     match cli.server.as_str() {
         "coding" => {
-            let parsed = mcp_servers::CodingMcpArgs::from_args(cli.args).map_err(StdioError::ServerArgs)?;
-            let mcp_servers::CodingMcpArgs { root_dir, rules_dirs, permission_mode } = parsed;
-            let server =
-                mcp_servers::CodingMcp::new().with_rules_dirs(rules_dirs).with_permission_mode(permission_mode);
+            let parsed = CodingMcpArgs::from_args(cli.args).map_err(StdioError::ServerArgs)?;
+            let CodingMcpArgs { root_dir, rules_dirs, permission_mode } = parsed;
+            let server = CodingMcp::new().with_rules_dirs(rules_dirs).with_permission_mode(permission_mode);
             let server = if let Some(root_dir) = root_dir {
                 server.with_lsp(root_dir.clone()).with_root_dir(root_dir)
             } else {
@@ -60,23 +60,27 @@ async fn main() -> Result<(), StdioError> {
             serve_stdio(server).await
         }
         "lsp" => {
-            let server = mcp_servers::LspMcp::from_args(cli.args).map_err(StdioError::ServerArgs)?;
+            let server = LspMcp::from_args(cli.args).map_err(StdioError::ServerArgs)?;
             serve_stdio(server).await
         }
         "skills" => {
-            let server = mcp_servers::SkillsMcp::from_args(cli.args).map_err(StdioError::ServerArgs)?;
+            let server = SkillsMcp::from_args(cli.args).map_err(StdioError::ServerArgs)?;
             serve_stdio(server).await
         }
         "tasks" => {
-            let server = mcp_servers::TasksMcp::from_args(cli.args).map_err(StdioError::ServerArgs)?;
+            let server = TasksMcp::from_args(cli.args).map_err(StdioError::ServerArgs)?;
             serve_stdio(server).await
         }
         "subagents" => {
-            let server = mcp_servers::SubAgentsMcp::from_args(cli.args).map_err(StdioError::ServerArgs)?;
+            let server = SubAgentsMcp::from_args(cli.args).map_err(StdioError::ServerArgs)?;
             serve_stdio(server).await
         }
         "survey" => {
-            let server = mcp_servers::SurveyMcp::from_args(cli.args).map_err(StdioError::ServerArgs)?;
+            let server = SurveyMcp::from_args(cli.args).map_err(StdioError::ServerArgs)?;
+            serve_stdio(server).await
+        }
+        "plan" => {
+            let server = PlanMcp::from_args(cli.args).map_err(StdioError::ServerArgs)?;
             serve_stdio(server).await
         }
         other => Err(StdioError::UnknownServer(other.to_string())),

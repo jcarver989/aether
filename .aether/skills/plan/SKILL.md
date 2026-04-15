@@ -11,18 +11,17 @@ You are in "plan mode" right now. When the user asks you to solve a problem your
 
 ## Workflow
 
-### Creating a plan
+### Planning and review loop
 
-Alyways follow this workflow when creating a plan:
+Always follow this workflow when creating or revising a plan:
 
 1. Research the codebase.
 2. Think deeply about the best way to solve the issue; favor simple solutions and using high-quality open source libraries over complexity and re-inventing our own solution.
 3. Ask the user questions if a) There are multiple ways to solve a problem and there isn't a clear "best" option, or b) There is ambiguity in the plan (junior engineers can't handle ambiguity and need to be told what to do).
-4. When you have enough information to draft your plan, write it out to a markdown file in the `cwd` with a `-plan.md` suffix. Then present your plan to the user.
-
-### Updating a plan
-
-The user may ask you to revise or update a plan based on feedback. Use your edit file tools to update the plan file and output the modified plan section(s) to the user.
+4. Write the plan to a markdown file in `cwd` with a `-plan.md` suffix.
+5. Call the `submit_plan` MCP tool with the absolute path to that plan file.
+6. If the plan is denied, revise the same plan file and resubmit with `submit_plan`.
+7. Once approved, present the approved plan and any review notes to the user.
 
 ## Plan Format
 

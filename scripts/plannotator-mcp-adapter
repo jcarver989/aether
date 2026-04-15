@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+plannotator | python3 -c '
+import json
+import sys
+
+raw = sys.stdin.read().strip()
+if not raw:
+    raise SystemExit("plannotator produced empty stdout")
+
+payload = json.loads(raw)
+
+approved = None
+feedback = None
+if isinstance(payload, dict) and "approved" in payload:
+    approved = payload["approved"]
+    feedback = payload.get("feedback")
+elif isinstance(payload, dict):
+    decision = payload.get("hookSpecificOutput", {}).get("decision", {})
+    behavior = decision.get("behavior")
+    if behavior == "allow":
+        approved = True
+    elif behavior == "deny":
+        approved = False
+        feedback = decision.get("message")
+
+if not isinstance(approved, bool):
+    raise SystemExit("unsupported reviewer response shape")
+
+if isinstance(feedback, str):
+    normalized_feedback = feedback.strip()
+    feedback = normalized_feedback if normalized_feedback else None
+elif feedback is not None:
+    feedback = str(feedback)
+
+print(json.dumps({"approved": approved, "feedback": feedback}))
+'

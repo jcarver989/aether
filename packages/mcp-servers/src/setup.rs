@@ -1,4 +1,7 @@
-use crate::{CodingMcp, CodingMcpArgs, DefaultCodingTools, LspMcp, SkillsMcp, SubAgentsMcp, SurveyMcp, TasksMcp};
+use crate::{
+    CodingMcp, CodingMcpArgs, DefaultCodingTools, LspMcp, PlanMcp, PlanMcpArgs, SkillsMcp, SubAgentsMcp, SurveyMcp,
+    TasksMcp,
+};
 use aether_core::mcp::McpBuilder;
 use futures::FutureExt;
 use mcp_utils::ServiceExt;
@@ -14,6 +17,7 @@ pub trait McpBuilderExt {
 impl McpBuilderExt for McpBuilder {
     fn with_builtin_servers(self, cwd: PathBuf, roots_path: &Path) -> Self {
         let lsp_cwd = cwd.clone();
+        let plan_cwd = cwd.clone();
         self.register_in_memory_server(
             "coding",
             Box::new(move |args, _input| {
@@ -69,6 +73,23 @@ impl McpBuilderExt for McpBuilder {
         .register_in_memory_server(
             "survey",
             Box::new(|_args, _input| async move { SurveyMcp::new().into_dyn() }.boxed()),
+        )
+        .register_in_memory_server(
+            "plan",
+            Box::new(move |args, _input| {
+                let project_path = plan_cwd.clone();
+                async move {
+                    let parsed = match PlanMcpArgs::from_args(args) {
+                        Ok(parsed) => parsed,
+                        Err(e) => {
+                            warn!("PlanMcp args parse failed: {e}, using defaults");
+                            PlanMcpArgs { command: None }
+                        }
+                    };
+                    PlanMcp::from_args_with_root(parsed, project_path).into_dyn()
+                }
+                .boxed()
+            }),
         )
         .register_in_memory_server(
             "tasks",
