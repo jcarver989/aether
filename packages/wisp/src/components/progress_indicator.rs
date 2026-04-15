@@ -9,7 +9,7 @@ const MESSAGES: &[&str] = &[
     "Tip: Use /resume to pick up a previous session",
     "Tip: Wisp supports custom themes — drop a .tmTheme in ~/.wisp/themes/",
     "Tip: Open /settings to change your model, theme, or view MCP server status",
-    "Tip: The context gauge in the status bar shows how much context window remains",
+    "Tip: The context gauge in the status bar shows current context usage against the model limit",
 ];
 
 /// Renders a spinner with "(esc to interrupt)" when the agent is busy.

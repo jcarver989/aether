@@ -7,11 +7,13 @@ use agent_client_protocol::{
 use tui::{Color, Frame, Line, ViewContext, display_width_text};
 use utils::ReasoningEffort;
 
+pub use crate::components::context_bar::ContextUsageDisplay;
+
 #[doc = include_str!("../docs/status_line.md")]
 pub struct StatusLine<'a> {
     pub agent_name: &'a str,
     pub config_options: &'a [SessionConfigOption],
-    pub context_pct_left: Option<u8>,
+    pub context_usage: Option<ContextUsageDisplay>,
     pub waiting_for_response: bool,
     pub unhealthy_server_count: usize,
     pub content_padding: usize,
@@ -56,12 +58,11 @@ impl StatusLine<'_> {
             ));
         }
 
-        if model_display.is_some() || self.context_pct_left.is_some() {
-            let pct = self.context_pct_left.unwrap_or(100);
+        if let Some(usage) = self.context_usage {
             if !right_parts.is_empty() {
                 right_parts.push((" · ".to_string(), sep));
             }
-            right_parts.push((context_bar(pct), context_color(pct, &context.theme)));
+            right_parts.push((context_bar(usage), context_color(usage, &context.theme)));
         }
 
         if !self.waiting_for_response && self.unhealthy_server_count > 0 {
@@ -210,7 +211,7 @@ mod tests {
         let status = StatusLine {
             agent_name: "test-agent",
             config_options: &options,
-            context_pct_left: None,
+            context_usage: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
             content_padding: DEFAULT_CONTENT_PADDING,
@@ -232,7 +233,7 @@ mod tests {
         let status = StatusLine {
             agent_name: "test-agent",
             config_options: &options,
-            context_pct_left: None,
+            context_usage: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
             content_padding: DEFAULT_CONTENT_PADDING,

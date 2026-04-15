@@ -9,6 +9,7 @@ use screen_router::ScreenRouterMessage;
 
 use crate::components::conversation_screen::ConversationScreen;
 use crate::components::conversation_screen::ConversationScreenMessage;
+use crate::components::status_line::ContextUsageDisplay;
 use crate::keybindings::Keybindings;
 use crate::settings;
 use crate::settings::overlay::{SettingsMessage, SettingsOverlay};
@@ -32,7 +33,7 @@ pub struct PromptAttachment {
 #[doc = include_str!("../../docs/app.md")]
 pub struct App {
     agent_name: String,
-    context_usage_pct: Option<u8>,
+    context_usage: Option<ContextUsageDisplay>,
     exit_requested: bool,
     ctrl_c_pressed_at: Option<Instant>,
     conversation_screen: ConversationScreen,
@@ -64,7 +65,7 @@ impl App {
         let content_padding = settings::resolve_content_padding(&wisp_settings);
         Self {
             agent_name,
-            context_usage_pct: None,
+            context_usage: None,
             exit_requested: false,
             ctrl_c_pressed_at: None,
             conversation_screen: ConversationScreen::new(keybindings.clone(), content_padding),
@@ -139,7 +140,7 @@ impl App {
                 let previous_selections = current_config_selections(&self.config_options);
                 self.session_id = session_id;
                 self.update_config_options(&config_options);
-                self.context_usage_pct = None;
+                self.context_usage = None;
                 self.restore_config_selections(&previous_selections);
             }
             AcpEvent::ConnectionClosed => {
@@ -378,16 +379,14 @@ impl App {
         match notification.method.as_ref() {
             CONTEXT_CLEARED_METHOD => {
                 self.conversation_screen.reset_after_context_cleared();
-                self.context_usage_pct = None;
+                self.context_usage = None;
             }
             CONTEXT_USAGE_METHOD => {
                 if let Ok(params) = serde_json::from_str::<ContextUsageParams>(notification.params.get()) {
-                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                    {
-                        self.context_usage_pct = params
-                            .usage_ratio
-                            .map(|usage_ratio| ((1.0 - usage_ratio) * 100.0).clamp(0.0, 100.0).round() as u8);
-                    }
+                    self.context_usage = params
+                        .context_limit
+                        .filter(|limit| *limit > 0)
+                        .map(|limit| ContextUsageDisplay::new(params.input_tokens, limit));
                 }
             }
             SUB_AGENT_PROGRESS_METHOD => {
@@ -1189,7 +1188,7 @@ mod tests {
         });
 
         assert_eq!(app.session_id, SessionId::new("new-session"));
-        assert!(app.context_usage_pct.is_none());
+        assert!(app.context_usage.is_none());
 
         let cmd = rx.try_recv().expect("expected a SetConfigOption command");
         match cmd {
@@ -1367,7 +1366,7 @@ mod tests {
         let status = StatusLine {
             agent_name: "test-agent",
             config_options: &options,
-            context_pct_left: None,
+            context_usage: None,
             waiting_for_response: false,
             unhealthy_server_count: 0,
             content_padding: DEFAULT_CONTENT_PADDING,

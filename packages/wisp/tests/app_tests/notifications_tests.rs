@@ -37,7 +37,7 @@ async fn test_invalid_sub_agent_progress_json_silently_ignored() {
 }
 
 #[tokio::test]
-async fn test_context_usage_notification_updates_percent_left() {
+async fn test_context_usage_notification_updates_nominal_display() {
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
@@ -55,8 +55,8 @@ async fn test_context_usage_notification_updates_percent_left() {
 
     let lines = renderer.writer().get_lines();
     assert!(
-        lines.iter().any(|l| l.contains("25%")),
-        "Status line should show 25% context remaining.\nBuffer:\n{}",
+        lines.iter().any(|l| l.contains("150k / 200k")),
+        "Status line should show nominal context usage.\nBuffer:\n{}",
         lines.join("\n")
     );
 }
@@ -78,7 +78,7 @@ async fn test_context_usage_notification_with_unknown_limit_clears_meter() {
         acp::ExtNotification::new(acp_utils::notifications::CONTEXT_USAGE_METHOD, std::sync::Arc::from(raw));
     renderer.on_ext_notification(notification).unwrap();
 
-    // Then clear it with null ratio
+    // Then clear it with null limit
     let raw = serde_json::value::to_raw_value(&serde_json::json!({
         "usage_ratio": null,
         "input_tokens": 0,
@@ -91,8 +91,8 @@ async fn test_context_usage_notification_with_unknown_limit_clears_meter() {
 
     let lines = renderer.writer().get_lines();
     assert!(
-        !lines.iter().any(|l| l.contains('%')),
-        "Status line should not show a percentage.\nBuffer:\n{}",
+        !lines.iter().any(|l| l.contains("ctx")),
+        "Context segment should not be shown when limit is unknown.\nBuffer:\n{}",
         lines.join("\n")
     );
 }

@@ -2,7 +2,7 @@ use acp_utils::config_option_id::ConfigOptionId;
 use agent_client_protocol::{self as acp, SessionConfigOption, SessionConfigOptionCategory};
 use tui::ViewContext;
 use tui::testing::render_lines;
-use wisp::components::status_line::StatusLine;
+use wisp::components::status_line::{ContextUsageDisplay, StatusLine};
 use wisp::settings::DEFAULT_CONTENT_PADDING;
 
 fn mode_option(value: impl Into<String>, name: impl Into<String>) -> SessionConfigOption {
@@ -37,7 +37,7 @@ fn reasoning_option(value: impl Into<String>) -> SessionConfigOption {
 struct StatusBuilder<'a> {
     name: &'a str,
     options: Vec<SessionConfigOption>,
-    ctx_pct: Option<u8>,
+    ctx_usage: Option<ContextUsageDisplay>,
     waiting: bool,
     unhealthy: usize,
     width: u16,
@@ -45,7 +45,7 @@ struct StatusBuilder<'a> {
 
 impl<'a> StatusBuilder<'a> {
     fn new(name: &'a str) -> Self {
-        Self { name, options: vec![], ctx_pct: None, waiting: false, unhealthy: 0, width: 80 }
+        Self { name, options: vec![], ctx_usage: None, waiting: false, unhealthy: 0, width: 80 }
     }
 
     fn model(mut self, m: &str) -> Self {
@@ -60,8 +60,8 @@ impl<'a> StatusBuilder<'a> {
         self.options.push(reasoning_option(v));
         self
     }
-    fn ctx_pct(mut self, v: u8) -> Self {
-        self.ctx_pct = Some(v);
+    fn ctx_usage(mut self, used: u32, limit: u32) -> Self {
+        self.ctx_usage = Some(ContextUsageDisplay::new(used, limit));
         self
     }
     fn waiting(mut self) -> Self {
@@ -81,7 +81,7 @@ impl<'a> StatusBuilder<'a> {
         let status = StatusLine {
             agent_name: self.name,
             config_options: &self.options,
-            context_pct_left: self.ctx_pct,
+            context_usage: self.ctx_usage,
             waiting_for_response: self.waiting,
             unhealthy_server_count: self.unhealthy,
             content_padding: DEFAULT_CONTENT_PADDING,
@@ -122,16 +122,18 @@ fn renders_without_model_when_none() {
 
 #[test]
 fn renders_context_usage() {
-    let line = StatusBuilder::new("aether").model("gpt-4o").ctx_pct(72).line();
-    assert!(line.contains("ctx") && line.contains("72%"));
-
-    // Shows 100% when no value
-    let line = StatusBuilder::new("aether").model("gpt-4o").line();
-    assert!(line.contains("ctx") && line.contains("100%"));
+    let line = StatusBuilder::new("aether").model("gpt-4o").ctx_usage(150_000, 200_000).line();
+    assert!(line.contains("ctx") && line.contains("150k / 200k"));
 
     // Works when waiting
-    let line = StatusBuilder::new("aether").model("gpt-4o").ctx_pct(72).waiting().line();
-    assert!(line.contains("ctx") && line.contains("72%"));
+    let line = StatusBuilder::new("aether").model("gpt-4o").ctx_usage(100_000, 200_000).waiting().line();
+    assert!(line.contains("ctx") && line.contains("100k / 200k"));
+}
+
+#[test]
+fn renders_no_context_segment_when_usage_unknown() {
+    let line = StatusBuilder::new("aether").model("gpt-4o").line();
+    assert!(!line.contains("ctx"), "context segment should be hidden when no usage data; got: {line}");
 }
 
 #[test]
@@ -154,8 +156,8 @@ fn renders_unhealthy_servers() {
 
 #[test]
 fn renders_both_context_and_unhealthy() {
-    let line = StatusBuilder::new("aether").ctx_pct(50).unhealthy(2).width(120).line();
-    assert!(line.contains("ctx") && line.contains("50%"));
+    let line = StatusBuilder::new("aether").ctx_usage(100_000, 200_000).unhealthy(2).width(120).line();
+    assert!(line.contains("ctx") && line.contains("100k / 200k"));
     assert!(line.contains("2 servers unhealthy"));
 }
 

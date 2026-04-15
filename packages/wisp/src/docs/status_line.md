@@ -9,7 +9,7 @@ Renders a single line with left-aligned identity info and right-aligned indicato
 
 **Right side:**
 - Reasoning effort bar (visual level indicator)
-- Context window usage bar
+- Context window usage bar (shows current context usage against the model limit)
 - Unhealthy MCP server count (when not waiting for a response)
 
 # See also

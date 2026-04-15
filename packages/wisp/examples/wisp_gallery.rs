@@ -9,7 +9,7 @@ use wisp::components::command_picker::{CommandEntry, CommandPicker};
 use wisp::components::file_picker::{FileMatch, FilePicker};
 use wisp::components::plan_view::PlanView;
 use wisp::components::progress_indicator::ProgressIndicator;
-use wisp::components::status_line::StatusLine;
+use wisp::components::status_line::{ContextUsageDisplay, StatusLine};
 use wisp::components::text_input::TextInput;
 use wisp::components::thought_message::ThoughtMessage;
 use wisp::components::tool_call_status_view::{ToolCallStatus, ToolCallStatusView};
@@ -171,7 +171,7 @@ impl Component for StatusLineStory {
         let status = StatusLine {
             agent_name: "aether",
             config_options: &[],
-            context_pct_left: Some(72),
+            context_usage: Some(ContextUsageDisplay::new(144_000, 200_000)),
             waiting_for_response: false,
             unhealthy_server_count: 0,
             content_padding: wisp::settings::DEFAULT_CONTENT_PADDING,

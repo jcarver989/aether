@@ -22,7 +22,7 @@ fn make_status_line(app: &App) -> StatusLine<'_> {
     StatusLine {
         agent_name: &app.agent_name,
         config_options: &app.config_options,
-        context_pct_left: app.context_usage_pct,
+        context_usage: app.context_usage,
         waiting_for_response: app.conversation_screen.is_waiting(),
         unhealthy_server_count: settings::unhealthy_server_count(&app.server_statuses),
         content_padding: app.content_padding,
