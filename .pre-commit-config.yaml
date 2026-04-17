@@ -15,28 +15,32 @@ repos:
         language: system
         types: [rust]
         pass_filenames: true
-        stages: [pre-commit, pre-push]
+        stages: [pre-commit]
+
+      - id: fmt-check-full
+        name: just fmt-check (full)
+        entry: just fmt-check
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
 
       - id: lint
         name: just lint
-        entry: scripts/run-check lint
+        entry: just lint
         language: system
-        types: [rust]
-        pass_filenames: true
+        pass_filenames: false
         stages: [pre-push]
 
       - id: test
         name: just test
-        entry: scripts/run-check test
+        entry: just test
         language: system
-        types: [rust]
-        pass_filenames: true
+        pass_filenames: false
         stages: [pre-push]
 
       - id: doc-check
         name: just doc-check
-        entry: scripts/run-check doc-check
+        entry: just doc-check
         language: system
-        types: [rust]
-        pass_filenames: true
+        pass_filenames: false
         stages: [pre-push]
