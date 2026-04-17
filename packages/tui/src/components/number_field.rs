@@ -17,9 +17,9 @@ impl NumberField {
 
     pub fn to_json(&self) -> serde_json::Value {
         if self.integer_only {
-            self.value.parse::<i64>().map(serde_json::Value::from).unwrap_or(serde_json::Value::Null)
+            self.value.parse::<i64>().map_or(serde_json::Value::Null, serde_json::Value::from)
         } else {
-            self.value.parse::<f64>().map(serde_json::Value::from).unwrap_or(serde_json::Value::Null)
+            self.value.parse::<f64>().map_or(serde_json::Value::Null, serde_json::Value::from)
         }
     }
 }
