@@ -78,7 +78,7 @@ fn process_stream_event(
         MessageDelta { data } => Ok(handle_message_delta(&data)),
         MessageStop { .. } => Ok(handle_message_stop()),
         Error { data } => {
-            Err(LlmError::ApiError(format!("Anthropic API error: {} - {}", data.error.error_type, data.error.message,)))
+            Err(LlmError::ApiError(format!("Anthropic API error: {} - {}", data.error.error_type, data.error.message)))
         }
         Ping => Ok(handle_ping()),
     }

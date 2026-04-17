@@ -40,7 +40,7 @@ impl PlanView<'_> {
                     line.push_with_style(entry.content.clone(), completed_style);
                 }
                 PlanEntryStatus::InProgress => {
-                    line.push_styled(format!("  {SQUARE_FILLED} "), context.theme.primary());
+                    line.push_styled(format!("  {SQUARE_FILLED} "), context.theme.info());
                     line.push_text(entry.content.clone());
                 }
                 _ => {
@@ -117,6 +117,16 @@ mod tests {
         let text = frame.lines()[2].plain_text();
         assert!(text.contains(SQUARE_FILLED));
         assert!(text.contains("Working"));
+    }
+
+    #[test]
+    fn in_progress_marker_uses_info_theme_color() {
+        let context = ctx();
+        let entries = vec![entry("Working", PlanEntryStatus::InProgress)];
+        let view = PlanView { entries: &entries };
+        let frame = view.render(&context);
+        let spans = frame.lines()[2].spans();
+        assert_eq!(spans[0].style().fg, Some(context.theme.info()));
     }
 
     #[test]

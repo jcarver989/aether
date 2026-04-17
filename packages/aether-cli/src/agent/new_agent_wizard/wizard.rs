@@ -126,10 +126,8 @@ impl NewAgentWizard {
 
     fn focus_next(&mut self) -> Option<NewAgentAction> {
         match self.step {
-            NewAgentStep::Identity => {
-                if self.identity.focus_next() {
-                    self.sync_draft_from_step();
-                }
+            NewAgentStep::Identity if self.identity.focus_next() => {
+                self.sync_draft_from_step();
             }
             NewAgentStep::Tools => {
                 self.tools.focus_next();

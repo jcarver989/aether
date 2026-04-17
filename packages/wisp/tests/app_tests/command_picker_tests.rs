@@ -123,8 +123,8 @@ async fn test_command_picker_shows_mcp_commands() {
     send_key(&mut renderer, KeyCode::Char('/'), KeyModifiers::empty()).await;
 
     let names = command_picker_visible_names(renderer.writer());
-    assert!(names.iter().any(|n| n == "settings"), "Picker should include built-in settings command. Got: {names:?}",);
-    assert!(names.iter().any(|n| n == "search"), "Picker should include MCP search command. Got: {names:?}",);
+    assert!(names.iter().any(|n| n == "settings"), "Picker should include built-in settings command. Got: {names:?}");
+    assert!(names.iter().any(|n| n == "search"), "Picker should include MCP search command. Got: {names:?}");
 }
 
 #[tokio::test]

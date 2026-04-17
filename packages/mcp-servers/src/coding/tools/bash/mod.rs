@@ -211,7 +211,7 @@ pub async fn execute_command(args: BashInput) -> Result<BashResult, BashError> {
         Ok(BashResult::Background(BackgroundProcessHandle { shell_id, output_rx, task_handle }))
     } else {
         // Run synchronously with default timeout of 120000ms (2 minutes)
-        let timeout = timeout_duration.or(Some(Duration::from_millis(120_000)));
+        let timeout = timeout_duration.or(Some(Duration::from_mins(2)));
         let command = args.command.clone();
 
         // Collect output in-memory for synchronous case

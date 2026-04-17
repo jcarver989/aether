@@ -242,15 +242,11 @@ impl TextInput {
         }
 
         match key_event.code {
-            KeyCode::Up if self.field.is_cursor_on_first_visual_line() => {
-                if self.recall_older() {
-                    return Some(vec![]);
-                }
+            KeyCode::Up if self.field.is_cursor_on_first_visual_line() && self.recall_older() => {
+                return Some(vec![]);
             }
-            KeyCode::Down if self.field.is_cursor_on_last_visual_line() => {
-                if self.recall_newer() {
-                    return Some(vec![]);
-                }
+            KeyCode::Down if self.field.is_cursor_on_last_visual_line() && self.recall_newer() => {
+                return Some(vec![]);
             }
             _ => {}
         }

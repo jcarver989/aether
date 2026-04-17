@@ -11,7 +11,7 @@ use rmcp::service::RunningService;
 use std::time::{Duration, Instant};
 
 /// Default timeout for polling operations (60 seconds).
-const POLL_TIMEOUT: Duration = Duration::from_secs(60);
+const POLL_TIMEOUT: Duration = Duration::from_mins(1);
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 pub fn test_client_info() -> ClientInfo {

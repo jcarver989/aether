@@ -56,7 +56,7 @@ impl AgentBuilder {
             initial_messages: Vec::new(),
             mcp_tx: None,
             channel_capacity: 1000,
-            tool_timeout: Duration::from_secs(60 * 20),
+            tool_timeout: Duration::from_mins(20),
             compaction_config: Some(CompactionConfig::default()),
             max_auto_continues: 3,
             prompt_cache_key: None,
@@ -229,7 +229,7 @@ mod tests {
     async fn test_agent_handle_abort() {
         let handle = AgentHandle {
             handle: tokio::spawn(async {
-                tokio::time::sleep(Duration::from_secs(60)).await;
+                tokio::time::sleep(Duration::from_mins(1)).await;
             }),
         };
         assert!(!handle.is_finished());

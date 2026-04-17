@@ -221,7 +221,7 @@ impl StreamingModelProvider for AnthropicProvider {
 }
 
 fn build_client() -> Result<Client> {
-    Client::builder().timeout(Duration::from_secs(60)).build().map_err(|e| LlmError::HttpClientCreation(e.to_string()))
+    Client::builder().timeout(Duration::from_mins(1)).build().map_err(|e| LlmError::HttpClientCreation(e.to_string()))
 }
 
 fn effort_to_budget_tokens(effort: ReasoningEffort) -> u32 {

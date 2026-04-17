@@ -118,7 +118,7 @@ fn render_includes_hint_for_commands_with_hint() {
         lines.iter().any(|l| l.contains("[query pattern]")),
         "Should render hint for search command. Got: {lines:?}",
     );
-    assert!(lines.iter().any(|l| l.contains("[url]")), "Should render hint for web command. Got: {lines:?}",);
+    assert!(lines.iter().any(|l| l.contains("[url]")), "Should render hint for web command. Got: {lines:?}");
 }
 
 #[test]
@@ -127,7 +127,7 @@ fn render_omits_hint_brackets_for_commands_without_hint() {
     let lines = rendered_lines(&mut picker, DEFAULT_SIZE.0, DEFAULT_SIZE.1);
 
     let config_line = lines.iter().find(|l| l.contains("/settings")).expect("settings command should be rendered");
-    assert!(!config_line.contains("  ["), "Config command should not have hint brackets. Got: {config_line}",);
+    assert!(!config_line.contains("  ["), "Config command should not have hint brackets. Got: {config_line}");
 }
 
 #[test]
@@ -139,7 +139,7 @@ fn selected_entry_has_highlight_background() {
     let row = output.iter().position(|l| l.starts_with("  /")).expect("should render a selected line");
 
     let style = term.style_of_text(row, "/settings").unwrap();
-    assert_eq!(style.bg, Some(ctx.theme.highlight_bg()), "selected entry should have highlight background",);
+    assert_eq!(style.bg, Some(ctx.theme.highlight_bg()), "selected entry should have highlight background");
 }
 
 #[test]
@@ -151,7 +151,7 @@ fn selected_entry_has_text_primary_foreground() {
     let row = output.iter().position(|l| l.starts_with("  /")).expect("should render a selected line");
 
     let style = term.style_of_text(row, "/settings").unwrap();
-    assert_eq!(style.fg, Some(ctx.theme.text_primary()), "selected entry should have text_primary foreground",);
+    assert_eq!(style.fg, Some(ctx.theme.text_primary()), "selected entry should have text_primary foreground");
 }
 
 #[test]
@@ -188,7 +188,7 @@ fn non_selected_items_have_multi_span_styling() {
     let name_style = term.style_of_text(row, "/search").or_else(|| term.style_of_text(row, "/web")).unwrap();
     let desc_style =
         term.style_of_text(row, "Search code").or_else(|| term.style_of_text(row, "Browse the web")).unwrap();
-    assert_ne!(name_style, desc_style, "Name and description should have different styles",);
+    assert_ne!(name_style, desc_style, "Name and description should have different styles");
 }
 
 #[test]

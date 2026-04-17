@@ -51,10 +51,8 @@ fn process_event(
     let mut responses = Vec::new();
 
     match event {
-        ResponseStreamEvent::ResponseOutputTextDelta(e) => {
-            if !e.delta.is_empty() {
-                responses.push(Ok(LlmResponse::Text { chunk: e.delta }));
-            }
+        ResponseStreamEvent::ResponseOutputTextDelta(e) if !e.delta.is_empty() => {
+            responses.push(Ok(LlmResponse::Text { chunk: e.delta }));
         }
         ResponseStreamEvent::ResponseOutputItemAdded(e) => {
             if let OutputItem::FunctionCall(call) = e.item {
@@ -71,10 +69,8 @@ fn process_event(
                 responses.push(Ok(LlmResponse::ToolRequestComplete { tool_call: tc }));
             }
         }
-        ResponseStreamEvent::ResponseReasoningSummaryTextDelta(e) => {
-            if !e.delta.is_empty() {
-                responses.push(Ok(LlmResponse::Reasoning { chunk: e.delta }));
-            }
+        ResponseStreamEvent::ResponseReasoningSummaryTextDelta(e) if !e.delta.is_empty() => {
+            responses.push(Ok(LlmResponse::Reasoning { chunk: e.delta }));
         }
         ResponseStreamEvent::ResponseOutputItemDone(e) => {
             if let OutputItem::Reasoning(reasoning) = e.item
