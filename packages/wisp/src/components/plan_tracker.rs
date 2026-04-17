@@ -52,7 +52,10 @@ impl PlanTracker {
     }
 
     pub fn visible_entries(&self, now: Instant, grace_period: Duration) -> Vec<acp::PlanEntry> {
-        self.entries.iter().filter(|entry| self.is_visible(entry, now, grace_period)).cloned().collect()
+        let mut visible: Vec<_> =
+            self.entries.iter().filter(|entry| self.is_visible(entry, now, grace_period)).cloned().collect();
+        visible.sort_by_key(Self::status_sort_order);
+        visible
     }
 
     pub fn clear(&mut self) {
@@ -74,6 +77,15 @@ impl PlanTracker {
     /// Content is the best stable identity ACP currently gives us for plan entries.
     fn entry_key(entry: &acp::PlanEntry) -> PlanEntryKey {
         entry.content.clone()
+    }
+
+    fn status_sort_order(entry: &acp::PlanEntry) -> u8 {
+        match entry.status {
+            acp::PlanEntryStatus::InProgress => 0,
+            acp::PlanEntryStatus::Pending => 1,
+            acp::PlanEntryStatus::Completed => 2,
+            _ => 3,
+        }
     }
 
     #[cfg(test)]
@@ -161,7 +173,7 @@ mod tests {
 
         let visible = tracker.visible_entries(now + GRACE_PERIOD + Duration::from_secs(10), GRACE_PERIOD);
         let contents: Vec<_> = visible.iter().map(|entry| entry.content.as_str()).collect();
-        assert_eq!(contents, vec!["Pending", "Working"]);
+        assert_eq!(contents, vec!["Working", "Pending"]);
     }
 
     #[test]
@@ -275,5 +287,33 @@ mod tests {
         let version_before_clear = tracker.version();
         tracker.clear();
         assert!(tracker.version() > version_before_clear);
+    }
+
+    #[test]
+    fn in_progress_sorted_before_pending() {
+        let mut tracker = PlanTracker::default();
+        let now = Instant::now();
+
+        tracker.replace(
+            vec![
+                plan_entry("Pending A", PlanEntryStatus::Pending),
+                plan_entry("Working B", PlanEntryStatus::InProgress),
+                plan_entry("Pending C", PlanEntryStatus::Pending),
+                plan_entry("Working D", PlanEntryStatus::InProgress),
+            ],
+            now,
+        );
+
+        let visible = tracker.visible_entries(now, GRACE_PERIOD);
+        let statuses: Vec<_> = visible.iter().map(|e| e.status.clone()).collect();
+        assert_eq!(
+            statuses,
+            vec![
+                PlanEntryStatus::InProgress,
+                PlanEntryStatus::InProgress,
+                PlanEntryStatus::Pending,
+                PlanEntryStatus::Pending,
+            ]
+        );
     }
 }

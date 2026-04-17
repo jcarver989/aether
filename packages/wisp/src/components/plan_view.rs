@@ -4,13 +4,14 @@ use tui::{FitOptions, Frame, Line, Style, ViewContext};
 
 const CHECKBOX_EMPTY: &str = "\u{2610}"; // Ballot Box
 const CHECKBOX_FILLED: &str = "\u{2611}"; // Ballot Box with Check
+const SQUARE_FILLED: &str = "\u{25A0}"; // Black Square
 
 /// Renders the agent's task plan as a compact checklist.
 ///
 /// ```text
 /// Plan
 ///   ☑ ~~Research AI agent patterns~~
-///   ☑ Implement task tracking
+///   ■ Implement task tracking
 ///   ☐ Write integration tests
 /// ```
 pub struct PlanView<'a> {
@@ -39,7 +40,7 @@ impl PlanView<'_> {
                     line.push_with_style(entry.content.clone(), completed_style);
                 }
                 PlanEntryStatus::InProgress => {
-                    line.push_styled(format!("  {CHECKBOX_FILLED} "), context.theme.primary());
+                    line.push_styled(format!("  {SQUARE_FILLED} "), context.theme.primary());
                     line.push_text(entry.content.clone());
                 }
                 _ => {
@@ -109,12 +110,12 @@ mod tests {
     }
 
     #[test]
-    fn in_progress_entry_has_filled_checkbox() {
+    fn in_progress_entry_has_filled_square() {
         let entries = vec![entry("Working", PlanEntryStatus::InProgress)];
         let view = PlanView { entries: &entries };
         let frame = view.render(&ctx());
         let text = frame.lines()[2].plain_text();
-        assert!(text.contains(CHECKBOX_FILLED));
+        assert!(text.contains(SQUARE_FILLED));
         assert!(text.contains("Working"));
     }
 
