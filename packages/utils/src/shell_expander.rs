@@ -22,8 +22,8 @@ impl ShellExpander {
     /// Expand `` !`command` `` markers in `content`, running each command from
     /// `cwd`. Returns `content` unchanged if no markers are present.
     ///
-    /// Markers are expanded concurrently; the first non-zero exit or spawn
-    /// failure short-circuits and surfaces as [`ShellInterpError`].
+    /// Markers are expanded concurrently; failed commands are logged and
+    /// substituted with an empty string.
     pub async fn expand(&self, content: &str, cwd: &Path) -> String {
         if !self.regex.is_match(content) {
             return content.to_string();
