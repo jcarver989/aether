@@ -273,6 +273,15 @@ async fn test_toc_excludes_agent_authored_skills() {
 async fn test_full_lifecycle() {
     let temp_dir = TempDir::new().unwrap();
 
+    // Curated skill must exist before the client starts so the catalog picks it up.
+    let skills_dir = temp_dir.path().join("skills").join("curated");
+    std::fs::create_dir_all(&skills_dir).unwrap();
+    std::fs::write(
+        skills_dir.join("SKILL.md"),
+        "---\ndescription: Curated skill\nagent-invocable: true\n---\n# Curated\n\nHand-written skill.",
+    )
+    .unwrap();
+
     let (_server, client) = create_test_client(temp_dir.path()).await;
 
     // 1. Save a note
@@ -326,14 +335,6 @@ async fn test_full_lifecycle() {
     assert!(results[0]["tags"].as_array().unwrap().iter().any(|t| t == "lifecycle"));
 
     // 4. get_skills still works for curated skills
-    let skills_dir = temp_dir.path().join("skills").join("curated");
-    std::fs::create_dir_all(&skills_dir).unwrap();
-    std::fs::write(
-        skills_dir.join("SKILL.md"),
-        "---\ndescription: Curated skill\nagent-invocable: true\n---\n# Curated\n\nHand-written skill.",
-    )
-    .unwrap();
-
     let result = client
         .call_tool(call_tool_params(
             "get_skills",
