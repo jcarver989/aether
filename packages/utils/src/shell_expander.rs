@@ -43,7 +43,7 @@ impl ShellExpander {
         let mut out = String::with_capacity(content.len());
         let mut last = 0;
 
-        for ((start, end, _), result) in spans.iter().zip(outputs.into_iter()) {
+        for ((start, end, _), result) in spans.iter().zip(outputs) {
             out.push_str(&content[last..*start]);
             match result {
                 Ok(output) => out.push_str(&output),
