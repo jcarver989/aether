@@ -1,4 +1,6 @@
-use crate::{CodingMcp, CodingMcpArgs, DefaultCodingTools, LspMcp, SkillsMcp, SubAgentsMcp, SurveyMcp, TasksMcp};
+use crate::{
+    CodingMcp, CodingMcpArgs, DefaultCodingTools, LspMcp, PlanMcp, SkillsMcp, SubAgentsMcp, SurveyMcp, TasksMcp,
+};
 use aether_core::mcp::McpBuilder;
 use futures::FutureExt;
 use mcp_utils::ServiceExt;
@@ -70,6 +72,7 @@ impl McpBuilderExt for McpBuilder {
             "survey",
             Box::new(|_args, _input| async move { SurveyMcp::new().into_dyn() }.boxed()),
         )
+        .register_in_memory_server("plan", Box::new(|_args, _input| async move { PlanMcp::new().into_dyn() }.boxed()))
         .register_in_memory_server(
             "tasks",
             Box::new(move |args, _input| {

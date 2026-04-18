@@ -25,7 +25,7 @@ dist = false
 workspace = true
 
 [features]
-default = ["coding", "skills", "tasks", "subagents"]
+default = ["coding", "skills", "tasks", "subagents", "plan"]
 test-helpers = []
 coding = [
     "dep:aether-project",
@@ -63,6 +63,7 @@ subagents = [
     "skills",
     "tasks",
     "survey",
+    "plan",
     "dep:aether-core",
     "dep:aether-project",
     "dep:llm",
@@ -70,8 +71,9 @@ subagents = [
     "dep:tracing",
 ]
 survey = []
-all = ["coding", "skills", "tasks", "subagents", "survey"]
-stdio = ["coding", "skills", "tasks", "survey", "subagents"]
+plan = []
+all = ["coding", "skills", "tasks", "subagents", "survey", "plan"]
+stdio = ["coding", "skills", "tasks", "survey", "subagents", "plan"]
 
 [dependencies]
 # Always required

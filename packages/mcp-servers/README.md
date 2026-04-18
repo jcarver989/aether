@@ -9,6 +9,7 @@ Pre-built [MCP](https://modelcontextprotocol.io/) tool servers for Aether agents
 | `tasks` | [`TasksMcp`](src/tasks/README.md) | Hierarchical task management with dependencies |
 | `subagents` | [`SubAgentsMcp`](src/subagents/README.md) | Spawn and orchestrate sub-agents |
 | `survey` | [`SurveyMcp`](src/survey/README.md) | Human-in-the-loop elicitation (ask the user questions) |
+| `plan` | [`PlanMcp`](src/plan/README.md) | Submit markdown plans for approval via native elicitation |
 
 ## Table of Contents
 
@@ -36,6 +37,7 @@ Key entry points:
 - [`SkillsMcp`](skills::SkillsMcp) -- skill prompts and slash commands
 - [`SubAgentsMcp`](subagents::SubAgentsMcp) -- sub-agent orchestration
 - [`SurveyMcp`](survey::SurveyMcp) -- structured user input collection
+- [`PlanMcp`](plan::PlanMcp) -- plan review and approval workflow
 - [`McpBuilderExt`] -- register all servers in one call
 
 ## Using with Aether (mcp.json)
@@ -59,6 +61,9 @@ These servers use Aether's `in-memory` transport type -- they run inside your ag
     "subagents": {
       "type": "in-memory",
       "args": ["--project-root", "."]
+    },
+    "plan": {
+      "type": "in-memory"
     }
   }
 }
@@ -79,7 +84,7 @@ To register factories and load the config:
 ```rust,ignore
 use aether_core::mcp::mcp;
 use futures::FutureExt;
-use mcp_servers::{CodingMcp, SkillsMcp, SubAgentsMcp, TasksMcp};
+use mcp_servers::{CodingMcp, PlanMcp, SkillsMcp, SubAgentsMcp, TasksMcp};
 
 let builder = mcp()
     .register_in_memory_server("coding", Box::new(|_args| {
@@ -93,6 +98,9 @@ let builder = mcp()
     }))
     .register_in_memory_server("subagents", Box::new(|args| {
         async move { SubAgentsMcp::from_args(args).unwrap().into_dyn() }.boxed()
+    }))
+    .register_in_memory_server("plan", Box::new(|_args| {
+        async move { PlanMcp::new().into_dyn() }.boxed()
     }));
 
 // Load mcp.json -- matches server keys to registered factories
@@ -136,14 +144,18 @@ let server = CodingMcp::with_tools(lsp_tools).into_dyn();
 - [`TasksMcp`](src/tasks/README.md)
 - [`SubAgentsMcp`](src/subagents/README.md)
 - [`SurveyMcp`](src/survey/README.md)
+- [`PlanMcp`](src/plan/README.md)
 
 ---
 
 ## Feature Flags
 
-- **`default`** -- all four servers
+- **`default`** -- coding, skills, tasks, subagents, and plan servers
 - **`coding`** -- file ops, bash, LSP, web tools
 - **`skills`** -- slash commands and prompts
 - **`tasks`** -- task tracking (no dependency on `coding`)
-- **`subagents`** -- sub-agent spawning (implies `coding`, `skills`, `tasks`)
-- **`all`** -- same as default, explicit alias
+- **`subagents`** -- sub-agent spawning (implies `coding`, `skills`, `tasks`, `survey`, `plan`)
+- **`survey`** -- structured human elicitation tooling
+- **`plan`** -- markdown plan submission and approval workflow
+- **`all`** -- explicit alias enabling all built-in servers
+
