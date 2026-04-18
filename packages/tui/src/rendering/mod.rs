@@ -1,4 +1,5 @@
 pub mod frame;
+pub mod gutter;
 pub mod line;
 pub mod render_context;
 pub mod renderer;
