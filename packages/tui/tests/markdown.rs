@@ -1,5 +1,5 @@
 use tui::testing::{TestTerminal, render_lines};
-use tui::{Line, Theme, ViewContext, render_markdown};
+use tui::{Line, MarkdownBlock, Theme, ViewContext, render_markdown_result};
 use unicode_width::UnicodeWidthStr;
 
 fn ctx() -> ViewContext {
@@ -12,22 +12,22 @@ fn themed_ctx(theme: &Theme) -> ViewContext {
 
 fn render(md: &str) -> TestTerminal {
     let ctx = ctx();
-    render_lines(&render_markdown(md, &ctx), 80, 24)
+    render_lines(&render_markdown_result(md, &ctx).to_lines(), 80, 24)
 }
 
 fn render_themed(md: &str, theme: &Theme) -> TestTerminal {
     let ctx = themed_ctx(theme);
-    render_lines(&render_markdown(md, &ctx), 80, 24)
+    render_lines(&render_markdown_result(md, &ctx).to_lines(), 80, 24)
 }
 
 fn render_tall(md: &str) -> TestTerminal {
     let ctx = ViewContext::new((80, 100));
-    render_lines(&render_markdown(md, &ctx), 80, 100)
+    render_lines(&render_markdown_result(md, &ctx).to_lines(), 80, 100)
 }
 
 fn render_tall_themed(md: &str, theme: &Theme) -> TestTerminal {
     let ctx = ViewContext::new_with_theme((80, 100), theme.clone());
-    render_lines(&render_markdown(md, &ctx), 80, 100)
+    render_lines(&render_markdown_result(md, &ctx).to_lines(), 80, 100)
 }
 
 fn find_row(term: &TestTerminal, text: &str) -> Option<usize> {
@@ -65,6 +65,103 @@ fn heading_renders_with_prefix_and_style() {
     let row = find_row(&term, "# Title").expect("heading row not found");
     assert!(term.get_lines()[row].contains("# Title"));
     assert!(term.style_of_text(row, "Title").unwrap().bold);
+}
+
+fn find_block(blocks: &[MarkdownBlock], anchor: usize) -> &MarkdownBlock {
+    blocks
+        .iter()
+        .find(|block| block.anchor_line_no == anchor)
+        .unwrap_or_else(|| panic!("no block anchored at source line {anchor}; blocks={blocks:?}"))
+}
+
+#[test]
+fn block_metadata_anchors_heading_and_paragraph_lines() {
+    let md = "# Title\n\nParagraph with **bold**\nsecond line";
+    let result = render_markdown_result(md, &ctx());
+
+    let anchors: Vec<_> = result.blocks.iter().map(|block| block.anchor_line_no).collect();
+    assert_eq!(anchors, vec![1, 3]);
+    let heading_text = &result.lines[find_block(&result.blocks, 1).rendered_line_range.clone()];
+    assert_eq!(heading_text.len(), 1);
+    assert!(heading_text[0].line.plain_text().contains("Title"));
+}
+
+#[test]
+fn block_metadata_excludes_blank_separator_rows() {
+    let md = "first\n\nsecond";
+    let result = render_markdown_result(md, &ctx());
+
+    let blocks: Vec<_> = result.blocks.iter().map(|block| block.anchor_line_no).collect();
+    assert_eq!(blocks, vec![1, 3]);
+
+    for block in &result.blocks {
+        for line in &result.lines[block.rendered_line_range.clone()] {
+            assert!(!line.line.plain_text().is_empty(), "block should not include blank separator rows");
+        }
+    }
+}
+
+#[test]
+fn block_metadata_tracks_list_items_individually() {
+    let md = "- alpha\n- beta\n- gamma";
+    let result = render_markdown_result(md, &ctx());
+
+    let anchors: Vec<_> = result.blocks.iter().map(|block| block.anchor_line_no).collect();
+    assert_eq!(anchors, vec![1, 2, 3]);
+}
+
+#[test]
+fn block_metadata_treats_fenced_code_block_as_single_block() {
+    let md = "intro\n\n```rust\nlet x = 1;\nlet y = 2;\n```";
+    let result = render_markdown_result(md, &ctx());
+
+    let code_block = find_block(&result.blocks, 3);
+    let rendered_code: Vec<_> =
+        result.lines[code_block.rendered_line_range.clone()].iter().map(|line| line.line.plain_text()).collect();
+    assert!(rendered_code.iter().any(|text| text.contains("let x = 1")));
+    assert!(rendered_code.iter().any(|text| text.contains("let y = 2")));
+}
+
+#[test]
+fn block_metadata_treats_table_as_single_block() {
+    let md = "paragraph\n\n| A | B |\n|---|---|\n| 1 | 2 |";
+    let result = render_markdown_result(md, &ctx());
+
+    let table_block = find_block(&result.blocks, 3);
+    let rendered_table: Vec<_> =
+        result.lines[table_block.rendered_line_range.clone()].iter().map(|line| line.line.plain_text()).collect();
+    assert!(rendered_table.iter().any(|text| text.contains('│')));
+}
+
+#[test]
+fn parse_only_heading_extraction_matches_renderer_headings() {
+    let md = "# One\n\nbody\n\n## Two\nmore\n\n### Three";
+    let rendered = render_markdown_result(md, &ctx());
+    let extracted = tui::parse_markdown_headings(md);
+
+    assert_eq!(extracted, rendered.headings);
+    assert_eq!(extracted.len(), 3);
+    assert_eq!(extracted[0].source_line_no, 1);
+    assert_eq!(extracted[1].source_line_no, 5);
+    assert_eq!(extracted[2].source_line_no, 8);
+}
+
+#[test]
+fn display_render_wrapper_keeps_existing_output() {
+    let md = "# Title\n\nfirst line\nsecond line\n\n- item";
+    let rendered = render_markdown_result(md, &ctx()).to_lines();
+    let text: Vec<_> = rendered.iter().map(Line::plain_text).collect();
+
+    assert_eq!(
+        text,
+        vec![
+            "# Title".to_string(),
+            String::new(),
+            "first line second line".to_string(),
+            String::new(),
+            "- item".to_string(),
+        ]
+    );
 }
 
 #[test]
@@ -192,7 +289,7 @@ fn link_is_underlined() {
 
 #[test]
 fn empty_input_returns_empty() {
-    assert!(render_markdown("", &ctx()).is_empty());
+    assert!(render_markdown_result("", &ctx()).to_lines().is_empty());
 }
 
 #[test]
@@ -228,12 +325,12 @@ fn nested_list_indents() {
 fn highlight_cache_returns_consistent_results() {
     let ctx = ctx();
     let md = "```rust\nfn main() {}\n```";
-    let first = render_markdown(md, &ctx);
-    let second = render_markdown(md, &ctx);
+    let first = render_markdown_result(md, &ctx).to_lines();
+    let second = render_markdown_result(md, &ctx).to_lines();
     assert_eq!(first, second);
 
     let md2 = "```rust\nfn b() {}\n```";
-    let lines2 = render_markdown(md2, &ctx);
+    let lines2 = render_markdown_result(md2, &ctx).to_lines();
     assert_ne!(
         first.iter().map(Line::plain_text).collect::<String>(),
         lines2.iter().map(Line::plain_text).collect::<String>(),

@@ -2,7 +2,7 @@ use std::mem::{Discriminant, discriminant};
 
 use crate::components::thought_message::ThoughtMessage;
 use crate::components::tool_call_statuses::ToolCallStatuses;
-use tui::{FitOptions, Frame, Insets, Line, Style, ViewContext, render_markdown};
+use tui::{FitOptions, Frame, Insets, Line, Style, ViewContext, render_markdown_result};
 
 #[derive(Debug, Clone)]
 pub enum SegmentContent {
@@ -176,7 +176,7 @@ fn render_segment_frame(
         SegmentContent::UserMessage(text) => Frame::new(render_user_message_block(text, content_padding, context)),
         SegmentContent::Thought(text) => ThoughtMessage { text }.render(context),
         SegmentContent::Text(text) => {
-            Frame::new(render_markdown(text, context)).fit(context.size.width, FitOptions::wrap())
+            Frame::new(render_markdown_result(text, context).to_lines()).fit(context.size.width, FitOptions::wrap())
         }
         SegmentContent::ToolCall(id) => tool_call_statuses.render_tool(id, context),
     }

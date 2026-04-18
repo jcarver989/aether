@@ -19,10 +19,10 @@ use std::path::PathBuf;
 use tokio::fs::read_to_string;
 use utils::plan_review::PlanReviewElicitationMeta;
 
-const APPROVE: &'static str = "approve";
-const DENY: &'static str = "deny";
-const DECISION: &'static str = "decision";
-const FEEDBACK: &'static str = "feedback";
+const APPROVE: &str = "approve";
+const DENY: &str = "deny";
+const DECISION: &str = "decision";
+const FEEDBACK: &str = "feedback";
 
 #[doc = include_str!("../docs/plan_mcp.md")]
 #[derive(Clone)]
@@ -45,7 +45,7 @@ impl PlanMcp {
     ) -> Result<Json<SubmitPlanOutput>, String> {
         let Parameters(input) = request;
         let plan = Plan::load(&input.plan_path).await.map_err(|e| e.to_string())?;
-        let form = self.build_elicitation_form(&plan)?;
+        let form = Self::build_elicitation_form(&plan)?;
         let result = context.peer.create_elicitation(form).await.map_err(|e| e.to_string())?;
 
         if result.action != ElicitationAction::Accept {
@@ -74,7 +74,7 @@ impl PlanMcp {
         Ok(Json(SubmitPlanOutput { approved: false, feedback }))
     }
 
-    fn build_elicitation_form(&self, plan: &Plan) -> Result<CreateElicitationRequestParams, String> {
+    fn build_elicitation_form(plan: &Plan) -> Result<CreateElicitationRequestParams, String> {
         let meta = PlanReviewElicitationMeta::new(&plan.path, &plan.content)
             .to_json()
             .map(Meta)

@@ -3,7 +3,7 @@ use super::new_agent_step::{McpConfigFile, NewAgentMode, PromptFile, server_opti
 use aether_project::McpServerEntry;
 use tui::{
     BorderedTextField, Color, Component, Event, FocusRing, KeyCode, Line, MultiSelect, Panel, SelectOption, Style,
-    ViewContext, render_markdown,
+    ViewContext, render_markdown_result,
 };
 use wisp::components::model_selector::{ModelEntry, ModelSelector, ModelSelectorMessage};
 
@@ -244,7 +244,7 @@ impl PromptsStep {
 
         let inner_w = pane_w.saturating_sub(4);
         let panel_ctx = ctx.with_width(inner_w);
-        let mut md_lines = render_markdown(system_md_content, &panel_ctx);
+        let mut md_lines = render_markdown_result(system_md_content, &panel_ctx).to_lines();
         md_lines.truncate(10);
         let mut panel = Panel::new(Color::Grey);
         panel.push(md_lines);

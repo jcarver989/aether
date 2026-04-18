@@ -51,6 +51,7 @@ pub use components::{Component, Cursor, Event, PickerMessage, ViewContext, merge
 pub use diffs::diff_types::{DiffLine, DiffPreview, DiffTag, SplitDiffCell, SplitDiffRow};
 pub use focus::{FocusOutcome, FocusRing};
 pub use rendering::frame::{FitOptions, Frame, FramePart, Overflow};
+pub use rendering::gutter::{digit_count, wrap_with_gutter};
 pub use rendering::line::Line;
 pub use rendering::render_context::{Insets, Size};
 pub use rendering::style::Style;
@@ -72,7 +73,10 @@ pub use rendering::span::Span;
 
 // Markdown
 #[cfg(feature = "syntax")]
-pub use markdown::render_markdown;
+pub use markdown::{
+    MarkdownBlock, MarkdownHeading, MarkdownRenderResult, SourceMappedLine, parse_markdown_headings,
+    render_markdown_result,
+};
 
 // Feature-gated re-exports
 #[cfg(feature = "syntax")]
