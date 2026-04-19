@@ -5,7 +5,7 @@ Renders the scrollable conversation history.
 # Segment types
 
 - **`UserMessage`** — the user's submitted prompt, rendered with a distinctive style.
-- **`Text`** — assistant markdown, rendered with syntax highlighting via [`render_markdown`](tui::render_markdown).
+- **`Text`** — assistant markdown, rendered with syntax highlighting via [`render_markdown_result`](tui::render_markdown_result).
 - **`Thought`** — reasoning/thinking content, displayed in a collapsible block.
 - **`ToolCall`** — a label identifying a tool invocation.
 
