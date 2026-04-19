@@ -302,7 +302,7 @@ fn screenshot_shaped_git_diff_wrap_row_stays_out_of_gutters() {
     let lines = term.get_lines();
     let wrapped_idx = lines
         .iter()
-        .position(|line| line.contains("lank_panel(left_panel));") && line.contains("theme.code_bg()));"))
+        .position(|line| line.contains("blank_panel(left_panel));") && line.contains("theme.code_bg()));"))
         .expect("expected wrapped row containing both continuation segments");
     let wrapped_row = &lines[wrapped_idx];
 
@@ -310,15 +310,15 @@ fn screenshot_shaped_git_diff_wrap_row_stays_out_of_gutters() {
         &render_lines(&[tui::Line::new(wrapped_row.clone())], 151, 1),
         &[cols(&[
             ("", 32),
-            ("lank_panel(left_panel));", 58),
+            ("blank_panel(left_panel));", 58),
             ("", 4),
-            ("lank_panel(left_panel, theme.code_bg()));", 0),
+            ("blank_panel(left_panel, theme.code_bg()));", 0),
         ])],
     );
 
-    let left_start = wrapped_row.find("lank_panel(left_panel));").expect("expected wrapped removed continuation");
+    let left_start = wrapped_row.find("blank_panel(left_panel));").expect("expected wrapped removed continuation");
     let right_start =
-        wrapped_row.find("lank_panel(left_panel, theme.code_bg()));").expect("expected wrapped added continuation");
+        wrapped_row.find("blank_panel(left_panel, theme.code_bg()));").expect("expected wrapped added continuation");
 
     let ctx = ViewContext::new((151, 8));
     let added_bg = Some(ctx.theme.diff_added_bg());

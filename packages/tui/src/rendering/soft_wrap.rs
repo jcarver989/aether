@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
-use super::line::Line;
+use super::{line::Line, style::Style};
+use crossterm::style::Color;
 use unicode_width::UnicodeWidthChar;
 
 /// Truncates text to fit within `max_width` display columns, appending "..." if truncated.
@@ -115,74 +116,58 @@ pub fn soft_wrap_line(line: &Line, width: u16) -> Vec<Line> {
         return vec![line.clone()];
     }
 
+    let cells = to_cells(line);
     let mut rows = Vec::new();
-    let mut current = Line::default();
-    let mut current_width = 0usize;
-    let mut last_ws: Option<(usize, usize, usize)>; // (byte offset, byte offset after ws, width after ws)
+    let mut row_start = 0usize;
+    let mut row_width = 0usize;
+    let mut last_ws = None;
+    let mut i = 0usize;
 
-    for span in line.spans() {
-        let text = span.text();
-        let style = span.style();
-        let mut start = 0;
-        last_ws = None;
+    while i < cells.len() {
+        let cell = cells[i];
 
-        for (i, ch) in text.char_indices() {
-            if ch == '\n' {
-                if start < i {
-                    current.push_with_style(&text[start..i], style);
-                }
-                rows.push(current);
-                current = Line::default();
-                current_width = 0;
+        if cell.ch == '\n' {
+            rows.push(to_line(&cells[row_start..i], line.fill()));
+            row_start = i + 1;
+            row_width = 0;
+            last_ws = None;
+            i += 1;
+            continue;
+        }
+
+        if cell.width > 0 && row_width + cell.width > max_width && row_width > 0 {
+            let split_start = row_start;
+            let (row_end, next_row_start) = if cell.ch.is_whitespace() {
+                (i, i + 1)
+            } else if let Some(ws) = last_ws {
+                (ws, ws + 1)
+            } else {
+                (i, i)
+            };
+
+            rows.push(to_line(&cells[split_start..row_end], line.fill()));
+            row_start = next_row_start;
+
+            if row_start > i {
+                row_width = 0;
                 last_ws = None;
-                start = i + ch.len_utf8();
+                i += 1;
                 continue;
             }
 
-            let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
-            if ch_width > 0 && current_width + ch_width > max_width && current_width > 0 {
-                let had_last_ws = last_ws.is_some();
-                let (break_at, skip_to, new_width) = if let Some((ws_pos, ws_end, width_after_ws)) = last_ws.take() {
-                    (ws_pos, ws_end, current_width - width_after_ws)
-                } else {
-                    (i, i, 0)
-                };
-
-                if start < break_at {
-                    current.push_with_style(&text[start..break_at], style);
-                }
-                rows.push(current);
-                current = Line::default();
-                current_width = new_width;
-                if skip_to < i {
-                    current.push_with_style(&text[skip_to..i], style);
-                }
-                if !had_last_ws && ch.is_whitespace() {
-                    start = i + ch.len_utf8();
-                    last_ws = None;
-                    continue;
-                }
-                start = i;
-            }
-            current_width += ch_width;
-            if ch.is_whitespace() {
-                last_ws = Some((i, i + ch.len_utf8(), current_width));
-            }
+            row_width = display_width_cells(&cells[row_start..i]);
+            last_ws = last_whitespace_index(&cells[row_start..i]).map(|offset| row_start + offset);
+            continue;
         }
 
-        if start < text.len() {
-            current.push_with_style(&text[start..], style);
+        row_width += cell.width;
+        if cell.ch.is_whitespace() {
+            last_ws = Some(i);
         }
+        i += 1;
     }
 
-    rows.push(current);
-
-    let fill = line.fill();
-    if fill.is_some() {
-        for row in &mut rows {
-            row.set_fill(fill);
-        }
-    }
+    rows.push(to_line(&cells[row_start..], line.fill()));
     rows
 }
 
@@ -196,6 +181,46 @@ pub fn soft_wrap_lines_with_map(lines: &[Line], width: u16) -> (Vec<Line>, Vec<u
     }
 
     (out, starts)
+}
+
+#[derive(Clone, Copy)]
+struct SoftWrapCell {
+    ch: char,
+    style: Style,
+    width: usize,
+}
+
+fn to_cells(line: &Line) -> Vec<SoftWrapCell> {
+    line.spans()
+        .iter()
+        .flat_map(|span| {
+            let style = span.style();
+            span.text().chars().map(move |ch| SoftWrapCell {
+                ch,
+                style,
+                width: UnicodeWidthChar::width(ch).unwrap_or(0),
+            })
+        })
+        .collect()
+}
+
+fn to_line(cells: &[SoftWrapCell], fill: Option<Color>) -> Line {
+    let mut line = Line::default();
+    for cell in cells {
+        let mut ch = [0; 4];
+        line.push_with_style(cell.ch.encode_utf8(&mut ch), cell.style);
+    }
+
+    line.set_fill(fill);
+    line
+}
+
+fn display_width_cells(cells: &[SoftWrapCell]) -> usize {
+    cells.iter().map(|cell| cell.width).sum()
+}
+
+fn last_whitespace_index(cells: &[SoftWrapCell]) -> Option<usize> {
+    cells.iter().rposition(|cell| cell.ch.is_whitespace())
 }
 
 #[cfg(test)]
@@ -426,6 +451,36 @@ mod tests {
     }
 
     #[test]
+    fn wraps_at_whitespace_across_span_boundaries() {
+        let mut line = Line::default();
+        line.push_styled("@aaaaa", Color::Red);
+        line.push_text(" ");
+        line.push_styled("@bbbbbb", Color::Blue);
+
+        let rows = soft_wrap_line(&line, 10);
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].plain_text(), "@aaaaa");
+        assert_eq!(rows[1].plain_text(), "@bbbbbb");
+        assert_eq!(rows[0].spans()[0].style().fg, Some(Color::Red));
+        assert_eq!(rows[1].spans()[0].style().fg, Some(Color::Blue));
+    }
+
+    #[test]
+    fn hard_wraps_long_styled_token_without_whitespace() {
+        let line = Line::styled("@abcdefghijk", Color::Green);
+        let rows = soft_wrap_line(&line, 5);
+
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].plain_text(), "@abcd");
+        assert_eq!(rows[1].plain_text(), "efghi");
+        assert_eq!(rows[2].plain_text(), "jk");
+        for row in &rows {
+            assert_eq!(row.spans()[0].style().fg, Some(Color::Green));
+        }
+    }
+
+    #[test]
     fn drops_whitespace_when_new_span_starts_at_wrap_boundary() {
         let mut line = Line::default();
         line.push_styled("abcdefghij", Color::Red);
@@ -470,8 +525,8 @@ mod tests {
         line.push_styled("hello ", Color::Red);
         line.push_styled("world this is long", Color::Blue);
         let rows = soft_wrap_line(&line, 10);
-        assert_eq!(rows[0].plain_text(), "hello worl");
-        assert_eq!(rows[1].plain_text(), "d this is");
-        assert_eq!(rows[2].plain_text(), "long");
+        assert_eq!(rows[0].plain_text(), "hello");
+        assert_eq!(rows[1].plain_text(), "world this");
+        assert_eq!(rows[2].plain_text(), "is long");
     }
 }
