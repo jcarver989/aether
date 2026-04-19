@@ -17,10 +17,8 @@ use std::fmt::{Display, Formatter};
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use tokio::fs::read_to_string;
-use utils::plan_review::PlanReviewElicitationMeta;
+use utils::plan_review::{PlanReviewDecision, PlanReviewElicitationMeta};
 
-const APPROVE: &str = "approve";
-const DENY: &str = "deny";
 const DECISION: &str = "decision";
 const FEEDBACK: &str = "feedback";
 
@@ -57,9 +55,9 @@ impl PlanMcp {
             .as_ref()
             .and_then(|content| content.get(DECISION))
             .and_then(serde_json::Value::as_str)
-            .unwrap_or(DENY);
+            .unwrap_or(PlanReviewDecision::Deny.as_str());
 
-        if decision == APPROVE {
+        if decision == PlanReviewDecision::Approve.as_str() {
             return Ok(Json(SubmitPlanOutput { approved: true, feedback: None }));
         }
 
@@ -80,9 +78,11 @@ impl PlanMcp {
             .map(Meta)
             .map_err(|e| format!("failed to serialize plan review metadata: {e}"))?;
 
-        let decision_schema = EnumSchema::builder(vec![APPROVE.into(), DENY.into()])
+        let approve = PlanReviewDecision::Approve.as_str();
+        let deny = PlanReviewDecision::Deny.as_str();
+        let decision_schema = EnumSchema::builder(vec![approve.into(), deny.into()])
             .untitled()
-            .with_default(DENY)
+            .with_default(deny)
             .map_err(|e| format!("failed to build decision schema: {e}"))?
             .build();
 

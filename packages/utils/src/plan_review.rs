@@ -1,8 +1,31 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use std::path::Path;
 
 pub const PLAN_REVIEW_UI_KIND: &str = "planReview";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PlanReviewDecision {
+    Approve,
+    Deny,
+}
+
+impl PlanReviewDecision {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Approve => "approve",
+            Self::Deny => "deny",
+        }
+    }
+
+    pub fn response_content(self, feedback: Option<&str>) -> Value {
+        match (self, feedback) {
+            (Self::Deny, Some(feedback)) => json!({ "decision": self.as_str(), "feedback": feedback }),
+            _ => json!({ "decision": self.as_str() }),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

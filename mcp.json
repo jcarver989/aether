@@ -17,6 +17,9 @@
     "survey": {
       "type": "in-memory"
     },
+    "plan": {
+      "type": "in-memory"
+    },
     "proxy": {
       "type": "in-memory",
       "input": {
