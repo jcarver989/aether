@@ -85,7 +85,10 @@ pub use diffs::diff::highlight_diff;
 #[cfg(feature = "syntax")]
 pub use diffs::split_diff::render_diff;
 #[cfg(feature = "syntax")]
-pub use diffs::split_diff::{GUTTER_WIDTH, SEPARATOR, SEPARATOR_WIDTH, render_cell as split_render_cell};
+pub use diffs::split_diff::{
+    MIN_GUTTER_WIDTH, SEPARATOR, SEPARATOR_WIDTH, Side as SplitDiffSide, gutter_width_for_preview,
+    render_cell as split_render_cell,
+};
 
 #[cfg(feature = "syntax")]
 pub use syntax_highlighting::SyntaxHighlighter;

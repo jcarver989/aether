@@ -1,6 +1,7 @@
 use crate::diffs::diff::highlight_diff;
 use crate::line::Line;
 use crate::rendering::frame::{FitOptions, Frame, FramePart};
+use crate::rendering::gutter::digit_count;
 use crate::rendering::render_context::ViewContext;
 use crate::span::Span;
 use crate::style::Style;
@@ -9,11 +10,18 @@ use crate::{DiffPreview, DiffTag, SplitDiffCell};
 
 const MAX_DIFF_LINES: usize = 20;
 pub const MIN_SPLIT_WIDTH: u16 = 80;
-pub const GUTTER_WIDTH: usize = 5;
-pub const SEPARATOR: &str = "   ";
-pub const SEPARATOR_WIDTH: usize = 3;
-const SEPARATOR_WIDTH_U16: u16 = 3;
-const FIXED_OVERHEAD: usize = GUTTER_WIDTH * 2 + SEPARATOR_WIDTH;
+pub const MIN_GUTTER_WIDTH: usize = 3;
+pub const SEPARATOR: &str = " ";
+pub const SEPARATOR_WIDTH: usize = 1;
+const SEPARATOR_WIDTH_U16: u16 = 1;
+const LEFT_INNER_PAD: usize = 1;
+
+/// Which pane a [`render_cell`] call is rendering
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    Left,
+    Right,
+}
 
 /// Renders a diff preview, choosing split or unified based on terminal width
 /// and whether the diff has removals.
@@ -30,24 +38,47 @@ pub fn render_diff(preview: &DiffPreview, context: &ViewContext) -> Vec<Line> {
     }
 }
 
+/// Compute the per-pane line-number gutter width: the number of decimal
+/// digits in the largest line number across either pane in `preview`, plus
+/// one for the trailing space, floored at [`MIN_GUTTER_WIDTH`].
+pub fn gutter_width_for_preview(preview: &DiffPreview) -> usize {
+    let max_line_no = preview
+        .rows
+        .iter()
+        .flat_map(|row| {
+            row.left
+                .as_ref()
+                .and_then(|c| c.line_number)
+                .into_iter()
+                .chain(row.right.as_ref().and_then(|c| c.line_number))
+        })
+        .max()
+        .unwrap_or(0);
+    (digit_count(max_line_no) + 1).max(MIN_GUTTER_WIDTH)
+}
+
 fn highlight_split_diff(preview: &DiffPreview, context: &ViewContext) -> Vec<Line> {
     let theme = &context.theme;
     let terminal_width = context.size.width as usize;
-    let usable = terminal_width.saturating_sub(FIXED_OVERHEAD);
+    let gutter_width = gutter_width_for_preview(preview);
+    let fixed_overhead = gutter_width * 2 + SEPARATOR_WIDTH + LEFT_INNER_PAD;
+    let usable = terminal_width.saturating_sub(fixed_overhead);
     let left_content = usable / 2;
     let right_content = usable - left_content;
     #[allow(clippy::cast_possible_truncation)]
-    let left_panel_u16 = (GUTTER_WIDTH + left_content) as u16;
+    let left_panel_u16 = (gutter_width + left_content + LEFT_INNER_PAD) as u16;
     #[allow(clippy::cast_possible_truncation)]
-    let right_panel_u16 = (GUTTER_WIDTH + right_content) as u16;
+    let right_panel_u16 = (gutter_width + right_content) as u16;
 
     let mut row_frames: Vec<Frame> = Vec::new();
     let mut visual_lines = 0usize;
     let mut rows_consumed = 0usize;
 
     for row in &preview.rows {
-        let left_frame = render_cell(row.left.as_ref(), left_content, &preview.lang_hint, context);
-        let right_frame = render_cell(row.right.as_ref(), right_content, &preview.lang_hint, context);
+        let left_frame =
+            render_cell(row.left.as_ref(), left_content, &preview.lang_hint, Side::Left, gutter_width, context);
+        let right_frame =
+            render_cell(row.right.as_ref(), right_content, &preview.lang_hint, Side::Right, gutter_width, context);
 
         let height = left_frame.lines().len().max(right_frame.lines().len());
 
@@ -89,10 +120,13 @@ pub fn render_cell(
     cell: Option<&SplitDiffCell>,
     content_width: usize,
     lang_hint: &str,
+    side: Side,
+    gutter_width: usize,
     context: &ViewContext,
 ) -> Frame {
     let theme = &context.theme;
-    let panel_width = GUTTER_WIDTH + content_width;
+    let inner_pad = if side == Side::Left { LEFT_INNER_PAD } else { 0 };
+    let panel_width = gutter_width + content_width + inner_pad;
 
     let Some(cell) = cell else {
         return Frame::new(vec![blank_panel(panel_width)]);
@@ -105,7 +139,6 @@ pub fn render_cell(
         DiffTag::Context => None,
     };
 
-    // Syntax-highlighted content
     let highlighted = context.highlighter().highlight(&cell.content, lang_hint, theme);
 
     let content_line = if let Some(hl_line) = highlighted.first() {
@@ -136,22 +169,27 @@ pub fn render_cell(
         }
         Line::with_style(&cell.content, style)
     };
+    let content_line = match bg {
+        Some(bg) => content_line.with_fill(bg),
+        None => content_line,
+    };
 
-    // content_width is derived from terminal width (u16), so it always fits in u16
     #[allow(clippy::cast_possible_truncation)]
     let content_width_u16 = content_width as u16;
+    let extend_to = content_width + inner_pad;
 
     let gutter_style = Style::fg(theme.muted());
+    let digit_field = gutter_width.saturating_sub(1);
     let head = match cell.line_number {
-        Some(num) => Line::with_style(format!("{num:>4} "), gutter_style),
-        None => Line::with_style("     ".to_string(), gutter_style),
+        Some(num) => Line::with_style(format!("{num:>digit_field$} "), gutter_style),
+        None => Line::with_style(" ".repeat(gutter_width), gutter_style),
     };
-    let tail = Line::new(" ".repeat(GUTTER_WIDTH));
+    let tail = Line::new(" ".repeat(gutter_width));
 
     Frame::new(vec![content_line])
         .fit(content_width_u16, FitOptions::wrap())
-        .map_lines(|mut line| {
-            line.extend_bg_to_width(content_width);
+        .map_lines(move |mut line| {
+            line.extend_bg_to_width(extend_to);
             line
         })
         .prefix(&head, &tail)
@@ -230,7 +268,8 @@ mod tests {
 
         let added_bg = ctx.theme.diff_added_bg();
         let removed_bg = ctx.theme.diff_removed_bg();
-        let padding_width = GUTTER_WIDTH + SEPARATOR_WIDTH;
+        let gutter_width = gutter_width_for_preview(&preview);
+        let padding_width = gutter_width + SEPARATOR_WIDTH;
         assert!(right_start >= padding_width, "right pane content should leave room for separator and gutter");
         for col in (right_start - padding_width)..right_start {
             let style = style_at_column(&lines[wrapped_row], col);
@@ -289,6 +328,32 @@ mod tests {
         assert_eq!(lines.len(), MAX_DIFF_LINES + 1);
         let last = lines.last().unwrap().plain_text();
         assert!(last.contains("more lines"), "overflow text missing: {last}");
+    }
+
+    #[test]
+    fn empty_added_cell_pads_content_with_added_background() {
+        let ctx = test_context_with_width(100);
+        let added_bg = ctx.theme.diff_added_bg();
+        let cell = SplitDiffCell { tag: DiffTag::Added, content: String::new(), line_number: Some(1) };
+        let content_width = 40;
+        let gutter_width = MIN_GUTTER_WIDTH;
+        let frame = render_cell(Some(&cell), content_width, "rs", Side::Right, gutter_width, &ctx);
+        let lines = frame.into_lines();
+        assert_eq!(lines.len(), 1);
+        let row = &lines[0];
+        assert_eq!(
+            row.display_width(),
+            gutter_width + content_width,
+            "row should fill panel width, got {}",
+            row.display_width()
+        );
+        let trailing = row.spans().last().expect("row should have spans");
+        assert_eq!(
+            trailing.style().bg,
+            Some(added_bg),
+            "trailing pad of empty added cell should carry diff_added_bg, got {:?}",
+            trailing.style().bg
+        );
     }
 
     #[test]
@@ -397,10 +462,12 @@ mod tests {
         let lines = highlight_split_diff(&preview, &ctx);
         assert_eq!(lines.len(), 1);
 
-        let usable = 100usize - FIXED_OVERHEAD;
+        let gutter_width = gutter_width_for_preview(&preview);
+        let usable = 100usize - (gutter_width * 2 + SEPARATOR_WIDTH + LEFT_INNER_PAD);
         let left_content = usable / 2;
-        let sep_start = GUTTER_WIDTH + left_content;
-        for col in sep_start..(sep_start + SEPARATOR_WIDTH) {
+        let sep_start = gutter_width + left_content + LEFT_INNER_PAD;
+        let sep_end = sep_start + SEPARATOR_WIDTH;
+        for col in sep_start..sep_end {
             let style = style_at_column(&lines[0], col);
             assert!(
                 style.bg.is_none(),
@@ -419,6 +486,58 @@ mod tests {
         let ctx = test_context_with_width(100);
         let lines = highlight_split_diff(&preview, &ctx);
         let text = lines[0].plain_text();
-        assert!(text.starts_with("     "), "should have blank gutter: {text:?}");
+        let blank_gutter = " ".repeat(gutter_width_for_preview(&preview));
+        assert!(text.starts_with(&blank_gutter), "should have blank gutter: {text:?}");
+    }
+
+    #[test]
+    fn left_pane_diff_bg_extends_through_inner_pad_to_separator() {
+        let preview = make_split_preview(vec![SplitDiffRow {
+            left: Some(removed_cell("old", 1)),
+            right: Some(added_cell("new", 1)),
+        }]);
+        let ctx = test_context_with_width(100);
+        let lines = highlight_split_diff(&preview, &ctx);
+        assert_eq!(lines.len(), 1);
+
+        let gutter_width = gutter_width_for_preview(&preview);
+        let usable = 100usize - (gutter_width * 2 + SEPARATOR_WIDTH + LEFT_INNER_PAD);
+        let left_content = usable / 2;
+        let inner_pad_col = gutter_width + left_content + LEFT_INNER_PAD - 1;
+        let style = style_at_column(&lines[0], inner_pad_col);
+        assert_eq!(
+            style.bg,
+            Some(ctx.theme.diff_removed_bg()),
+            "left inner-edge pad column {inner_pad_col} should carry diff_removed_bg, got {:?}",
+            style.bg,
+        );
+    }
+
+    #[test]
+    fn right_pane_line_number_sits_adjacent_to_separator() {
+        let preview = make_split_preview(vec![SplitDiffRow {
+            left: Some(removed_cell("old", 89)),
+            right: Some(added_cell("new", 89)),
+        }]);
+        let ctx = test_context_with_width(100);
+        let lines = highlight_split_diff(&preview, &ctx);
+        assert_eq!(lines.len(), 1);
+
+        let gutter_width = gutter_width_for_preview(&preview);
+        let usable = 100usize - (gutter_width * 2 + SEPARATOR_WIDTH + LEFT_INNER_PAD);
+        let left_content = usable / 2;
+        let right_pane_first_col = gutter_width + left_content + LEFT_INNER_PAD + SEPARATOR_WIDTH;
+        let text = lines[0].plain_text();
+        let chars: Vec<char> = text.chars().collect();
+        assert_eq!(
+            chars[right_pane_first_col], '8',
+            "right pane line# digit '8' should sit at the very first column after SEP (col {right_pane_first_col}); got line: {text:?}",
+        );
+        assert_eq!(
+            chars[right_pane_first_col + 1],
+            '9',
+            "right pane line# digit '9' should follow at col {}",
+            right_pane_first_col + 1
+        );
     }
 }
