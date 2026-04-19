@@ -4,4 +4,5 @@ mod agent {
     mod clear_context_tests;
     mod error_recovery_tests;
     mod model_switch_tests;
+    mod queued_message_tests;
 }

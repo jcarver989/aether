@@ -7,7 +7,7 @@ use llm::{
     AssistantReasoning, ChatMessage, Context, EncryptedReasoningContent, LlmError, LlmResponse, StopReason,
     StreamingModelProvider, TokenUsage, ToolCallError, ToolCallRequest, ToolCallResult,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
@@ -25,6 +25,9 @@ enum StreamEvent {
 }
 
 type EventStream = Pin<Box<dyn Stream<Item = StreamEvent> + Send>>;
+
+const USER_STREAM_KEY: &str = "user";
+const LLM_STREAM_KEY: &str = "llm";
 
 pub(crate) struct AgentConfig {
     pub llm: Arc<dyn StreamingModelProvider>,
@@ -46,6 +49,7 @@ pub struct Agent {
     compaction_config: Option<CompactionConfig>,
     auto_continue: AutoContinue,
     active_requests: HashMap<String, ToolCallRequest>,
+    queued_user_messages: VecDeque<Vec<llm::ContentBlock>>,
 }
 
 impl Agent {
@@ -55,8 +59,10 @@ impl Agent {
         message_tx: mpsc::Sender<AgentMessage>,
     ) -> Self {
         let mut streams: StreamMap<String, EventStream> = StreamMap::new();
-        streams
-            .insert("user".to_string(), Box::pin(ReceiverStream::new(user_message_rx).map(StreamEvent::UserMessage)));
+        streams.insert(
+            USER_STREAM_KEY.to_string(),
+            Box::pin(ReceiverStream::new(user_message_rx).map(StreamEvent::UserMessage)),
+        );
 
         let context_limit = config.llm.context_window();
 
@@ -71,6 +77,7 @@ impl Agent {
             compaction_config: config.compaction_config,
             auto_continue: config.auto_continue,
             active_requests: HashMap::new(),
+            queued_user_messages: VecDeque::new(),
         }
     }
 
@@ -98,8 +105,12 @@ impl Agent {
                 }
 
                 StreamEvent::UserMessage(Text { content }) => {
-                    state = IterationState::new();
-                    self.on_user_text(content);
+                    if self.is_busy() {
+                        self.queued_user_messages.push_back(content);
+                    } else {
+                        state = IterationState::new();
+                        self.on_user_text(content);
+                    }
                 }
 
                 StreamEvent::UserMessage(SwitchModel(new_provider)) => {
@@ -115,15 +126,11 @@ impl Agent {
                 }
 
                 StreamEvent::Llm(llm_event) => {
-                    if !state.cancelled {
-                        self.on_llm_event(llm_event, &mut state).await;
-                    }
+                    self.on_llm_event(llm_event, &mut state).await;
                 }
 
                 StreamEvent::ToolExecution(tool_event) => {
-                    if !state.cancelled {
-                        self.on_tool_execution_event(tool_event, &mut state).await;
-                    }
+                    self.on_tool_execution_event(tool_event, &mut state).await;
                 }
             }
 
@@ -150,43 +157,45 @@ impl Agent {
         } = iteration;
         let has_tool_calls = !completed_tool_calls.is_empty();
         let has_content = !message_content.is_empty() || has_tool_calls;
+        let should_auto_continue = self.auto_continue.should_continue(stop_reason.as_ref());
 
-        // Skip context update for empty responses (e.g., API errors mid-stream)
-        if !has_content && !self.auto_continue.should_continue(stop_reason.as_ref()) {
-            let _ = self.message_tx.send(AgentMessage::Done).await;
-            return;
-        }
+        if has_content {
+            let reasoning = AssistantReasoning::from_parts(reasoning_summary_text.clone(), encrypted_reasoning);
+            self.update_context(&message_content, reasoning, completed_tool_calls);
 
-        let reasoning = AssistantReasoning::from_parts(reasoning_summary_text.clone(), encrypted_reasoning);
-        self.update_context(&message_content, reasoning, completed_tool_calls);
-
-        let _ = self
-            .message_tx
-            .send(AgentMessage::Text {
-                message_id: id.clone(),
-                chunk: message_content.clone(),
-                is_complete: true,
-                model_name: self.llm.display_name(),
-            })
-            .await;
-
-        if !reasoning_summary_text.is_empty() {
             let _ = self
                 .message_tx
-                .send(AgentMessage::Thought {
+                .send(AgentMessage::Text {
                     message_id: id.clone(),
-                    chunk: reasoning_summary_text,
+                    chunk: message_content.clone(),
                     is_complete: true,
                     model_name: self.llm.display_name(),
                 })
                 .await;
+
+            if !reasoning_summary_text.is_empty() {
+                let _ = self
+                    .message_tx
+                    .send(AgentMessage::Thought {
+                        message_id: id.clone(),
+                        chunk: reasoning_summary_text,
+                        is_complete: true,
+                        model_name: self.llm.display_name(),
+                    })
+                    .await;
+            }
         }
 
-        if has_tool_calls {
-            self.auto_continue.on_tool_calls();
-            self.maybe_preflight_compact().await;
-            self.start_llm_stream();
-        } else if self.auto_continue.should_continue(stop_reason.as_ref()) {
+        let has_queued_text = !self.queued_user_messages.is_empty();
+        if has_queued_text {
+            let content: Vec<_> = self.queued_user_messages.drain(..).flatten().collect();
+            self.context.add_message(ChatMessage::User { content, timestamp: IsoString::now() });
+        }
+
+        if has_queued_text || has_tool_calls {
+            self.auto_continue.reset();
+            self.start_next_turn().await;
+        } else if should_auto_continue {
             self.auto_continue.advance();
             tracing::info!(
                 "LLM stopped with {:?}, auto-continuing (attempt {}/{})",
@@ -204,30 +213,33 @@ impl Agent {
                 .await;
 
             self.inject_continuation_prompt(&message_content, stop_reason.as_ref());
-            self.maybe_preflight_compact().await;
-            self.start_llm_stream();
+            self.start_next_turn().await;
         } else {
             tracing::debug!("LLM completed turn with stop reason: {:?}", stop_reason);
-            self.auto_continue.on_completion();
+            self.auto_continue.reset();
             if let Err(e) = self.message_tx.send(AgentMessage::Done).await {
                 tracing::warn!("Failed to send Done message: {:?}", e);
             }
         }
     }
 
+    async fn start_next_turn(&mut self) {
+        self.maybe_preflight_compact().await;
+        self.start_llm_stream();
+    }
+
     async fn on_user_cancel(&mut self, state: &mut IterationState) {
-        state.cancelled = true;
-        self.streams.remove("llm");
+        self.abort_in_flight_work();
+        *state = IterationState::new();
         let _ = self.message_tx.send(AgentMessage::Cancelled { message: "Processing cancelled".to_string() }).await;
         let _ = self.message_tx.send(AgentMessage::Done).await;
     }
 
     async fn on_user_clear_context(&mut self, state: &mut IterationState) {
-        self.clear_active_streams();
-        self.active_requests.clear();
+        self.abort_in_flight_work();
         self.context.clear_conversation();
         self.token_tracker.reset_current_usage();
-        self.auto_continue.on_completion();
+        self.auto_continue.reset();
         *state = IterationState::new();
 
         let _ = self.message_tx.send(AgentMessage::ContextCleared).await;
@@ -235,7 +247,7 @@ impl Agent {
 
     fn on_user_text(&mut self, content: Vec<llm::ContentBlock>) {
         self.context.add_message(ChatMessage::User { content, timestamp: IsoString::now() });
-
+        self.auto_continue.reset();
         self.start_llm_stream();
     }
 
@@ -252,16 +264,22 @@ impl Agent {
     }
 
     fn start_llm_stream(&mut self) {
-        self.streams.remove("llm");
+        self.streams.remove(LLM_STREAM_KEY);
         let llm_stream = self.llm.stream_response(&self.context).map(StreamEvent::Llm);
-        self.streams.insert("llm".to_string(), Box::pin(llm_stream));
+        self.streams.insert(LLM_STREAM_KEY.to_string(), Box::pin(llm_stream));
     }
 
-    fn clear_active_streams(&mut self) {
-        self.streams.remove("llm");
+    fn is_busy(&self) -> bool {
+        self.streams.contains_key(LLM_STREAM_KEY) || !self.active_requests.is_empty()
+    }
+
+    fn abort_in_flight_work(&mut self) {
+        self.streams.remove(LLM_STREAM_KEY);
         for stream_key in self.active_requests.keys().cloned().collect::<Vec<_>>() {
             self.streams.remove(&stream_key);
         }
+        self.active_requests.clear();
+        self.queued_user_messages.clear();
     }
 
     /// Inject a continuation prompt when the LLM stops due to a resumable reason.
@@ -617,11 +635,7 @@ impl AutoContinue {
         Self { max, count: 0 }
     }
 
-    fn on_tool_calls(&mut self) {
-        self.count = 0;
-    }
-
-    fn on_completion(&mut self) {
+    fn reset(&mut self) {
         self.count = 0;
     }
 
@@ -652,7 +666,6 @@ struct IterationState {
     completed_tool_calls: Vec<Result<ToolCallResult, ToolCallError>>,
     llm_done: bool,
     stop_reason: Option<StopReason>,
-    cancelled: bool,
 }
 
 impl IterationState {
@@ -666,7 +679,6 @@ impl IterationState {
             completed_tool_calls: Vec::new(),
             llm_done: false,
             stop_reason: None,
-            cancelled: false,
         }
     }
 
