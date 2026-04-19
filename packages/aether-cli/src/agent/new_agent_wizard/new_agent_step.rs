@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use tui::SelectOption;
+
 pub enum NewAgentMode {
     ScaffoldProject,
     AddAgentToExistingProject,
@@ -173,6 +175,11 @@ pub fn server_options() -> Vec<tui::SelectOption> {
             value: "survey".to_string(),
             title: "Survey".to_string(),
             description: Some("Allow your agent to ask you structured questions".to_string()),
+        },
+        SelectOption {
+            value: "plan".to_string(),
+            title: "Plan".to_string(),
+            description: Some("Plan-mode prompt and plan review via elicitation".to_string()),
         },
     ]
 }
