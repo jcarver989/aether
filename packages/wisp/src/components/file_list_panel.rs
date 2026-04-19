@@ -1,10 +1,11 @@
+use crate::components::common::VerticalCursor;
 use crate::components::file_tree::{FileTree, FileTreeEntry, FileTreeEntryKind};
 use crate::git_diff::{FileDiff, FileStatus};
 use tui::{Component, Event, Frame, KeyCode, Line, MouseEventKind, Style, ViewContext, truncate_text};
 
 pub struct FileListPanel {
     tree: FileTree,
-    scroll: usize,
+    cursor: VerticalCursor,
     queued_comment_count: usize,
 }
 
@@ -15,7 +16,7 @@ pub enum FileListMessage {
 
 impl Default for FileListPanel {
     fn default() -> Self {
-        Self { tree: FileTree::empty(), scroll: 0, queued_comment_count: 0 }
+        Self { tree: FileTree::empty(), cursor: VerticalCursor::new(), queued_comment_count: 0 }
     }
 }
 
@@ -26,7 +27,7 @@ impl FileListPanel {
 
     pub fn rebuild_from_files(&mut self, files: &[FileDiff]) {
         self.tree = FileTree::from_files(files);
-        self.scroll = 0;
+        self.cursor = VerticalCursor::new();
     }
 
     pub fn selected_file_index(&self) -> Option<usize> {
@@ -63,12 +64,7 @@ impl FileListPanel {
     }
 
     fn ensure_visible(&mut self, viewport_height: usize) {
-        let selected = self.tree.selected_visible();
-        if selected < self.scroll {
-            self.scroll = selected;
-        } else if selected >= self.scroll + viewport_height {
-            self.scroll = selected.saturating_sub(viewport_height - 1);
-        }
+        self.cursor.ensure_visible(self.tree.selected_visible(), viewport_height);
     }
 
     pub fn tree_mut(&mut self) -> &mut FileTree {
@@ -137,7 +133,7 @@ impl Component for FileListPanel {
             let queue_row = self.queued_comment_count > 0 && i == height.saturating_sub(1);
             if queue_row {
                 let indicator = format!(
-                    " [{} comment{}] s:submit u:undo",
+                    " [{} comment{}]",
                     self.queued_comment_count,
                     if self.queued_comment_count == 1 { "" } else { "s" },
                 );
@@ -148,7 +144,7 @@ impl Component for FileListPanel {
                     line.push_with_style(" ".repeat(pad), Style::default().bg_color(theme.sidebar_bg()));
                 }
             } else {
-                let scrolled_i = i + self.scroll;
+                let scrolled_i = i + self.cursor.scroll;
                 if let Some(entry) = visible_entries.get(scrolled_i) {
                     render_file_tree_cell(&mut line, entry, scrolled_i == tree_selected, width, theme);
                 } else {

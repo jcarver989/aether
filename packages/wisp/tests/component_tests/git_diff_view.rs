@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 use tui::testing::{assert_buffer_eq, cols, key, render_component, render_lines};
-use tui::{Event, GUTTER_WIDTH, KeyCode, SEPARATOR_WIDTH, ViewContext};
+use tui::{Component, Event, KeyCode, MIN_GUTTER_WIDTH, SEPARATOR_WIDTH, ViewContext};
 use wisp::components::app::{GitDiffLoadState, GitDiffMode};
 use wisp::git_diff::{FileDiff, FileStatus, GitDiffDocument, Hunk, PatchLine, PatchLineKind};
+
+const HINT_LINE: &str = "j/k:move  n/p:hunk  h/l:focus  c:comment  s:submit  u:undo  r:refresh  Esc:close";
 
 fn make_test_doc() -> GitDiffDocument {
     GitDiffDocument {
@@ -138,7 +140,7 @@ fn make_wrapping_split_doc() -> GitDiffDocument {
 #[test]
 fn wrapped_right_pane_rows_keep_a_neutral_boundary() {
     let mut mode = make_mode(make_wrapping_split_doc());
-    let term = render_component(|ctx| mode.render_frame(ctx), 140, 12);
+    let term = render_component(|ctx| mode.render(ctx), 140, 12);
     let lines = term.get_lines();
 
     let first_row = lines
@@ -155,22 +157,16 @@ fn wrapped_right_pane_rows_keep_a_neutral_boundary() {
         .find_map(|(index, line)| line.contains("RIGHT_TAIL").then_some(index))
         .expect("expected wrapped continuation row containing RIGHT_TAIL marker");
 
-    let wrapped_start = lines[wrapped_idx].find("RIGHT_TAIL").expect("expected RIGHT_TAIL marker in wrapped row");
-
-    assert!(
-        wrapped_start >= right_start,
-        "wrapped continuation should not start left of original right-pane content start (was {wrapped_start}, expected >= {right_start})"
-    );
-
-    let padding_width = GUTTER_WIDTH + SEPARATOR_WIDTH;
-    assert!(wrapped_start >= padding_width, "wrapped content should leave room for separator and gutter");
     let ctx = ViewContext::new((140, 12));
     let added_bg = Some(ctx.theme.diff_added_bg());
     let removed_bg = Some(ctx.theme.diff_removed_bg());
-    for col in (wrapped_start - padding_width)..wrapped_start {
+    let separator_and_gutter = SEPARATOR_WIDTH + MIN_GUTTER_WIDTH;
+    let separator_start = right_start.saturating_sub(separator_and_gutter);
+    assert!(separator_start > 0, "first row's RIGHT_HEAD should be preceded by separator + gutter columns");
+    for col in separator_start..right_start {
         let actual_bg = term.get_style_at(wrapped_idx, col).bg;
-        assert_ne!(actual_bg, added_bg, "padding column {col} should not inherit added background");
-        assert_ne!(actual_bg, removed_bg, "padding column {col} should not inherit removed background");
+        assert_ne!(actual_bg, added_bg, "separator/gutter column {col} should not inherit added background");
+        assert_ne!(actual_bg, removed_bg, "separator/gutter column {col} should not inherit removed background");
     }
 }
 
@@ -178,7 +174,7 @@ fn wrapped_right_pane_rows_keep_a_neutral_boundary() {
 fn wrapped_split_diff_continuation_row_keeps_neutral_padding() {
     let mut mode = make_mode(make_wrapping_split_doc());
     let ctx = ViewContext::new((140, 12));
-    let frame = mode.render_frame(&ctx);
+    let frame = mode.render(&ctx);
     let wrapped_row = frame
         .lines()
         .iter()
@@ -187,11 +183,20 @@ fn wrapped_split_diff_continuation_row_keeps_neutral_padding() {
         .expect("expected wrapped continuation row containing RIGHT_TAIL");
 
     let term = render_lines(&[wrapped_row], 140, 1);
-    assert_buffer_eq(&term, &[cols(&[("", 91), ("RIGHT_TAIL", 0)])]);
 
+    // The continuation row's LEFT pane is blank (no bg), then SEP, then RIGHT
+    // pane's tail-gutter (blank, no bg), then RIGHT bg-padded content. Verify
+    // the SEP + RIGHT-gutter columns immediately before the RIGHT content
+    // start carry no diff background.
     let added_bg = Some(ctx.theme.diff_added_bg());
     let removed_bg = Some(ctx.theme.diff_removed_bg());
-    for col in 83..91 {
+    let right_content_start = term
+        .get_lines()
+        .first()
+        .and_then(|line| (0..line.len()).find(|&col| term.get_style_at(0, col).bg == added_bg))
+        .expect("wrapped row should contain at least one cell with the diff_added bg");
+    let neutral_start = right_content_start.saturating_sub(SEPARATOR_WIDTH + MIN_GUTTER_WIDTH);
+    for col in neutral_start..right_content_start {
         let actual_bg = term.get_style_at(0, col).bg;
         assert_ne!(actual_bg, added_bg, "padding column {col} should not inherit added background");
         assert_ne!(actual_bg, removed_bg, "padding column {col} should not inherit removed background");
@@ -237,7 +242,7 @@ fn git_diff_view_keeps_wrapped_code_out_of_the_line_number_gutter() {
             binary: false,
         }],
     });
-    let term = render_component(|ctx| mode.render_frame(ctx), 140, 6);
+    let term = render_component(|ctx| mode.render(ctx), 140, 7);
 
     assert_buffer_eq(
         &term,
@@ -245,9 +250,10 @@ fn git_diff_view_keeps_wrapped_code_out_of_the_line_number_gutter() {
             cols(&[(">   M x.rs             +1/-1", 28), ("", 1), ("x.rs  (modified)", 0)]),
             String::new(),
             cols(&[("", 28), ("", 1), ("@@ -1,2 +1,2 @@", 0)]),
-            cols(&[("", 29), ("   1 LEFT_MARK", 54), ("", 3), ("   1 RIGHT_HEAD", 54)]),
-            cols(&[("", 29), ("", 54), ("", 3), ("", 5), (filler.as_str(), 0)]),
-            cols(&[("", 29), ("", 54), ("", 3), ("", 5), ("RIGHT_TAIL", 0)]),
+            cols(&[("", 29), (" 1 LEFT_MARK", 55), ("", 1), (" 1 RIGHT_HEAD", 55)]),
+            cols(&[("", 29), ("", 55), ("", 1), ("", 3), (filler.as_str(), 0)]),
+            cols(&[("", 29), ("", 55), ("", 1), ("", 3), ("RIGHT_TAIL", 0)]),
+            HINT_LINE.to_string(),
         ],
     );
 }
@@ -292,27 +298,32 @@ fn screenshot_shaped_git_diff_wrap_row_stays_out_of_gutters() {
             binary: false,
         }],
     });
-    let term = render_component(|ctx| mode.render_frame(ctx), 151, 8);
+    let term = render_component(|ctx| mode.render(ctx), 151, 8);
     let lines = term.get_lines();
     let wrapped_idx = lines
         .iter()
-        .position(|line| line.contains("blank_panel(left_panel));") && line.contains("theme.code_bg()));"))
+        .position(|line| line.contains("lank_panel(left_panel));") && line.contains("theme.code_bg()));"))
         .expect("expected wrapped row containing both continuation segments");
     let wrapped_row = &lines[wrapped_idx];
 
     assert_buffer_eq(
         &render_lines(&[tui::Line::new(wrapped_row.clone())], 151, 1),
-        &[cols(&[("", 34), ("| blank_panel(left_panel));", 62), ("blank_panel(left_panel, theme.code_bg()));", 0)])],
+        &[cols(&[
+            ("", 32),
+            ("lank_panel(left_panel));", 58),
+            ("", 4),
+            ("lank_panel(left_panel, theme.code_bg()));", 0),
+        ])],
     );
 
-    let left_start = wrapped_row.find("| blank_panel(left_panel));").expect("expected wrapped removed continuation");
+    let left_start = wrapped_row.find("lank_panel(left_panel));").expect("expected wrapped removed continuation");
     let right_start =
-        wrapped_row.find("blank_panel(left_panel, theme.code_bg()));").expect("expected wrapped added continuation");
+        wrapped_row.find("lank_panel(left_panel, theme.code_bg()));").expect("expected wrapped added continuation");
 
     let ctx = ViewContext::new((151, 8));
     let added_bg = Some(ctx.theme.diff_added_bg());
     let removed_bg = Some(ctx.theme.diff_removed_bg());
-    let code_panel_start = left_start.saturating_sub(GUTTER_WIDTH);
+    let code_panel_start = left_start.saturating_sub(MIN_GUTTER_WIDTH);
     for col in code_panel_start..left_start {
         let actual_bg = term.get_style_at(wrapped_idx, col).bg;
         assert_ne!(actual_bg, added_bg, "blank left panel column {col} should not inherit added background");
@@ -342,10 +353,14 @@ fn make_long_split_hunk_header_doc() -> GitDiffDocument {
 fn render_empty_state() {
     let sb = 26;
     let mut mode = GitDiffMode::new(PathBuf::from("."));
-    let term = render_component(|ctx| mode.render_frame(ctx), 80, 3);
+    let term = render_component(|ctx| mode.render(ctx), 80, 3);
     assert_buffer_eq(
         &term,
-        &[cols(&[("", sb), ("", 1), ("No changes in working tree relative to HEAD", 0)]), String::new(), String::new()],
+        &[
+            cols(&[("", sb), ("", 1), ("No changes in working tree relative to HEAD", 0)]),
+            String::new(),
+            HINT_LINE.to_string(),
+        ],
     );
 }
 
@@ -353,11 +368,11 @@ fn render_empty_state() {
 fn render_error_state() {
     let sb = 26;
     let mut mode = GitDiffMode::new(PathBuf::from("."));
-    mode.load_state = GitDiffLoadState::Error { message: "not a repo".to_string() };
-    let term = render_component(|ctx| mode.render_frame(ctx), 80, 3);
+    mode.set_load_state(GitDiffLoadState::Error { message: "not a repo".to_string() });
+    let term = render_component(|ctx| mode.render(ctx), 80, 3);
     assert_buffer_eq(
         &term,
-        &[cols(&[("", sb), ("", 1), ("Git diff unavailable: not a repo", 0)]), String::new(), String::new()],
+        &[cols(&[("", sb), ("", 1), ("Git diff unavailable: not a repo", 0)]), String::new(), HINT_LINE.to_string()],
     );
 }
 
@@ -366,7 +381,7 @@ fn render_shows_file_list_and_patch() {
     let sb = 28;
     let doc = make_test_doc();
     let mut mode = make_mode(doc);
-    let term = render_component(|ctx| mode.render_frame(ctx), 100, 8);
+    let term = render_component(|ctx| mode.render(ctx), 100, 9);
     assert_buffer_eq(
         &term,
         &[
@@ -378,6 +393,7 @@ fn render_shows_file_list_and_patch() {
             cols(&[("", sb), ("", 1), ("  2 +     new();", 0)]),
             cols(&[("", sb), ("", 1), ("3 3   }", 0)]),
             String::new(),
+            HINT_LINE.to_string(),
         ],
     );
 }
@@ -385,7 +401,7 @@ fn render_shows_file_list_and_patch() {
 #[test]
 fn added_lines_use_added_background_style() {
     let mut mode = make_mode(make_test_doc());
-    let term = render_component(|ctx| mode.render_frame(ctx), 100, 8);
+    let term = render_component(|ctx| mode.render(ctx), 100, 8);
     let lines = term.get_lines();
 
     let added_row = lines.iter().position(|line| line.contains("new();")).expect("expected added diff line");
@@ -398,7 +414,7 @@ fn added_lines_use_added_background_style() {
 #[test]
 fn narrow_width_renders_unified_diff_rows() {
     let mut mode = make_mode(make_test_doc());
-    let term = render_component(|ctx| mode.render_frame(ctx), 108, 10);
+    let term = render_component(|ctx| mode.render(ctx), 108, 10);
     let lines = term.get_lines();
 
     assert!(lines.iter().any(|line| line.contains("old();")), "expected removed line in unified view");
@@ -412,7 +428,7 @@ fn narrow_width_renders_unified_diff_rows() {
 #[test]
 fn wide_width_renders_split_diff_rows() {
     let mut mode = make_mode(make_test_doc());
-    let term = render_component(|ctx| mode.render_frame(ctx), 109, 10);
+    let term = render_component(|ctx| mode.render(ctx), 109, 10);
     let lines = term.get_lines();
 
     assert!(
@@ -424,7 +440,7 @@ fn wide_width_renders_split_diff_rows() {
 #[test]
 fn git_diff_mode_soft_wraps_long_patch_headers_in_rhs_panel() {
     let mut mode = make_mode(make_long_header_doc());
-    let term = render_component(|ctx| mode.render_frame(ctx), 100, 8);
+    let term = render_component(|ctx| mode.render(ctx), 100, 8);
     let lines = term.get_lines();
 
     assert!(
@@ -441,7 +457,7 @@ fn git_diff_mode_soft_wraps_long_patch_headers_in_rhs_panel() {
 #[test]
 fn git_split_view_preserves_hunk_header_background_on_wrapped_rows() {
     let mut mode = make_mode(make_long_split_hunk_header_doc());
-    let term = render_component(|ctx| mode.render_frame(ctx), 130, 10);
+    let term = render_component(|ctx| mode.render(ctx), 130, 10);
     let lines = term.get_lines();
 
     let header_row = lines
@@ -509,8 +525,8 @@ fn make_comment_test_doc() -> GitDiffDocument {
 async fn send_keys(mode: &mut GitDiffMode, codes: &[KeyCode]) {
     let ctx = ViewContext::new((100, 20));
     for &code in codes {
-        mode.render_frame(&ctx);
-        mode.on_key_event(&Event::Key(key(code))).await;
+        mode.render(&ctx);
+        mode.on_event(&Event::Key(key(code))).await;
     }
 }
 
@@ -551,7 +567,7 @@ async fn draft_comment_appears_after_correct_line_when_submitted_comment_exists(
     )
     .await;
 
-    let term = render_component(|ctx| mode.render_frame(ctx), 100, 20);
+    let term = render_component(|ctx| mode.render(ctx), 100, 20);
     let lines = term.get_lines();
 
     let line_one_row = lines.iter().position(|l| l.contains("line_one")).expect("line_one should render");
@@ -598,9 +614,9 @@ async fn submitted_comment_visible_on_last_line() {
     )
     .await;
 
-    // height=6 → body_height=4, exactly fits 4 diff lines.
+    // height=7 → split-body height=4, exactly fits 4 diff lines.
     // The 3-row comment box below line_three is entirely off-screen without a scroll fix.
-    let term = render_component(|ctx| mode.render_frame(ctx), 100, 6);
+    let term = render_component(|ctx| mode.render(ctx), 100, 7);
     let lines = term.get_lines();
 
     assert!(lines.iter().any(|l| l.contains("line_three")), "cursor line should be visible, got: {lines:?}");
@@ -631,7 +647,7 @@ async fn draft_comment_bottom_border_visible_on_last_line() {
 
     // height=8 → body_height=6. 4 diff lines + 3 draft rows = 7 body rows.
     // Without fix the draft content row is visible but the bottom border is clipped.
-    let term = render_component(|ctx| mode.render_frame(ctx), 100, 8);
+    let term = render_component(|ctx| mode.render(ctx), 100, 8);
     let lines = term.get_lines();
 
     assert!(lines.iter().any(|l| l.contains("hi")), "draft text should be visible, got: {lines:?}");

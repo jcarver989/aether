@@ -9,9 +9,8 @@ pub fn build_frame(app: &mut App, context: &ViewContext) -> Frame {
         return Frame::vstack(vec![overlay_frame, make_status_line(app).render(context)]);
     }
 
-    if app.screen_router.is_git_diff() {
-        let diff_frame = app.screen_router.render(context);
-        return Frame::vstack(vec![diff_frame, make_status_line(app).render(context)]);
+    if app.screen_router.is_full_screen_mode() {
+        return app.screen_router.render(context);
     }
 
     let conv_frame = app.conversation_screen.render(context);

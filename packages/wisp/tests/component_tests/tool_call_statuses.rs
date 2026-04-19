@@ -335,10 +335,7 @@ fn indented_split_diff_does_not_bleed_diff_bg_into_left_indent_columns() {
     let term = render_component(|ctx| view.render(ctx).indent(indent), 100, 4);
 
     let diff_row = 1;
-    assert_buffer_eq(
-        &term,
-        &["  ✓ Edit (file.rs)", "     1 old code                                         1 new code", "", ""],
-    );
+    assert_buffer_eq(&term, &["  ✓ Edit (file.rs)", &format!("   1 old code{}1 new code", " ".repeat(41)), "", ""]);
 
     let theme = &ViewContext::new((100, 4)).theme;
     for col in 0..usize::from(indent) {

@@ -153,10 +153,7 @@ fn renders_queued_comment_indicator() {
     panel.set_queued_comment_count(3);
     let term = render_component(|ctx| panel.render(ctx), W, 3);
 
-    assert_buffer_eq(
-        &term,
-        &[cols(&[(">   M a.rs", 35), ("+1/-1", 5)]), String::new(), " [3 comments] s:submit u:undo".to_string()],
-    );
+    assert_buffer_eq(&term, &[cols(&[(">   M a.rs", 35), ("+1/-1", 5)]), String::new(), " [3 comments]".to_string()]);
 }
 
 #[test]
@@ -167,10 +164,7 @@ fn queued_comment_singular() {
     panel.set_queued_comment_count(1);
     let term = render_component(|ctx| panel.render(ctx), W, 3);
 
-    assert_buffer_eq(
-        &term,
-        &[cols(&[(">   M a.rs", 35), ("+1/-1", 5)]), String::new(), " [1 comment] s:submit u:undo".to_string()],
-    );
+    assert_buffer_eq(&term, &[cols(&[(">   M a.rs", 35), ("+1/-1", 5)]), String::new(), " [1 comment]".to_string()]);
 }
 
 #[test]

@@ -1,31 +1,23 @@
-use crate::components::app::git_diff_mode::PatchLineRef;
+use super::PatchAnchor;
+use crate::components::common::AnchoredSurfaceBuilder;
+use crate::components::review_comments::{AnchoredBlock, AnchoredRows, CommentAnchor};
 use crate::git_diff::{FileDiff, PatchLineKind};
-use std::collections::HashMap;
 use tui::{Line, ViewContext};
 
-pub struct RenderedPatch {
-    pub lines: Vec<Line>,
-    pub line_refs: Vec<Option<PatchLineRef>>,
-    pub line_ref_to_anchor_row_index: HashMap<PatchLineRef, usize>,
+pub(crate) struct RenderedPatch {
+    pub surface: AnchoredRows<PatchAnchor>,
     pub hunk_offsets: Vec<usize>,
 }
 
 impl RenderedPatch {
-    pub(crate) fn new(
-        lines: Vec<Line>,
-        line_refs: Vec<Option<PatchLineRef>>,
-        line_ref_to_anchor_row_index: HashMap<PatchLineRef, usize>,
-    ) -> Self {
-        let hunk_offsets = compute_hunk_offsets(&line_refs);
-        Self { lines, line_refs, line_ref_to_anchor_row_index, hunk_offsets }
+    pub(crate) fn new(surface: AnchoredRows<PatchAnchor>) -> Self {
+        let hunk_offsets = compute_hunk_offsets(surface.blocks());
+        Self { surface, hunk_offsets }
     }
 
-    pub fn from_file_diff(file: &FileDiff, width: usize, ctx: &ViewContext) -> RenderedPatch {
+    pub(crate) fn from_file_diff(file: &FileDiff, width: usize, ctx: &ViewContext) -> RenderedPatch {
         let theme = &ctx.theme;
         let lang_hint = lang_hint_from_path(&file.path);
-        let mut patch_lines = Vec::new();
-        let mut patch_refs = Vec::new();
-        let mut anchor_insert_row_lookup = HashMap::new();
         let max_line_no = file
             .hunks
             .iter()
@@ -34,70 +26,78 @@ impl RenderedPatch {
             .max()
             .unwrap_or(0);
 
-        let gutter_width = get_n_digits(max_line_no);
+        let gutter_width = tui::digit_count(max_line_no);
+        let width_u16 = usize_to_u16_saturating(width);
+        let mut rows = AnchoredSurfaceBuilder::new();
 
         for (hunk_idx, hunk) in file.hunks.iter().enumerate() {
             if hunk_idx > 0 {
-                patch_lines.push(Line::default());
-                patch_refs.push(None);
+                rows.push_raw_unanchored_rows([Line::default()]);
             }
 
             for (line_idx, patch_line) in hunk.lines.iter().enumerate() {
-                let mut line = Line::default();
-
-                match patch_line.kind {
-                    PatchLineKind::HunkHeader => {
-                        line.push_with_style(
+                let (head, tail, content) = match patch_line.kind {
+                    PatchLineKind::HunkHeader => (
+                        Line::default(),
+                        Line::default(),
+                        Line::with_style(
                             &patch_line.text,
                             tui::Style::fg(theme.info()).bold().bg_color(theme.code_bg()),
-                        );
-                    }
+                        ),
+                    ),
+                    PatchLineKind::Meta => (
+                        Line::default(),
+                        Line::default(),
+                        Line::with_style(&patch_line.text, tui::Style::fg(theme.text_secondary()).italic()),
+                    ),
                     PatchLineKind::Context => {
                         let old_str = format_line_no(patch_line.old_line_no, gutter_width);
                         let new_str = format_line_no(patch_line.new_line_no, gutter_width);
-                        line.push_with_style(format!("{old_str} {new_str}   "), tui::Style::fg(theme.text_secondary()));
-                        append_syntax_spans(&mut line, &patch_line.text, lang_hint, None, ctx);
+                        let head =
+                            Line::with_style(format!("{old_str} {new_str}   "), tui::Style::fg(theme.text_secondary()));
+                        let tail = Line::new(" ".repeat(2 * gutter_width + 4));
+                        let mut content = Line::default();
+                        append_syntax_spans(&mut content, &patch_line.text, lang_hint, None, ctx);
+                        (head, tail, content)
                     }
-
                     PatchLineKind::Added => {
                         let old_str = " ".repeat(gutter_width);
                         let new_str = format_line_no(patch_line.new_line_no, gutter_width);
-                        let bg = Some(theme.diff_added_bg());
-                        let style = tui::Style::fg(theme.diff_added_fg()).bg_color(theme.diff_added_bg());
-                        line.push_with_style(format!("{old_str} {new_str} + "), style);
-                        append_syntax_spans(&mut line, &patch_line.text, lang_hint, bg, ctx);
+                        let bg = theme.diff_added_bg();
+                        let head = Line::with_style(
+                            format!("{old_str} {new_str} + "),
+                            tui::Style::fg(theme.diff_added_fg()).bg_color(bg),
+                        );
+                        let tail =
+                            Line::with_style(" ".repeat(2 * gutter_width + 4), tui::Style::default().bg_color(bg));
+                        let mut content = Line::default();
+                        append_syntax_spans(&mut content, &patch_line.text, lang_hint, Some(bg), ctx);
+                        let content = content.with_fill(bg);
+                        (head, tail, content)
                     }
                     PatchLineKind::Removed => {
                         let old_str = format_line_no(patch_line.old_line_no, gutter_width);
                         let new_str = " ".repeat(gutter_width);
-                        let bg = Some(theme.diff_removed_bg());
-                        let style = tui::Style::fg(theme.diff_removed_fg()).bg_color(theme.diff_removed_bg());
-                        line.push_with_style(format!("{old_str} {new_str} - "), style);
-                        append_syntax_spans(&mut line, &patch_line.text, lang_hint, bg, ctx);
+                        let bg = theme.diff_removed_bg();
+                        let head = Line::with_style(
+                            format!("{old_str} {new_str} - "),
+                            tui::Style::fg(theme.diff_removed_fg()).bg_color(bg),
+                        );
+                        let tail =
+                            Line::with_style(" ".repeat(2 * gutter_width + 4), tui::Style::default().bg_color(bg));
+                        let mut content = Line::default();
+                        append_syntax_spans(&mut content, &patch_line.text, lang_hint, Some(bg), ctx);
+                        let content = content.with_fill(bg);
+                        (head, tail, content)
                     }
-                    PatchLineKind::Meta => {
-                        line.push_with_style(&patch_line.text, tui::Style::fg(theme.text_secondary()).italic());
-                    }
-                }
+                };
 
-                let anchor = PatchLineRef { hunk_index: hunk_idx, line_index: line_idx };
-                let width_u16 = usize_to_u16_saturating(width);
-                let wrapped = tui::Frame::new(vec![line])
-                    .fit(width_u16, tui::FitOptions::wrap())
-                    .map_lines(|mut wrapped_line| {
-                        wrapped_line.extend_bg_to_width(width);
-                        wrapped_line
-                    })
-                    .into_lines();
-
-                anchor_insert_row_lookup.insert(anchor, patch_lines.len() + wrapped.len());
-                patch_refs.push(Some(anchor));
-                patch_refs.extend(std::iter::repeat_n(None, wrapped.len().saturating_sub(1)));
-                patch_lines.extend(wrapped);
+                let anchor = CommentAnchor(PatchAnchor { hunk: hunk_idx, line: line_idx });
+                rows.push_anchored_wrapped(anchor, content, width_u16, &head, &tail);
             }
         }
 
-        Self::new(patch_lines, patch_refs, anchor_insert_row_lookup)
+        Self::new(rows.finish())
     }
 }
 
@@ -137,33 +137,19 @@ pub(crate) fn usize_to_u16_saturating(value: usize) -> u16 {
     u16::try_from(value).unwrap_or(u16::MAX)
 }
 
-fn compute_hunk_offsets(line_refs: &[Option<PatchLineRef>]) -> Vec<usize> {
+fn compute_hunk_offsets(blocks: &[AnchoredBlock<PatchAnchor>]) -> Vec<usize> {
     let mut offsets = Vec::new();
     let mut last_hunk: Option<usize> = None;
 
-    for (index, line_ref) in line_refs.iter().enumerate() {
-        if let Some(patch_line_ref) = line_ref
-            && last_hunk != Some(patch_line_ref.hunk_index)
-        {
-            offsets.push(index);
-            last_hunk = Some(patch_line_ref.hunk_index);
+    for block in blocks {
+        let CommentAnchor(PatchAnchor { hunk, .. }) = block.anchor;
+        if last_hunk != Some(hunk) {
+            offsets.push(block.start_row);
+            last_hunk = Some(hunk);
         }
     }
 
     offsets
-}
-
-fn get_n_digits(mut n: usize) -> usize {
-    if n == 0 {
-        return 1;
-    }
-
-    let mut count = 0;
-    while n > 0 {
-        count += 1;
-        n /= 10;
-    }
-    count
 }
 
 #[cfg(test)]
@@ -207,8 +193,8 @@ mod tests {
         let context = ViewContext::new((120, 24));
         let result = RenderedPatch::from_file_diff(&file, 80, &context);
 
-        assert_eq!(result.line_ref_to_anchor_row_index.len(), 2);
-        assert_eq!(result.line_ref_to_anchor_row_index[&PatchLineRef { hunk_index: 0, line_index: 0 }], 1);
+        assert_eq!(result.surface.blocks().len(), 2);
+        assert_eq!(result.surface.end_row_for_anchor(CommentAnchor(PatchAnchor { hunk: 0, line: 0 })), Some(0));
     }
 
     #[test]
@@ -250,9 +236,9 @@ mod tests {
         let right_width = 60;
         let result = RenderedPatch::from_file_diff(&file, right_width, &context);
 
-        assert!(result.lines.len() > 2, "long line should wrap, got {} lines", result.lines.len());
+        assert!(result.surface.lines().len() > 2, "long line should wrap, got {} lines", result.surface.lines().len());
 
-        for (index, line) in result.lines.iter().enumerate() {
+        for (index, line) in result.surface.lines().iter().enumerate() {
             let display_width = line.display_width();
             assert!(
                 display_width <= right_width,
@@ -260,21 +246,83 @@ mod tests {
             );
         }
 
-        assert!(result.line_refs[1].is_some(), "first wrapped line should have a ref");
-        for (index, line_ref) in result.line_refs.iter().enumerate().skip(2) {
-            assert!(line_ref.is_none(), "continuation line {index} should have None ref");
+        let anchor = CommentAnchor(PatchAnchor { hunk: 0, line: 1 });
+        assert_eq!(result.surface.start_row_for_anchor(anchor), Some(1));
+        assert!(
+            result.surface.end_row_for_anchor(anchor).is_some_and(|end_row| end_row > 1),
+            "wrapped line should extend the anchored block"
+        );
+
+        let gutter_cols = 2 * tui::digit_count(1) + 4;
+        let gutter_pad = " ".repeat(gutter_cols);
+        for (index, line) in result.surface.lines().iter().enumerate().skip(2) {
+            let text = line.plain_text();
+            assert!(
+                text.starts_with(&gutter_pad),
+                "continuation line {index} should start with blank gutter, got {text:?}"
+            );
         }
     }
 
     #[test]
-    fn digit_count_works() {
-        assert_eq!(get_n_digits(0), 1);
-        assert_eq!(get_n_digits(1), 1);
-        assert_eq!(get_n_digits(9), 1);
-        assert_eq!(get_n_digits(10), 2);
-        assert_eq!(get_n_digits(99), 2);
-        assert_eq!(get_n_digits(100), 3);
-        assert_eq!(get_n_digits(999), 3);
+    fn added_row_continuation_preserves_added_background() {
+        let long_content = "x".repeat(200);
+        let file = make_file(vec![
+            PatchLine {
+                kind: PatchLineKind::HunkHeader,
+                text: "@@ -1,1 +1,1 @@".to_string(),
+                old_line_no: None,
+                new_line_no: None,
+            },
+            PatchLine { kind: PatchLineKind::Added, text: long_content, old_line_no: None, new_line_no: Some(1) },
+        ]);
+        let context = ViewContext::new((120, 24));
+        let added_bg = context.theme.diff_added_bg();
+        let result = RenderedPatch::from_file_diff(&file, 60, &context);
+
+        assert!(result.surface.lines().len() > 2, "long Added line should wrap");
+
+        for (index, line) in result.surface.lines().iter().enumerate().skip(2) {
+            let first_span = line.spans().first().expect("continuation row should have spans");
+            assert_eq!(
+                first_span.style().bg,
+                Some(added_bg),
+                "continuation line {index}: gutter tail should carry diff_added_bg, got {:?}",
+                first_span.style().bg
+            );
+        }
+    }
+
+    #[test]
+    fn empty_added_line_fills_full_width_with_added_background() {
+        let file = make_file(vec![
+            PatchLine {
+                kind: PatchLineKind::HunkHeader,
+                text: "@@ -1,1 +1,1 @@".to_string(),
+                old_line_no: None,
+                new_line_no: None,
+            },
+            PatchLine { kind: PatchLineKind::Added, text: String::new(), old_line_no: None, new_line_no: Some(1) },
+        ]);
+        let context = ViewContext::new((120, 24));
+        let added_bg = context.theme.diff_added_bg();
+        let total_width = 60;
+        let result = RenderedPatch::from_file_diff(&file, total_width, &context);
+
+        let added_row = &result.surface.lines()[1];
+        assert_eq!(
+            added_row.display_width(),
+            total_width,
+            "empty added row should be padded to full width, got {}",
+            added_row.display_width()
+        );
+        let trailing = added_row.spans().last().expect("added row should have at least one span");
+        assert_eq!(
+            trailing.style().bg,
+            Some(added_bg),
+            "trailing pad of empty added line should carry diff_added_bg, got {:?}",
+            trailing.style().bg
+        );
     }
 
     #[test]

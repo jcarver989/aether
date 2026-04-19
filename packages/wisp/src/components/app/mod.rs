@@ -1,14 +1,17 @@
 pub mod attachments;
 pub mod git_diff_mode;
+mod plan_review_mode;
 mod screen_router;
 mod view;
 
 pub use git_diff_mode::{GitDiffLoadState, GitDiffMode, GitDiffViewMessage};
+pub use plan_review_mode::{PlanReviewAction, PlanReviewInput, PlanReviewMode};
 use screen_router::ScreenRouter;
 use screen_router::ScreenRouterMessage;
 
 use crate::components::conversation_screen::ConversationScreen;
 use crate::components::conversation_screen::ConversationScreenMessage;
+use crate::components::plan_review::PlanDocument;
 use crate::components::status_line::ContextUsageDisplay;
 use crate::keybindings::Keybindings;
 use crate::settings;
@@ -16,6 +19,7 @@ use crate::settings::overlay::{SettingsMessage, SettingsOverlay};
 use acp_utils::client::{AcpEvent, AcpPromptHandle};
 use acp_utils::config_meta::SelectOptionMeta;
 use acp_utils::config_option_id::ConfigOptionId;
+use acp_utils::notifications::{CreateElicitationRequestParams, ElicitationAction, ElicitationResponse};
 use agent_client_protocol::{self as acp, SessionId};
 use attachments::build_attachment_blocks;
 use std::path::PathBuf;
@@ -23,6 +27,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
 use tui::RendererCommand;
 use tui::{Component, Event, Frame, KeyEvent, ViewContext};
+use utils::plan_review::{PlanReviewDecision, PlanReviewElicitationMeta};
 
 #[derive(Debug, Clone)]
 pub struct PromptAttachment {
@@ -43,6 +48,7 @@ pub struct App {
     auth_methods: Vec<acp::AuthMethod>,
     settings_overlay: Option<SettingsOverlay>,
     screen_router: ScreenRouter,
+    pending_plan_review_response: Option<oneshot::Sender<ElicitationResponse>>,
     keybindings: Keybindings,
     session_id: SessionId,
     prompt_handle: AcpPromptHandle,
@@ -74,7 +80,8 @@ impl App {
             server_statuses: Vec::new(),
             auth_methods,
             settings_overlay: None,
-            screen_router: ScreenRouter::new(GitDiffMode::new(working_dir.clone())),
+            screen_router: ScreenRouter::new(working_dir.clone()),
+            pending_plan_review_response: None,
             keybindings,
             session_id,
             prompt_handle,
@@ -96,7 +103,7 @@ impl App {
     }
 
     pub fn needs_mouse_capture(&self) -> bool {
-        self.settings_overlay.is_some() || self.screen_router.is_git_diff()
+        self.settings_overlay.is_some() || self.screen_router.is_full_screen_mode()
     }
 
     pub fn wants_tick(&self) -> bool {
@@ -171,7 +178,7 @@ impl App {
 
         let event = Event::Key(key_event);
 
-        if self.screen_router.is_git_diff() {
+        if self.screen_router.is_full_screen_mode() {
             for msg in self.screen_router.on_event(&event).await.unwrap_or_default() {
                 self.handle_screen_router_message(commands, msg).await;
             }
@@ -345,6 +352,12 @@ impl App {
                 self.submit_prompt(user_input, Vec::new()).await;
                 self.screen_router.close_git_diff();
             }
+            ScreenRouterMessage::FinishPlanReview(action) => {
+                let response = plan_review_response(action);
+                if let Some(response_tx) = self.pending_plan_review_response.take() {
+                    let _ = response_tx.send(response);
+                }
+            }
         }
         let _ = commands;
     }
@@ -367,6 +380,17 @@ impl App {
         response_tx: oneshot::Sender<acp_utils::notifications::ElicitationResponse>,
     ) {
         self.settings_overlay = None;
+
+        if let Some(meta) = plan_review_meta_from_request(&params.request) {
+            if let Some(existing_tx) = self.pending_plan_review_response.replace(response_tx) {
+                let _ = existing_tx.send(cancel_response());
+            }
+            let document = PlanDocument::parse(meta.plan_path, &meta.markdown);
+            let input = PlanReviewInput { title: meta.title, document };
+            self.screen_router.open_plan_review(input);
+            return;
+        }
+
         self.conversation_screen.on_elicitation_request(params, response_tx);
     }
 
@@ -496,8 +520,14 @@ impl Component for App {
             Event::Key(key_event) => self.handle_key(&mut commands, *key_event).await,
             Event::Paste(_) => {
                 self.settings_overlay = None;
-                let outcome = self.conversation_screen.on_event(event).await;
-                self.handle_conversation_messages(&mut commands, outcome).await;
+                if self.screen_router.is_full_screen_mode() {
+                    for msg in self.screen_router.on_event(event).await.unwrap_or_default() {
+                        self.handle_screen_router_message(&mut commands, msg).await;
+                    }
+                } else {
+                    let outcome = self.conversation_screen.on_event(event).await;
+                    self.handle_conversation_messages(&mut commands, outcome).await;
+                }
             }
             Event::Tick => {
                 if let Some(instant) = self.ctrl_c_pressed_at
@@ -509,7 +539,7 @@ impl Component for App {
                 self.conversation_screen.on_tick(now);
             }
             Event::Mouse(_) => {
-                if self.screen_router.is_git_diff() {
+                if self.screen_router.is_full_screen_mode() {
                     for msg in self.screen_router.on_event(event).await.unwrap_or_default() {
                         self.handle_screen_router_message(&mut commands, msg).await;
                     }
@@ -534,6 +564,33 @@ impl Component for App {
 
         view::build_frame(self, ctx)
     }
+}
+
+fn plan_review_meta_from_request(request: &CreateElicitationRequestParams) -> Option<PlanReviewElicitationMeta> {
+    match request {
+        CreateElicitationRequestParams::FormElicitationParams { meta, .. } => {
+            PlanReviewElicitationMeta::parse(meta.as_ref().map(|meta| &meta.0))
+        }
+        CreateElicitationRequestParams::UrlElicitationParams { .. } => None,
+    }
+}
+
+fn plan_review_response(action: PlanReviewAction) -> ElicitationResponse {
+    match action {
+        PlanReviewAction::Approve => ElicitationResponse {
+            action: ElicitationAction::Accept,
+            content: Some(PlanReviewDecision::Approve.response_content(None)),
+        },
+        PlanReviewAction::RequestChanges { feedback } => ElicitationResponse {
+            action: ElicitationAction::Accept,
+            content: Some(PlanReviewDecision::Deny.response_content(Some(&feedback))),
+        },
+        PlanReviewAction::Cancel => cancel_response(),
+    }
+}
+
+fn cancel_response() -> ElicitationResponse {
+    ElicitationResponse { action: ElicitationAction::Cancel, content: None }
 }
 
 fn current_config_selections(options: &[acp::SessionConfigOption]) -> Vec<(String, String)> {
@@ -647,10 +704,12 @@ mod tests {
     use crate::settings::{DEFAULT_CONTENT_PADDING, ThemeSettings as WispThemeSettings, WispSettings, save_settings};
     use crate::test_helpers::with_wisp_home;
     use std::fs;
+    use std::path::Path;
     use std::time::Duration;
     use tempfile::TempDir;
     use tui::testing::render_component;
     use tui::{Frame, KeyCode, KeyModifiers, Renderer, Theme, ViewContext};
+    use utils::plan_review::PlanReviewElicitationMeta;
 
     fn make_renderer() -> Renderer<Vec<u8>> {
         Renderer::new(Vec::new(), Theme::default(), (80, 24))
@@ -681,6 +740,28 @@ mod tests {
 
     fn make_plan_entry(name: &str, status: acp::PlanEntryStatus) -> acp::PlanEntry {
         acp::PlanEntry::new(name, acp::PlanEntryPriority::Medium, status)
+    }
+
+    fn make_plan_review_params(markdown: &str) -> acp_utils::notifications::ElicitationParams {
+        let meta = PlanReviewElicitationMeta::new(Path::new("/tmp/test-plan.md"), markdown)
+            .to_json()
+            .expect("serialize plan review metadata");
+
+        acp_utils::notifications::ElicitationParams {
+            server_name: "plan-server".to_string(),
+            request: acp_utils::notifications::CreateElicitationRequestParams::FormElicitationParams {
+                meta: Some(
+                    serde_json::from_value(serde_json::Value::Object(meta))
+                        .expect("deserialize plan review metadata into rmcp meta"),
+                ),
+                message: "Approve plan?".to_string(),
+                requested_schema: acp_utils::ElicitationSchema::builder()
+                    .required_string("decision")
+                    .optional_string("feedback")
+                    .build()
+                    .expect("build plan review requested schema"),
+            },
+        }
     }
 
     fn mode_model_options(
@@ -936,6 +1017,86 @@ mod tests {
 
         send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
         assert!(!app.screen_router.is_git_diff(), "git diff should not open during elicitation");
+    }
+
+    #[tokio::test]
+    async fn plan_review_elicitation_opens_full_screen_review() {
+        let mut app = make_app();
+        let (response_tx, _response_rx) = oneshot::channel();
+
+        app.on_elicitation_request(make_plan_review_params("# Plan\n\n- item"), response_tx);
+
+        assert!(app.screen_router.is_plan_review(), "plan review mode should open");
+        assert!(app.conversation_screen.active_modal.is_none(), "plan review should bypass modal form");
+    }
+
+    #[tokio::test]
+    async fn regular_form_elicitation_still_uses_modal_form() {
+        let mut app = make_app();
+        let (response_tx, _response_rx) = oneshot::channel();
+
+        app.on_elicitation_request(
+            acp_utils::notifications::ElicitationParams {
+                server_name: "test-server".to_string(),
+                request: acp_utils::notifications::CreateElicitationRequestParams::FormElicitationParams {
+                    meta: None,
+                    message: "regular form".to_string(),
+                    requested_schema: acp_utils::ElicitationSchema::builder().build().unwrap(),
+                },
+            },
+            response_tx,
+        );
+
+        assert!(!app.screen_router.is_plan_review());
+        assert!(matches!(app.conversation_screen.active_modal, Some(Modal::Elicitation(_))));
+    }
+
+    #[tokio::test]
+    async fn plan_review_finish_routes_response_and_closes_mode() {
+        let mut app = make_app();
+        let (response_tx, response_rx) = oneshot::channel();
+        app.on_elicitation_request(make_plan_review_params("# Plan"), response_tx);
+
+        send_key(&mut app, KeyCode::Char('a'), KeyModifiers::NONE).await;
+
+        assert!(!app.screen_router.is_plan_review(), "plan review mode should close after finish");
+        let response = response_rx.await.expect("plan review response should be sent");
+        assert_eq!(response.action, acp_utils::notifications::ElicitationAction::Accept);
+        assert_eq!(response.content.expect("approve content")["decision"], "approve");
+    }
+
+    #[tokio::test]
+    async fn plan_review_cancel_routes_cancel_response() {
+        let mut app = make_app();
+        let (response_tx, response_rx) = oneshot::channel();
+        app.on_elicitation_request(make_plan_review_params("# Plan"), response_tx);
+
+        send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+
+        let response = response_rx.await.expect("plan review response should be sent");
+        assert_eq!(response.action, acp_utils::notifications::ElicitationAction::Cancel);
+        assert!(response.content.is_none());
+    }
+
+    #[tokio::test]
+    async fn replacing_pending_plan_review_cancels_the_previous_response() {
+        let mut app = make_app();
+        let (first_tx, first_rx) = oneshot::channel();
+        let (second_tx, second_rx) = oneshot::channel();
+
+        app.on_elicitation_request(make_plan_review_params("# First"), first_tx);
+        app.on_elicitation_request(make_plan_review_params("# Second"), second_tx);
+
+        let first_response = first_rx.await.expect("first plan review response should be sent");
+        assert_eq!(first_response.action, acp_utils::notifications::ElicitationAction::Cancel);
+        assert!(first_response.content.is_none());
+        assert!(app.screen_router.is_plan_review(), "replacement plan review should stay open");
+
+        send_key(&mut app, KeyCode::Char('a'), KeyModifiers::NONE).await;
+
+        let second_response = second_rx.await.expect("replacement plan review response should be sent");
+        assert_eq!(second_response.action, acp_utils::notifications::ElicitationAction::Accept);
+        assert_eq!(second_response.content.expect("approve content")["decision"], "approve");
     }
 
     #[tokio::test]

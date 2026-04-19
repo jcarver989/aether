@@ -1,5 +1,7 @@
 use crate::components::file_list_panel::{FileListMessage, FileListPanel};
 use crate::components::git_diff::git_diff_panel::{GitDiffPanel, GitDiffPanelMessage};
+use crate::components::git_diff::{DiffAnchor, PatchAnchor};
+use crate::components::review_comments::{CommentAnchor, ReviewComment};
 use crate::git_diff::{GitDiffDocument, PatchLineKind, load_git_diff};
 use std::path::PathBuf;
 use tui::{Component, Either, Event, Frame, KeyCode, Line, SplitLayout, SplitPanel, Style, ViewContext};
@@ -17,20 +19,18 @@ pub enum GitDiffLoadState {
     Error { message: String },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct PatchLineRef {
-    pub hunk_index: usize,
-    pub line_index: usize,
-}
-
 #[derive(Debug, Clone)]
-pub struct QueuedComment {
+pub(crate) struct GitDiffCommentContext {
     pub file_path: String,
-    pub patch_ref: PatchLineRef,
     pub line_text: String,
     pub line_number: Option<usize>,
     pub line_kind: PatchLineKind,
-    pub comment: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct QueuedComment {
+    pub review: ReviewComment<PatchAnchor>,
+    pub context: GitDiffCommentContext,
 }
 
 pub struct GitDiffMode {
@@ -38,8 +38,8 @@ pub struct GitDiffMode {
     cached_repo_root: Option<PathBuf>,
     document_revision: usize,
     pub load_state: GitDiffLoadState,
-    pub(crate) split: SplitPanel<FileListPanel, GitDiffPanel>,
-    pub(crate) queued_comments: Vec<QueuedComment>,
+    split: SplitPanel<FileListPanel, GitDiffPanel>,
+    queued_comments: Vec<QueuedComment>,
     pending_restore: Option<RefreshState>,
 }
 
@@ -101,44 +101,55 @@ impl GitDiffMode {
         self.split.focus_left();
     }
 
-    pub async fn on_key_event(&mut self, event: &Event) -> Vec<GitDiffViewMessage> {
+    pub fn load_document(&mut self, doc: GitDiffDocument) {
+        self.apply_loaded_document(doc, None);
+    }
+
+    pub fn set_load_state(&mut self, state: GitDiffLoadState) {
+        self.load_state = state;
+    }
+}
+
+impl Component for GitDiffMode {
+    type Message = GitDiffViewMessage;
+
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<GitDiffViewMessage>> {
         if self.split.right().is_in_comment_mode() {
-            return self.on_comment_mode_event(event).await;
+            return Some(self.on_comment_mode_event(event).await);
         }
 
         if let Event::Key(key) = event {
             match key.code {
-                KeyCode::Esc => return vec![GitDiffViewMessage::Close],
-                KeyCode::Char('r') => return vec![GitDiffViewMessage::Refresh],
+                KeyCode::Esc => return Some(vec![GitDiffViewMessage::Close]),
+                KeyCode::Char('r') => return Some(vec![GitDiffViewMessage::Refresh]),
                 KeyCode::Char('u') => {
                     self.queued_comments.pop();
                     self.split.left_mut().set_queued_comment_count(self.queued_comments.len());
                     self.split.right_mut().invalidate_submitted_comments_layer();
-                    return vec![];
+                    return Some(vec![]);
                 }
                 KeyCode::Char('s') if !self.split.is_left_focused() => {
-                    return self.submit_review();
+                    return Some(self.submit_review());
                 }
                 KeyCode::Char('h') | KeyCode::Left if !self.split.is_left_focused() => {
                     self.split.focus_left();
-                    return vec![];
+                    return Some(vec![]);
                 }
                 _ => {}
             }
         }
 
-        if let Some(msgs) = self.split.on_event(event).await {
-            return self.handle_split_messages(msgs);
-        }
-
-        vec![]
+        self.split.on_event(event).await.map(|msgs| self.handle_split_messages(msgs))
     }
 
-    pub fn render_frame(&mut self, context: &ViewContext) -> Frame {
+    fn render(&mut self, context: &ViewContext) -> Frame {
         let theme = &context.theme;
         if context.size.width < 10 {
             return Frame::new(vec![Line::new("Too narrow")]);
         }
+
+        let body_height = context.size.height.saturating_sub(1);
+        let body_context = context.with_size((context.size.width, body_height));
 
         let status_msg = match &self.load_state {
             GitDiffLoadState::Loading => Some("Loading...".to_string()),
@@ -150,8 +161,8 @@ impl GitDiffMode {
             GitDiffLoadState::Ready(_) => None,
         };
 
-        if let Some(msg) = status_msg {
-            let height = context.size.height as usize;
+        let body = if let Some(msg) = status_msg {
+            let height = body_height as usize;
             let widths = self.split.widths(context.size.width);
             let left_width = widths.left as usize;
             let mut rows = Vec::with_capacity(height);
@@ -164,14 +175,23 @@ impl GitDiffMode {
                 }
                 rows.push(line);
             }
-            return Frame::new(rows);
-        }
+            Frame::new(rows)
+        } else {
+            self.prepare_right_panel_layers(&body_context);
+            self.split.set_separator_style(Style::default().bg_color(theme.background()));
+            self.split.render(&body_context)
+        };
 
-        self.prepare_right_panel_layers(context);
-        self.split.set_separator_style(Style::default().bg_color(theme.background()));
-        self.split.render(context)
+        let mut help = Line::default();
+        help.push_with_style(
+            "j/k:move  n/p:hunk  h/l:focus  c:comment  s:submit  u:undo  r:refresh  Esc:close",
+            Style::fg(theme.muted()),
+        );
+        Frame::vstack([body, Frame::new(vec![help])])
     }
+}
 
+impl GitDiffMode {
     fn prepare_right_panel_layers(&mut self, context: &ViewContext) {
         let GitDiffLoadState::Ready(doc) = &self.load_state else {
             return;
@@ -181,7 +201,7 @@ impl GitDiffMode {
         let file = &doc.files[selected];
 
         let file_comments =
-            self.queued_comments.iter().filter(|comment| comment.file_path == file.path).collect::<Vec<_>>();
+            self.queued_comments.iter().filter(|comment| comment.context.file_path == file.path).collect::<Vec<_>>();
 
         let right_width = self.split.widths(context.size.width).right;
         self.split.right_mut().ensure_layers(file, &file_comments, right_width, self.document_revision);
@@ -227,28 +247,30 @@ impl GitDiffMode {
         vec![]
     }
 
-    fn queue_comment(&mut self, anchor: PatchLineRef, text: &str) {
+    fn queue_comment(&mut self, anchor: DiffAnchor, text: &str) {
         let GitDiffLoadState::Ready(doc) = &self.load_state else {
             return;
         };
+        let CommentAnchor(PatchAnchor { hunk: hunk_index, line: line_index }) = anchor;
         let selected = self.split.left().selected_file_index().unwrap_or(0);
         let Some(file) = doc.files.get(selected) else {
             return;
         };
-        let Some(hunk) = file.hunks.get(anchor.hunk_index) else {
+        let Some(hunk) = file.hunks.get(hunk_index) else {
             return;
         };
-        let Some(patch_line) = hunk.lines.get(anchor.line_index) else {
+        let Some(patch_line) = hunk.lines.get(line_index) else {
             return;
         };
 
         self.queued_comments.push(QueuedComment {
-            file_path: file.path.clone(),
-            patch_ref: anchor,
-            line_text: patch_line.text.clone(),
-            line_number: patch_line.new_line_no.or(patch_line.old_line_no),
-            line_kind: patch_line.kind,
-            comment: text.to_string(),
+            review: ReviewComment::new(anchor, text),
+            context: GitDiffCommentContext {
+                file_path: file.path.clone(),
+                line_text: patch_line.text.clone(),
+                line_number: patch_line.new_line_no.or(patch_line.old_line_no),
+                line_kind: patch_line.kind,
+            },
         });
         self.split.left_mut().set_queued_comment_count(self.queued_comments.len());
         self.split.right_mut().invalidate_submitted_comments_layer();
@@ -268,10 +290,6 @@ impl GitDiffMode {
         };
         let idx = self.split.left().selected_file_index()?;
         doc.files.get(idx).map(|f| f.path.as_str())
-    }
-
-    pub fn load_document(&mut self, doc: GitDiffDocument) {
-        self.apply_loaded_document(doc, None);
     }
 
     fn apply_loaded_document(&mut self, doc: GitDiffDocument, restore: Option<RefreshState>) {
@@ -316,10 +334,10 @@ pub(crate) fn format_review_prompt(comments: &[QueuedComment]) -> String {
 
     let mut file_groups: Vec<(&str, Vec<&QueuedComment>)> = Vec::new();
     for comment in comments {
-        if let Some(group) = file_groups.iter_mut().find(|(path, _)| *path == comment.file_path) {
+        if let Some(group) = file_groups.iter_mut().find(|(path, _)| *path == comment.context.file_path) {
             group.1.push(comment);
         } else {
-            file_groups.push((&comment.file_path, vec![comment]));
+            file_groups.push((&comment.context.file_path, vec![comment]));
         }
     }
 
@@ -327,18 +345,18 @@ pub(crate) fn format_review_prompt(comments: &[QueuedComment]) -> String {
         write!(prompt, "\n## `{file_path}`\n").unwrap();
 
         for comment in file_comments {
-            let kind_label = match comment.line_kind {
+            let kind_label = match comment.context.line_kind {
                 PatchLineKind::Added => "added",
                 PatchLineKind::Removed => "removed",
                 PatchLineKind::Context => "context",
                 PatchLineKind::HunkHeader => "header",
                 PatchLineKind::Meta => "meta",
             };
-            let line_ref = match comment.line_number {
+            let line_ref = match comment.context.line_number {
                 Some(n) => format!("Line {n} ({kind_label})"),
                 None => kind_label.to_string(),
             };
-            write!(prompt, "\n**{line_ref}:** `{}`\n> {}\n", comment.line_text, comment.comment).unwrap();
+            write!(prompt, "\n**{line_ref}:** `{}`\n> {}\n", comment.context.line_text, comment.review.body).unwrap();
         }
     }
 

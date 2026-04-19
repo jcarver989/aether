@@ -1,34 +1,33 @@
-use super::git_diff_compositor::{GitDiffCompositor, apply_cursor_highlight};
-use super::git_diff_draft_editor::{DraftCommentEdit, DraftCommentEditor};
-use crate::components::app::git_diff_mode::{PatchLineRef, QueuedComment};
+use super::git_diff_compositor::GitDiffCompositor;
+use super::{DiffAnchor, PatchAnchor};
+use crate::components::app::git_diff_mode::QueuedComment;
+use crate::components::review_comments::{KeyOutcome, Navigation, ReviewSurface, ReviewSurfaceEvent};
 use crate::git_diff::{FileDiff, FileStatus, PatchLineKind};
 use tui::{Component, Cursor, Event, Frame, KeyCode, Line, MouseEventKind, Style, ViewContext};
 
+const PAGE_SIZE: usize = 20;
+
 pub struct GitDiffPanel {
-    pub(crate) scroll: usize,
-    pub(crate) cursor_line: usize,
     file_header: String,
     file_status: FileStatus,
     binary: bool,
-    saved_cursor_anchor: Option<PatchLineRef>,
-    draft_editor: DraftCommentEditor,
+    saved_cursor_anchor: Option<DiffAnchor>,
+    surface: ReviewSurface<PatchAnchor>,
     compositor: GitDiffCompositor,
 }
 
 pub enum GitDiffPanelMessage {
-    CommentSubmitted { anchor: PatchLineRef, text: String },
+    CommentSubmitted { anchor: DiffAnchor, text: String },
 }
 
 impl GitDiffPanel {
     pub fn new() -> Self {
         Self {
-            scroll: 0,
-            cursor_line: 0,
             file_header: String::new(),
             file_status: FileStatus::Modified,
             binary: false,
             saved_cursor_anchor: None,
-            draft_editor: DraftCommentEditor::new(),
+            surface: ReviewSurface::new(),
             compositor: GitDiffCompositor::new(),
         }
     }
@@ -44,18 +43,16 @@ impl GitDiffPanel {
     }
 
     pub fn reset_for_new_file(&mut self) {
-        self.cursor_line = 0;
-        self.scroll = 0;
-        self.draft_editor.cancel();
+        self.surface = ReviewSurface::new();
         self.invalidate_diff_layer();
     }
 
     pub fn reset_scroll(&mut self) {
-        self.scroll = 0;
+        self.surface.cursor_mut().scroll = 0;
     }
 
     pub fn is_in_comment_mode(&self) -> bool {
-        self.draft_editor.is_active()
+        self.surface.is_in_comment_mode()
     }
 
     pub fn ensure_layers(
@@ -73,7 +70,6 @@ impl GitDiffPanel {
                 self.compositor.invalidate_all();
             }
             self.restore_cursor_to_anchor(cursor_anchor);
-            self.cursor_line = self.cursor_line.min(self.max_scroll());
             return;
         }
 
@@ -84,124 +80,55 @@ impl GitDiffPanel {
 
         let context = ViewContext::new((width, 0));
         self.compositor.ensure_diff_layer(file, width, use_split_patch, document_revision, &context);
-        self.compositor.ensure_submitted_layer(file, comments, width, &context.theme);
+        self.compositor.ensure_submitted_layer(file, comments, &context);
 
         self.restore_cursor_to_anchor(cursor_anchor);
-        self.cursor_line = self.cursor_line.min(self.max_scroll());
-    }
-
-    pub(crate) fn max_scroll(&self) -> usize {
-        self.line_refs().len().saturating_sub(1)
-    }
-
-    pub(crate) fn move_cursor(&mut self, delta: isize) -> bool {
-        let max = self.max_scroll();
-        let next = if delta.is_negative() {
-            self.cursor_line.saturating_sub(delta.unsigned_abs())
-        } else {
-            (self.cursor_line + delta.unsigned_abs()).min(max)
-        };
-        let changed = next != self.cursor_line;
-        self.cursor_line = next;
-        changed
-    }
-
-    fn move_cursor_to_start(&mut self) -> bool {
-        let changed = self.cursor_line != 0;
-        self.cursor_line = 0;
-        changed
-    }
-
-    fn move_cursor_to_end(&mut self) -> bool {
-        let next = self.max_scroll();
-        let changed = next != self.cursor_line;
-        self.cursor_line = next;
-        changed
-    }
-
-    fn ensure_visual_row_visible(&mut self, visual_row: usize, viewport_height: usize) {
-        if viewport_height == 0 {
-            return;
-        }
-
-        if visual_row < self.scroll {
-            self.scroll = visual_row;
-        } else if visual_row >= self.scroll + viewport_height {
-            self.scroll = visual_row.saturating_sub(viewport_height - 1);
-        }
     }
 
     pub(crate) fn jump_next_hunk(&mut self) -> bool {
-        let current = self.cursor_line;
-        if let Some(&next) = self.hunk_offsets_slice().iter().find(|&&offset| offset > current) {
-            let next = next.min(self.max_scroll());
-            let changed = next != self.cursor_line;
-            self.cursor_line = next;
-            return changed;
+        let current = self.surface.cursor().row;
+        let max = self.max_row();
+        let Some(&next) = self.hunk_offsets_slice().iter().find(|&&offset| offset > current) else {
+            return false;
+        };
+        let next = next.min(max);
+        let cursor = self.surface.cursor_mut();
+        if cursor.row == next {
+            return false;
         }
-        false
+        cursor.row = next;
+        true
     }
 
     pub(crate) fn jump_prev_hunk(&mut self) -> bool {
-        let current = self.cursor_line;
-        if let Some(&prev) = self.hunk_offsets_slice().iter().rev().find(|&&offset| offset < current) {
-            let changed = prev != self.cursor_line;
-            self.cursor_line = prev;
-            return changed;
-        }
-        false
-    }
-
-    fn enter_comment_mode(&mut self) {
-        if self.cursor_line >= self.line_refs().len() {
-            return;
-        }
-
-        let Some(anchor) = self.line_refs()[self.cursor_line] else {
-            return;
+        let current = self.surface.cursor().row;
+        let Some(&prev) = self.hunk_offsets_slice().iter().rev().find(|&&offset| offset < current) else {
+            return false;
         };
-
-        self.draft_editor.begin(anchor);
+        let cursor = self.surface.cursor_mut();
+        if cursor.row == prev {
+            return false;
+        }
+        cursor.row = prev;
+        true
     }
 
-    fn on_comment_input(&mut self, code: KeyCode) -> Vec<GitDiffPanelMessage> {
-        match self.draft_editor.handle_key(code) {
-            DraftCommentEdit::Submitted { anchor, text } => {
-                vec![GitDiffPanelMessage::CommentSubmitted { anchor, text }]
-            }
-            DraftCommentEdit::Noop | DraftCommentEdit::Cancelled => vec![],
-        }
+    fn max_row(&self) -> usize {
+        self.compositor.rendered_patch().map_or(0, |rendered| rendered.surface.max_row())
     }
 
-    fn current_cursor_anchor(&self) -> Option<PatchLineRef> {
-        let line_refs = self.line_refs();
-
-        if self.cursor_line < line_refs.len() {
-            if let Some(anchor) = line_refs[self.cursor_line] {
-                return Some(anchor);
-            }
-
-            for index in (0..self.cursor_line).rev() {
-                if let Some(anchor) = line_refs[index] {
-                    return Some(anchor);
-                }
-            }
-        }
-
-        None
+    fn current_cursor_anchor(&self) -> Option<DiffAnchor> {
+        self.compositor
+            .rendered_patch()
+            .and_then(|rendered| rendered.surface.anchor_at_or_before(self.surface.cursor().row))
     }
 
-    fn restore_cursor_to_anchor(&mut self, anchor: Option<PatchLineRef>) {
-        let line_refs = self.line_refs();
-
-        if let Some(anchor) = anchor
-            && let Some(row) = line_refs.iter().position(|line_ref| *line_ref == Some(anchor))
-        {
-            self.cursor_line = row;
-            return;
+    fn restore_cursor_to_anchor(&mut self, anchor: Option<DiffAnchor>) {
+        if let Some(rendered) = self.compositor.rendered_patch() {
+            rendered.surface.restore_cursor(self.surface.cursor_mut(), anchor);
+        } else {
+            self.surface.cursor_mut().row = 0;
         }
-
-        self.cursor_line = self.cursor_line.min(self.max_scroll());
     }
 
     fn update_file_header(&mut self, file: &FileDiff) {
@@ -246,10 +173,6 @@ impl GitDiffPanel {
         Frame::new(lines).with_cursor(Cursor::hidden())
     }
 
-    fn line_refs(&self) -> &[Option<PatchLineRef>] {
-        self.compositor.rendered_patch().map_or(&[], |rendered| rendered.line_refs.as_slice())
-    }
-
     fn hunk_offsets_slice(&self) -> &[usize] {
         self.compositor.rendered_patch().map_or(&[], |rendered| rendered.hunk_offsets.as_slice())
     }
@@ -260,13 +183,14 @@ impl Component for GitDiffPanel {
 
     async fn on_event(&mut self, event: &Event) -> Option<Vec<Self::Message>> {
         if let Event::Mouse(mouse) = event {
+            let rendered = self.compositor.rendered_patch()?;
             return match mouse.kind {
                 MouseEventKind::ScrollUp if !self.is_in_comment_mode() => {
-                    self.move_cursor(-3);
+                    self.surface.on_mouse_scroll(-3, &rendered.surface, Navigation::RowStep { page_size: PAGE_SIZE });
                     Some(vec![])
                 }
                 MouseEventKind::ScrollDown if !self.is_in_comment_mode() => {
-                    self.move_cursor(3);
+                    self.surface.on_mouse_scroll(3, &rendered.surface, Navigation::RowStep { page_size: PAGE_SIZE });
                     Some(vec![])
                 }
                 _ => None,
@@ -277,48 +201,26 @@ impl Component for GitDiffPanel {
             return None;
         };
 
-        if self.is_in_comment_mode() {
-            return Some(self.on_comment_input(key.code));
-        }
+        let rendered = self.compositor.rendered_patch()?;
 
-        match key.code {
-            KeyCode::Char('j') | KeyCode::Down => {
-                self.move_cursor(1);
-                Some(vec![])
+        let outcome =
+            self.surface.on_key(key.code, &rendered.surface, Navigation::RowStep { page_size: PAGE_SIZE }).await;
+        match outcome {
+            KeyOutcome::Event(ReviewSurfaceEvent::CommentSubmitted { anchor, text }) => {
+                Some(vec![GitDiffPanelMessage::CommentSubmitted { anchor, text }])
             }
-            KeyCode::Char('k') | KeyCode::Up => {
-                self.move_cursor(-1);
-                Some(vec![])
-            }
-            KeyCode::Char('g') => {
-                self.move_cursor_to_start();
-                Some(vec![])
-            }
-            KeyCode::Char('G') => {
-                self.move_cursor_to_end();
-                Some(vec![])
-            }
-            KeyCode::PageDown => {
-                self.move_cursor(20);
-                Some(vec![])
-            }
-            KeyCode::PageUp => {
-                self.move_cursor(-20);
-                Some(vec![])
-            }
-            KeyCode::Char('n') => {
-                self.jump_next_hunk();
-                Some(vec![])
-            }
-            KeyCode::Char('p') => {
-                self.jump_prev_hunk();
-                Some(vec![])
-            }
-            KeyCode::Char('c') => {
-                self.enter_comment_mode();
-                Some(vec![])
-            }
-            _ => None,
+            KeyOutcome::Consumed => Some(vec![]),
+            KeyOutcome::PassThrough => match key.code {
+                KeyCode::Char('n') => {
+                    self.jump_next_hunk();
+                    Some(vec![])
+                }
+                KeyCode::Char('p') => {
+                    self.jump_prev_hunk();
+                    Some(vec![])
+                }
+                _ => None,
+            },
         }
     }
 
@@ -331,7 +233,6 @@ impl Component for GitDiffPanel {
         }
 
         let body_height = height.saturating_sub(2);
-        let right_width = usize::from(ctx.size.width);
 
         let Some(rendered) = self.compositor.rendered_patch() else {
             let mut lines = vec![self.render_header_line()];
@@ -339,71 +240,15 @@ impl Component for GitDiffPanel {
             return Frame::new(lines).with_cursor(Cursor::hidden());
         };
 
-        if rendered.lines.is_empty() {
+        if rendered.surface.lines().is_empty() {
             let mut lines = vec![self.render_header_line()];
             lines.resize(height, Line::default());
             return Frame::new(lines).with_cursor(Cursor::hidden());
         }
 
-        let diff_lines: Vec<Line> = rendered
-            .lines
-            .iter()
-            .enumerate()
-            .map(|(i, line)| if i == self.cursor_line { apply_cursor_highlight(line, theme) } else { line.clone() })
-            .collect();
-        let mut frame = Frame::new(diff_lines);
-
-        let mut cursor_offset: usize = 0;
-        for splice in self.compositor.comment_splices().iter().rev() {
-            if splice.after_row < self.cursor_line {
-                cursor_offset += splice.frame.lines().len();
-            }
-            frame = frame.splice(splice.after_row, splice.frame.clone());
-        }
-
-        let draft_state = self.draft_editor.state();
-        let mut draft_end_visual_row = None;
-        if let Some(ref draft) = draft_state
-            && let Some(draft_splice) = self.compositor.draft_splice(draft, right_width, theme)
-        {
-            if draft_splice.splice.after_row < self.cursor_line {
-                cursor_offset += draft_splice.splice.frame.lines().len();
-            }
-
-            let submitted_offset: usize = self
-                .compositor
-                .comment_splices()
-                .iter()
-                .filter(|s| s.after_row <= draft_splice.splice.after_row)
-                .map(|s| s.frame.lines().len())
-                .sum();
-
-            let draft_frame_height = draft_splice.splice.frame.lines().len();
-            frame = frame.splice(draft_splice.splice.after_row + submitted_offset, draft_splice.splice.frame);
-
-            draft_end_visual_row = Some(draft_splice.splice.after_row + submitted_offset + draft_frame_height);
-        }
-
-        let cursor_visual_row = self.cursor_line + cursor_offset;
-        let max_scroll = frame.lines().len().saturating_sub(body_height);
-        self.scroll = self.scroll.min(max_scroll);
-        self.ensure_visual_row_visible(cursor_visual_row, body_height);
-
-        if body_height > 0
-            && let Some(splice) = self.compositor.comment_splices().iter().find(|s| s.after_row == self.cursor_line)
-        {
-            let comment_end = cursor_visual_row + splice.frame.lines().len();
-            if comment_end >= self.scroll + body_height {
-                self.scroll = comment_end.saturating_sub(body_height - 1).min(cursor_visual_row);
-            }
-        }
-
-        if let Some(draft_end) = draft_end_visual_row {
-            self.ensure_visual_row_visible(draft_end, body_height);
-        }
-        self.scroll = self.scroll.min(max_scroll);
-
-        let viewport = frame.scroll(self.scroll, body_height);
+        let rendered_surface = &rendered.surface;
+        let comment_splices = self.compositor.comment_splices();
+        let viewport = self.surface.render_body_with_splices(rendered_surface, comment_splices, ctx, body_height);
 
         let mut header_lines = vec![self.render_header_line()];
         if height > 1 {

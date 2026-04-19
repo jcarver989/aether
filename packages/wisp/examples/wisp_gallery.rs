@@ -5,8 +5,10 @@ use tui::{
     Component, CrosstermEvent, Event, Frame, Gallery, GalleryMessage, Line, MouseCapture, TerminalConfig,
     TerminalRuntime, Theme, ViewContext, terminal_size,
 };
+use wisp::components::app::{PlanReviewInput, PlanReviewMode};
 use wisp::components::command_picker::{CommandEntry, CommandPicker};
 use wisp::components::file_picker::{FileMatch, FilePicker};
+use wisp::components::plan_review::PlanDocument;
 use wisp::components::plan_view::PlanView;
 use wisp::components::progress_indicator::ProgressIndicator;
 use wisp::components::status_line::{ContextUsageDisplay, StatusLine};
@@ -24,6 +26,7 @@ enum WispStory {
     ThoughtMessage(ThoughtMessageStory),
     StatusLine(StatusLineStory),
     PlanView(PlanViewStory),
+    PlanReview(Box<PlanReviewStory>),
 }
 
 impl Component for WispStory {
@@ -39,6 +42,7 @@ impl Component for WispStory {
             Self::ThoughtMessage(c) => c.on_event(event).await,
             Self::StatusLine(c) => c.on_event(event).await,
             Self::PlanView(c) => c.on_event(event).await,
+            Self::PlanReview(c) => c.on_event(event).await,
         }
     }
 
@@ -52,6 +56,7 @@ impl Component for WispStory {
             Self::ThoughtMessage(c) => c.render(ctx),
             Self::StatusLine(c) => c.render(ctx),
             Self::PlanView(c) => c.render(ctx),
+            Self::PlanReview(c) => c.render(ctx),
         }
     }
 }
@@ -198,6 +203,102 @@ impl Component for PlanViewStory {
     }
 }
 
+struct PlanReviewStory {
+    mode: PlanReviewMode,
+}
+
+impl Component for PlanReviewStory {
+    type Message = ();
+
+    async fn on_event(&mut self, event: &Event) -> Option<Vec<()>> {
+        self.mode.on_event(event).await;
+        Some(vec![])
+    }
+
+    fn render(&mut self, ctx: &ViewContext) -> Frame {
+        self.mode.render(ctx)
+    }
+}
+
+fn sample_plan_review_markdown() -> &'static str {
+    r"# Overview
+We need to add a native markdown review surface in Wisp for plan approval.
+The experience should feel like the git diff review flow, but operate on stable source lines from the markdown plan.
+
+## Goals
+- Keep the default path inside Wisp.
+- Preserve a clean fallback for non-Wisp clients.
+- Make the outline pane useful for large plans.
+
+### Success criteria
+1. Reviewers can move around with vim-style keys.
+2. Reviewers can leave inline comments on source lines.
+3. Reviewers can approve, request changes, or cancel.
+
+## UX sketch
+The screen should have two panes:
+- an outline on the left
+- the full markdown source on the right
+- inline comments rendered directly below the anchored line
+
+### Interaction details
+- `j` / `k` move within the focused pane
+- `h` / `l` switch focus
+- `Enter` jumps from the outline to the selected section
+- `c` creates an inline comment draft
+- `a` approves the plan
+- `r` requests changes
+
+## Data model
+We should parse the markdown into a line-stable structure.
+
+```rust
+pub struct PlanDocument {
+    pub path: String,
+    pub lines: Vec<PlanSourceLine>,
+    pub outline: Vec<PlanSection>,
+}
+
+pub struct PlanSection {
+    pub title: String,
+    pub level: u8,
+    pub first_line_no: usize,
+}
+```
+
+### Notes on rendering
+Paragraphs can be styled, but comments must stay anchored to the original source line.
+That means we should not reflow the markdown before attaching review comments.
+
+## Implementation phases
+### Phase 1
+- parse headings
+- render the outline
+- render line numbers
+- support basic navigation
+
+### Phase 2
+- add inline comments
+- compile review feedback
+- support approve / deny / cancel
+
+### Phase 3
+- reuse shared review primitives with git diff
+- reduce duplicate splice and highlight code
+- add a gallery story for rapid iteration
+
+## Risks
+- The outline and document cursor can fight each other if they both own selection.
+- Reflowed markdown would make line comments ambiguous.
+- Duplicated rendering logic can drift over time.
+
+## Open questions
+- Should long code fences soft-wrap or hard-truncate?
+- Should we show section context in compiled feedback?
+- Do we want richer markdown styling for tables later?
+"
+}
+
 fn sample_commands() -> Vec<CommandEntry> {
     vec![
         CommandEntry {
@@ -299,6 +400,15 @@ fn stories() -> Vec<(String, WispStory)> {
             WispStory::PlanView(PlanViewStory {
                 entries: sample_plan_entries(),
             }),
+        ),
+        (
+            "PlanReview".into(),
+            WispStory::PlanReview(Box::new(PlanReviewStory {
+                mode: PlanReviewMode::new(PlanReviewInput {
+                    title: "Review /tmp/gallery-plan.md".to_string(),
+                    document: PlanDocument::parse("/tmp/gallery-plan.md", sample_plan_review_markdown()),
+                }),
+            })),
         ),
     ]
 }

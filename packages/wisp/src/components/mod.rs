@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod command_picker;
+pub(crate) mod common;
 pub(crate) mod context_bar;
 pub(crate) mod conversation_screen;
 pub mod conversation_window;
@@ -13,12 +14,14 @@ pub mod file_tree;
 pub mod git_diff;
 pub mod input_prompt;
 pub mod model_selector;
+pub mod plan_review;
 pub(crate) mod plan_tracker;
 pub mod plan_view;
 pub mod progress_indicator;
 pub(crate) mod prompt_composer;
 pub mod provider_login;
 pub(crate) mod reasoning_bar;
+pub(crate) mod review_comments;
 pub mod server_status;
 pub(crate) mod session_picker;
 pub mod status_line;
