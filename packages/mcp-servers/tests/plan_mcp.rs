@@ -1,9 +1,9 @@
-use mcp_servers::PlanMcp;
+use mcp_servers::{DEFAULT_PLAN_PROMPT, PlanMcp};
 use mcp_utils::client::{McpClient, McpClientEvent};
 use mcp_utils::testing::connect;
 use rmcp::model::{
     CallToolRequestParams, ClientCapabilities, ClientInfo, CreateElicitationRequestParams, CreateElicitationResult,
-    ElicitationAction, Implementation,
+    ElicitationAction, GetPromptRequestParams, Implementation,
 };
 use rmcp::service::RunningService;
 use rmcp::{RoleClient, Service};
@@ -90,4 +90,77 @@ async fn submit_plan<T: Service<RoleClient>>(
     let content = result.content.first().expect("Expected content");
     let text = content.as_text().expect("Expected text content");
     serde_json::from_str(&text.text).expect("Invalid JSON response")
+}
+
+fn silent_client() -> McpClient {
+    let (event_tx, _event_rx) = mpsc::channel(8);
+    McpClient::new(test_client_info(), "plan-test-server".to_string(), event_tx, Arc::new(RwLock::new(Vec::new())))
+}
+
+#[tokio::test]
+async fn list_prompts_returns_plan_prompt() {
+    let (_server_handle, client_handle) = connect(PlanMcp::new(), silent_client()).await.expect("connect client");
+    let result = client_handle.list_prompts(None).await.expect("list prompts");
+
+    assert_eq!(result.prompts.len(), 1);
+    assert_eq!(result.prompts[0].name, "plan");
+
+    let args = result.prompts[0].arguments.as_ref().expect("plan prompt should advertise arguments");
+    assert_eq!(args.len(), 1);
+    assert_eq!(args[0].name, "ARGUMENTS");
+}
+
+#[tokio::test]
+async fn get_prompt_returns_default_body_when_unconfigured() {
+    let (_server_handle, client_handle) = connect(PlanMcp::new(), silent_client()).await.expect("connect client");
+    let result = client_handle.get_prompt(GetPromptRequestParams::new("plan")).await.expect("get prompt");
+
+    assert_eq!(result.messages.len(), 1);
+    let text = extract_user_text(&result.messages[0]);
+    assert_eq!(text, DEFAULT_PLAN_PROMPT);
+}
+
+#[tokio::test]
+async fn get_prompt_substitutes_arguments() {
+    let (_server_handle, client_handle) = connect(PlanMcp::new(), silent_client()).await.expect("connect client");
+
+    let args = json!({ "ARGUMENTS": "wire up the widget" }).as_object().unwrap().clone();
+    let request = GetPromptRequestParams::new("plan").with_arguments(args);
+    let result = client_handle.get_prompt(request).await.expect("get prompt");
+
+    let text = extract_user_text(&result.messages[0]);
+    assert!(text.contains("<task>wire up the widget</task>"), "expected substituted task in: {text}");
+    assert!(!text.contains("$ARGUMENTS"), "expected $ARGUMENTS placeholder to be gone in: {text}");
+}
+
+#[tokio::test]
+async fn get_prompt_uses_configured_prompt_file() {
+    let temp_dir = TempDir::new().expect("tempdir");
+    let path = temp_dir.path().join("custom.md");
+    fs::write(&path, "custom plan mode body").expect("write custom prompt");
+
+    let server = PlanMcp::new().with_prompt_file(path);
+    let (_server_handle, client_handle) = connect(server, silent_client()).await.expect("connect client");
+
+    let result = client_handle.get_prompt(GetPromptRequestParams::new("plan")).await.expect("get prompt");
+    assert_eq!(extract_user_text(&result.messages[0]), "custom plan mode body");
+}
+
+#[tokio::test]
+async fn get_prompt_falls_back_when_configured_file_missing() {
+    let temp_dir = TempDir::new().expect("tempdir");
+    let missing = temp_dir.path().join("not-there.md");
+
+    let server = PlanMcp::new().with_prompt_file(missing);
+    let (_server_handle, client_handle) = connect(server, silent_client()).await.expect("connect client");
+
+    let result = client_handle.get_prompt(GetPromptRequestParams::new("plan")).await.expect("get prompt");
+    assert_eq!(extract_user_text(&result.messages[0]), DEFAULT_PLAN_PROMPT);
+}
+
+fn extract_user_text(message: &rmcp::model::PromptMessage) -> String {
+    match &message.content {
+        rmcp::model::PromptMessageContent::Text { text } => text.clone(),
+        other => panic!("expected text content, got {other:?}"),
+    }
 }

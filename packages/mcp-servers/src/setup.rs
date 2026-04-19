@@ -72,7 +72,12 @@ impl McpBuilderExt for McpBuilder {
             "survey",
             Box::new(|_args, _input| async move { SurveyMcp::new().into_dyn() }.boxed()),
         )
-        .register_in_memory_server("plan", Box::new(|_args, _input| async move { PlanMcp::new().into_dyn() }.boxed()))
+        .register_in_memory_server(
+            "plan",
+            Box::new(|args, _input| {
+                async move { PlanMcp::from_args(args).expect("Failed to parse PlanMcp args").into_dyn() }.boxed()
+            }),
+        )
         .register_in_memory_server(
             "tasks",
             Box::new(move |args, _input| {

@@ -1,37 +1,74 @@
+use clap::Parser;
 use rmcp::{
-    RoleServer, ServerHandler,
+    ErrorData as McpError, RoleServer, ServerHandler,
     handler::server::{
         router::tool::ToolRouter,
         wrapper::{Json, Parameters},
     },
     model::{
-        CreateElicitationRequestParams, ElicitationAction, ElicitationSchema, EnumSchema, Implementation, Meta,
-        ServerCapabilities, ServerInfo,
+        CreateElicitationRequestParams, ElicitationAction, ElicitationSchema, EnumSchema, GetPromptRequestParams,
+        GetPromptResult, Implementation, ListPromptsResult, Meta, PaginatedRequestParams, Prompt, PromptArgument,
+        PromptMessage, PromptMessageRole, ServerCapabilities, ServerInfo,
     },
     service::RequestContext,
     tool, tool_handler, tool_router,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use tokio::fs::read_to_string;
 use utils::plan_review::{PlanReviewDecision, PlanReviewElicitationMeta};
+use utils::substitution::substitute_parameters;
+
+pub const DEFAULT_PLAN_PROMPT: &str = include_str!("./default_prompt.md");
 
 const DECISION: &str = "decision";
 const FEEDBACK: &str = "feedback";
+const PROMPT_NAME: &str = "plan";
+const ARGUMENTS: &str = "ARGUMENTS";
+
+#[derive(Debug, Clone, Parser)]
+#[command(name = "plan-mcp")]
+pub struct PlanMcpArgs {
+    /// Markdown file whose body is returned as the `plan` MCP prompt.
+    /// When the flag is absent or the file is missing at invocation time,
+    /// `DEFAULT_PLAN_PROMPT` is used instead.
+    #[arg(long)]
+    pub prompt_file: Option<PathBuf>,
+}
+
+impl PlanMcpArgs {
+    pub fn from_args(args: Vec<String>) -> Result<Self, String> {
+        let mut full_args = vec!["plan-mcp".to_string()];
+        full_args.extend(args);
+        Self::try_parse_from(full_args).map_err(|e| format!("Failed to parse PlanMcp arguments: {e}"))
+    }
+}
 
 #[doc = include_str!("../docs/plan_mcp.md")]
 #[derive(Clone)]
 pub struct PlanMcp {
     tool_router: ToolRouter<Self>,
+    prompt_file: Option<PathBuf>,
 }
 
 #[tool_router]
 impl PlanMcp {
     pub fn new() -> Self {
-        Self { tool_router: Self::tool_router() }
+        Self { tool_router: Self::tool_router(), prompt_file: None }
+    }
+
+    pub fn from_args(args: Vec<String>) -> Result<Self, String> {
+        let PlanMcpArgs { prompt_file } = PlanMcpArgs::from_args(args)?;
+        Ok(Self { tool_router: Self::tool_router(), prompt_file })
+    }
+
+    pub fn with_prompt_file(mut self, path: PathBuf) -> Self {
+        self.prompt_file = Some(path);
+        self
     }
 
     #[doc = include_str!("./submit_plan_description.md")]
@@ -101,15 +138,50 @@ impl PlanMcp {
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for PlanMcp {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+        ServerInfo::new(ServerCapabilities::builder().enable_prompts().enable_tools().build())
             .with_server_info(Implementation::new("plan-mcp", "0.1.0"))
             .with_instructions("MCP Server for Plan mode")
     }
-}
 
-impl Default for PlanMcp {
-    fn default() -> Self {
-        Self::new()
+    async fn list_prompts(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListPromptsResult, McpError> {
+        let prompt = Prompt::new(
+            PROMPT_NAME,
+            Some("Generate an implementation plan for a task.".to_string()),
+            Some(vec![
+                PromptArgument::new(ARGUMENTS)
+                    .with_description("The task to generate a plan for.".to_string())
+                    .with_required(true),
+            ]),
+        );
+
+        Ok(ListPromptsResult { prompts: vec![prompt], next_cursor: None, meta: None })
+    }
+
+    async fn get_prompt(
+        &self,
+        request: GetPromptRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<GetPromptResult, McpError> {
+        if request.name.as_str() != PROMPT_NAME {
+            return Err(McpError::invalid_params(format!("Prompt '{}' not found", request.name), None));
+        }
+
+        let prompt = match &self.prompt_file {
+            Some(path) => read_to_string(path).await.unwrap_or(DEFAULT_PLAN_PROMPT.to_string()),
+            None => DEFAULT_PLAN_PROMPT.to_string(),
+        };
+
+        let arguments: Option<HashMap<String, String>> = request.arguments.as_ref().map(|json_map| {
+            json_map.iter().filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string()))).collect()
+        });
+
+        let content = substitute_parameters(&prompt, &arguments);
+        let messages = vec![PromptMessage::new_text(PromptMessageRole::User, content)];
+        Ok(GetPromptResult::new(messages).with_description("Enter plan mode.".to_string()))
     }
 }
 
@@ -154,6 +226,12 @@ impl Plan {
         }
 
         Ok(Self { path, content })
+    }
+}
+
+impl Default for PlanMcp {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -226,5 +304,17 @@ mod tests {
 
         let result = Plan::load(path.to_string_lossy().as_ref()).await;
         assert!(matches!(result, Err(SubmitPlanError::EmptyPlan(_))));
+    }
+
+    #[test]
+    fn from_args_parses_prompt_file() {
+        let server = PlanMcp::from_args(vec!["--prompt-file".into(), "/tmp/plan.md".into()]).unwrap();
+        assert_eq!(server.prompt_file, Some(PathBuf::from("/tmp/plan.md")));
+    }
+
+    #[test]
+    fn from_args_empty_is_ok() {
+        let server = PlanMcp::from_args(vec![]).unwrap();
+        assert_eq!(server.prompt_file, None);
     }
 }

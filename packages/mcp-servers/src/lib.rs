@@ -46,4 +46,4 @@ pub use subagents::{SubAgentsMcp, SubAgentsMcpArgs};
 pub use survey::SurveyMcp;
 
 #[cfg(feature = "plan")]
-pub use plan::PlanMcp;
+pub use plan::{DEFAULT_PLAN_PROMPT, PlanMcp, PlanMcpArgs};

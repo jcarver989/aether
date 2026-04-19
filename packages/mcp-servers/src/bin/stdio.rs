@@ -79,7 +79,10 @@ async fn main() -> Result<(), StdioError> {
             let server = SurveyMcp::from_args(cli.args).map_err(StdioError::ServerArgs)?;
             serve_stdio(server).await
         }
-        "plan" => serve_stdio(PlanMcp::new()).await,
+        "plan" => {
+            let server = PlanMcp::from_args(cli.args).map_err(StdioError::ServerArgs)?;
+            serve_stdio(server).await
+        }
         other => Err(StdioError::UnknownServer(other.to_string())),
     }
 }
