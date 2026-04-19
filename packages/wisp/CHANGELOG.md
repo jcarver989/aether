@@ -2,4 +2,4 @@
 
 All notable changes to this project will be documented in this file.
 
-## [aether-wisp-v0.1.9] - 2026-04-15
+## [aether-wisp-v0.2.0] - 2026-04-19

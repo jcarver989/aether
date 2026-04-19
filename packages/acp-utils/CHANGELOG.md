@@ -2,4 +2,4 @@
 
 All notable changes to this project will be documented in this file.
 
-## [aether-acp-utils-v0.1.8] - 2026-04-15
+## [aether-acp-utils-v0.2.0] - 2026-04-19
