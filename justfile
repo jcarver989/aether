@@ -70,7 +70,7 @@ sweep DAYS="7":
 
 # Sweep artifacts not used by the current toolchain
 sweep-installed:
-    cargo sweep --installed
+    cargo sweep --time 1
 
 # Build the workspace sandbox image
 build-sandbox TAG="aether-sandbox:latest":
@@ -84,6 +84,7 @@ run-sandbox:
 install:
     cargo install --path packages/aether-cli --force
     cargo install --path packages/wisp --force
+    cargo sweep --installed
 
 # Release only packages with changes since their last tag
 release LEVEL:
