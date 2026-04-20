@@ -33,7 +33,7 @@ agent-client-protocol = { workspace = true }
 rmcp = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-mcp_utils = { package = "aether-mcp-utils", path = "../mcp-utils", version = "0.2.0" }
+mcp_utils = { package = "aether-mcp-utils", path = "../mcp-utils", version = "0.2.1" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 utils = { package = "aether-utils", path = "../utils", version = "0.2.0" }
