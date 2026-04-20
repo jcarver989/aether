@@ -5,7 +5,7 @@ description: Configure agents in .aether/settings.json.
 
 import { FileTree } from '@astrojs/starlight/components';
 
-Agents are defined in `.aether/settings.json` — their model, prompts, tools, and how they can be invoked.
+Agents are defined in `.aether/settings.json` — their model, prompts, tool access, and how they can be invoked.
 
 ## File location
 
@@ -14,7 +14,7 @@ Agents are defined in `.aether/settings.json` — their model, prompts, tools, a
 - .aether/
   - **settings.json** — Agent catalog
   - mcp.json — MCP server config
-  - SYSTEM.md — Base system prompt
+  - DEFAULT.md — Shared prompt scaffold
 - AGENTS.md — Project instructions
 
 </FileTree>
@@ -23,13 +23,14 @@ Agents are defined in `.aether/settings.json` — their model, prompts, tools, a
 
 ```json
 {
-  "prompts": ["AGENTS.md"],
+  "prompts": [".aether/DEFAULT.md", "AGENTS.md"],
   "mcpServers": [".aether/mcp.json"],
   "agents": [
     {
-      "name": "coder",
-      "description": "General-purpose coding assistant",
+      "name": "planner",
+      "description": "Plans implementation strategy",
       "model": "anthropic:claude-sonnet-4-5",
+      "reasoningEffort": "high",
       "userInvocable": true
     }
   ]
@@ -41,7 +42,7 @@ Agents are defined in `.aether/settings.json` — their model, prompts, tools, a
 | Field | Type | Description |
 |-------|------|-------------|
 | `prompts` | `string[]` | Glob patterns for prompt files inherited by all agents |
-| `mcpServers` | `string[]` | Paths to inherited MCP configs (relative to project root). Files are merged in order — on server name collisions, the last file wins. |
+| `mcpServers` | `Array<string \| { path: string, proxy?: boolean }>` | Inherited MCP config refs. Files are merged in order; on collisions, the last file wins. Use `{ "path": "...", "proxy": true }` to route a referenced config through Aether's built-in proxy. |
 | `agents` | `AgentEntry[]` | Array of agent definitions |
 
 ## Agent entry fields
@@ -55,8 +56,12 @@ Agents are defined in `.aether/settings.json` — their model, prompts, tools, a
 | `userInvocable` | `boolean` | `false` | Appears as a mode in the TUI and ACP clients |
 | `agentInvocable` | `boolean` | `false` | Can be spawned as a [sub-agent](/aether/built-in-servers/subagents/) |
 | `prompts` | `string[]` | `[]` | Glob patterns for agent-specific prompt files |
-| `mcpServers` | `string[]` | `[]` | Override inherited MCP configs for this agent. Files are merged in order — on collisions, the last file wins. |
+| `mcpServers` | `Array<string \| { path: string, proxy?: boolean }>` | `[]` | When non-empty, replaces the inherited MCP config list for that agent. Files are merged in order; on collisions, the last file wins. |
 | `tools` | `object` | `{}` | [Tool filtering](/aether/configuration/mcp-servers/#tool-filtering) with `allow` and `deny` arrays |
+
+:::note
+If an agent omits `mcpServers`, it inherits the top-level list. If an agent provides its own non-empty `mcpServers` array, that list replaces the inherited one rather than appending to it.
+:::
 
 ## Validation rules
 
@@ -65,5 +70,5 @@ Agents are defined in `.aether/settings.json` — their model, prompts, tools, a
 - `"__default__"` is a reserved name
 - At least one of `userInvocable` or `agentInvocable` must be `true`
 - All prompt glob patterns must match at least one file
-- MCP config paths must point to existing files
+- All referenced MCP config paths must point to existing files
 :::

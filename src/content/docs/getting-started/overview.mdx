@@ -10,9 +10,9 @@ Aether is a modular, open-source AI coding agent toolkit written in Rust.
 ### Design principles
 
 - **Empty by default** — Agents have no default system prompt or tools. You add what you need.
-- **Any model** — Use any LLM you want, local or remote. Anthropic, OpenAI, OpenRouter, DeepSeek, Gemini, Z, Moonshot, LlamaCpp, Ollama, and more are supported out of the box.
+- **Any model** — Use any LLM you want, local or remote. Anthropic, OpenAI, OpenRouter, DeepSeek, Gemini, Moonshot, ZAI, Llama.cpp, Ollama, and more are supported out of the box.
 - **Any tools** — Agents get tools via [MCP](https://modelcontextprotocol.io/) servers. You can author tools in any language.
-- **Any surface** — Run your agent in a TUI, IDE/editor (via ACP) or headless.
+- **Any surface** — Run your agent in a TUI, IDE/editor (via ACP), or headless.
 
 ## Getting started
 
@@ -59,7 +59,7 @@ Aether is a modular, open-source AI coding agent toolkit written in Rust.
    ```
    ✓ Created .aether/settings.json
    ✓ Created .aether/mcp.json
-   ✓ Created .aether/SYSTEM.md
+   ✓ Created .aether/DEFAULT.md
    ✓ Created AGENTS.md
    ```
 
@@ -67,12 +67,14 @@ Aether is a modular, open-source AI coding agent toolkit written in Rust.
      - .aether/
        - settings.json — [Agent definitions](/aether/configuration/agent-settings/)
        - mcp.json — [MCP server config](/aether/configuration/mcp-servers/)
-       - SYSTEM.md — Base system prompt
+       - DEFAULT.md — Default prompt scaffold
      - AGENTS.md — [Project instructions](/aether/configuration/system-prompts/)
    </FileTree>
 
+   Built-in in-memory servers you can enable in `.aether/mcp.json` include `coding`, `lsp`, `skills`, `tasks`, `subagents`, `survey`, and `plan`.
+
    :::note[Set up your LLM credentials]
-   Most providers need an API key (e.g. `export ANTHROPIC_API_KEY=sk-ant-...`).
+   Most providers need an API key (for example `export ANTHROPIC_API_KEY=sk-ant-...`).
    See [LLM Providers](/aether/configuration/llm-providers/) for all supported providers and credential setup.
    :::
 
@@ -92,7 +94,7 @@ Aether is a modular, open-source AI coding agent toolkit written in Rust.
    aether acp
    ```
 
-   Exposes agents over [ACP](https://agentclientprotocol.org/) for [editor integration](/aether/running/editor-integration/).
+   Exposes agents over [ACP](https://agentclientprotocol.com/get-started/introduction) for [editor integration](/aether/running/editor-integration/).
 
    **Headless**
 

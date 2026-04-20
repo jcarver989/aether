@@ -19,7 +19,8 @@ export const installCargoCode = `$ cargo install aether-agent-cli`;
 export const firstRunCode = `$ aether
 ✓ Created .aether/settings.json
 ✓ Created .aether/mcp.json
-✓ Created .aether/AGENTS.md
+✓ Created .aether/DEFAULT.md
+✓ Created AGENTS.md
 Launching TUI...`;
 
 export const showPromptCode = `$ aether show-prompt -a Build
@@ -128,7 +129,7 @@ export const toolsWireCode = `{
       "model": "zai:glm-5.1",
       "userInvocable": true,
       "prompts": ["BUILD.md", "AGENTS.md"],
-      "mcpServers": ["mcp.json"]
+      "mcpServers": [".aether/mcp.json"]
     }
   ]
 }`;
@@ -140,7 +141,8 @@ export const toolsBuiltinCode = `{
     "skills":    { "type": "in-memory" },
     "subagents": { "type": "in-memory" },
     "tasks":     { "type": "in-memory" },
-    "survey":    { "type": "in-memory" }
+    "survey":    { "type": "in-memory" },
+    "plan":      { "type": "in-memory" }
   }
 }`;
 
@@ -253,18 +255,18 @@ export const runAcpCode = `$ aether acp`;
     <div class="mx-auto max-w-350">
         <div class="text-center mb-16">
             <h2 class="font-mono text-3xl sm:text-4xl font-bold text-white mb-3">Connect tools via MCP servers (local or remote)</h2>
-            <p class="text-gray-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">Be minimal...or maximal. Give your agent a single tool (Bash) and point it at some CLIs + skill files. Or, go full batteries-included by adding a few lines to your mcp.json file.</p>
+            <p class="text-gray-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">Be minimal...or maximal. Give your agent a single tool (Bash) and point it at some CLIs + skill files. Or, go full batteries-included by adding a few lines to your `.aether/mcp.json` file.</p>
         </div>
         <div class="flex flex-col gap-6">
-            <ToolShowcaseItem title="Batteries included MCPs" description='Aether includes several built-in MCP servers you can optionally enable. They run in a custom in-memory transport. <ul class="mt-3 space-y-1 text-gray-400 text-sm list-none pl-0"><li><code class="text-white">coding</code> — file I/O, grep, bash, and web fetch</li><li><code class="text-white">lsp</code> — language-aware completions and diagnostics</li><li><code class="text-white">skills</code> — reusable domain knowledge as slash commands</li><li><code class="text-white">subagents</code> — spawn parallel child agents with their own models and tools</li><li><code class="text-white">tasks</code> — persistent task tracking across turns</li><li><code class="text-white">survey</code> — allow the agent to ask you questions with structured output</li></ul>'>
+            <ToolShowcaseItem title="Batteries included MCPs" description='Aether includes several built-in MCP servers you can optionally enable. They run in a custom in-memory transport. <ul class="mt-3 space-y-1 text-gray-400 text-sm list-none pl-0"><li><code class="text-white">coding</code> — file I/O, grep, bash, and web fetch</li><li><code class="text-white">lsp</code> — language-aware symbol lookup, diagnostics, and rename</li><li><code class="text-white">skills</code> — reusable domain knowledge as slash commands</li><li><code class="text-white">subagents</code> — spawn parallel child agents with their own models and tools</li><li><code class="text-white">tasks</code> — persistent task tracking across turns</li><li><code class="text-white">survey</code> — allow the agent to ask you questions with structured output</li><li><code class="text-white">plan</code> — submit markdown plans for approval and feedback</li></ul>'>
                 <Code code={toolsWireCode} lang="json" title=".aether/settings.json" meta="ins={9}" />
-                <Code code={toolsBuiltinCode} lang="json" title="mcp.json" meta="ins={3-8}" />
+                <Code code={toolsBuiltinCode} lang="json" title=".aether/mcp.json" meta="ins={3-9}" />
             </ToolShowcaseItem>
             <ToolShowcaseItem title="Any MCP server" description="Plug in any external MCP server via stdio, SSE, or streamable HTTP. Remote server OAuth credentials are stored securely in your keychain.">
-                <Code code={toolsExternalCode} lang="json" title="mcp.json" meta="ins={4-8}" />
+                <Code code={toolsExternalCode} lang="json" title=".aether/mcp.json" meta="ins={4-8}" />
             </ToolShowcaseItem>
             <ToolShowcaseItem title="Built in proxy stops MCP tools from eating your context" description="Aether ships with a built-in proxy, so you don't have to worry about MCPs flooding your context. When enabled, agents only load MCP tools when they need them." border={false}>
-                <Code code={proxyConfigCode} lang="json" title="mcp.json" meta="ins={3-17}" />
+                <Code code={proxyConfigCode} lang="json" title=".aether/mcp.json" meta="ins={3-17}" />
             </ToolShowcaseItem>
         </div>
     </div>

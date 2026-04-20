@@ -3,25 +3,27 @@ title: Embedding Servers
 description: Use built-in MCP servers as library components.
 ---
 
-The `mcp_servers` crate provides the same MCP servers used by the CLI — coding tools, skills, tasks, sub-agents — as embeddable library components. Use them to build custom applications with Aether's tool capabilities.
+The `aether-mcp-servers` crate provides the same built-in servers used by the CLI as embeddable library components. You can selectively enable the servers you need and register them with `McpBuilder` in your own runtime.
 
 ```toml title="Cargo.toml"
 [dependencies]
-mcp-servers = { version = "0.1", features = ["coding"] }
+aether-mcp-servers = { version = "0.2", default-features = false, features = ["coding", "plan"] }
 ```
+
+The crate is imported in Rust as `mcp_servers`.
 
 ## Feature flags
 
-Each server is behind a feature flag to keep compile times down:
-
-| Feature | Server | Tools |
-|---------|--------|-------|
-| `coding` | `CodingMcp` | File I/O, bash, search, web, LSP |
-| `skills` | `SkillsMcp` | Slash commands, skill prompts, notes |
-| `tasks` | `TasksMcp` | Task creation and tracking |
-| `subagents` | `SubAgentsMcp` | Child agent spawning |
+| Feature | Exposes | Notes |
+|---------|---------|-------|
+| `default` | `CodingMcp`, `SkillsMcp`, `TasksMcp`, `SubAgentsMcp`, `PlanMcp` | Default bundle |
+| `coding` | `CodingMcp`, `LspMcp`, `LspRegistry` | File I/O, bash, search, web, and standalone LSP support |
+| `skills` | `SkillsMcp` | Slash commands, skills, and persisted notes |
+| `tasks` | `TasksMcp` | Hierarchical task management |
+| `subagents` | `SubAgentsMcp` | Child agent spawning and orchestration |
 | `survey` | `SurveyMcp` | Structured user questions |
-| `all` | All of the above | — |
+| `plan` | `PlanMcp` | Plan review and approval workflow |
+| `all` | All built-in servers | Explicit alias for the full set |
 
 ## Constructing servers
 
@@ -35,68 +37,51 @@ let server = CodingMcp::new()
     .with_permission_mode(PermissionMode::AlwaysAllow);
 ```
 
-| Method | Description |
-|--------|-------------|
-| `new()` | Create with defaults |
-| `with_root_dir(path)` | Set workspace root (default: cwd) |
-| `with_lsp(root_path)` | Enable LSP integration |
-| `with_roots(paths)` | Set file access roots |
-| `with_permission_mode(mode)` | `AlwaysAllow`, `Auto`, or `AlwaysAsk` |
-
-### SkillsMcp
+### Standalone LSP
 
 ```rust
-use mcp_servers::SkillsMcp;
+use mcp_servers::LspMcp;
 
-let args = SkillsMcpArgs { dir: Some(".aether".into()) };
-let server = SkillsMcp::new(args);
+let server = LspMcp::new("/my/project".into());
 ```
 
-### TasksMcp
+### PlanMcp
 
 ```rust
-use mcp_servers::TasksMcp;
+use mcp_servers::PlanMcp;
 
-let args = TasksMcpArgs { dir: Some(".".into()) };
-let server = TasksMcp::new(args);
+let server = PlanMcp::new();
+let custom = PlanMcp::new().with_prompt_file("/my/project/.aether/prompts/plan-mode.md".into());
 ```
 
-### SubAgentsMcp
+## Registering with `McpBuilder`
 
-```rust
-use mcp_servers::SubAgentsMcp;
-
-let args = SubAgentsMcpArgs { project_root: Some(".".into()) };
-let server = SubAgentsMcp::new(args);
-```
-
-## Registering with McpBuilder
-
-Use `register_in_memory_server` to add a server to the MCP builder:
+Use `register_in_memory_server()` to expose the servers your runtime wants to support:
 
 ```rust
 use aether_core::mcp::mcp;
-use mcp_servers::CodingMcp;
+use futures::FutureExt;
+use mcp_servers::{CodingMcp, PlanMcp};
 
-let mcp_result = mcp()
-    .register_in_memory_server("coding", || {
-        CodingMcp::new()
-            .with_root_dir("/my/project".into())
-            .into_dyn()
-    })
-    .register_in_memory_server("tasks", || {
-        TasksMcp::new(TasksMcpArgs { dir: Some(".".into()) })
-            .into_dyn()
-    })
-    .spawn()
-    .await?;
+let builder = mcp()
+    .register_in_memory_server("coding", Box::new(|_args, _input| {
+        async move {
+            CodingMcp::new()
+                .with_root_dir("/my/project".into())
+                .into_dyn()
+        }
+        .boxed()
+    }))
+    .register_in_memory_server("plan", Box::new(|args, _input| {
+        async move { PlanMcp::from_args(args).unwrap().into_dyn() }.boxed()
+    }));
 ```
 
-The `into_dyn()` method converts the typed server into a dynamic MCP server handle that the builder can manage.
+If you want the same built-in server setup used by the CLI, look at `mcp_servers::setup::McpBuilderExt` in the main repository for a production-ready registration helper.
 
 ## Custom CodingTools
 
-You can replace the default file system implementation by implementing the `CodingTools` trait:
+You can swap out the default filesystem-backed implementation by implementing the `CodingTools` trait yourself:
 
 ```rust
 use mcp_servers::{CodingMcp, CodingTools};
@@ -104,15 +89,10 @@ use mcp_servers::{CodingMcp, CodingTools};
 struct MySandboxedTools { /* ... */ }
 
 impl CodingTools for MySandboxedTools {
-    // Implement file operations, bash, etc.
-    // with your own sandboxing or virtual filesystem
+    // Implement file operations, bash, search, and web behavior.
 }
 
 let server = CodingMcp::with_tools(MySandboxedTools::new());
 ```
 
-This is useful for sandboxed environments, testing, or custom file access policies.
-
-## Standalone usage
-
-Each server implements the rmcp `ServerHandler` trait and can be used with any MCP-compatible client, not just Aether's agent runtime. See the [rmcp documentation](https://docs.rs/rmcp) for the server protocol details.
+This is useful for sandboxed environments, testing, or custom file-access policies.

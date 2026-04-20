@@ -5,7 +5,7 @@ description: Create slash commands and reusable skill prompts.
 
 import { Tabs, TabItem, FileTree } from '@astrojs/starlight/components';
 
-The `skills` server lets you define slash commands and skill prompts that agents can load on demand. Commands are quick actions triggered by `/name`; skills are deeper knowledge bases agents can reference. See [Tools](/aether/configuration/mcp-servers/) for configuration.
+The `skills` server lets you load slash commands and skills from local files on disk.
 
 ## Directory structure
 
@@ -28,8 +28,8 @@ The `skills` server lets you define slash commands and skill prompts that agents
 
 | Tool | Description |
 |------|-------------|
-| `get_skills` | Load a skill or auxiliary file |
-| `save_note` | Append content to a topic-based note |
+| `get_skills` | Load a skill or one of its auxiliary files |
+| `save_note` | Append a learning to a topic-based note file |
 | `search_notes` | Search notes by topic or tags |
 
 <Tabs>
@@ -60,7 +60,7 @@ The `skills` server lets you define slash commands and skill prompts that agents
     |-------|-------------|
     | `description` | Shown in the command picker UI |
     | `argument-hint` | Placeholder text for the argument input |
-    | `allowed-tools` | Tools the agent can use when running this command |
+    | `allowed-tools` | Tools the agent can use while executing the command |
 
     ### Template variables
 
@@ -102,11 +102,15 @@ The `skills` server lets you define slash commands and skill prompts that agents
 
     ### Auxiliary files
 
-    Additional markdown files in the skill directory can be loaded on demand via the `get_skills` tool.
+    Additional markdown files in the skill directory can be loaded on demand via `get_skills`. When a client loads `SKILL.md`, the response also includes a manifest of available auxiliary files.
   </TabItem>
 </Tabs>
 
 ## Global vs project skills
 
-- **Project skills** — Place in `.aether/commands/` and `.aether/skills/` within your project
-- **Global skills** — Place in `~/.aether/commands/` and `~/.aether/skills/` for availability across all projects
+- **Project skills** — Place them in `.aether/commands/` and `.aether/skills/` inside your project
+- **Global skills** — Place them in `~/.aether/commands/` and `~/.aether/skills/` to make them available everywhere
+
+## Notes
+
+`save_note` and `search_notes` let agents persist concise learnings between sessions.
