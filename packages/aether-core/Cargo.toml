@@ -1,6 +1,6 @@
 [package]
 name = "aether-agent-core"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 description = "A minimal Rust library for building AI agents with MCP tool integration"
 license = "MIT"
@@ -43,7 +43,7 @@ acp_utils = { package = "aether-acp-utils", path = "../acp-utils", default-featu
 glob = { workspace = true }
 regex = { workspace = true }
 mcp_utils = { package = "aether-mcp-utils", path = "../mcp-utils", version = "0.2.0" }
-llm = { package = "aether-llm", path = "../llm", version = "0.2.0" }
+llm = { package = "aether-llm", path = "../llm", version = "0.2.1" }
 utils = { package = "aether-utils", path = "../utils", version = "0.2.0" }
 
 [features]

@@ -109,9 +109,9 @@ serde_yml = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 
 # subagents feature
-aether-core = { package = "aether-agent-core", path = "../aether-core", optional = true, version = "0.2.0" }
+aether-core = { package = "aether-agent-core", path = "../aether-core", optional = true, version = "0.2.1" }
 aether-project = { path = "../aether-project", optional = true, version = "0.2.0" }
-llm = { package = "aether-llm", path = "../llm", optional = true, version = "0.2.0" }
+llm = { package = "aether-llm", path = "../llm", optional = true, version = "0.2.1" }
 
 [dev-dependencies]
 tempfile = { workspace = true }
