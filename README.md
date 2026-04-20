@@ -7,7 +7,9 @@
 
 Aether is an AI coding agent harness, written in Rust, that gives _you_ control over every token in context. 
 
-You can use Aether as a minimal agent (it has no hardcoded system prompt or tools) or go full batteries-included with file system tools, lsp integration, skills, sub-agents and more. Aether runs in a TUI, IDE/Editor or headless.
+Aether agents have no built-in system prompt and get tools _exclusively_ via MCP. You can use Aether as a truly minimal agent, extend it in any language you want (via MCP), or go full batteries-included with 1st-party MCPs for filesystem tools, lsp integration, skills, sub-agents and more. Progressive discovery is built into the harness so MCP tool definition bloat isn't a problem. 
+
+Aether runs in a TUI, IDE/Editor or headless.
 
 **[Documentation](https://aether-agent.io)**. 
 
