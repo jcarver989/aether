@@ -534,8 +534,7 @@ impl HeadingCollector {
 
 fn heading_style(level: u8, theme: &Theme) -> Style {
     match level {
-        1 => Style::fg(theme.heading()).bold(),
-        2 => Style::fg(theme.text_primary()).bold(),
+        1 | 2 => Style::fg(theme.heading()).bold(),
         _ => Style::fg(theme.text_secondary()).bold(),
     }
 }
