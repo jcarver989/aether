@@ -152,7 +152,7 @@ mod tests {
         write_skill(
             dir.path(),
             "commit",
-            "---\ndescription: Generate commit messages\nuser-invocable: true\n---\nGenerate a commit message.",
+            "---\ndescription: Generate commit messages\nuser-invocable: true\nagent-invocable: false\n---\nGenerate a commit message.",
         );
 
         let catalog = PromptCatalog::from_dir(dir.path()).unwrap();
@@ -188,7 +188,7 @@ mod tests {
         write_skill(
             dir.path(),
             "rust-rules",
-            "---\ndescription: Rust conventions\ntriggers:\n  read:\n    - \"packages/**/*.rs\"\n---\nFollow Rust conventions.",
+            "---\ndescription: Rust conventions\nagent-invocable: false\ntriggers:\n  read:\n    - \"packages/**/*.rs\"\n---\nFollow Rust conventions.",
         );
 
         let catalog = PromptCatalog::from_dir(dir.path()).unwrap();
@@ -257,7 +257,7 @@ mod tests {
     #[test]
     fn flat_md_without_activation_surface_is_skipped() {
         let dir = create_temp_project();
-        write_flat_rule(dir.path(), "noop.md", "---\ndescription: Does nothing\n---\nContent.");
+        write_flat_rule(dir.path(), "noop.md", "---\ndescription: Does nothing\nagent-invocable: false\n---\nContent.");
 
         let catalog = PromptCatalog::from_dir(dir.path()).unwrap();
         assert!(catalog.all().is_empty());
@@ -319,7 +319,7 @@ mod tests {
         write_flat_rule(
             dir.path(),
             "rule.md",
-            "---\ndescription: A rule\ntriggers:\n  read:\n    - \"*.rs\"\n---\nRule content.",
+            "---\ndescription: A rule\nagent-invocable: false\ntriggers:\n  read:\n    - \"*.rs\"\n---\nRule content.",
         );
 
         let catalog = PromptCatalog::from_dir(dir.path()).unwrap();

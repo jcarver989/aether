@@ -15,8 +15,8 @@ pub(crate) struct PromptFrontmatter {
     pub name: Option<String>,
     #[serde(default, rename = "user-invocable", skip_serializing_if = "Option::is_none")]
     pub user_invocable: Option<bool>,
-    #[serde(default, rename = "agent-invocable", skip_serializing_if = "not")]
-    pub agent_invocable: bool,
+    #[serde(default, rename = "agent-invocable", skip_serializing_if = "Option::is_none")]
+    pub agent_invocable: Option<bool>,
     #[serde(default, rename = "argument-hint", skip_serializing_if = "Option::is_none")]
     pub argument_hint: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -80,12 +80,13 @@ impl PromptFile {
         let description = frontmatter.description.trim().to_string();
         let description = if description.is_empty() { name.clone() } else { description };
         let user_invocable = frontmatter.user_invocable.unwrap_or(is_skill_file);
+        let agent_invocable = frontmatter.agent_invocable.unwrap_or(true);
 
         let mut read_globs = frontmatter.triggers.map(|t| t.read).unwrap_or_default();
         read_globs.extend(frontmatter.globs);
         read_globs.extend(frontmatter.paths);
 
-        if !user_invocable && !frontmatter.agent_invocable && read_globs.is_empty() {
+        if !user_invocable && !agent_invocable && read_globs.is_empty() {
             return Err(PromptFileError::NoActivationSurface { name });
         }
 
@@ -97,7 +98,7 @@ impl PromptFile {
             body,
             path: path.to_path_buf(),
             user_invocable,
-            agent_invocable: frontmatter.agent_invocable,
+            agent_invocable,
             argument_hint: frontmatter.argument_hint,
             tags: frontmatter.tags,
             triggers,
@@ -136,7 +137,7 @@ impl PromptFile {
             description: self.description.clone(),
             name: Some(self.name.clone()),
             user_invocable: self.user_invocable.then_some(true),
-            agent_invocable: self.agent_invocable,
+            agent_invocable: (!self.agent_invocable).then_some(false),
             argument_hint: self.argument_hint.clone(),
             tags: self.tags.clone(),
             triggers,
@@ -287,7 +288,7 @@ mod tests {
             description: description.to_string(),
             name: None,
             user_invocable: None,
-            agent_invocable: false,
+            agent_invocable: None,
             argument_hint: None,
             tags: vec![],
             triggers: None,
@@ -649,7 +650,7 @@ Skill body.",
 
         let parsed = PromptFile::parse(&path).unwrap();
         assert!(parsed.user_invocable);
-        assert!(!parsed.agent_invocable);
+        assert!(parsed.agent_invocable);
     }
 
     #[test]
@@ -660,6 +661,7 @@ Skill body.",
             &path,
             r"---
 description: No activation
+agent-invocable: false
 ---
 Rule body.",
         )
