@@ -1,4 +1,5 @@
 pub mod config;
+pub mod connect_mcp;
 pub mod connection;
 pub mod error;
 pub mod manager;
