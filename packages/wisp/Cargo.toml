@@ -24,7 +24,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 workspace = true
 
 [dependencies]
-acp_utils = { package = "aether-acp-utils", path = "../acp-utils", features = ["client"], version = "0.2.0" }
+acp_utils = { package = "aether-acp-utils", path = "../acp-utils", features = ["client"], version = "0.2.1" }
 tui = { package = "aether-tui", path = "../tui", version = "0.2.1" }
 utils = { package = "aether-utils", path = "../utils", version = "0.2.0" }
 agent-client-protocol = { workspace = true }

@@ -21,7 +21,7 @@ dependencies = [
 
 [[package]]
 name = "aether-acp-utils"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "aether-mcp-utils",
  "aether-utils",
@@ -70,7 +70,7 @@ dependencies = [
 
 [[package]]
 name = "aether-agent-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "aether-acp-utils",
  "aether-agent-core",
@@ -100,7 +100,7 @@ dependencies = [
 
 [[package]]
 name = "aether-llm"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "aether-llm-codegen",
  "aether-utils",
@@ -202,7 +202,7 @@ dependencies = [
 
 [[package]]
 name = "aether-mcp-utils"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "aether-llm",
  "aether-utils",
