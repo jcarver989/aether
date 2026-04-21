@@ -1,6 +1,10 @@
-Loads files from skill directories. If you omit `path`, it loads the skill's `SKILL.md`. If you provide `path`, it loads that file relative to the skill root.
+Loads content for skills discovered via `list_skills`.
 
-When loading `SKILL.md`, the server also returns a manifest of additional available files so you can progressively load more context only as needed.
+Use the exact `name` values returned by `list_skills`. Only skills marked `agent-invocable: true` can be loaded.
+
+If you omit `path`, this loads the skill root content (`SKILL.md` for directory-backed skills, or the markdown file for flat skills). If you provide `path`, it loads that file relative to a directory-backed skill root.
+
+When loading a directory-backed `SKILL.md`, the server returns `availableFiles` so you can progressively load only the auxiliary files you need.
 
 ## Usage
 
@@ -16,5 +20,5 @@ When loading `SKILL.md`, the server also returns a manifest of additional availa
 ## Parameters
 
 - `requests` — **required**, array of skill requests
-  - `name` — **required**, skill directory name
-  - `path` — optional, file path relative to skill root (defaults to `SKILL.md`)
+  - `name` — **required**, exact skill name returned by `list_skills`
+  - `path` — optional, file path relative to the skill root (for directory-backed skills)

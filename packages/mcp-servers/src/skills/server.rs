@@ -22,11 +22,12 @@ use utils::shell_expander::ShellExpander;
 use utils::substitution::substitute_parameters;
 
 use super::tools::{
-    LoadSkillsInput, LoadSkillsOutput, SaveNoteInput, SaveNoteOutput, SearchNotesInput, SearchNotesOutput, SkillFile,
-    SkillRequest, save_note,
+    ListSkillsInput, ListSkillsOutput, LoadSkillsInput, LoadSkillsOutput, SaveNoteInput, SaveNoteOutput,
+    SearchNotesInput, SearchNotesOutput, SkillFile, SkillListItem, SkillRequest, save_note,
 };
 use crate::skills::tools::search_notes::search_notes;
 use aether_project::{PromptCatalog, PromptFile, SKILL_FILENAME};
+use mcp_utils::display_meta::ToolDisplayMeta;
 
 /// CLI arguments for `SkillsMcp` server
 #[derive(Debug, Clone, Parser)]
@@ -63,6 +64,7 @@ pub struct SkillsMcp {
 #[derive(Debug)]
 enum SkillFileError {
     SkillNotFound(String),
+    NotAgentInvocable(String),
     FlatFileDoesNotSupportRelativePaths(String),
     AbsolutePath,
     TraversalAttempt,
@@ -77,6 +79,7 @@ impl Display for SkillFileError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SkillFileError::SkillNotFound(name) => write!(f, "Skill not found: {name}"),
+            SkillFileError::NotAgentInvocable(name) => write!(f, "Skill '{name}' is not agent-invocable"),
             SkillFileError::FlatFileDoesNotSupportRelativePaths(name) => {
                 write!(f, "Prompt '{name}' is a flat markdown file and does not support relative paths")
             }
@@ -119,27 +122,6 @@ impl SkillsMcp {
         self
     }
 
-    fn build_instructions(catalog: &PromptCatalog) -> String {
-        let mut instructions = include_str!("./instructions.md").to_string();
-        let agent_skills: Vec<_> = catalog.skills().filter(|s| !s.agent_authored).collect();
-
-        if !agent_skills.is_empty() {
-            instructions.push_str("\n\n## Complete List of Available Skills\n");
-            instructions.push_str("You have access to the following Skills:\n\n");
-            for skill in agent_skills {
-                use std::fmt::Write as _;
-                if skill.tags.is_empty() {
-                    let _ = writeln!(instructions, "- **{}**: {}", skill.name, skill.description);
-                } else {
-                    let tags = skill.tags.join(", ");
-                    let _ = writeln!(instructions, "- **{}** [{}]: {}", skill.name, tags, skill.description);
-                }
-            }
-        }
-
-        instructions
-    }
-
     fn is_directory_prompt(prompt: &PromptFile) -> bool {
         prompt.path.file_name().is_some_and(|name| name == SKILL_FILENAME)
     }
@@ -153,6 +135,10 @@ impl SkillsMcp {
             catalog.find(&request.name).cloned()
         }
         .ok_or_else(|| SkillFileError::SkillNotFound(request.name.clone()))?;
+
+        if !prompt.agent_invocable {
+            return Err(SkillFileError::NotAgentInvocable(request.name.clone()));
+        }
 
         if Self::is_directory_prompt(&prompt) {
             let skill_dir = prompt.path.parent().ok_or_else(|| SkillFileError::FileNotFound(prompt.path.clone()))?;
@@ -282,17 +268,9 @@ impl SkillsMcp {
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for SkillsMcp {
     fn get_info(&self) -> ServerInfo {
-        // try_read() avoids blocking the synchronous get_info() callback.
-        // On contention (only possible during a concurrent tool call), we fall back
-        // to an empty catalog — this only affects the MCP handshake instructions,
-        // and the tools themselves always read fresh data.
-        let instructions = match self.catalog.try_read() {
-            Ok(catalog) => Self::build_instructions(&catalog),
-            Err(_) => Self::build_instructions(&PromptCatalog::empty()),
-        };
         ServerInfo::new(ServerCapabilities::builder().enable_prompts().enable_tools().build())
             .with_server_info(Implementation::new("skills-mcp", "0.1.0"))
-            .with_instructions(instructions)
+            .with_instructions(include_str!("./instructions.md"))
     }
 
     async fn list_prompts(
@@ -347,6 +325,31 @@ impl ServerHandler for SkillsMcp {
 
 #[tool_router]
 impl SkillsMcp {
+    #[doc = include_str!("tools/list_skills/description.md")]
+    #[tool]
+    pub async fn list_skills(&self, request: Parameters<ListSkillsInput>) -> Result<Json<ListSkillsOutput>, String> {
+        let Parameters(_input) = request;
+        let catalog = self.catalog.read().await;
+        let mut skills: Vec<_> = catalog
+            .skills()
+            .map(|skill| SkillListItem {
+                name: skill.name.clone(),
+                description: skill.description.clone(),
+                tags: skill.tags.clone(),
+            })
+            .collect();
+        skills.sort_by(|a, b| a.name.cmp(&b.name));
+        let count = skills.len();
+
+        Ok(Json(ListSkillsOutput {
+            status: "success".to_string(),
+            skills,
+            count,
+            message: format!("Found {count} skills"),
+            meta: Some(ToolDisplayMeta::new("Skills", format!("{count} skills")).into()),
+        }))
+    }
+
     #[doc = include_str!("tools/get_skills/description.md")]
     #[tool]
     pub async fn get_skills(&self, request: Parameters<LoadSkillsInput>) -> Result<Json<LoadSkillsOutput>, String> {
@@ -385,6 +388,7 @@ fn today_string() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rmcp::ServerHandler;
     use tempfile::TempDir;
 
     fn create_skill(prompt_dir: &Path, name: &str, content: &str, aux_files: &[(&str, &str)]) {
@@ -440,6 +444,114 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_list_skills_only_returns_agent_invocable_sorted_by_name() {
+        let temp_dir = TempDir::new().unwrap();
+        create_skill(
+            temp_dir.path(),
+            "zeta",
+            "---\ndescription: Zeta\nagent-invocable: true\ntags:\n  - systems\n---\n# Zeta",
+            &[],
+        );
+        create_skill(
+            temp_dir.path(),
+            "user-only",
+            "---\ndescription: User only\nuser-invocable: true\nagent-invocable: false\n---\n# User only",
+            &[],
+        );
+        create_flat_prompt(
+            temp_dir.path(),
+            "flat-agent",
+            "---\nname: alpha-flat\ndescription: Flat skill\nagent-invocable: true\ntags:\n  - flat\n---\n# Flat",
+        );
+        create_flat_prompt(
+            temp_dir.path(),
+            "rule-only",
+            "---\ndescription: Rule only\nagent-invocable: false\ntriggers:\n  read:\n    - \"**/*.rs\"\n---\n# Rule",
+        );
+
+        let server = SkillsMcp::new(&[temp_dir.path().to_path_buf()], temp_dir.path().join("notes"));
+        let Json(output) = server.list_skills(Parameters(ListSkillsInput::default())).await.unwrap();
+
+        assert_eq!(output.status, "success");
+        assert_eq!(output.count, 2);
+        assert_eq!(output.message, "Found 2 skills");
+
+        let names: Vec<_> = output.skills.iter().map(|skill| skill.name.clone()).collect();
+        assert_eq!(names, vec!["alpha-flat".to_string(), "zeta".to_string()]);
+
+        let alpha = output.skills.iter().find(|skill| skill.name == "alpha-flat").unwrap();
+        assert_eq!(alpha.description, "Flat skill");
+        assert_eq!(alpha.tags, vec!["flat".to_string()]);
+
+        let zeta = output.skills.iter().find(|skill| skill.name == "zeta").unwrap();
+        assert_eq!(zeta.description, "Zeta");
+        assert_eq!(zeta.tags, vec!["systems".to_string()]);
+
+        let meta = output.meta.expect("list_skills should return display metadata");
+        assert_eq!(meta.display.title, "Skills");
+        assert_eq!(meta.display.value, "2 skills");
+    }
+
+    #[test]
+    fn test_get_info_instructions_reference_list_skills_and_do_not_embed_skill_names() {
+        let temp_dir = TempDir::new().unwrap();
+        create_skill(
+            temp_dir.path(),
+            "unique-instructions-skill-a",
+            "---\ndescription: A\nagent-invocable: true\n---\n# A",
+            &[],
+        );
+        create_skill(
+            temp_dir.path(),
+            "unique-instructions-skill-b",
+            "---\ndescription: B\nagent-invocable: true\n---\n# B",
+            &[],
+        );
+
+        let server = SkillsMcp::new(&[temp_dir.path().to_path_buf()], temp_dir.path().join("notes"));
+        let info = ServerHandler::get_info(&server);
+        let instructions = info.instructions.expect("skills server should provide instructions");
+
+        assert!(instructions.contains("list_skills"));
+        assert!(!instructions.contains("Complete List of Available Skills"));
+        assert!(!instructions.contains("unique-instructions-skill-a"));
+        assert!(!instructions.contains("unique-instructions-skill-b"));
+    }
+
+    #[tokio::test]
+    async fn test_get_skills_rejects_non_agent_invocable_directory_prompt() {
+        let temp_dir = TempDir::new().unwrap();
+        create_skill(
+            temp_dir.path(),
+            "user-only",
+            "---\ndescription: User-only prompt\nuser-invocable: true\nagent-invocable: false\n---\n# User only",
+            &[],
+        );
+
+        let server = SkillsMcp::new(&[temp_dir.path().to_path_buf()], temp_dir.path().join("notes"));
+        let result = load(&server, "user-only", None).await;
+
+        assert!(result.content.is_none());
+        assert!(result.error.as_deref().unwrap().contains("not agent-invocable"));
+    }
+
+    #[tokio::test]
+    async fn test_get_skills_rejects_non_agent_invocable_flat_prompt() {
+        let temp_dir = TempDir::new().unwrap();
+        create_flat_prompt(
+            temp_dir.path(),
+            "rule-only",
+            "---\ndescription: Rule-only prompt\nagent-invocable: false\ntriggers:\n  read:\n    - \"**/*.rs\"\n---\n# Rule",
+        );
+
+        let server = SkillsMcp::new(&[temp_dir.path().to_path_buf()], temp_dir.path().join("notes"));
+        let result = load(&server, "rule-only", None).await;
+
+        assert!(result.content.is_none());
+        assert!(result.error.as_deref().unwrap().contains("not agent-invocable"));
+    }
+
+    #[tokio::test]
     async fn test_load_skill_file_root() {
         let temp_dir = TempDir::new().unwrap();
         create_skill(
@@ -485,7 +597,7 @@ mod tests {
         create_flat_prompt(
             temp_dir.path(),
             "rule-file",
-            "---\nname: rust-rules\ndescription: Rust rules\ntriggers:\n  read:\n    - \"**/*.rs\"\n---\nUse Rust conventions.",
+            "---\nname: rust-rules\ndescription: Rust rules\nagent-invocable: true\ntriggers:\n  read:\n    - \"**/*.rs\"\n---\nUse Rust conventions.",
         );
 
         let server = SkillsMcp::new(&[temp_dir.path().to_path_buf()], temp_dir.path().join("notes"));
@@ -504,7 +616,7 @@ mod tests {
         create_flat_prompt(
             temp_dir.path(),
             "rust-rules",
-            "---\ndescription: Rust rules\ntriggers:\n  read:\n    - \"**/*.rs\"\n---\nUse Rust conventions.",
+            "---\ndescription: Rust rules\nagent-invocable: true\ntriggers:\n  read:\n    - \"**/*.rs\"\n---\nUse Rust conventions.",
         );
 
         let server = SkillsMcp::new(&[temp_dir.path().to_path_buf()], temp_dir.path().join("notes"));
@@ -523,7 +635,7 @@ mod tests {
         create_flat_prompt(
             temp_dir.path(),
             "rust-rules",
-            "---\ndescription: Rust rules\ntriggers:\n  read:\n    - \"**/*.rs\"\n---\nUse Rust conventions.",
+            "---\ndescription: Rust rules\nagent-invocable: true\ntriggers:\n  read:\n    - \"**/*.rs\"\n---\nUse Rust conventions.",
         );
 
         let server = SkillsMcp::new(&[temp_dir.path().to_path_buf()], temp_dir.path().join("notes"));

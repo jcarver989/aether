@@ -131,6 +131,48 @@ async fn test_load_skills_tool() {
 }
 
 #[tokio::test]
+async fn test_list_skills_only_returns_agent_invocable_entries() {
+    let test_files = vec![
+        ("skills/zeta/SKILL.md", "---\ndescription: Zeta\nagent-invocable: true\ntags:\n  - systems\n---\n# Zeta"),
+        (
+            "skills/user-only/SKILL.md",
+            "---\ndescription: User only\nuser-invocable: true\nagent-invocable: false\n---\n# User only",
+        ),
+        (
+            "skills/flat-agent.md",
+            "---\nname: alpha-flat\ndescription: Flat skill\nagent-invocable: true\ntags:\n  - flat\n---\n# Flat",
+        ),
+        (
+            "skills/rule-only.md",
+            "---\ndescription: Rule only\nagent-invocable: false\ntriggers:\n  read:\n    - \"**/*.rs\"\n---\n# Rule",
+        ),
+    ];
+
+    let temp_dir = create_test_files(&test_files);
+    let (_server_handle, client) = create_test_client(temp_dir.path()).await;
+
+    let result = client
+        .call_tool(
+            CallToolRequestParams::new("list_skills")
+                .with_arguments(serde_json::json!({}).as_object().unwrap().clone()),
+        )
+        .await
+        .expect("Failed to call list_skills");
+
+    let parsed = parse_tool_result(&result);
+    assert_eq!(parsed["status"], "success");
+    assert_eq!(parsed["count"], 2);
+    assert_eq!(parsed["message"], "Found 2 skills");
+
+    let skills = parsed["skills"].as_array().expect("Expected skills array");
+    let names: Vec<_> = skills.iter().map(|entry| entry["name"].as_str().unwrap()).collect();
+    assert_eq!(names, vec!["alpha-flat", "zeta"]);
+
+    assert!(skills.iter().all(|entry| entry.get("content").is_none()));
+    assert!(skills.iter().all(|entry| entry.get("availableFiles").is_none()));
+}
+
+#[tokio::test]
 async fn test_load_skills_with_missing() {
     let test_files = vec![
         ("skills/skill-1/SKILL.md", "---\ndescription: First skill\nagent-invocable: true\n---\n# Skill 1\n\nContent."),
@@ -178,6 +220,57 @@ async fn test_load_skills_with_missing() {
     let missing = files.iter().find(|s| s["name"] == "nonexistent-skill").unwrap();
     assert!(missing["content"].is_null());
     assert!(missing["error"].as_str().unwrap().contains("not found"));
+}
+
+#[tokio::test]
+async fn test_get_skills_rejects_non_agent_invocable_prompts() {
+    let test_files = vec![
+        ("skills/allowed/SKILL.md", "---\ndescription: Allowed\nagent-invocable: true\n---\n# Allowed"),
+        (
+            "skills/user-only/SKILL.md",
+            "---\ndescription: User only\nuser-invocable: true\nagent-invocable: false\n---\n# User only",
+        ),
+        (
+            "skills/rule-only.md",
+            "---\ndescription: Rule only\nagent-invocable: false\ntriggers:\n  read:\n    - \"**/*.rs\"\n---\n# Rule",
+        ),
+    ];
+
+    let temp_dir = create_test_files(&test_files);
+    let (_server_handle, client) = create_test_client(temp_dir.path()).await;
+
+    let result = client
+        .call_tool(
+            CallToolRequestParams::new("get_skills").with_arguments(
+                serde_json::json!({
+                    "requests": [
+                        { "name": "allowed" },
+                        { "name": "user-only" },
+                        { "name": "rule-only" }
+                    ]
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+        )
+        .await
+        .expect("Failed to call get_skills tool");
+
+    let parsed = parse_tool_result(&result);
+    let files = parsed["files"].as_array().expect("Expected files array");
+
+    let allowed = files.iter().find(|entry| entry["name"] == "allowed").unwrap();
+    assert!(allowed["content"].is_string());
+    assert!(allowed["error"].is_null());
+
+    let user_only = files.iter().find(|entry| entry["name"] == "user-only").unwrap();
+    assert!(user_only["content"].is_null());
+    assert!(user_only["error"].as_str().unwrap().contains("not agent-invocable"));
+
+    let rule_only = files.iter().find(|entry| entry["name"] == "rule-only").unwrap();
+    assert!(rule_only["content"].is_null());
+    assert!(rule_only["error"].as_str().unwrap().contains("not agent-invocable"));
 }
 
 #[tokio::test]
@@ -293,4 +386,18 @@ async fn test_reject_absolute_path() {
     let file = &parsed["files"][0];
 
     assert!(file["error"].as_str().unwrap().contains("Absolute"));
+}
+
+#[tokio::test]
+async fn list_skills_input_schema_has_properties_object() {
+    let temp_dir = create_test_files(&[]);
+    let (_server_handle, client) = create_test_client(temp_dir.path()).await;
+
+    let tools = client.peer().list_all_tools().await.expect("list tools");
+    let tool = tools.into_iter().find(|tool| tool.name.as_ref() == "list_skills").expect("list_skills tool present");
+
+    let schema = serde_json::Value::Object((*tool.input_schema).clone());
+    assert_eq!(schema.get("type").and_then(|v| v.as_str()), Some("object"));
+    let properties = schema.get("properties").expect("object schema must include a properties key");
+    assert!(properties.is_object(), "properties must be an object, got: {properties}");
 }

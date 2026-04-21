@@ -238,12 +238,11 @@ async fn test_search_notes_empty_results() {
 }
 
 #[tokio::test]
-async fn test_toc_excludes_agent_authored_skills() {
+async fn test_instructions_reference_list_skills_and_do_not_embed_catalog_entries() {
     let temp_dir = TempDir::new().unwrap();
     let skills_dir = temp_dir.path().join("skills");
     std::fs::create_dir_all(&skills_dir).unwrap();
 
-    // Create an agent-authored skill
     let agent_dir = skills_dir.join("agent-skill");
     std::fs::create_dir_all(&agent_dir).unwrap();
     std::fs::write(
@@ -252,7 +251,6 @@ async fn test_toc_excludes_agent_authored_skills() {
     )
     .unwrap();
 
-    // Create a human-authored skill
     let human_dir = skills_dir.join("human-skill");
     std::fs::create_dir_all(&human_dir).unwrap();
     std::fs::write(human_dir.join("SKILL.md"), "---\ndescription: Human skill\nagent-invocable: true\n---\nContent.\n")
@@ -262,11 +260,12 @@ async fn test_toc_excludes_agent_authored_skills() {
     let info = server.get_info();
     let instructions = info.instructions.unwrap();
 
-    assert!(
-        !instructions.contains("**agent-skill**"),
-        "TOC should not include agent-authored skills, got: {instructions}"
-    );
-    assert!(instructions.contains("**human-skill**"), "TOC should include human-authored skills, got: {instructions}");
+    assert!(instructions.contains("search_notes"));
+    assert!(instructions.contains("list_skills"));
+    assert!(instructions.contains("get_skills"));
+    assert!(!instructions.contains("Complete List of Available Skills"));
+    assert!(!instructions.contains("human-skill"));
+    assert!(!instructions.contains("agent-skill"));
 }
 
 #[tokio::test]
@@ -334,7 +333,12 @@ async fn test_full_lifecycle() {
     assert!(results[0]["tags"].as_array().unwrap().iter().any(|t| t == "test"));
     assert!(results[0]["tags"].as_array().unwrap().iter().any(|t| t == "lifecycle"));
 
-    // 4. get_skills still works for curated skills
+    // 4. Discover skills, then load curated content
+    let result = client.call_tool(call_tool_params("list_skills", &serde_json::json!({}))).await.unwrap();
+    let parsed = parse_tool_result(&result);
+    let skills = parsed["skills"].as_array().unwrap();
+    assert!(skills.iter().any(|entry| entry["name"] == "curated"));
+
     let result = client
         .call_tool(call_tool_params(
             "get_skills",

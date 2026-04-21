@@ -1,6 +1,6 @@
 MCP server for unified prompt artifacts -- skills, slash commands, and rules.
 
-This server loads prompt artifacts from explicitly configured prompt directories. It exposes tools for loading skills/prompts and managing notes, and implements the MCP prompts protocol so prompts can be invoked as slash commands.
+This server loads prompt artifacts from explicitly configured directories. It exposes tools to discover and load Skills, and implements user invocable slash commands via the MCP prompts.
 
 # Construction
 
@@ -22,9 +22,12 @@ let server = SkillsMcp::from_args(vec![
 
 # Tools provided
 
-- **`get_skills`** -- Load prompt files by name. Supports both `<name>/SKILL.md` directories and flat `<name>.md` files.
+- **`list_skills`** -- Discover available `agent-invocable` skills (lightweight metadata only).
+- **`get_skills`** -- Load skill files by exact name returned from `list_skills`.
 - **`save_note`** -- Save a note (creates or updates a file in the notes directory).
 - **`search_notes`** -- Search saved notes by keyword.
+
+Recommended flow: `search_notes` -> `list_skills` -> `get_skills`.
 
 # Prompts
 

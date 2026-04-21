@@ -11,6 +11,7 @@ Slash commands and reusable skill prompts. Skills teach the agent domain-specifi
 
 - [Directory Structure](#directory-structure)
 - [Tools](#tools)
+- [list_skills API](#list_skills-api)
 - [get_skills API](#get_skills-api)
   - [Examples](#examples)
   - [Response Fields](#response-fields)
@@ -22,7 +23,7 @@ Slash commands and reusable skill prompts. Skills teach the agent domain-specifi
 
 ## Directory Structure
 
-```
+```text
 ~/.aether/
 ├── commands/           # Slash commands (markdown files)
 │   ├── commit.md
@@ -41,28 +42,58 @@ Slash commands and reusable skill prompts. Skills teach the agent domain-specifi
 
 | Tool | Description |
 |------|-------------|
-| `get_skills` | Load files from skill directories. Omit `path` for `SKILL.md`, or provide `path` for auxiliary files. |
+| `list_skills` | Discover available `agent-invocable` skills with lightweight metadata (`name`, `description`, `tags`). |
+| `get_skills` | Load files for exact skill names returned by `list_skills`. |
 | `save_note` | Append a learning to a topic-based note file. Notes consolidate learnings by topic. |
 | `search_notes` | Search notes by topic name (substring) or tag (exact match). |
 
 Commands are exposed as **MCP Prompts** (via `list_prompts` / `get_prompt`) rather than tools. This is what powers `/slash-commands` in the TUI.
 
+## list_skills API
+
+`list_skills` provides explicit skill discovery. Call it before `get_skills`.
+
+### Example
+
+Request:
+```json
+{}
+```
+
+Response:
+```json
+{
+  "status": "success",
+  "skills": [
+    {
+      "name": "rust",
+      "description": "Rust best practices and project conventions",
+      "tags": ["rust", "testing"]
+    }
+  ],
+  "count": 1,
+  "message": "Found 1 skills"
+}
+```
+
 ## get_skills API
 
-`get_skills` loads files from skill directories with progressive disclosure:
+`get_skills` loads files with progressive disclosure:
 
-- Omit `path` → loads `SKILL.md`
-- Provide `path` → loads that file relative to the skill root
-- When loading `SKILL.md`, the response includes `availableFiles` (manifest of auxiliary files)
+- Use exact names returned by `list_skills`
+- Only `agent-invocable: true` skills can be loaded
+- Omit `path` -> loads root content (`SKILL.md` for directory-backed skills)
+- Provide `path` -> loads that file relative to a directory-backed skill root
+- For directory-backed skills, loading `SKILL.md` returns `availableFiles` so callers can selectively load auxiliary files
 
 ### Examples
 
-Load a skill root:
+Load a discovered skill root:
 ```json
 { "requests": [{ "name": "rust" }] }
 ```
 
-Load auxiliary files:
+Load auxiliary files after inspecting `availableFiles`:
 ```json
 { "requests": [
   { "name": "rust", "path": "traits.md" },
@@ -73,10 +104,10 @@ Load auxiliary files:
 ### Response Fields
 
 - `name` — skill name
-- `path` — file path (normalized to `SKILL.md` if omitted)
+- `path` — file path (normalized to `SKILL.md` for directory-backed root loads)
 - `content` — file content (null if error)
 - `error` — error message if loading failed
-- `availableFiles` — auxiliary files in the skill (only for `SKILL.md`)
+- `availableFiles` — auxiliary file manifest (only when loading a directory-backed `SKILL.md` root)
 
 ### Security
 
@@ -120,6 +151,7 @@ Create a directory under `skills/` with a `SKILL.md` file:
 name: rust
 description: Rust best practices and project conventions
 tags: [rust, testing]
+agent-invocable: true
 ---
 
 # Rust Coding Guidelines
@@ -128,6 +160,4 @@ See [traits](./traits.md) for trait conventions.
 See [error-handling](./error-handling.md) for error patterns.
 ```
 
-Skills support multi-file content. The `SKILL.md` is the primary file loaded by `get_skills`. Auxiliary files (like `traits.md`, `error-handling.md`) can be loaded on-demand by providing the `path` parameter.
-
-The agent discovers auxiliary files via the `availableFiles` field when loading `SKILL.md`.
+Skills support multi-file content. The `SKILL.md` is the primary file loaded by `get_skills`. Auxiliary files can be loaded on-demand via the `path` parameter after discovery through `availableFiles`.
