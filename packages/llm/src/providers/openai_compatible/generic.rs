@@ -1,6 +1,8 @@
 use async_openai::{Client, config::OpenAIConfig};
+use schemars::Schema;
 
 use crate::provider::get_context_window;
+use crate::tool_schema::normalize_for_moonshot;
 use crate::{Context, LlmError, LlmModel, LlmResponseStream, Result, StreamingModelProvider};
 
 use super::{build_chat_request, create_custom_stream_generic};
@@ -15,6 +17,7 @@ pub struct ProviderConfig {
     pub default_model: &'static str,
     pub prefix: &'static str,
     pub display_name: &'static str,
+    pub tool_schema_transform: Option<fn(&mut Schema)>,
 }
 
 pub const DEEPSEEK: ProviderConfig = ProviderConfig {
@@ -23,6 +26,7 @@ pub const DEEPSEEK: ProviderConfig = ProviderConfig {
     default_model: "deepseek-chat",
     prefix: "deepseek",
     display_name: "DeepSeek",
+    tool_schema_transform: None,
 };
 
 pub const MOONSHOT: ProviderConfig = ProviderConfig {
@@ -31,6 +35,7 @@ pub const MOONSHOT: ProviderConfig = ProviderConfig {
     default_model: "moonshot-v1-8k",
     prefix: "moonshot",
     display_name: "Moonshot",
+    tool_schema_transform: Some(normalize_for_moonshot),
 };
 
 pub const ZAI: ProviderConfig = ProviderConfig {
@@ -39,6 +44,7 @@ pub const ZAI: ProviderConfig = ProviderConfig {
     default_model: "GLM-4.6",
     prefix: "zai",
     display_name: "Z.ai",
+    tool_schema_transform: None,
 };
 
 /// A generic provider for APIs that are fully OpenAI-compatible.
@@ -76,7 +82,7 @@ impl StreamingModelProvider for GenericOpenAiProvider {
     }
 
     fn stream_response(&self, context: &Context) -> LlmResponseStream {
-        let request = match build_chat_request(&self.model, context) {
+        let request = match build_chat_request(&self.model, context, self.config.tool_schema_transform) {
             Ok(req) => req,
             Err(e) => return Box::pin(async_stream::stream! { yield Err(e); }),
         };

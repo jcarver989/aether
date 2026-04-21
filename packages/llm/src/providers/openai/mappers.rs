@@ -7,6 +7,8 @@ use async_openai::types::chat::{
     ChatCompletionRequestUserMessageContentPart, ChatCompletionTool, ChatCompletionTools, FunctionCall, FunctionObject,
     ImageUrl, InputAudio, InputAudioFormat,
 };
+use schemars::Schema;
+use serde_json::from_str;
 
 use crate::{ChatMessage, ContentBlock, LlmError, Result, ToolDefinition};
 
@@ -80,8 +82,11 @@ pub fn map_messages(messages: &[ChatMessage]) -> Result<Vec<ChatCompletionReques
         .collect()
 }
 
-pub fn map_tools(tools: &[ToolDefinition]) -> Result<Vec<ChatCompletionTools>> {
-    tools.iter().map(tool_definition_to_openai).collect()
+pub fn map_tools(
+    tools: &[ToolDefinition],
+    tool_schema_transform: Option<fn(&mut Schema)>,
+) -> Result<Vec<ChatCompletionTools>> {
+    tools.iter().map(|t| tool_definition_to_openai(t, tool_schema_transform)).collect()
 }
 
 fn map_user_content(parts: Vec<ContentBlock>) -> Result<ChatCompletionRequestUserMessageContent> {
@@ -120,15 +125,22 @@ fn map_audio_format(mime_type: &str) -> Result<InputAudioFormat> {
     }
 }
 
-fn tool_definition_to_openai(tool: &ToolDefinition) -> Result<ChatCompletionTools> {
-    let parameters = serde_json::from_str(&tool.parameters)
+fn tool_definition_to_openai(
+    tool: &ToolDefinition,
+    tool_schema_transform: Option<fn(&mut Schema)>,
+) -> Result<ChatCompletionTools> {
+    let mut schema: Schema = from_str(&tool.parameters)
         .map_err(|e| LlmError::ToolParameterParsing { tool_name: tool.name.clone(), error: e.to_string() })?;
+
+    if let Some(transform) = tool_schema_transform {
+        transform(&mut schema);
+    }
 
     Ok(ChatCompletionTools::Function(ChatCompletionTool {
         function: FunctionObject {
             name: tool.name.clone(),
             description: Some(tool.description.clone()),
-            parameters: Some(parameters),
+            parameters: Some(schema.into()),
             strict: Some(false),
         },
     }))
@@ -137,7 +149,7 @@ fn tool_definition_to_openai(tool: &ToolDefinition) -> Result<ChatCompletionTool
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::IsoString;
+    use crate::{tool_schema::normalize_for_moonshot, types::IsoString};
 
     #[test]
     fn map_user_content_text_only() {
@@ -273,7 +285,7 @@ mod tests {
             parameters: r#"{"type": "object", "properties": {"q": {"type": "string"}}}"#.to_string(),
             server: None,
         }];
-        let result = map_tools(&tools);
+        let result = map_tools(&tools, None);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 1);
     }
@@ -286,7 +298,7 @@ mod tests {
             parameters: "not valid json{{{".to_string(),
             server: None,
         }];
-        let result = map_tools(&tools);
+        let result = map_tools(&tools, None);
         assert!(result.is_err());
         match result.unwrap_err() {
             LlmError::ToolParameterParsing { tool_name, .. } => {
@@ -294,5 +306,25 @@ mod tests {
             }
             other => panic!("Expected ToolParameterParsing, got: {other}"),
         }
+    }
+
+    #[test]
+    fn map_tools_applies_transform_when_provided() {
+        let raw_params = r#"{"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "MySchema", "type": "object", "properties": {"q": {"type": "string", "format": "uri"}}}"#;
+        let tools = vec![ToolDefinition {
+            name: "search".to_string(),
+            description: "Search".to_string(),
+            parameters: raw_params.to_string(),
+            server: None,
+        }];
+        let result = map_tools(&tools, Some(normalize_for_moonshot)).unwrap();
+        let ChatCompletionTools::Function(f) = &result[0] else {
+            panic!("Expected function tool");
+        };
+        let params = f.function.parameters.as_ref().unwrap();
+        assert!(params.get("$schema").is_none());
+        assert!(params.get("title").is_none());
+        assert!(params["properties"]["q"].get("format").is_none());
+        assert_eq!(params["type"], "object");
     }
 }

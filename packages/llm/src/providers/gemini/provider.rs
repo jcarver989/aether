@@ -73,7 +73,7 @@ impl StreamingModelProvider for GeminiProvider {
 
             tracing::info!("Using Gemini API with API key (OpenAI-compatible endpoint)");
             let client = Self::build_openai_client(&api_key);
-            let request = match build_chat_request(&provider.model, &context) {
+            let request = match build_chat_request(&provider.model, &context, None) {
                 Ok(req) => req,
                 Err(e) => {
                     yield Err(e);

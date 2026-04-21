@@ -14,6 +14,7 @@ pub mod provider;
 pub mod providers;
 mod reasoning;
 pub mod testing;
+mod tool_schema;
 mod tools;
 pub mod types;
 

@@ -311,7 +311,7 @@ mod tests {
     #[test]
     fn test_build_request_includes_reasoning_content_on_assistant_tool_message() {
         let context = context_with_assistant_message(assistant_with_tool_call(Some("trace chunk")));
-        let request = build_chat_request("test-model", &context).unwrap();
+        let request = build_chat_request("test-model", &context, None).unwrap();
 
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["messages"][1]["role"], "assistant");
@@ -324,7 +324,7 @@ mod tests {
             vec![ChatMessage::User { content: vec![ContentBlock::text("hello")], timestamp: IsoString::now() }],
             vec![],
         );
-        let request = build_chat_request("test-model", &context).unwrap();
+        let request = build_chat_request("test-model", &context, None).unwrap();
 
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["stream_options"]["include_usage"], true);
@@ -333,7 +333,7 @@ mod tests {
     #[test]
     fn test_build_request_sends_empty_reasoning_content_on_tool_call_when_none() {
         let context = context_with_assistant_message(assistant_with_tool_call(None));
-        let request = build_chat_request("test-model", &context).unwrap();
+        let request = build_chat_request("test-model", &context, None).unwrap();
 
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["messages"][1]["role"], "assistant");
