@@ -11,38 +11,12 @@ Aether is an AI coding agent harness, written in Rust, that gives _you_ control 
 
 ![Aether demo](demo.gif)
 
-## Why Aether?
-
-Many harnesses ship with hardcoded system prompts and tools that bloat context and cause you to fight the harness for control. Aether takes a different approach -- agents begin as blank slates with _no_ system prompt and 0 tools, so every token is _yours_ to mold. 
-
-Then, you add what you need. Aether is highly modular by design. You can go from a minimal agent to fully batteries-included with just a few lines of config.
-
-### Your Prompt
-
-System prompts are just arrays of markdown files, giving _you_ full control to edit and compose your agent's instructions however you wish. Aether doesn't care if you name your prompt file `CLAUDE.md`, `AGENTS.md`, or `THE_FUTURE.md`.
-
-### Your Tools
-
-Aether agents receive tools _exclusively_ via [MCP](https://modelcontextprotocol.io/) servers, so you can easily extend their capabilities using _any_ language you like. Local and remote servers are supported (including OAuth). And Aether ships with optional 1st-party MCPs for file system operations, lsp integration, sub-agents, skills and more.
-
-Aether bakes progressive discovery for MCP tools directly into the harness, so you can connect as many MCPs as you'd like without blowing out your context window.
-
-### Your Model
-
-Aether supports Anthropic, OpenAI, OpenRouter, DeepSeek, Gemini, Moonshot, ZAI, Llama.cpp, and Ollama [out of the box](https://aether-agent.io/aether/configuration/llm-providers/). You can implement your own via the `StreamingModelProvider` trait, or [alloy models together](https://aether-agent.io/aether/configuration/llm-providers/#alloying) to combine their strengths.
-
-### Your Interface
-
-- **TUI**: Aether's TUI supports syntax highlighting, PR-style comments on git diffs to give feedback to your agent, custom themes and more.
-- **IDE/Editor**: Aether is an [ACP](https://agentclientprotocol.com/get-started/introduction) agent, so you can use it with any client that supports ACP (e.g. Zed).
-- **Headless**: Aether can be run as a headless agent that streams structured JSON logs.
-- **Rust library**: Aether can also be used as a Rust library to build agentic applications.
-
 ## Table of Contents
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 
+- [Why Aether?](#why-aether)
 - [Quick Start](#quick-start)
   - [1. **Install**](#1-install)
   - [2. **Create your first agent**](#2-create-your-first-agent)
@@ -53,6 +27,24 @@ Aether supports Anthropic, OpenAI, OpenRouter, DeepSeek, Gemini, Moonshot, ZAI, 
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
+
+
+## Why Aether?
+
+Many harnesses ship with hardcoded system prompts and tools that bloat context and cause you to fight the harness for control. 
+
+Aether takes a different approach. Agents begin as blank slates with _no_ system prompt and 0 tools, so every token is _yours_ to mold. Then, you add what you need. Aether is highly modular by design. You can go from a minimal agent to fully batteries-included with just a few lines of config.
+
+- **Your Prompt**: System prompts are just arrays of markdown files. Edit and compose instructions however you wish. It doesn't matter if you name your files `CLAUDE.md`, `AGENTS.md`, or `THE_FUTURE.md`.
+- **Your Tools**: Aether agents get tools _exclusively_ via [MCP](https://modelcontextprotocol.io/) servers. Extend capabilities using _any_ language you like. Local and remote servers are supported (including OAuth). And Aether ships with 1st-party MCPs for file system operations, lsp integration, sub-agents, skills and more. Connect as many MCPs as you'd like without blowing out your context window as progressive discovery is built into the harness.
+- **Your Model**: Anthropic, OpenAI, OpenRouter, DeepSeek, Gemini, Moonshot, ZAI, Llama.cpp, and Ollama are [supported out of the box](https://aether-agent.io/aether/configuration/llm-providers/). Bring your own provider via the `StreamingModelProvider` trait, or [alloy models together](https://aether-agent.io/aether/configuration/llm-providers/#alloying) to combine their strengths.
+- **Your Interface**: 
+  - **TUI**: Aether's TUI supports syntax highlighting, PR-style comments on git diffs to give feedback to your agent, custom themes and more.
+  - **IDE/Editor**: Aether is an [ACP](https://agentclientprotocol.com/get-started/introduction) agent, so you can use it with any client that supports ACP (e.g. Zed).
+  - **Headless**: Aether can be run as a headless agent that streams structured JSON logs.
+  - **Rust library**: Aether can also be used as a Rust library to build agentic applications.
+  
+  
 ## Quick Start
 
 ### 1. **Install**
@@ -108,8 +100,6 @@ Aether supports Anthropic, OpenAI, OpenRouter, DeepSeek, Gemini, Moonshot, ZAI, 
      ```bash
      aether headless "Refactor auth module"
      ```
-
-
 
 ## Using Aether as a library
 
