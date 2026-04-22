@@ -16,6 +16,10 @@ dist = false
 name = "wisp"
 path = "src/lib.rs"
 
+[[bin]]
+name = "wisp"
+path = "src/main.rs"
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
