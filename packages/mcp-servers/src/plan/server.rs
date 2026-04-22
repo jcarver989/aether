@@ -20,6 +20,7 @@ use std::fmt::{Display, Formatter};
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use tokio::fs::read_to_string;
+use tokio::process::Command;
 use utils::plan_review::{PlanReviewDecision, PlanReviewElicitationMeta};
 use utils::substitution::substitute_parameters;
 
@@ -38,6 +39,15 @@ pub struct PlanMcpArgs {
     /// `DEFAULT_PLAN_PROMPT` is used instead.
     #[arg(long)]
     pub prompt_file: Option<PathBuf>,
+
+    /// Command invoked instead of the default MCP elicitation when
+    /// `submit_plan` is called. All trailing positional tokens in the
+    /// `mcp.json` `args` array become the program + its arguments; the
+    /// absolute plan-file path is appended as the final positional arg.
+    /// Stdout from the command is returned verbatim to the agent as
+    /// feedback.
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    pub submit_command: Vec<String>,
 }
 
 impl PlanMcpArgs {
@@ -53,21 +63,27 @@ impl PlanMcpArgs {
 pub struct PlanMcp {
     tool_router: ToolRouter<Self>,
     prompt_file: Option<PathBuf>,
+    submit_command: Vec<String>,
 }
 
 #[tool_router]
 impl PlanMcp {
     pub fn new() -> Self {
-        Self { tool_router: Self::tool_router(), prompt_file: None }
+        Self { tool_router: Self::tool_router(), prompt_file: None, submit_command: Vec::new() }
     }
 
     pub fn from_args(args: Vec<String>) -> Result<Self, String> {
-        let PlanMcpArgs { prompt_file } = PlanMcpArgs::from_args(args)?;
-        Ok(Self { tool_router: Self::tool_router(), prompt_file })
+        let PlanMcpArgs { prompt_file, submit_command } = PlanMcpArgs::from_args(args)?;
+        Ok(Self { tool_router: Self::tool_router(), prompt_file, submit_command })
     }
 
     pub fn with_prompt_file(mut self, path: PathBuf) -> Self {
         self.prompt_file = Some(path);
+        self
+    }
+
+    pub fn with_submit_command(mut self, command: Vec<String>) -> Self {
+        self.submit_command = command;
         self
     }
 
@@ -80,6 +96,11 @@ impl PlanMcp {
     ) -> Result<Json<SubmitPlanOutput>, String> {
         let Parameters(input) = request;
         let plan = Plan::load(&input.plan_path).await.map_err(|e| e.to_string())?;
+
+        if !self.submit_command.is_empty() {
+            return run_external_submit(&plan, &self.submit_command).await.map(Json).map_err(|e| e.to_string());
+        }
+
         let form = Self::build_elicitation_form(&plan)?;
         let result = context.peer.create_elicitation(form).await.map_err(|e| e.to_string())?;
 
@@ -206,6 +227,9 @@ pub enum SubmitPlanError {
     RelativePath,
     Io { path: PathBuf, source: std::io::Error },
     EmptyPlan(PathBuf),
+    EmptySubmitCommand,
+    SubmitCommandSpawn { program: String, source: std::io::Error },
+    SubmitCommandFailed { program: String, status: std::process::ExitStatus, stderr: String },
 }
 
 struct Plan {
@@ -255,8 +279,43 @@ impl Display for SubmitPlanError {
             SubmitPlanError::EmptyPlan(path) => {
                 write!(f, "Plan file is empty: {}", path.display())
             }
+            SubmitPlanError::EmptySubmitCommand => {
+                write!(f, "submit_command is empty; expected at least a program name")
+            }
+            SubmitPlanError::SubmitCommandSpawn { program, source } => {
+                write!(f, "Failed to spawn submit command `{program}`: {source}")
+            }
+            SubmitPlanError::SubmitCommandFailed { program, status, stderr } => {
+                let stderr_trimmed = stderr.trim();
+                if stderr_trimmed.is_empty() {
+                    write!(f, "Submit command `{program}` exited with {status}")
+                } else {
+                    write!(f, "Submit command `{program}` exited with {status}: {stderr_trimmed}")
+                }
+            }
         }
     }
+}
+
+async fn run_external_submit(plan: &Plan, command: &[String]) -> Result<SubmitPlanOutput, SubmitPlanError> {
+    let (program, extra_args) = command.split_first().ok_or(SubmitPlanError::EmptySubmitCommand)?;
+    let output = Command::new(program)
+        .args(extra_args)
+        .arg(&plan.path)
+        .output()
+        .await
+        .map_err(|source| SubmitPlanError::SubmitCommandSpawn { program: program.clone(), source })?;
+
+    if !output.status.success() {
+        return Err(SubmitPlanError::SubmitCommandFailed {
+            program: program.clone(),
+            status: output.status,
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    Ok(SubmitPlanOutput { approved: false, feedback: Some(stdout) })
 }
 
 #[cfg(test)]
@@ -316,5 +375,26 @@ mod tests {
     fn from_args_empty_is_ok() {
         let server = PlanMcp::from_args(vec![]).unwrap();
         assert_eq!(server.prompt_file, None);
+        assert!(server.submit_command.is_empty());
+    }
+
+    #[test]
+    fn from_args_parses_trailing_submit_command() {
+        let server =
+            PlanMcp::from_args(vec!["contextbridge".into(), "plan".into(), "--project".into(), "foo".into()]).unwrap();
+        assert_eq!(server.submit_command, vec!["contextbridge", "plan", "--project", "foo"]);
+    }
+
+    #[test]
+    fn from_args_parses_prompt_file_followed_by_submit_command() {
+        let server = PlanMcp::from_args(vec![
+            "--prompt-file".into(),
+            "/tmp/plan.md".into(),
+            "contextbridge".into(),
+            "plan".into(),
+        ])
+        .unwrap();
+        assert_eq!(server.prompt_file, Some(PathBuf::from("/tmp/plan.md")));
+        assert_eq!(server.submit_command, vec!["contextbridge", "plan"]);
     }
 }

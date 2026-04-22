@@ -2,8 +2,8 @@ use mcp_servers::{DEFAULT_PLAN_PROMPT, PlanMcp};
 use mcp_utils::client::{McpClient, McpClientEvent};
 use mcp_utils::testing::connect;
 use rmcp::model::{
-    CallToolRequestParams, ClientCapabilities, ClientInfo, CreateElicitationRequestParams, CreateElicitationResult,
-    ElicitationAction, GetPromptRequestParams, Implementation,
+    CallToolRequestParams, CallToolResult, ClientCapabilities, ClientInfo, CreateElicitationRequestParams,
+    CreateElicitationResult, ElicitationAction, GetPromptRequestParams, Implementation,
 };
 use rmcp::service::RunningService;
 use rmcp::{RoleClient, Service};
@@ -92,6 +92,15 @@ async fn submit_plan<T: Service<RoleClient>>(
     serde_json::from_str(&text.text).expect("Invalid JSON response")
 }
 
+async fn submit_plan_raw<T: Service<RoleClient>>(
+    client: &RunningService<RoleClient, T>,
+    plan_path: &str,
+) -> CallToolResult {
+    let request = CallToolRequestParams::new("submit_plan")
+        .with_arguments(json!({ "planPath": plan_path }).as_object().unwrap().clone());
+    client.call_tool(request).await.expect("call submit_plan")
+}
+
 fn silent_client() -> McpClient {
     let (event_tx, _event_rx) = mpsc::channel(8);
     McpClient::new(test_client_info(), "plan-test-server".to_string(), event_tx, Arc::new(RwLock::new(Vec::new())))
@@ -163,4 +172,65 @@ fn extract_user_text(message: &rmcp::model::PromptMessage) -> String {
         rmcp::model::PromptMessageContent::Text { text } => text.clone(),
         other => panic!("expected text content, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn submit_plan_runs_external_command_and_forwards_stdout_as_feedback() {
+    let temp_dir = TempDir::new().expect("tempdir");
+    let plan_path = temp_dir.path().join("plan.md");
+    fs::write(&plan_path, "# Plan\n\nDo the thing.").expect("write plan");
+
+    let server = PlanMcp::new().with_submit_command(vec![
+        "/bin/sh".into(),
+        "-c".into(),
+        r#"printf "feedback for %s" "$1""#.into(),
+        "--".into(),
+    ]);
+    let (_server, client) = connect(server, silent_client()).await.expect("connect");
+
+    let result = submit_plan(&client, plan_path.to_string_lossy().as_ref()).await;
+    assert_eq!(result["approved"], false);
+    let feedback = result["feedback"].as_str().expect("feedback string");
+    let expected = format!("feedback for {}", plan_path.display());
+    assert_eq!(feedback, expected, "expected verbatim stdout forwarded to feedback");
+}
+
+#[tokio::test]
+async fn submit_plan_external_command_forwards_empty_stdout() {
+    let temp_dir = TempDir::new().expect("tempdir");
+    let plan_path = temp_dir.path().join("plan.md");
+    fs::write(&plan_path, "# Plan").expect("write plan");
+
+    let server = PlanMcp::new().with_submit_command(vec!["/bin/true".into()]);
+    let (_server, client) = connect(server, silent_client()).await.expect("connect");
+
+    let result = submit_plan(&client, plan_path.to_string_lossy().as_ref()).await;
+    assert_eq!(result["approved"], false);
+    assert_eq!(result["feedback"], "", "empty stdout should still be forwarded as empty feedback");
+}
+
+#[tokio::test]
+async fn submit_plan_external_command_errors_on_nonzero_exit() {
+    let temp_dir = TempDir::new().expect("tempdir");
+    let plan_path = temp_dir.path().join("plan.md");
+    fs::write(&plan_path, "# Plan").expect("write plan");
+
+    let server = PlanMcp::new().with_submit_command(vec!["/bin/false".into()]);
+    let (_server, client) = connect(server, silent_client()).await.expect("connect");
+
+    let result = submit_plan_raw(&client, plan_path.to_string_lossy().as_ref()).await;
+    assert!(result.is_error.unwrap_or(false), "expected tool error for nonzero exit: {result:?}");
+}
+
+#[tokio::test]
+async fn submit_plan_external_command_errors_on_missing_binary() {
+    let temp_dir = TempDir::new().expect("tempdir");
+    let plan_path = temp_dir.path().join("plan.md");
+    fs::write(&plan_path, "# Plan").expect("write plan");
+
+    let server = PlanMcp::new().with_submit_command(vec!["aether-plan-mcp-does-not-exist-xyz".into()]);
+    let (_server, client) = connect(server, silent_client()).await.expect("connect");
+
+    let result = submit_plan_raw(&client, plan_path.to_string_lossy().as_ref()).await;
+    assert!(result.is_error.unwrap_or(false), "expected tool error for missing binary: {result:?}");
 }

@@ -1,6 +1,27 @@
 # PlanMcp
 
-MCP server that exposes a `submit_plan` tool that allows your agent to submit plans for user approval/feedback. Calling this tool triggers a MCP elicitation request to the client.
+MCP server that exposes a `submit_plan` tool that allows your agent to submit plans for user approval/feedback. By default, calling this tool triggers an MCP elicitation request to the client (e.g. Wisp renders a plan-review TUI panel).
+
+Alternatively, the server can hand the plan off to an arbitrary external CLI. Any trailing positional tokens in the `mcp.json` `args` array are treated as the submit command; the plan's absolute path is appended as its final argument, and its stdout is forwarded verbatim to the agent as `feedback`.
+
+```json
+{
+  "servers": {
+    "plan": {
+      "type": "in-memory",
+      "args": ["contextbridge", "plan", "--project", "foo"]
+    }
+  }
+}
+```
+
+With the above config, calling `submit_plan` with `planPath=/tmp/plan.md` invokes:
+
+```
+contextbridge plan --project foo /tmp/plan.md
+```
+
+A non-zero exit code surfaces as a tool error; an exit code of `0` returns `{ "approved": false, "feedback": "<stdout>" }` regardless of stdout content — the agent reads the feedback and decides how to proceed.
 
 ## Table of Contents
 

@@ -58,6 +58,7 @@ tasks = [
     "dep:tempfile",
     "dep:thiserror",
 ]
+plan = []
 subagents = [
     "coding",
     "skills",
@@ -71,7 +72,6 @@ subagents = [
     "dep:tracing",
 ]
 survey = []
-plan = []
 all = ["coding", "skills", "tasks", "subagents", "survey", "plan"]
 stdio = ["coding", "skills", "tasks", "survey", "subagents", "plan"]
 
