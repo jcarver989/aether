@@ -86,41 +86,44 @@ install:
     cargo install --path packages/wisp --force
     cargo sweep --installed
 
-# Release only packages with changes since their last tag
-release LEVEL:
+# Release packages whose sources changed since their last tag, plus any
+# packages that transitively path-depend on them. Dependents are always
+# included because any change to A means B — which path-depends on A —
+# resolves to a new A, so B's published artifact changes and B needs its
+# own version bump regardless of whether A's change was breaking.
+_release LEVEL FLAGS:
     #!/usr/bin/env bash
     set -euo pipefail
-    pkgs=""
+    metadata=$(cargo metadata --no-deps --format-version 1)
+    seeds=()
     while IFS=$'\t' read -r name dir; do
         tag=$(git tag -l "${name}-v*" --sort=-v:refname | head -1)
         if [ -z "$tag" ] || [ -n "$(git log "${tag}..HEAD" -- "$dir")" ]; then
-            pkgs="$pkgs -p $name"
+            seeds+=("$name")
         fi
-    done < <(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | [.name, (.manifest_path | split("/") | .[:-1] | join("/"))] | @tsv')
-    if [ -z "$pkgs" ]; then
+    done < <(echo "$metadata" | jq -r '.packages[] | [.name, (.manifest_path | sub("/Cargo.toml$"; ""))] | @tsv')
+    if [ ${#seeds[@]} -eq 0 ]; then
         echo "No packages have changes to release"
         exit 0
     fi
-    echo "Releasing:$pkgs"
-    cargo release {{LEVEL}} $pkgs --execute
+    pkgs=$(echo "$metadata" | jq -r --args '
+        (reduce .packages[] as $p ({};
+            reduce ($p.dependencies[] | select(.path != null and .kind != "dev") | .name) as $d
+                (.; .[$d] += [$p.name]))) as $rev
+        | def close(s):
+            ((s + (s | map($rev[.] // []) | add // [])) | unique) as $next
+            | if $next == s then s else close($next) end;
+          close($ARGS.positional | unique) | map("-p " + .) | join(" ")
+    ' -- "${seeds[@]}")
+    [ -z "{{FLAGS}}" ] && verb="Would release" || verb="Releasing"
+    echo "${verb}: $pkgs"
+    cargo release {{LEVEL}} $pkgs {{FLAGS}}
+
+# Release eligible packages
+release LEVEL: (_release LEVEL "--execute")
 
 # Dry-run release (no commits, tags, or publishing)
-release-dry-run LEVEL="patch":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    pkgs=""
-    while IFS=$'\t' read -r name dir; do
-        tag=$(git tag -l "${name}-v*" --sort=-v:refname | head -1)
-        if [ -z "$tag" ] || [ -n "$(git log "${tag}..HEAD" -- "$dir")" ]; then
-            pkgs="$pkgs -p $name"
-        fi
-    done < <(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | [.name, (.manifest_path | split("/") | .[:-1] | join("/"))] | @tsv')
-    if [ -z "$pkgs" ]; then
-        echo "No packages have changes to release"
-        exit 0
-    fi
-    echo "Would release:$pkgs"
-    cargo release {{LEVEL}} $pkgs
+release-dry-run LEVEL="patch": (_release LEVEL "")
 
 # Clean everything
 clean:
