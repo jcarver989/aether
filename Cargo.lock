@@ -28,6 +28,7 @@ dependencies = [
  "agent-client-protocol",
  "agent-client-protocol-tokio",
  "async-trait",
+ "futures",
  "rmcp",
  "serde",
  "serde_json",

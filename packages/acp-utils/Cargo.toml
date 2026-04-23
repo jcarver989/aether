@@ -31,6 +31,7 @@ server = ["dep:thiserror"]
 [dependencies]
 agent-client-protocol = { workspace = true }
 agent-client-protocol-tokio = { workspace = true, optional = true }
+futures = { workspace = true }
 rmcp = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -1,7 +1,7 @@
-mod actor;
-mod actor_handle;
+mod connection;
+mod connection_handle;
 mod error;
 
-pub use actor::{AcpActor, AcpRequest};
-pub use actor_handle::AcpActorHandle;
+pub use connection::AcpConnection;
+pub use connection_handle::AcpConnectionHandle;
 pub use error::AcpServerError;

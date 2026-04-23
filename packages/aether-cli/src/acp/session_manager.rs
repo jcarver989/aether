@@ -1,37 +1,34 @@
-use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::{AuthMethodsUpdatedParams, McpRequest};
-use agent_client_protocol::{
-    self as acp, Agent, AgentCapabilities, AuthMethod, AuthenticateRequest, AuthenticateResponse,
-    AvailableCommandsUpdate, ConfigOptionUpdate, ExtNotification, Implementation, InitializeRequest,
-    InitializeResponse, ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
-    McpCapabilities, NewSessionRequest, NewSessionResponse, PromptCapabilities, PromptResponse, ProtocolVersion,
-    SessionId, SessionNotification, SessionUpdate, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse,
-    SetSessionModeRequest, SetSessionModeResponse,
+use agent_client_protocol::schema::{
+    self as acp, AgentCapabilities, AuthMethod, AuthenticateRequest, AuthenticateResponse, AvailableCommandsUpdate,
+    ConfigOptionUpdate, Implementation, InitializeRequest, InitializeResponse, ListSessionsRequest,
+    ListSessionsResponse, LoadSessionRequest, LoadSessionResponse, McpCapabilities, NewSessionRequest,
+    NewSessionResponse, PromptCapabilities, PromptResponse, ProtocolVersion, SessionId, SessionNotification,
+    SessionUpdate, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse,
 };
 use llm::catalog::{self, LlmModel, get_local_models};
 use llm::oauth::OAuthCredentialStore;
 use llm::types::IsoString;
 use llm::{ContentBlock, ReasoningEffort};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::spawn;
 use tokio::sync::oneshot;
-use tokio::sync::{Mutex, mpsc};
-use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 use super::config_setting::ConfigSetting;
 use super::mappers::{map_acp_mcp_servers, replay_to_client};
 use super::model_config::{
-    ValidatedMode, build_config_options_from_modes, effective_model, mode_name_for_state_from_modes, model_exists,
-    pick_default_model, resolve_mode_from_modes, supports_prompt_audio, validated_modes_from_specs,
+    ValidatedMode, build_config_options_from_modes, effective_model, pick_default_model, supports_prompt_audio,
+    validated_modes_from_specs,
 };
-use super::relay::{RelayHandle, SessionCommand, spawn_relay};
+use super::relay::{SessionCommand, spawn_relay};
 use super::session::Session;
+use super::session_registry::{SessionRegistry, SessionState};
 use super::session_store::{SessionMeta, SessionStore};
 use acp_utils::content::format_embedded_resource;
-use acp_utils::server::AcpActorHandle;
+use acp_utils::server::AcpConnection;
 use aether_core::context::ext::ContextExt;
 use aether_project::{AgentCatalog, load_agent_catalog};
 use llm::Context;
@@ -60,84 +57,22 @@ impl PromptModalities {
     }
 }
 
-/// Mutable per-session config state.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct SessionConfigState {
-    active_model: String,
-    pending_model: Option<String>,
-    reasoning_effort: Option<ReasoningEffort>,
-    selected_mode: Option<String>,
-}
-
-impl SessionConfigState {
-    fn new(active_model: String) -> Self {
-        Self { active_model, pending_model: None, reasoning_effort: None, selected_mode: None }
-    }
-
-    fn apply_config_change(
-        &mut self,
-        validated_modes: &[ValidatedMode],
-        available: &[LlmModel],
-        setting: &ConfigSetting,
-    ) -> Result<(), acp::Error> {
-        match setting {
-            ConfigSetting::Mode(value) => {
-                let Some((mode_model, mode_reasoning_effort)) = resolve_mode_from_modes(validated_modes, value) else {
-                    error!("Unknown or invalid mode: {}", value);
-                    return Err(acp::Error::invalid_params());
-                };
-
-                self.pending_model = (self.active_model != mode_model).then_some(mode_model);
-                self.reasoning_effort = mode_reasoning_effort;
-                self.selected_mode = Some(value.clone());
-            }
-            ConfigSetting::Model(value) => {
-                if !model_exists(available, value) {
-                    error!("Unknown model in set_session_config_option: {}", value);
-                    return Err(acp::Error::invalid_params());
-                }
-                self.pending_model = (self.active_model != *value).then_some(value.clone());
-            }
-            ConfigSetting::ReasoningEffort(effort) => {
-                self.reasoning_effort = *effort;
-            }
-        }
-
-        let effective = effective_model(&self.active_model, self.pending_model.as_deref());
-        if setting.config_id() == ConfigOptionId::Model {
-            self.selected_mode = mode_name_for_state_from_modes(validated_modes, effective, self.reasoning_effort);
-        }
-
-        Ok(())
-    }
-}
-
-/// Per-session state including active and staged model selections.
-struct SessionState {
-    relay_tx: mpsc::Sender<SessionCommand>,
-    mcp_request_tx: mpsc::Sender<McpRequest>,
-    #[allow(dead_code)]
-    _relay_handle: JoinHandle<()>,
-    config: SessionConfigState,
-    modes: Vec<ValidatedMode>,
-}
-
 /// Manages ACP sessions, each session has its own agent and state
 pub struct SessionManager {
-    sessions: Arc<Mutex<HashMap<String, SessionState>>>,
-    actor_handle: AcpActorHandle,
+    registry: Arc<SessionRegistry>,
+    connection: Arc<dyn AcpConnection>,
     session_store: Arc<SessionStore>,
     has_oauth_credential: fn(&str) -> bool,
 }
 
 impl SessionManager {
-    pub fn new(actor_handle: AcpActorHandle) -> Self {
+    pub fn new(connection: Arc<dyn AcpConnection>) -> Self {
         info!("Creating SessionManager");
         let session_store =
             SessionStore::new().map_or_else(|e| panic!("Failed to initialize session store: {e}"), Arc::new);
         Self {
-            sessions: Arc::new(Mutex::new(HashMap::new())),
-            actor_handle,
+            registry: Arc::new(SessionRegistry::new()),
+            connection,
             session_store,
             has_oauth_credential: OAuthCredentialStore::has_credential,
         }
@@ -167,18 +102,10 @@ impl SessionManager {
         reasoning_effort: Option<ReasoningEffort>,
         modes: Vec<ValidatedMode>,
     ) -> Vec<acp::SessionConfigOption> {
-        let RelayHandle { cmd_tx, mcp_request_tx, join_handle } =
-            spawn_relay(session, self.actor_handle.clone(), acp_session_id.clone(), self.session_store.clone());
+        let relay = spawn_relay(session, self.connection.clone(), acp_session_id.clone(), self.session_store.clone());
 
-        let mut config = SessionConfigState::new(model.to_string());
-        config.reasoning_effort = reasoning_effort;
-        config.selected_mode.clone_from(&selected_mode);
-
-        let state =
-            SessionState { relay_tx: cmd_tx, mcp_request_tx, _relay_handle: join_handle, config, modes: modes.clone() };
-
-        let mut sessions = self.sessions.lock().await;
-        sessions.insert(session_id.to_string(), state);
+        let state = SessionState::new(relay, model.to_string(), selected_mode.clone(), reasoning_effort, modes.clone());
+        self.registry.insert(session_id.to_string(), state).await;
 
         let available = get_local_models().await;
         let all_models = get_all_models(&available);
@@ -207,15 +134,21 @@ impl SessionManager {
             acp_session_id,
             SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(available_commands)),
         );
-        let actor_handle = self.actor_handle.clone();
+        let connection = self.connection.clone();
         let session_id_log = session_id.to_string();
         spawn(async move {
-            if let Err(e) = actor_handle.send_session_notification(notification).await {
+            if let Err(e) = connection.send_session_notification(notification) {
                 error!("Failed to send available commands notification: {:?}", e);
             } else {
                 info!("Sent available commands update for session {} ({} commands)", session_id_log, command_count);
             }
         });
+    }
+
+    /// Drain every session and stop its relay task. Blocks until every relay
+    /// has exited.
+    pub async fn shutdown_all_sessions(&self) {
+        self.registry.shutdown_all().await;
     }
 }
 
@@ -310,79 +243,14 @@ fn validate_prompt_support(model_value: &str, content: &[ContentBlock]) -> Resul
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
-    use crate::acp::config_setting::ConfigSetting;
-    use ReasoningEffort as RE;
-    use agent_client_protocol::{InitializeRequest, ProtocolVersion};
+    use agent_client_protocol::schema::{InitializeRequest, ProtocolVersion};
 
     const SONNET: &str = "anthropic:claude-sonnet-4-5";
     const DEEPSEEK: &str = "deepseek:deepseek-chat";
 
-    fn available_models() -> Vec<LlmModel> {
-        [SONNET, "anthropic:claude-opus-4-6", DEEPSEEK].into_iter().map(|s| s.parse().expect("valid model")).collect()
-    }
-
-    fn validated_modes() -> Vec<ValidatedMode> {
-        let m = |name: &str, model: &str, effort| ValidatedMode {
-            name: name.into(),
-            model: model.into(),
-            reasoning_effort: effort,
-        };
-        vec![m("Planner", SONNET, Some(RE::High)), m("Coder", DEEPSEEK, None)]
-    }
-
-    fn apply(
-        active: &str,
-        effort: Option<RE>,
-        mode: Option<&str>,
-        setting: &ConfigSetting,
-    ) -> (Result<(), acp::Error>, SessionConfigState) {
-        let mut state = SessionConfigState::new(active.into());
-        state.reasoning_effort = effort;
-        state.selected_mode = mode.map(Into::into);
-        let result = state.apply_config_change(&validated_modes(), &available_models(), setting);
-        (result, state)
-    }
-
-    #[test]
-    fn new_state_has_no_pending_model_or_mode() {
-        let s = SessionConfigState::new(DEEPSEEK.into());
-        assert!((s.pending_model.is_none() && s.reasoning_effort.is_none() && s.selected_mode.is_none()));
-    }
-
-    #[test]
-    fn mode_selection_updates_pending_model_and_reasoning() {
-        let (res, s) = apply(DEEPSEEK, None, None, &ConfigSetting::Mode("Planner".into()));
-        assert!(res.is_ok());
-        assert_eq!(s.pending_model.as_deref(), Some(SONNET));
-        assert_eq!(s.reasoning_effort, Some(RE::High));
-        assert_eq!(s.selected_mode.as_deref(), Some("Planner"));
-    }
-
-    #[test]
-    fn unknown_mode_is_rejected() {
-        let (res, _) = apply(DEEPSEEK, None, None, &ConfigSetting::Mode("Unknown".into()));
-        assert!(res.is_err());
-    }
-
-    #[test]
-    fn effort_change_preserves_mode_and_model_change_clears_it() {
-        // Changing reasoning effort keeps the selected mode.
-        let (res, s) = apply(SONNET, Some(RE::High), Some("Planner"), &ConfigSetting::ReasoningEffort(Some(RE::Low)));
-        assert!(res.is_ok());
-        assert_eq!(s.reasoning_effort, Some(RE::Low));
-        assert_eq!(s.selected_mode.as_deref(), Some("Planner"));
-
-        // Changing the model to one that doesn't match any mode clears the mode.
-        let (res, s) = apply(SONNET, Some(RE::Medium), Some("Planner"), &ConfigSetting::Model(DEEPSEEK.into()));
-        assert!(res.is_ok());
-        assert_eq!(s.pending_model.as_deref(), Some(DEEPSEEK));
-        assert!(s.selected_mode.is_none());
-    }
-
     #[tokio::test]
     async fn initialize_always_advertises_load_session_support() {
-        let (tx, _rx) = mpsc::unbounded_channel();
-        let mut manager = SessionManager::new(AcpActorHandle::new(tx));
+        let mut manager = SessionManager::new(Arc::new(acp_utils::server::AcpConnectionHandle::new_disconnected()));
         manager.has_oauth_credential = |_| false;
         let response =
             manager.initialize(InitializeRequest::new(ProtocolVersion::LATEST)).await.expect("initialize succeeds");
@@ -429,9 +297,8 @@ mod tests {
     }
 }
 
-#[async_trait::async_trait(?Send)]
-impl Agent for SessionManager {
-    async fn initialize(&self, args: InitializeRequest) -> Result<InitializeResponse, acp::Error> {
+impl SessionManager {
+    pub async fn initialize(&self, args: InitializeRequest) -> Result<InitializeResponse, acp::Error> {
         info!("Received initialize request: {:?}", args);
         let auth_methods = build_auth_methods(self.has_oauth_credential);
         let available = get_local_models().await;
@@ -447,7 +314,7 @@ impl Agent for SessionManager {
             .auth_methods(auth_methods))
     }
 
-    async fn authenticate(&self, args: AuthenticateRequest) -> Result<AuthenticateResponse, acp::Error> {
+    pub async fn authenticate(&self, args: AuthenticateRequest) -> Result<AuthenticateResponse, acp::Error> {
         info!("Received authenticate request: {:?}", args);
         let method_id = args.method_id.0.as_ref();
         match method_id {
@@ -460,8 +327,7 @@ impl Agent for SessionManager {
             _ => return Err(acp::Error::invalid_params()),
         }
         let auth_methods = build_auth_methods(self.has_oauth_credential);
-        let auth_methods_notification: ExtNotification = AuthMethodsUpdatedParams { auth_methods }.into();
-        if let Err(e) = self.actor_handle.send_ext_notification(auth_methods_notification).await {
+        if let Err(e) = self.connection.send_auth_methods_updated(AuthMethodsUpdatedParams { auth_methods }) {
             error!("Failed to send auth methods updated notification: {:?}", e);
         }
 
@@ -469,29 +335,30 @@ impl Agent for SessionManager {
         let credential_store = OAuthCredentialStore::default();
         let available = catalog::get_local_models().await;
         let all_models = get_all_models(&available);
-        let sessions = self.sessions.lock().await;
-        for (id, state) in sessions.iter() {
-            let model = effective_model(&state.config.active_model, state.config.pending_model.as_deref());
-            let options = build_config_options_from_modes(
-                &state.modes,
-                &available,
-                state.config.selected_mode.as_deref(),
-                model,
-                state.config.reasoning_effort,
-                &all_models,
-                &credential_store,
-            );
-            let notification = SessionNotification::new(
-                SessionId::new(id.clone()),
-                SessionUpdate::ConfigOptionUpdate(ConfigOptionUpdate::new(options)),
-            );
-            let _ = self.actor_handle.send_session_notification(notification).await;
-        }
+        self.registry
+            .for_each(|id, state| {
+                let model = effective_model(&state.config.active_model, state.config.pending_model.as_deref());
+                let options = build_config_options_from_modes(
+                    &state.modes,
+                    &available,
+                    state.config.selected_mode.as_deref(),
+                    model,
+                    state.config.reasoning_effort,
+                    &all_models,
+                    &credential_store,
+                );
+                let notification = SessionNotification::new(
+                    SessionId::new(id.to_string()),
+                    SessionUpdate::ConfigOptionUpdate(ConfigOptionUpdate::new(options)),
+                );
+                let _ = self.connection.send_session_notification(notification);
+            })
+            .await;
 
         Ok(AuthenticateResponse::default())
     }
 
-    async fn new_session(&self, mut args: NewSessionRequest) -> Result<NewSessionResponse, acp::Error> {
+    pub async fn new_session(&self, mut args: NewSessionRequest) -> Result<NewSessionResponse, acp::Error> {
         // Inside a sandbox container the client sends the *host* cwd, but the
         // project is mounted at the container's working directory.
         if std::env::var("AETHER_INSIDE_SANDBOX").is_ok() {
@@ -570,11 +437,11 @@ impl Agent for SessionManager {
         Ok(response)
     }
 
-    async fn list_sessions(&self, args: ListSessionsRequest) -> Result<ListSessionsResponse, acp::Error> {
+    pub fn list_sessions(&self, args: &ListSessionsRequest) -> Result<ListSessionsResponse, acp::Error> {
         info!("Listing sessions, cwd filter: {:?}", args.cwd);
         let mut summaries = self.session_store.list();
 
-        if let Some(ref cwd) = args.cwd {
+        if let Some(cwd) = args.cwd.as_ref() {
             summaries.retain(|s| s.meta.cwd == *cwd);
         }
 
@@ -587,7 +454,7 @@ impl Agent for SessionManager {
         Ok(ListSessionsResponse::new(sessions))
     }
 
-    async fn load_session(&self, args: LoadSessionRequest) -> Result<LoadSessionResponse, acp::Error> {
+    pub async fn load_session(&self, args: LoadSessionRequest) -> Result<LoadSessionResponse, acp::Error> {
         let session_id = args.session_id.0.to_string();
         info!("Loading session: {session_id}");
 
@@ -652,10 +519,10 @@ impl Agent for SessionManager {
 
         let response = LoadSessionResponse::new().config_options(config_options);
 
-        let actor_handle = self.actor_handle.clone();
+        let connection = self.connection.clone();
         let replay_session_id = acp_session_id.clone();
         spawn(async move {
-            replay_to_client(&events, &actor_handle, &replay_session_id).await;
+            replay_to_client(&events, &*connection, &replay_session_id).await;
         });
 
         self.spawn_available_commands_notification(available_commands, acp_session_id, &session_id);
@@ -663,34 +530,34 @@ impl Agent for SessionManager {
         Ok(response)
     }
 
-    async fn prompt(&self, args: acp::PromptRequest) -> Result<acp::PromptResponse, acp::Error> {
+    pub async fn prompt(&self, args: acp::PromptRequest) -> Result<acp::PromptResponse, acp::Error> {
         info!("Received prompt for session: {:?}", args.session_id);
         let session_id_str = args.session_id.0.to_string();
+        let prompt_content = args.prompt;
 
-        let (relay_tx, content, switch_model, reasoning_effort) = {
-            let mut sessions = self.sessions.lock().await;
-            let state = sessions.get_mut(&session_id_str).ok_or_else(|| {
+        let (relay_tx, content, switch_model, reasoning_effort) = self
+            .registry
+            .with_mut(&session_id_str, move |state| -> Result<_, acp::Error> {
+                let content = map_acp_to_content_blocks(prompt_content);
+                let model_str = effective_model(&state.config.active_model, state.config.pending_model.as_deref());
+                validate_prompt_support(model_str, &content)?;
+
+                let switch_model = state.config.pending_model.take().and_then(|pending| {
+                    if pending == state.config.active_model {
+                        None
+                    } else {
+                        state.config.active_model.clone_from(&pending);
+                        Some(pending)
+                    }
+                });
+
+                Ok((state.relay.cmd_tx.clone(), content, switch_model, state.config.reasoning_effort))
+            })
+            .await
+            .ok_or_else(|| {
                 error!("Session not found: {}", session_id_str);
                 acp::Error::invalid_params()
-            })?;
-
-            let content = map_acp_to_content_blocks(args.prompt);
-            let effective_model = effective_model(&state.config.active_model, state.config.pending_model.as_deref());
-            validate_prompt_support(effective_model, &content)?;
-
-            let switch_model = state.config.pending_model.take().and_then(|pending| {
-                if pending == state.config.active_model {
-                    None
-                } else {
-                    state.config.active_model.clone_from(&pending);
-                    Some(pending)
-                }
-            });
-
-            let reasoning_effort = state.config.reasoning_effort;
-
-            (state.relay_tx.clone(), content, switch_model, reasoning_effort)
-        };
+            })??;
 
         let (result_tx, result_rx) = oneshot::channel();
         relay_tx.send(SessionCommand::Prompt { content, switch_model, reasoning_effort, result_tx }).await.map_err(
@@ -715,20 +582,14 @@ impl Agent for SessionManager {
         Ok(PromptResponse::new(stop_reason))
     }
 
-    async fn cancel(&self, args: acp::CancelNotification) -> Result<(), acp::Error> {
+    pub async fn cancel(&self, args: acp::CancelNotification) -> Result<(), acp::Error> {
         info!("Received cancel for session: {:?}", args.session_id);
         let session_id_str = args.session_id.0.to_string();
-        let relay_tx = {
-            let sessions = self.sessions.lock().await;
-            sessions
-                .get(&session_id_str)
-                .ok_or_else(|| {
-                    error!("Session not found for cancel: {}", session_id_str);
-                    acp::Error::invalid_params()
-                })?
-                .relay_tx
-                .clone()
-        };
+        let relay_tx =
+            self.registry.with(&session_id_str, |state| state.relay.cmd_tx.clone()).await.ok_or_else(|| {
+                error!("Session not found for cancel: {}", session_id_str);
+                acp::Error::invalid_params()
+            })?;
 
         relay_tx.send(SessionCommand::Cancel).await.map_err(|_| {
             error!("Relay channel closed for cancel: {}", session_id_str);
@@ -738,7 +599,7 @@ impl Agent for SessionManager {
         Ok(())
     }
 
-    async fn set_session_config_option(
+    pub async fn set_session_config_option(
         &self,
         args: SetSessionConfigOptionRequest,
     ) -> Result<SetSessionConfigOptionResponse, acp::Error> {
@@ -756,61 +617,46 @@ impl Agent for SessionManager {
         let available = get_local_models().await;
         let all_models = get_all_models(&available);
 
-        let mut sessions = self.sessions.lock().await;
-        let state = sessions.get_mut(&session_id_str).ok_or_else(|| {
-            error!("Session not found: {}", session_id_str);
-            acp::Error::invalid_params()
-        })?;
+        let options = self
+            .registry
+            .with_mut(&session_id_str, |state| -> Result<_, acp::Error> {
+                state.config.apply_config_change(&state.modes, &available, &setting)?;
+                let model_str = effective_model(&state.config.active_model, state.config.pending_model.as_deref());
+                Ok(build_config_options_from_modes(
+                    &state.modes,
+                    &available,
+                    state.config.selected_mode.as_deref(),
+                    model_str,
+                    state.config.reasoning_effort,
+                    &all_models,
+                    &OAuthCredentialStore::default(),
+                ))
+            })
+            .await
+            .ok_or_else(|| {
+                error!("Session not found: {}", session_id_str);
+                acp::Error::invalid_params()
+            })??;
 
-        state.config.apply_config_change(&state.modes, &available, &setting)?;
-
-        let effective_model = effective_model(&state.config.active_model, state.config.pending_model.as_deref());
-        let options = build_config_options_from_modes(
-            &state.modes,
-            &available,
-            state.config.selected_mode.as_deref(),
-            effective_model,
-            state.config.reasoning_effort,
-            &all_models,
-            &OAuthCredentialStore::default(),
-        );
         Ok(SetSessionConfigOptionResponse::new(options))
     }
 
-    async fn set_session_mode(&self, args: SetSessionModeRequest) -> Result<SetSessionModeResponse, acp::Error> {
-        info!("Received set_session_mode request: {:?}", args);
-        Err(acp::Error::method_not_found())
-    }
+    pub async fn on_mcp_request(&self, request: McpRequest) -> Result<(), acp::Error> {
+        info!("Received MCP ext request: {:?}", request);
+        match request {
+            McpRequest::Authenticate { session_id, server_name } => {
+                let mcp_request_tx =
+                    self.registry.with(&session_id, |state| state.relay.mcp_request_tx.clone()).await.ok_or_else(
+                        || {
+                            error!("Session not found for authenticate_mcp_server: {}", session_id);
+                            acp::Error::invalid_params()
+                        },
+                    )?;
 
-    async fn ext_method(&self, args: acp::ExtRequest) -> Result<acp::ExtResponse, acp::Error> {
-        info!("Received extension method: {}, params: {:?}", args.method, args.params);
-        let null_value: Arc<serde_json::value::RawValue> = serde_json::from_str("null").expect("null is valid JSON");
-        Ok(null_value.into())
-    }
-
-    async fn ext_notification(&self, args: acp::ExtNotification) -> Result<(), acp::Error> {
-        info!("Received extension notification: {}, params: {:?}", args.method, args.params);
-
-        if let Ok(msg) = McpRequest::try_from(&args) {
-            match msg {
-                McpRequest::Authenticate { session_id, server_name } => {
-                    let mcp_request_tx = {
-                        let sessions = self.sessions.lock().await;
-                        let session = sessions.get(&session_id);
-                        session
-                            .ok_or_else(|| {
-                                error!("Session not found for authenticate_mcp_server: {}", session_id);
-                                acp::Error::invalid_params()
-                            })?
-                            .mcp_request_tx
-                            .clone()
-                    };
-
-                    mcp_request_tx.send(McpRequest::Authenticate { session_id, server_name }).await.map_err(|_| {
-                        error!("MCP request channel closed for session");
-                        acp::Error::internal_error()
-                    })?;
-                }
+                mcp_request_tx.send(McpRequest::Authenticate { session_id, server_name }).await.map_err(|_| {
+                    error!("MCP request channel closed for session");
+                    acp::Error::internal_error()
+                })?;
             }
         }
 

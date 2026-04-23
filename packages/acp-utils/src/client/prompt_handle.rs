@@ -1,45 +1,23 @@
-use agent_client_protocol as acp;
-use std::path::Path;
+use agent_client_protocol::schema::{ContentBlock, SessionId};
+use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
 
 use super::error::AcpClientError;
 
-/// Commands sent from the main thread to the ACP `LocalSet` thread.
+/// Commands sent from the main thread to the ACP client task.
 #[derive(Debug)]
 pub enum PromptCommand {
-    Prompt {
-        session_id: acp::SessionId,
-        text: String,
-        content: Option<Vec<acp::ContentBlock>>,
-    },
-    Cancel {
-        session_id: acp::SessionId,
-    },
-    SetConfigOption {
-        session_id: acp::SessionId,
-        config_id: String,
-        value: String,
-    },
-    AuthenticateMcpServer {
-        session_id: acp::SessionId,
-        server_name: String,
-    },
-    Authenticate {
-        #[allow(dead_code)]
-        session_id: acp::SessionId,
-        method_id: String,
-    },
+    Prompt { session_id: SessionId, text: String, content: Option<Vec<ContentBlock>> },
+    Cancel { session_id: SessionId },
+    SetConfigOption { session_id: SessionId, config_id: String, value: String },
+    AuthenticateMcpServer { session_id: SessionId, server_name: String },
+    Authenticate { method_id: String },
     ListSessions,
-    LoadSession {
-        session_id: acp::SessionId,
-        cwd: std::path::PathBuf,
-    },
-    NewSession {
-        cwd: std::path::PathBuf,
-    },
+    LoadSession { session_id: SessionId, cwd: PathBuf },
+    NewSession { cwd: std::path::PathBuf },
 }
 
-/// Send-safe handle for issuing prompt commands to the !Send ACP connection.
+/// Send-safe handle for issuing prompt commands to the ACP client task.
 #[derive(Clone)]
 pub struct AcpPromptHandle {
     pub(crate) cmd_tx: mpsc::UnboundedSender<PromptCommand>,
@@ -63,20 +41,20 @@ impl AcpPromptHandle {
 
     pub fn prompt(
         &self,
-        session_id: &acp::SessionId,
+        session_id: &SessionId,
         text: &str,
-        content: Option<Vec<acp::ContentBlock>>,
+        content: Option<Vec<ContentBlock>>,
     ) -> Result<(), AcpClientError> {
         self.send(PromptCommand::Prompt { session_id: session_id.clone(), text: text.to_string(), content })
     }
 
-    pub fn cancel(&self, session_id: &acp::SessionId) -> Result<(), AcpClientError> {
+    pub fn cancel(&self, session_id: &SessionId) -> Result<(), AcpClientError> {
         self.send(PromptCommand::Cancel { session_id: session_id.clone() })
     }
 
     pub fn set_config_option(
         &self,
-        session_id: &acp::SessionId,
+        session_id: &SessionId,
         config_id: &str,
         value: &str,
     ) -> Result<(), AcpClientError> {
@@ -87,26 +65,22 @@ impl AcpPromptHandle {
         })
     }
 
-    pub fn authenticate_mcp_server(
-        &self,
-        session_id: &acp::SessionId,
-        server_name: &str,
-    ) -> Result<(), AcpClientError> {
+    pub fn authenticate_mcp_server(&self, session_id: &SessionId, server_name: &str) -> Result<(), AcpClientError> {
         self.send(PromptCommand::AuthenticateMcpServer {
             session_id: session_id.clone(),
             server_name: server_name.to_string(),
         })
     }
 
-    pub fn authenticate(&self, session_id: &acp::SessionId, method_id: &str) -> Result<(), AcpClientError> {
-        self.send(PromptCommand::Authenticate { session_id: session_id.clone(), method_id: method_id.to_string() })
+    pub fn authenticate(&self, method_id: &str) -> Result<(), AcpClientError> {
+        self.send(PromptCommand::Authenticate { method_id: method_id.to_string() })
     }
 
     pub fn list_sessions(&self) -> Result<(), AcpClientError> {
         self.send(PromptCommand::ListSessions)
     }
 
-    pub fn load_session(&self, session_id: &acp::SessionId, cwd: &Path) -> Result<(), AcpClientError> {
+    pub fn load_session(&self, session_id: &SessionId, cwd: &Path) -> Result<(), AcpClientError> {
         self.send(PromptCommand::LoadSession { session_id: session_id.clone(), cwd: cwd.to_path_buf() })
     }
 
@@ -121,12 +95,14 @@ impl AcpPromptHandle {
 
 #[cfg(test)]
 mod tests {
+    use agent_client_protocol::schema::TextContent;
+
     use super::*;
 
     #[test]
     fn test_noop_handle_succeeds_silently() {
         let handle = AcpPromptHandle::noop();
-        let session_id = acp::SessionId::new("test");
+        let session_id = SessionId::new("test");
 
         assert!(handle.prompt(&session_id, "hello", None).is_ok());
         assert!(handle.cancel(&session_id).is_ok());
@@ -136,7 +112,7 @@ mod tests {
     fn test_prompt_sends_command() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let handle = AcpPromptHandle { cmd_tx: tx };
-        let session_id = acp::SessionId::new("sess-1");
+        let session_id = SessionId::new("sess-1");
 
         handle.prompt(&session_id, "hello", None).unwrap();
 
@@ -154,7 +130,7 @@ mod tests {
     fn test_cancel_sends_command() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let handle = AcpPromptHandle { cmd_tx: tx };
-        let session_id = acp::SessionId::new("sess-1");
+        let session_id = SessionId::new("sess-1");
 
         handle.cancel(&session_id).unwrap();
 
@@ -166,7 +142,7 @@ mod tests {
     fn test_set_config_option_sends_command() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let handle = AcpPromptHandle { cmd_tx: tx };
-        let session_id = acp::SessionId::new("sess-1");
+        let session_id = SessionId::new("sess-1");
 
         handle.set_config_option(&session_id, "model", "gpt-4o").unwrap();
 
@@ -185,8 +161,8 @@ mod tests {
     fn test_prompt_with_content_sends_blocks() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let handle = AcpPromptHandle { cmd_tx: tx };
-        let session_id = acp::SessionId::new("sess-1");
-        let content = vec![acp::ContentBlock::Text(acp::TextContent::new("attached"))];
+        let session_id = SessionId::new("sess-1");
+        let content = vec![ContentBlock::Text(TextContent::new("attached"))];
 
         handle.prompt(&session_id, "hello", Some(content.clone())).unwrap();
 
@@ -216,8 +192,8 @@ mod tests {
     fn test_load_session_sends_command() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let handle = AcpPromptHandle { cmd_tx: tx };
-        let session_id = acp::SessionId::new("sess-restore");
-        let cwd = std::path::Path::new("/tmp/project");
+        let session_id = SessionId::new("sess-restore");
+        let cwd = Path::new("/tmp/project");
 
         handle.load_session(&session_id, cwd).unwrap();
 

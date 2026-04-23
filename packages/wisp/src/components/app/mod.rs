@@ -117,8 +117,24 @@ impl App {
     pub fn on_acp_event(&mut self, event: AcpEvent) {
         match event {
             AcpEvent::SessionUpdate(update) => self.on_session_update(&update),
-            AcpEvent::ExtNotification(notification) => {
-                self.on_ext_notification(&notification);
+            AcpEvent::ContextCleared(_) => {
+                self.conversation_screen.reset_after_context_cleared();
+                self.context_usage = None;
+            }
+            AcpEvent::ContextUsage(params) => {
+                self.context_usage = params
+                    .context_limit
+                    .filter(|limit| *limit > 0)
+                    .map(|limit| ContextUsageDisplay::new(params.input_tokens, limit));
+            }
+            AcpEvent::SubAgentProgress(progress) => {
+                self.conversation_screen.on_sub_agent_progress(&progress);
+            }
+            AcpEvent::AuthMethodsUpdated(params) => {
+                self.update_auth_methods(params.auth_methods);
+            }
+            AcpEvent::McpNotification(notification) => {
+                self.on_mcp_notification(notification);
             }
             AcpEvent::PromptDone(stop_reason) => self.on_prompt_done(stop_reason),
             AcpEvent::PromptError(error) => {
@@ -394,50 +410,17 @@ impl App {
         self.conversation_screen.on_elicitation_request(params, response_tx);
     }
 
-    fn on_ext_notification(&mut self, notification: &acp::ExtNotification) {
-        use acp_utils::ext_codec::logical_notification_method;
-        use acp_utils::notifications::{
-            AUTH_METHODS_UPDATED_METHOD, AuthMethodsUpdatedParams, CONTEXT_CLEARED_METHOD, CONTEXT_USAGE_METHOD,
-            ContextUsageParams, McpNotification, SUB_AGENT_PROGRESS_METHOD, SubAgentProgressParams,
-        };
-
-        match logical_notification_method(notification) {
-            CONTEXT_CLEARED_METHOD => {
-                self.conversation_screen.reset_after_context_cleared();
-                self.context_usage = None;
-            }
-            CONTEXT_USAGE_METHOD => {
-                if let Ok(params) = serde_json::from_str::<ContextUsageParams>(notification.params.get()) {
-                    self.context_usage = params
-                        .context_limit
-                        .filter(|limit| *limit > 0)
-                        .map(|limit| ContextUsageDisplay::new(params.input_tokens, limit));
+    fn on_mcp_notification(&mut self, notification: acp_utils::notifications::McpNotification) {
+        use acp_utils::notifications::McpNotification;
+        match notification {
+            McpNotification::ServerStatus { servers } => {
+                if let Some(ref mut overlay) = self.settings_overlay {
+                    overlay.update_server_statuses(servers.clone());
                 }
+                self.server_statuses = servers;
             }
-            SUB_AGENT_PROGRESS_METHOD => {
-                if let Ok(progress) = serde_json::from_str::<SubAgentProgressParams>(notification.params.get()) {
-                    self.conversation_screen.on_sub_agent_progress(&progress);
-                }
-            }
-            AUTH_METHODS_UPDATED_METHOD => {
-                if let Ok(params) = AuthMethodsUpdatedParams::try_from(notification) {
-                    self.update_auth_methods(params.auth_methods);
-                }
-            }
-            _ => {
-                if let Ok(notification) = McpNotification::try_from(notification) {
-                    match notification {
-                        McpNotification::ServerStatus { servers } => {
-                            if let Some(ref mut overlay) = self.settings_overlay {
-                                overlay.update_server_statuses(servers.clone());
-                            }
-                            self.server_statuses = servers;
-                        }
-                        McpNotification::UrlElicitationComplete(params) => {
-                            self.conversation_screen.on_url_elicitation_complete(&params);
-                        }
-                    }
-                }
+            McpNotification::UrlElicitationComplete(params) => {
+                self.conversation_screen.on_url_elicitation_complete(&params);
             }
         }
     }

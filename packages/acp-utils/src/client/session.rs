@@ -1,165 +1,55 @@
 use super::error::AcpClientError;
 use super::event::AcpEvent;
 use super::prompt_handle::{AcpPromptHandle, PromptCommand};
-use crate::notifications::{ELICITATION_METHOD, ElicitationParams, McpRequest};
-use agent_client_protocol::{
-    self as acp, Agent, Client, ConfigOptionUpdate, ExtNotification, ExtRequest, ExtResponse, InitializeRequest,
-    PermissionOptionKind, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SelectedPermissionOutcome, SessionConfigOption, SessionId, SessionNotification, SessionUpdate,
-    SetSessionConfigOptionRequest,
+use crate::notifications::{
+    AuthMethodsUpdatedParams, ContextClearedParams, ContextUsageParams, ElicitationParams, McpNotification, McpRequest,
+    SubAgentProgressParams,
 };
-use serde_json::value::RawValue;
-use std::process::Stdio;
+use agent_client_protocol::schema::{
+    AuthMethod, AuthenticateRequest, CancelNotification, ConfigOptionUpdate, ContentBlock, InitializeRequest,
+    ListSessionsRequest, LoadSessionRequest, NewSessionRequest, PermissionOptionId, PermissionOptionKind,
+    PromptCapabilities, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    SelectedPermissionOutcome, SessionConfigOption, SessionId, SessionNotification, SetSessionConfigOptionRequest,
+    TextContent,
+};
+use agent_client_protocol::{self as acp, Client, ConnectionTo};
+use agent_client_protocol_tokio::AcpAgent;
+use std::str::FromStr;
 use std::sync::Arc;
-use std::thread::spawn;
-use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot};
-use tokio::task::{LocalSet, spawn_local};
-use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::info;
 
 /// ACP session with all handles needed by the caller.
 pub struct AcpSession {
     pub session_id: SessionId,
     pub agent_name: String,
-    pub prompt_capabilities: acp::PromptCapabilities,
+    pub prompt_capabilities: PromptCapabilities,
     pub config_options: Vec<SessionConfigOption>,
-    pub auth_methods: Vec<acp::AuthMethod>,
+    pub auth_methods: Vec<AuthMethod>,
     pub event_rx: mpsc::UnboundedReceiver<AcpEvent>,
     pub prompt_handle: AcpPromptHandle,
 }
 
-/// A built-in ACP client that auto-approves permissions and forwards session
-/// notifications as [`AcpEvent`]s.
-pub struct AutoApproveClient {
-    event_tx: mpsc::UnboundedSender<AcpEvent>,
-}
-
-impl AutoApproveClient {
-    pub fn new(event_tx: mpsc::UnboundedSender<AcpEvent>) -> Self {
-        Self { event_tx }
-    }
-}
-
-#[async_trait::async_trait(?Send)]
-impl Client for AutoApproveClient {
-    async fn request_permission(&self, args: RequestPermissionRequest) -> acp::Result<RequestPermissionResponse> {
-        let option_id = args
-            .options
-            .iter()
-            .find(|o| matches!(o.kind, PermissionOptionKind::AllowOnce | PermissionOptionKind::AllowAlways))
-            .map_or_else(|| args.options[0].option_id.clone(), |o| o.option_id.clone());
-
-        Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-            option_id,
-        ))))
-    }
-
-    async fn session_notification(&self, args: SessionNotification) -> acp::Result<()> {
-        let _ = self.event_tx.send(AcpEvent::SessionUpdate(Box::new(args.update)));
-
-        Ok(())
-    }
-
-    async fn ext_notification(&self, args: ExtNotification) -> acp::Result<()> {
-        let _ = self.event_tx.send(AcpEvent::ExtNotification(args));
-        Ok(())
-    }
-
-    async fn ext_method(&self, args: ExtRequest) -> acp::Result<ExtResponse> {
-        if args.method.as_ref() == ELICITATION_METHOD {
-            return handle_elicitation_ext_method(&self.event_tx, args).await;
-        }
-
-        // Unknown ext_method — return null (default behavior)
-        let null_raw: Arc<RawValue> = serde_json::from_str("null").expect("null is valid JSON");
-        Ok(ExtResponse::new(null_raw))
-    }
-}
-
-async fn handle_elicitation_ext_method(
-    event_tx: &mpsc::UnboundedSender<AcpEvent>,
-    args: ExtRequest,
-) -> acp::Result<ExtResponse> {
-    let params: ElicitationParams =
-        serde_json::from_str(args.params.get()).map_err(|_| acp::Error::invalid_params())?;
-
-    let (response_tx, response_rx) = oneshot::channel();
-    event_tx.send(AcpEvent::ElicitationRequest { params, response_tx }).map_err(|_| acp::Error::internal_error())?;
-
-    let response = response_rx.await.map_err(|_| acp::Error::internal_error())?;
-
-    let raw = serde_json::value::to_raw_value(&response).map_err(|_| acp::Error::internal_error())?;
-
-    Ok(ExtResponse::new(Arc::from(raw)))
-}
-
 /// Spawn an agent subprocess and establish an ACP session.
 ///
-/// The handshake (initialize + `new_session`) runs on a dedicated !Send thread.
-/// `client_factory` creates the ACP [`Client`] implementation,
-/// receiving the event sender so it can forward protocol events.
-///
-/// For the common auto-approve case, use `AutoApproveClient::new`:
-/// ```ignore
-/// spawn_acp_session("my-agent", init_req, session_req, AutoApproveClient::new).await
-/// ```
-pub async fn spawn_acp_session<F, C>(
+/// The connection auto-approves permissions, forwards session notifications as
+/// [`AcpEvent`]s, and tunnels elicitation requests through the `_aether/elicitation`
+/// extension method.
+pub async fn spawn_acp_session(
     agent_command: &str,
     init_request: InitializeRequest,
-    new_session_request: acp::NewSessionRequest,
-    client_factory: F,
-) -> Result<AcpSession, AcpClientError>
-where
-    F: FnOnce(mpsc::UnboundedSender<AcpEvent>) -> C + Send + 'static,
-    C: acp::Client + 'static,
-{
-    let parts: Vec<&str> = agent_command.split_whitespace().collect();
-    let (program, args) =
-        parts.split_first().ok_or_else(|| AcpClientError::AgentCrashed("empty agent command".to_string()))?;
-
-    let mut child = Command::new(program)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .map_err(AcpClientError::SpawnFailed)?;
-
-    let child_stdin =
-        child.stdin.take().ok_or_else(|| AcpClientError::AgentCrashed("no stdin on child".to_string()))?;
-
-    let child_stdout =
-        child.stdout.take().ok_or_else(|| AcpClientError::AgentCrashed("no stdout on child".to_string()))?;
+    new_session_request: NewSessionRequest,
+) -> Result<AcpSession, AcpClientError> {
+    let agent = AcpAgent::from_str(agent_command).map_err(AcpClientError::InvalidAgentCommand)?;
 
     let (event_tx, event_rx) = mpsc::unbounded_channel::<AcpEvent>();
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<PromptCommand>();
     let (session_tx, session_rx) = oneshot::channel::<HandshakeResult>();
-    let thread_ctx = AcpThreadContext {
-        child_stdin,
-        child_stdout,
-        event_tx,
-        cmd_rx,
-        session_tx,
-        client_factory,
-        init_request,
-        new_session_request,
-    };
 
-    spawn(move || {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("failed to build tokio runtime for ACP");
+    tokio::spawn(run_client_connection(agent, event_tx, cmd_rx, session_tx, init_request, new_session_request));
 
-        LocalSet::new().block_on(&rt, async move {
-            run_acp_thread(thread_ctx).await;
-        });
-    });
-
-    let handshake = session_rx
-        .await
-        .map_err(|_| AcpClientError::AgentCrashed("ACP thread died during handshake".to_string()))??;
+    let handshake =
+        session_rx.await.map_err(|_| AcpClientError::AgentCrashed("ACP task died during handshake".to_string()))??;
 
     Ok(AcpSession {
         session_id: handshake.session_id,
@@ -173,58 +63,149 @@ where
 }
 
 struct HandshakeData {
-    session_id: acp::SessionId,
+    session_id: SessionId,
     agent_name: String,
-    prompt_capabilities: acp::PromptCapabilities,
-    config_options: Vec<acp::SessionConfigOption>,
-    auth_methods: Vec<acp::AuthMethod>,
+    prompt_capabilities: PromptCapabilities,
+    config_options: Vec<SessionConfigOption>,
+    auth_methods: Vec<AuthMethod>,
 }
 
 type HandshakeResult = Result<HandshakeData, AcpClientError>;
 
-struct AcpThreadContext<F> {
-    child_stdin: tokio::process::ChildStdin,
-    child_stdout: tokio::process::ChildStdout,
+#[allow(clippy::too_many_lines)]
+async fn run_client_connection(
+    agent: AcpAgent,
     event_tx: mpsc::UnboundedSender<AcpEvent>,
     cmd_rx: mpsc::UnboundedReceiver<PromptCommand>,
     session_tx: oneshot::Sender<HandshakeResult>,
-    client_factory: F,
     init_request: InitializeRequest,
-    new_session_request: acp::NewSessionRequest,
+    new_session_request: NewSessionRequest,
+) {
+    // `run_main` normally consumes the handshake sender after initialize +
+    // new_session. If `connect_with` itself fails (transport never came up)
+    // the outer task consumes it instead. An async Mutex<Option<_>> keeps
+    // these two mutually exclusive paths honest without risking poisoning.
+    let session_tx = Arc::new(tokio::sync::Mutex::new(Some(session_tx)));
+    let connection_result = Client
+        .builder()
+        .on_receive_request(
+            async move |req: RequestPermissionRequest, responder, _cx| {
+                responder.respond(RequestPermissionResponse::new(RequestPermissionOutcome::Selected(
+                    SelectedPermissionOutcome::new(auto_approve_option(&req)),
+                )))
+            },
+            acp::on_receive_request!(),
+        )
+        .on_receive_request(
+            {
+                let event_tx = event_tx.clone();
+                async move |req: ElicitationParams, responder, _cx| {
+                    let (response_tx, response_rx) = oneshot::channel();
+                    if event_tx.send(AcpEvent::ElicitationRequest { params: req, response_tx }).is_err() {
+                        return responder.respond_with_error(acp::Error::internal_error());
+                    }
+                    match response_rx.await {
+                        Ok(response) => responder.respond(response),
+                        Err(_) => responder.respond_with_error(acp::Error::internal_error()),
+                    }
+                }
+            },
+            acp::on_receive_request!(),
+        )
+        .on_receive_notification(
+            {
+                let event_tx = event_tx.clone();
+                async move |notif: SessionNotification, _cx| {
+                    let _ = event_tx.send(AcpEvent::SessionUpdate(Box::new(notif.update)));
+                    Ok(())
+                }
+            },
+            acp::on_receive_notification!(),
+        )
+        .on_receive_notification(
+            {
+                let event_tx = event_tx.clone();
+                async move |p: ContextUsageParams, _cx| {
+                    let _ = event_tx.send(AcpEvent::ContextUsage(p));
+                    Ok(())
+                }
+            },
+            acp::on_receive_notification!(),
+        )
+        .on_receive_notification(
+            {
+                let event_tx = event_tx.clone();
+                async move |p: ContextClearedParams, _cx| {
+                    let _ = event_tx.send(AcpEvent::ContextCleared(p));
+                    Ok(())
+                }
+            },
+            acp::on_receive_notification!(),
+        )
+        .on_receive_notification(
+            {
+                let event_tx = event_tx.clone();
+                async move |p: SubAgentProgressParams, _cx| {
+                    let _ = event_tx.send(AcpEvent::SubAgentProgress(p));
+                    Ok(())
+                }
+            },
+            acp::on_receive_notification!(),
+        )
+        .on_receive_notification(
+            {
+                let event_tx = event_tx.clone();
+                async move |p: AuthMethodsUpdatedParams, _cx| {
+                    let _ = event_tx.send(AcpEvent::AuthMethodsUpdated(p));
+                    Ok(())
+                }
+            },
+            acp::on_receive_notification!(),
+        )
+        .on_receive_notification(
+            {
+                let event_tx = event_tx.clone();
+                async move |n: McpNotification, _cx| {
+                    let _ = event_tx.send(AcpEvent::McpNotification(n));
+                    Ok(())
+                }
+            },
+            acp::on_receive_notification!(),
+        )
+        .connect_with(agent, {
+            let event_tx = event_tx.clone();
+            let session_tx = session_tx.clone();
+            async move |cx: ConnectionTo<acp::Agent>| {
+                run_main(cx, event_tx, cmd_rx, session_tx, init_request, new_session_request).await;
+                Ok(())
+            }
+        })
+        .await;
+
+    if let Err(e) = connection_result {
+        tracing::warn!("ACP connection exited with error: {e:?}");
+        if let Some(tx) = session_tx.lock().await.take() {
+            let _ = tx.send(Err(AcpClientError::ConnectFailed(e)));
+        }
+    }
+    let _ = event_tx.send(AcpEvent::ConnectionClosed);
 }
 
 #[allow(clippy::too_many_lines)]
-async fn run_acp_thread<F, C>(ctx: AcpThreadContext<F>)
-where
-    F: FnOnce(mpsc::UnboundedSender<AcpEvent>) -> C,
-    C: Client + 'static,
-{
-    let AcpThreadContext {
-        child_stdin,
-        child_stdout,
-        event_tx,
-        mut cmd_rx,
-        session_tx,
-        client_factory,
-        init_request,
-        new_session_request,
-    } = ctx;
-
-    let client = client_factory(event_tx.clone());
-    let outgoing = child_stdin.compat_write();
-    let incoming = child_stdout.compat();
-    let (conn, handle_io) = acp::ClientSideConnection::new(client, outgoing, incoming, |fut| {
-        spawn_local(fut);
-    });
-
-    spawn_local(async move {
-        let _ = handle_io.await;
-    });
-
-    let init_resp = match conn.initialize(init_request).await {
+async fn run_main(
+    cx: ConnectionTo<acp::Agent>,
+    event_tx: mpsc::UnboundedSender<AcpEvent>,
+    mut cmd_rx: mpsc::UnboundedReceiver<PromptCommand>,
+    session_tx: Arc<tokio::sync::Mutex<Option<oneshot::Sender<HandshakeResult>>>>,
+    init_request: InitializeRequest,
+    new_session_request: NewSessionRequest,
+) {
+    let init_resp = match cx.send_request(init_request).block_task().await {
         Ok(r) => r,
         Err(e) => {
-            let _ = session_tx.send(Err(AcpClientError::Protocol(e)));
+            if let Some(tx) = session_tx.lock().await.take() {
+                let _ = tx.send(Err(AcpClientError::Protocol(e)));
+            }
             return;
         }
     };
@@ -239,10 +220,12 @@ where
 
     let auth_methods = init_resp.auth_methods;
 
-    let session_resp = match conn.new_session(new_session_request).await {
+    let session_resp = match cx.send_request(new_session_request).block_task().await {
         Ok(r) => r,
         Err(e) => {
-            let _ = session_tx.send(Err(AcpClientError::Protocol(e)));
+            if let Some(tx) = session_tx.lock().await.take() {
+                let _ = tx.send(Err(AcpClientError::Protocol(e)));
+            }
             return;
         }
     };
@@ -251,25 +234,21 @@ where
     info!("ACP session created: {session_id}");
 
     let config_options = session_resp.config_options.unwrap_or_default();
-    let _ = session_tx.send(Ok(HandshakeData {
-        session_id,
-        agent_name,
-        prompt_capabilities,
-        config_options,
-        auth_methods,
-    }));
+    if let Some(tx) = session_tx.lock().await.take() {
+        let _ =
+            tx.send(Ok(HandshakeData { session_id, agent_name, prompt_capabilities, config_options, auth_methods }));
+    }
 
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
             PromptCommand::Prompt { session_id, text, content } => {
-                let mut prompt = vec![acp::ContentBlock::Text(acp::TextContent::new(text))];
+                let mut prompt = vec![ContentBlock::Text(TextContent::new(text))];
                 if let Some(extra_content) = content {
                     prompt.extend(extra_content);
                 }
-                let prompt_fut = conn.prompt(acp::PromptRequest::new(session_id, prompt));
+                let prompt_fut = cx.send_request(PromptRequest::new(session_id, prompt)).block_task();
                 tokio::pin!(prompt_fut);
 
-                // Process cancel/config commands while the prompt is in-flight
                 loop {
                     tokio::select! {
                         result = &mut prompt_fut => {
@@ -281,14 +260,14 @@ where
                             break;
                         }
                         Some(cmd) = cmd_rx.recv() => {
-                            handle_side_command(&conn, &event_tx, cmd).await;
+                            handle_side_command(&cx, &event_tx, cmd).await;
                         }
                     }
                 }
             }
             PromptCommand::ListSessions => {
-                let req = acp::ListSessionsRequest::new();
-                match conn.list_sessions(req).await {
+                let req = ListSessionsRequest::new();
+                match cx.send_request(req).block_task().await {
                     Ok(resp) => {
                         let _ = event_tx.send(AcpEvent::SessionsListed { sessions: resp.sessions });
                     }
@@ -298,8 +277,8 @@ where
                 }
             }
             PromptCommand::LoadSession { session_id, cwd } => {
-                let req = acp::LoadSessionRequest::new(session_id.clone(), cwd);
-                match conn.load_session(req).await {
+                let req = LoadSessionRequest::new(session_id.clone(), cwd);
+                match cx.send_request(req).block_task().await {
                     Ok(resp) => {
                         let config_options = resp.config_options.unwrap_or_default();
                         let _ = event_tx.send(AcpEvent::SessionLoaded { session_id, config_options });
@@ -310,8 +289,8 @@ where
                 }
             }
             PromptCommand::NewSession { cwd } => {
-                let req = acp::NewSessionRequest::new(cwd);
-                match conn.new_session(req).await {
+                let req = NewSessionRequest::new(cwd);
+                match cx.send_request(req).block_task().await {
                     Ok(resp) => {
                         let config_options = resp.config_options.unwrap_or_default();
                         let _ =
@@ -322,28 +301,28 @@ where
                     }
                 }
             }
-            cmd => handle_side_command(&conn, &event_tx, cmd).await,
+            cmd => handle_side_command(&cx, &event_tx, cmd).await,
         }
     }
-
-    let _ = event_tx.send(AcpEvent::ConnectionClosed);
 }
 
 async fn handle_side_command(
-    conn: &acp::ClientSideConnection,
+    cx: &ConnectionTo<acp::Agent>,
     event_tx: &mpsc::UnboundedSender<AcpEvent>,
     cmd: PromptCommand,
 ) {
     match cmd {
         PromptCommand::Cancel { session_id } => {
-            let _ = conn.cancel(acp::CancelNotification::new(session_id)).await;
+            let _ = cx.send_notification(CancelNotification::new(session_id));
         }
         PromptCommand::SetConfigOption { session_id, config_id, value } => {
             let req = SetSessionConfigOptionRequest::new(session_id, config_id, value);
-            match conn.set_session_config_option(req).await {
+            match cx.send_request(req).block_task().await {
                 Ok(resp) => {
                     let update = ConfigOptionUpdate::new(resp.config_options);
-                    let _ = event_tx.send(AcpEvent::SessionUpdate(Box::new(SessionUpdate::ConfigOptionUpdate(update))));
+                    let _ = event_tx.send(AcpEvent::SessionUpdate(Box::new(
+                        acp::schema::SessionUpdate::ConfigOptionUpdate(update),
+                    )));
                 }
                 Err(e) => {
                     tracing::warn!("set_session_config_option failed: {e:?}");
@@ -364,12 +343,12 @@ async fn handle_side_command(
         }
         PromptCommand::AuthenticateMcpServer { session_id, server_name } => {
             let msg = McpRequest::Authenticate { session_id: session_id.0.to_string(), server_name };
-            if let Err(e) = conn.ext_notification(msg.into()).await {
+            if let Err(e) = cx.send_notification(msg) {
                 tracing::warn!("authenticate_mcp_server notification failed: {e:?}");
             }
         }
-        PromptCommand::Authenticate { session_id: _, method_id } => {
-            match conn.authenticate(acp::AuthenticateRequest::new(method_id.clone())).await {
+        PromptCommand::Authenticate { method_id } => {
+            match cx.send_request(AuthenticateRequest::new(method_id.clone())).block_task().await {
                 Ok(_) => {
                     let _ = event_tx.send(AcpEvent::AuthenticateComplete { method_id });
                 }
@@ -380,4 +359,12 @@ async fn handle_side_command(
             }
         }
     }
+}
+
+fn auto_approve_option(req: &RequestPermissionRequest) -> PermissionOptionId {
+    debug_assert!(!req.options.is_empty(), "ACP guarantees at least one permission option");
+    req.options
+        .iter()
+        .find(|o| matches!(o.kind, PermissionOptionKind::AllowOnce | PermissionOptionKind::AllowAlways))
+        .map_or_else(|| req.options[0].option_id.clone(), |o| o.option_id.clone())
 }

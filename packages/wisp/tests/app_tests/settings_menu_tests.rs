@@ -45,7 +45,7 @@ async fn test_auth_methods_updated_notification_refreshes_provider_login_and_per
         acp::AuthMethod::Agent(acp::AuthMethodAgent::new("anthropic", "Anthropic").description("authenticated")),
         acp::AuthMethod::Agent(acp::AuthMethodAgent::new("openrouter", "OpenRouter")),
     ];
-    r.on_ext_notification(acp_utils::notifications::AuthMethodsUpdatedParams { auth_methods: updated }.into()).unwrap();
+    r.on_auth_methods_updated(acp_utils::notifications::AuthMethodsUpdatedParams { auth_methods: updated }).unwrap();
     assert_buffer_contains(r.writer(), "Anthropic  ✓ logged in");
 
     press_esc(&mut r).await;
@@ -287,12 +287,12 @@ async fn test_settings_option_update_refreshes_mode_display() {
 #[tokio::test]
 async fn test_server_status_notification_updates_overlay_state() {
     let mut r = open_settings(&[], (TEST_WIDTH, 40)).await;
-    let notification = acp::ExtNotification::from(acp_utils::notifications::McpNotification::ServerStatus {
+    let notification = acp_utils::notifications::McpNotification::ServerStatus {
         servers: vec![acp_utils::notifications::McpServerStatusEntry {
             name: "docs".to_string(),
             status: acp_utils::notifications::McpServerStatus::Connected { tool_count: 0 },
         }],
-    });
-    r.on_ext_notification(notification).unwrap();
+    };
+    r.on_mcp_notification(notification).unwrap();
     assert!(has_settings_menu(r.writer()));
 }

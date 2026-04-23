@@ -1,14 +1,5 @@
 //! Typed wire-format types for Aether's custom ACP extension requests and
 //! notifications.
-//!
-//! Each type carries its own wire method name via the
-//! [`JsonRpcRequest`](agent_client_protocol::JsonRpcRequest) /
-//! [`JsonRpcNotification`](agent_client_protocol::JsonRpcNotification) /
-//! [`JsonRpcResponse`](agent_client_protocol::JsonRpcResponse) derive. Senders
-//! pass these straight to [`ConnectionTo::send_notification`] /
-//! [`send_request`]; receivers register typed `on_receive_notification` /
-//! `on_receive_request` handlers and the ACP builder routes by type.
-
 use agent_client_protocol::schema::AuthMethod;
 use agent_client_protocol::{JsonRpcNotification, JsonRpcRequest, JsonRpcResponse};
 pub use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};

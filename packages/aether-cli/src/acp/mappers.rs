@@ -1,7 +1,7 @@
 use acp_utils::notifications::{ContextClearedParams, ContextUsageParams, SubAgentProgressParams};
-use acp_utils::server::AcpActorHandle;
+use acp_utils::server::AcpConnection;
 use aether_core::events::{AgentMessage, SubAgentProgressPayload};
-use agent_client_protocol::{
+use agent_client_protocol::schema::{
     self as acp, Content, ContentBlock, ContentChunk, Diff, HttpHeader, McpServer, PlanEntry, PlanEntryPriority,
     PlanEntryStatus, SessionId, SessionNotification, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallContent,
     ToolCallId, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields,
@@ -142,7 +142,16 @@ fn map_agent_message_to_notification(
     }
 }
 
-pub fn try_into_ext_notification(msg: &AgentMessage) -> Option<acp::ExtNotification> {
+/// Typed union of agent-side extension notifications that the relay forwards
+/// to the client. Each variant dispatches to the corresponding typed
+/// [`crate::acp::AcpConnection`] send method.
+pub enum AgentExtNotification {
+    ContextUsage(ContextUsageParams),
+    ContextCleared(ContextClearedParams),
+    SubAgentProgress(SubAgentProgressParams),
+}
+
+pub fn try_into_agent_notification(msg: &AgentMessage) -> Option<AgentExtNotification> {
     match msg {
         AgentMessage::ContextUsageUpdate {
             usage_ratio,
@@ -157,29 +166,26 @@ pub fn try_into_ext_notification(msg: &AgentMessage) -> Option<acp::ExtNotificat
             total_cache_read_tokens,
             total_cache_creation_tokens,
             total_reasoning_tokens,
-        } => {
-            let params = ContextUsageParams {
-                usage_ratio: *usage_ratio,
-                context_limit: *context_limit,
-                input_tokens: *input_tokens,
-                output_tokens: *output_tokens,
-                cache_read_tokens: *cache_read_tokens,
-                cache_creation_tokens: *cache_creation_tokens,
-                reasoning_tokens: *reasoning_tokens,
-                total_input_tokens: *total_input_tokens,
-                total_output_tokens: *total_output_tokens,
-                total_cache_read_tokens: *total_cache_read_tokens,
-                total_cache_creation_tokens: *total_cache_creation_tokens,
-                total_reasoning_tokens: *total_reasoning_tokens,
-            };
-            Some(params.into())
-        }
+        } => Some(AgentExtNotification::ContextUsage(ContextUsageParams {
+            usage_ratio: *usage_ratio,
+            context_limit: *context_limit,
+            input_tokens: *input_tokens,
+            output_tokens: *output_tokens,
+            cache_read_tokens: *cache_read_tokens,
+            cache_creation_tokens: *cache_creation_tokens,
+            reasoning_tokens: *reasoning_tokens,
+            total_input_tokens: *total_input_tokens,
+            total_output_tokens: *total_output_tokens,
+            total_cache_read_tokens: *total_cache_read_tokens,
+            total_cache_creation_tokens: *total_cache_creation_tokens,
+            total_reasoning_tokens: *total_reasoning_tokens,
+        })),
         AgentMessage::ToolProgress { request, message, .. } => {
             let msg_str = message.as_ref()?;
             let params = try_parse_sub_agent_progress(msg_str, request)?;
-            Some(params.into())
+            Some(AgentExtNotification::SubAgentProgress(params))
         }
-        AgentMessage::ContextCleared => Some(ContextClearedParams::default().into()),
+        AgentMessage::ContextCleared => Some(AgentExtNotification::ContextCleared(ContextClearedParams::default())),
         _ => None,
     }
 }
@@ -364,32 +370,36 @@ fn map_tool_progress_to_notification(
 }
 
 /// Replay session events to the client as ACP notifications.
-pub async fn replay_to_client(events: &[SessionEvent], actor_handle: &AcpActorHandle, session_id: &SessionId) {
-    for event in events {
-        let notifications: Vec<_> = match event {
-            SessionEvent::User(UserEvent::Message { content }) => content
-                .iter()
-                .map(|block| {
-                    SessionNotification::new(
-                        session_id.clone(),
-                        SessionUpdate::UserMessageChunk(ContentChunk::new(map_user_content_block(block))),
-                    )
-                })
-                .collect(),
-            SessionEvent::Agent(message) => {
-                map_agent_message_to_notification(session_id.clone(), message, NotificationMode::Replay)
-                    .into_iter()
-                    .collect()
-            }
-            SessionEvent::User(_) => Vec::new(),
-        };
-
-        for notif in notifications {
-            if let Err(e) = actor_handle.send_session_notification(notif).await {
-                tracing::error!("Failed to send replay notification: {e:?}");
-            }
+pub async fn replay_to_client(events: &[SessionEvent], connection: &dyn AcpConnection, session_id: &SessionId) {
+    for notif in replay_events_to_notifications(events, session_id) {
+        if let Err(e) = connection.send_session_notification(notif) {
+            tracing::error!("Failed to send replay notification: {e:?}");
         }
     }
+}
+
+/// Pure mapping from stored session events to the ACP notifications that
+/// replay them to a client. Kept separate so it can be tested without a live
+/// ACP connection.
+pub fn replay_events_to_notifications(events: &[SessionEvent], session_id: &SessionId) -> Vec<SessionNotification> {
+    let mut out = Vec::new();
+    for event in events {
+        match event {
+            SessionEvent::User(UserEvent::Message { content }) => {
+                for block in content {
+                    out.push(SessionNotification::new(
+                        session_id.clone(),
+                        SessionUpdate::UserMessageChunk(ContentChunk::new(map_user_content_block(block))),
+                    ));
+                }
+            }
+            SessionEvent::Agent(message) => {
+                out.extend(map_agent_message_to_notification(session_id.clone(), message, NotificationMode::Replay));
+            }
+            SessionEvent::User(_) => {}
+        }
+    }
+    out
 }
 
 fn map_user_content_block(block: &llm::ContentBlock) -> ContentBlock {
@@ -424,10 +434,7 @@ fn try_parse_sub_agent_progress(message: &str, request: &llm::ToolCallRequest) -
 mod tests {
     use super::*;
     use acp_utils::notifications::SubAgentEvent;
-    use acp_utils::server::AcpRequest;
-    use aether_core::events::SUB_AGENT_PROGRESS_METHOD;
     use llm::ToolCallRequest;
-    use tokio::sync::mpsc;
 
     #[test]
     fn test_tool_progress_with_sub_agent_payload_emits_ext_notification() {
@@ -460,20 +467,20 @@ mod tests {
 
         assert!(notification.is_none());
 
-        let ext = try_into_ext_notification(&tool_progress).expect("ext notification");
-        assert_eq!(ext.method.as_ref(), SUB_AGENT_PROGRESS_METHOD);
-
-        let parsed: SubAgentProgressParams = serde_json::from_str(ext.params.get()).expect("valid JSON");
-        assert_eq!(parsed.parent_tool_id, "call_123");
-        assert_eq!(parsed.task_id, "task_1");
-        assert_eq!(parsed.agent_name, "sub-agent");
-        assert!(matches!(parsed.event, SubAgentEvent::Other));
+        let agent_notif = try_into_agent_notification(&tool_progress).expect("agent notification");
+        match agent_notif {
+            AgentExtNotification::SubAgentProgress(params) => {
+                assert_eq!(params.parent_tool_id, "call_123");
+                assert_eq!(params.task_id, "task_1");
+                assert_eq!(params.agent_name, "sub-agent");
+                assert!(matches!(params.event, SubAgentEvent::Other));
+            }
+            _ => panic!("expected SubAgentProgress"),
+        }
     }
 
-    #[tokio::test]
-    async fn replay_emits_user_media_chunks_in_order() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let actor = AcpActorHandle::new(tx);
+    #[test]
+    fn replay_emits_user_media_chunks_in_order() {
         let session_id = acp::SessionId::new("test-session");
         let events = vec![SessionEvent::User(UserEvent::Message {
             content: vec![
@@ -483,20 +490,8 @@ mod tests {
             ],
         })];
 
-        let responder = tokio::spawn(async move {
-            let mut updates = Vec::new();
-            for _ in 0..3 {
-                if let Some(AcpRequest::SessionNotification { notification, response_tx }) = rx.recv().await {
-                    updates.push(notification.update);
-                    let _ = response_tx.send(Ok(()));
-                }
-            }
-            updates
-        });
-
-        replay_to_client(&events, &actor, &session_id).await;
-
-        let updates = responder.await.unwrap();
+        let notifications = replay_events_to_notifications(&events, &session_id);
+        let updates: Vec<_> = notifications.into_iter().map(|n| n.update).collect();
         assert!(matches!(
             &updates[0],
             acp::SessionUpdate::UserMessageChunk(chunk)
@@ -650,14 +645,10 @@ mod tests {
     }
 
     #[test]
-    fn test_context_cleared_maps_to_ext_notification() {
-        let ext = try_into_ext_notification(&AgentMessage::ContextCleared)
-            .expect("context cleared should emit ext notification");
-        assert_eq!(ext.method.as_ref(), acp_utils::notifications::CONTEXT_CLEARED_METHOD);
-
-        let parsed: acp_utils::notifications::ContextClearedParams =
-            serde_json::from_str(ext.params.get()).expect("valid JSON");
-        assert_eq!(parsed, acp_utils::notifications::ContextClearedParams::default());
+    fn test_context_cleared_maps_to_agent_notification() {
+        let notif = try_into_agent_notification(&AgentMessage::ContextCleared)
+            .expect("context cleared should emit agent notification");
+        assert!(matches!(notif, AgentExtNotification::ContextCleared(_)));
     }
 
     #[test]
@@ -883,6 +874,27 @@ mod tests {
                 assert!(update.fields.content.is_none());
             }
             other => panic!("Expected ToolCallUpdate, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn replay_to_client_forwards_each_event_as_session_notification() {
+        use crate::acp::testing::FakeAcpConnection;
+        use llm::ContentBlock as LlmContentBlock;
+
+        let connection = FakeAcpConnection::new();
+        let session_id = acp::SessionId::new("test-session");
+        let events = vec![SessionEvent::User(UserEvent::Message {
+            content: vec![LlmContentBlock::text("hello"), LlmContentBlock::text("world")],
+        })];
+
+        replay_to_client(&events, &connection, &session_id).await;
+
+        let sent = connection.session_notifications();
+        assert_eq!(sent.len(), 2, "expected one notification per user content block");
+        for notif in &sent {
+            assert_eq!(notif.session_id, session_id);
+            assert!(matches!(notif.update, SessionUpdate::UserMessageChunk(_)));
         }
     }
 }

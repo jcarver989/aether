@@ -8,7 +8,7 @@ use mcp_utils::client::oauth::BrowserOAuthHandler;
 use mcp_utils::client::{McpClientEvent, McpServerConfig};
 use mcp_utils::status::McpServerStatusEntry;
 
-use agent_client_protocol as acp;
+use agent_client_protocol::schema as acp;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use tokio::sync::{mpsc, oneshot};
