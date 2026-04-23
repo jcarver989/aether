@@ -1,4 +1,4 @@
-use agent_client_protocol as acp;
+use agent_client_protocol::schema as acp;
 
 /// Converts ACP `ContentBlock` to plain text.
 ///

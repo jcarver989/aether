@@ -1,8 +1,6 @@
 use super::AgentMessage;
 use serde::{Deserialize, Serialize};
 
-pub use acp_utils::notifications::SUB_AGENT_PROGRESS_METHOD;
-
 /// Payload for sub-agent progress updates emitted by MCP tools.
 ///
 /// This is the internal payload embedded in MCP progress messages between

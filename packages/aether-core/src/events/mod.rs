@@ -9,5 +9,5 @@ mod sub_agent_progress;
 mod user_message;
 
 pub use agent_message::AgentMessage;
-pub use sub_agent_progress::{SUB_AGENT_PROGRESS_METHOD, SubAgentProgressPayload};
+pub use sub_agent_progress::SubAgentProgressPayload;
 pub use user_message::UserMessage;

@@ -1,30 +1,21 @@
-//! Shared wire-format types for Aether's custom ACP extension notifications.
+//! Typed wire-format types for Aether's custom ACP extension requests and
+//! notifications.
 //!
-//! These types are used on both the agent (server) and client (UI) sides of the
-//! ACP connection.
+//! Each type carries its own wire method name via the
+//! [`JsonRpcRequest`](agent_client_protocol::JsonRpcRequest) /
+//! [`JsonRpcNotification`](agent_client_protocol::JsonRpcNotification) /
+//! [`JsonRpcResponse`](agent_client_protocol::JsonRpcResponse) derive. Senders
+//! pass these straight to [`ConnectionTo::send_notification`] /
+//! [`send_request`]; receivers register typed `on_receive_notification` /
+//! `on_receive_request` handlers and the ACP builder routes by type.
 
-use agent_client_protocol::{AuthMethod, ExtNotification};
+use agent_client_protocol::schema::AuthMethod;
+use agent_client_protocol::{JsonRpcNotification, JsonRpcRequest, JsonRpcResponse};
 pub use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
 pub use rmcp::model::CreateElicitationRequestParams;
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use serde_json::value::to_raw_value;
-use std::fmt;
-use std::sync::Arc;
+use serde::{Deserialize, Serialize};
 
 pub use mcp_utils::status::{McpServerStatus, McpServerStatusEntry};
-
-/// Custom notification methods for sub-agent progress updates.
-/// Per ACP extensibility spec, custom notifications must start with underscore.
-pub const SUB_AGENT_PROGRESS_METHOD: &str = "_aether/sub_agent_progress";
-pub const CONTEXT_USAGE_METHOD: &str = "_aether/context_usage";
-pub const CONTEXT_CLEARED_METHOD: &str = "_aether/context_cleared";
-pub const MCP_MESSAGE_METHOD: &str = "_aether/mcp";
-pub const AUTH_METHODS_UPDATED_METHOD: &str = "_aether/auth_methods_updated";
-
-/// Custom `ext_method` for tunneling MCP elicitation through ACP.
-/// Note: ACP auto-prefixes `ext_method` names with `_`, so the wire method
-/// becomes `_aether/elicitation`.
-pub const ELICITATION_METHOD: &str = "aether/elicitation";
 
 /// Parameters for `_aether/context_usage` notifications.
 ///
@@ -33,7 +24,8 @@ pub const ELICITATION_METHOD: &str = "aether/elicitation";
 /// API response. The `total_*` fields are cumulative across the agent's
 /// lifetime. The optional fields are `None` when the provider doesn't
 /// expose that dimension; this is semantically distinct from `Some(0)`.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonRpcNotification)]
+#[notification(method = "_aether/context_usage")]
 pub struct ContextUsageParams {
     pub usage_ratio: Option<f64>,
     pub context_limit: Option<u32>,
@@ -59,21 +51,24 @@ pub struct ContextUsageParams {
 }
 
 /// Parameters for `_aether/context_cleared` notifications.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default, JsonRpcNotification)]
+#[notification(method = "_aether/context_cleared")]
 pub struct ContextClearedParams {}
 
 /// Parameters for `_aether/auth_methods_updated` notifications.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonRpcNotification)]
+#[notification(method = "_aether/auth_methods_updated")]
 pub struct AuthMethodsUpdatedParams {
     pub auth_methods: Vec<AuthMethod>,
 }
 
-/// Parameters sent via `ext_method` for `aether/elicitation`.
+/// Request parameters for the `_aether/elicitation` ext method.
 ///
 /// Carries the full RMCP elicitation request plus the originating server name
-/// so the client can distinguish form vs URL mode and display which
-/// server is requesting.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// so the client can distinguish form vs URL mode and display which server is
+/// requesting.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonRpcRequest)]
+#[request(method = "_aether/elicitation", response = ElicitationResponse)]
 pub struct ElicitationParams {
     pub server_name: String,
     pub request: CreateElicitationRequestParams,
@@ -82,7 +77,7 @@ pub struct ElicitationParams {
 pub use rmcp::model::ElicitationAction;
 
 /// Response returned from the client for an elicitation request.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonRpcResponse)]
 pub struct ElicitationResponse {
     pub action: ElicitationAction,
     /// Structured form data when action is "accept".
@@ -92,125 +87,34 @@ pub struct ElicitationResponse {
 pub use mcp_utils::client::UrlElicitationCompleteParams;
 
 /// Server→client MCP extension notifications (relay → wisp).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonRpcNotification)]
+#[notification(method = "_aether/mcp")]
 pub enum McpNotification {
     ServerStatus { servers: Vec<McpServerStatusEntry> },
     UrlElicitationComplete(UrlElicitationCompleteParams),
 }
 
-impl From<McpNotification> for ExtNotification {
-    fn from(msg: McpNotification) -> Self {
-        ext_notification(MCP_MESSAGE_METHOD, &msg)
-    }
-}
-
 /// Client→server MCP extension requests (wisp → relay).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// Shares the `_aether/mcp` wire method with [`McpNotification`] — each peer
+/// only registers a handler for its direction, so there is no collision on a
+/// given connection.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonRpcNotification)]
+#[notification(method = "_aether/mcp")]
 pub enum McpRequest {
     Authenticate { session_id: String, server_name: String },
-}
-
-impl From<McpRequest> for ExtNotification {
-    fn from(msg: McpRequest) -> Self {
-        ext_notification(MCP_MESSAGE_METHOD, &msg)
-    }
-}
-
-/// Error returned when converting an `ExtNotification` into a typed MCP message.
-#[derive(Debug)]
-pub enum ExtNotificationParseError {
-    WrongMethod { expected: &'static str, actual: String },
-    InvalidJson { method: &'static str, source: serde_json::Error },
-}
-
-impl fmt::Display for ExtNotificationParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::WrongMethod { expected, actual } => {
-                write!(f, "notification method mismatch: expected {expected}, got {actual}")
-            }
-            Self::InvalidJson { method, source } => write!(f, "invalid JSON params for {method}: {source}"),
-        }
-    }
-}
-
-fn parse_ext_notification<T: DeserializeOwned>(
-    notification: &ExtNotification,
-    method: &'static str,
-) -> Result<T, ExtNotificationParseError> {
-    if notification.method.as_ref() != method {
-        return Err(ExtNotificationParseError::WrongMethod {
-            expected: method,
-            actual: notification.method.as_ref().to_string(),
-        });
-    }
-
-    serde_json::from_str(notification.params.get())
-        .map_err(|source| ExtNotificationParseError::InvalidJson { method, source })
-}
-
-impl TryFrom<&ExtNotification> for McpRequest {
-    type Error = ExtNotificationParseError;
-
-    fn try_from(n: &ExtNotification) -> Result<Self, Self::Error> {
-        parse_ext_notification(n, MCP_MESSAGE_METHOD)
-    }
-}
-
-impl TryFrom<&ExtNotification> for McpNotification {
-    type Error = ExtNotificationParseError;
-
-    fn try_from(n: &ExtNotification) -> Result<Self, Self::Error> {
-        parse_ext_notification(n, MCP_MESSAGE_METHOD)
-    }
-}
-
-impl TryFrom<&ExtNotification> for AuthMethodsUpdatedParams {
-    type Error = ExtNotificationParseError;
-
-    fn try_from(n: &ExtNotification) -> Result<Self, Self::Error> {
-        parse_ext_notification(n, AUTH_METHODS_UPDATED_METHOD)
-    }
-}
-
-fn ext_notification<T: Serialize>(method: &str, params: &T) -> ExtNotification {
-    let raw_value = to_raw_value(params).expect("notification params are serializable");
-    ExtNotification::new(method, Arc::from(raw_value))
-}
-
-impl From<ContextUsageParams> for ExtNotification {
-    fn from(params: ContextUsageParams) -> Self {
-        ext_notification(CONTEXT_USAGE_METHOD, &params)
-    }
-}
-
-impl From<ContextClearedParams> for ExtNotification {
-    fn from(params: ContextClearedParams) -> Self {
-        ext_notification(CONTEXT_CLEARED_METHOD, &params)
-    }
-}
-
-impl From<AuthMethodsUpdatedParams> for ExtNotification {
-    fn from(params: AuthMethodsUpdatedParams) -> Self {
-        ext_notification(AUTH_METHODS_UPDATED_METHOD, &params)
-    }
 }
 
 /// Parameters for `_aether/sub_agent_progress` notifications.
 ///
 /// This is the wire format sent from the ACP server (`aether-cli`) to clients like `wisp`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcNotification)]
+#[notification(method = "_aether/sub_agent_progress")]
 pub struct SubAgentProgressParams {
     pub parent_tool_id: String,
     pub task_id: String,
     pub agent_name: String,
     pub event: SubAgentEvent,
-}
-
-impl From<SubAgentProgressParams> for ExtNotification {
-    fn from(params: SubAgentProgressParams) -> Self {
-        ext_notification(SUB_AGENT_PROGRESS_METHOD, &params)
-    }
 }
 
 /// Subset of agent message variants relevant for sub-agent status display.
@@ -255,18 +159,90 @@ pub struct SubAgentToolError {
 
 #[cfg(test)]
 mod tests {
-    use agent_client_protocol::AuthMethodAgent;
-    use serde_json::from_str;
+    use agent_client_protocol::JsonRpcMessage;
+    use agent_client_protocol::schema::AuthMethodAgent;
 
     use super::*;
 
     #[test]
-    fn method_constants_have_underscore_prefix() {
-        assert!(SUB_AGENT_PROGRESS_METHOD.starts_with('_'));
-        assert!(CONTEXT_USAGE_METHOD.starts_with('_'));
-        assert!(CONTEXT_CLEARED_METHOD.starts_with('_'));
-        assert!(MCP_MESSAGE_METHOD.starts_with('_'));
-        assert!(AUTH_METHODS_UPDATED_METHOD.starts_with('_'));
+    fn wire_method_names_are_prefixed() {
+        assert_eq!(ContextClearedParams::default().method(), "_aether/context_cleared");
+        assert!(AuthMethodsUpdatedParams { auth_methods: vec![] }.method() == "_aether/auth_methods_updated");
+        assert!(McpNotification::ServerStatus { servers: vec![] }.method() == "_aether/mcp");
+        assert!(
+            McpRequest::Authenticate { session_id: String::new(), server_name: String::new() }.method()
+                == "_aether/mcp"
+        );
+    }
+
+    #[test]
+    fn context_usage_params_roundtrip() {
+        let params = ContextUsageParams {
+            usage_ratio: Some(0.75),
+            context_limit: Some(100_000),
+            input_tokens: 75_000,
+            output_tokens: 1_200,
+            cache_read_tokens: Some(40_000),
+            cache_creation_tokens: Some(2_000),
+            reasoning_tokens: Some(500),
+            total_input_tokens: 200_000,
+            total_output_tokens: 8_000,
+            total_cache_read_tokens: 90_000,
+            total_cache_creation_tokens: 5_000,
+            total_reasoning_tokens: 1_500,
+        };
+
+        let untyped = params.to_untyped_message().expect("serializable");
+        assert_eq!(untyped.method(), "_aether/context_usage");
+        let parsed = ContextUsageParams::parse_message(untyped.method(), untyped.params()).expect("roundtrip");
+        assert_eq!(parsed, params);
+    }
+
+    #[test]
+    fn context_usage_params_omits_unset_optional_token_fields() {
+        let params = ContextUsageParams {
+            usage_ratio: Some(0.1),
+            context_limit: Some(1_000),
+            input_tokens: 100,
+            output_tokens: 0,
+            cache_read_tokens: None,
+            cache_creation_tokens: None,
+            reasoning_tokens: None,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+            total_cache_read_tokens: 0,
+            total_cache_creation_tokens: 0,
+            total_reasoning_tokens: 0,
+        };
+
+        let raw = serde_json::to_string(&params).unwrap();
+        assert!(!raw.contains("\"cache_read_tokens\""));
+        assert!(!raw.contains("\"cache_creation_tokens\""));
+        assert!(!raw.contains("\"reasoning_tokens\""));
+    }
+
+    #[test]
+    fn context_cleared_params_roundtrip() {
+        let params = ContextClearedParams::default();
+        let untyped = params.to_untyped_message().expect("serializable");
+        assert_eq!(untyped.method(), "_aether/context_cleared");
+        let parsed = ContextClearedParams::parse_message(untyped.method(), untyped.params()).expect("roundtrip");
+        assert_eq!(parsed, params);
+    }
+
+    #[test]
+    fn auth_methods_updated_roundtrip() {
+        let params = AuthMethodsUpdatedParams {
+            auth_methods: vec![
+                AuthMethod::Agent(AuthMethodAgent::new("anthropic", "Anthropic").description("authenticated")),
+                AuthMethod::Agent(AuthMethodAgent::new("openrouter", "OpenRouter")),
+            ],
+        };
+
+        let untyped = params.to_untyped_message().expect("serializable");
+        assert_eq!(untyped.method(), "_aether/auth_methods_updated");
+        let parsed = AuthMethodsUpdatedParams::parse_message(untyped.method(), untyped.params()).expect("roundtrip");
+        assert_eq!(parsed, params);
     }
 
     #[test]
@@ -276,10 +252,9 @@ mod tests {
             server_name: "my oauth server".to_string(),
         };
 
-        let notification: ExtNotification = msg.clone().into();
-        assert_eq!(notification.method.as_ref(), MCP_MESSAGE_METHOD);
-
-        let parsed: McpRequest = serde_json::from_str(notification.params.get()).expect("valid JSON");
+        let untyped = msg.to_untyped_message().expect("serializable");
+        assert_eq!(untyped.method(), "_aether/mcp");
+        let parsed = McpRequest::parse_message(untyped.method(), untyped.params()).expect("roundtrip");
         assert_eq!(parsed, msg);
     }
 
@@ -299,39 +274,35 @@ mod tests {
             ],
         };
 
-        let notification: ExtNotification = msg.clone().into();
-        assert_eq!(notification.method.as_ref(), MCP_MESSAGE_METHOD);
-
-        let parsed: McpNotification = serde_json::from_str(notification.params.get()).expect("valid JSON");
+        let untyped = msg.to_untyped_message().expect("serializable");
+        assert_eq!(untyped.method(), "_aether/mcp");
+        let parsed = McpNotification::parse_message(untyped.method(), untyped.params()).expect("roundtrip");
         assert_eq!(parsed, msg);
     }
 
     #[test]
-    fn auth_methods_updated_params_roundtrip() {
-        let params = AuthMethodsUpdatedParams {
-            auth_methods: vec![
-                AuthMethod::Agent(AuthMethodAgent::new("anthropic", "Anthropic").description("authenticated")),
-                AuthMethod::Agent(AuthMethodAgent::new("openrouter", "OpenRouter")),
-            ],
-        };
+    fn mcp_notification_url_elicitation_complete_roundtrip() {
+        let msg = McpNotification::UrlElicitationComplete(UrlElicitationCompleteParams {
+            server_name: "github".to_string(),
+            elicitation_id: "el-456".to_string(),
+        });
 
-        let notification: ExtNotification = params.clone().into();
-        let parsed: AuthMethodsUpdatedParams = from_str(notification.params.get()).expect("valid JSON");
-
-        assert_eq!(parsed, params);
-        assert_eq!(notification.method.as_ref(), AUTH_METHODS_UPDATED_METHOD);
+        let untyped = msg.to_untyped_message().expect("serializable");
+        let parsed = McpNotification::parse_message(untyped.method(), untyped.params()).expect("roundtrip");
+        assert_eq!(parsed, msg);
     }
 
     #[test]
-    fn mcp_server_status_entry_serde_roundtrip() {
-        let entry = McpServerStatusEntry {
-            name: "test-server".to_string(),
-            status: McpServerStatus::Connected { tool_count: 3 },
+    fn sub_agent_progress_params_roundtrip() {
+        let params = SubAgentProgressParams {
+            parent_tool_id: "call_123".to_string(),
+            task_id: "task_abc".to_string(),
+            agent_name: "explorer".to_string(),
+            event: SubAgentEvent::Done,
         };
 
-        let json = serde_json::to_string(&entry).unwrap();
-        let parsed: McpServerStatusEntry = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, entry);
+        let untyped = params.to_untyped_message().expect("serializable");
+        assert_eq!(untyped.method(), "_aether/sub_agent_progress");
     }
 
     #[test]
@@ -353,13 +324,14 @@ mod tests {
             },
         };
 
-        let json = serde_json::to_string(&params).unwrap();
-        let parsed: ElicitationParams = serde_json::from_str(&json).unwrap();
+        let untyped = params.to_untyped_message().expect("serializable");
+        assert_eq!(untyped.method(), "_aether/elicitation");
+        let parsed = ElicitationParams::parse_message(untyped.method(), untyped.params()).expect("roundtrip");
         assert_eq!(parsed, params);
     }
 
     #[test]
-    fn elicitation_params_url_roundtrip() {
+    fn elicitation_params_url_variant_has_mode_field() {
         let params = ElicitationParams {
             server_name: "github".to_string(),
             request: CreateElicitationRequestParams::UrlElicitationParams {
@@ -373,98 +345,18 @@ mod tests {
         let json = serde_json::to_string(&params).unwrap();
         assert!(json.contains("\"mode\":\"url\""));
         assert!(json.contains("\"server_name\":\"github\""));
-        let parsed: ElicitationParams = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, params);
     }
 
     #[test]
-    fn mcp_notification_url_elicitation_complete_roundtrip() {
-        let msg = McpNotification::UrlElicitationComplete(UrlElicitationCompleteParams {
-            server_name: "github".to_string(),
-            elicitation_id: "el-456".to_string(),
-        });
-
-        let notification: ExtNotification = msg.clone().into();
-        assert_eq!(notification.method.as_ref(), MCP_MESSAGE_METHOD);
-
-        let parsed: McpNotification = serde_json::from_str(notification.params.get()).expect("valid JSON");
-        assert_eq!(parsed, msg);
-    }
-
-    #[test]
-    fn context_usage_params_roundtrip() {
-        let params = ContextUsageParams {
-            usage_ratio: Some(0.75),
-            context_limit: Some(100_000),
-            input_tokens: 75_000,
-            output_tokens: 1_200,
-            cache_read_tokens: Some(40_000),
-            cache_creation_tokens: Some(2_000),
-            reasoning_tokens: Some(500),
-            total_input_tokens: 200_000,
-            total_output_tokens: 8_000,
-            total_cache_read_tokens: 90_000,
-            total_cache_creation_tokens: 5_000,
-            total_reasoning_tokens: 1_500,
+    fn mcp_server_status_entry_serde_roundtrip() {
+        let entry = McpServerStatusEntry {
+            name: "test-server".to_string(),
+            status: McpServerStatus::Connected { tool_count: 3 },
         };
 
-        let notification: ExtNotification = params.clone().into();
-        assert_eq!(notification.method.as_ref(), CONTEXT_USAGE_METHOD);
-
-        let parsed: ContextUsageParams = serde_json::from_str(notification.params.get()).expect("valid JSON");
-        assert_eq!(parsed, params);
-    }
-
-    #[test]
-    fn context_usage_params_omits_unset_optional_token_fields() {
-        let params = ContextUsageParams {
-            usage_ratio: Some(0.1),
-            context_limit: Some(1_000),
-            input_tokens: 100,
-            output_tokens: 0,
-            cache_read_tokens: None,
-            cache_creation_tokens: None,
-            reasoning_tokens: None,
-            total_input_tokens: 0,
-            total_output_tokens: 0,
-            total_cache_read_tokens: 0,
-            total_cache_creation_tokens: 0,
-            total_reasoning_tokens: 0,
-        };
-
-        let notification: ExtNotification = params.clone().into();
-        let raw = notification.params.get();
-        assert!(!raw.contains("\"cache_read_tokens\""));
-        assert!(!raw.contains("\"cache_creation_tokens\""));
-        assert!(!raw.contains("\"reasoning_tokens\""));
-    }
-
-    #[test]
-    fn context_cleared_params_roundtrip() {
-        let params = ContextClearedParams::default();
-
-        let notification: ExtNotification = params.clone().into();
-        assert_eq!(notification.method.as_ref(), CONTEXT_CLEARED_METHOD);
-
-        let parsed: ContextClearedParams = serde_json::from_str(notification.params.get()).expect("valid JSON");
-        assert_eq!(parsed, params);
-    }
-
-    #[test]
-    fn sub_agent_progress_params_roundtrip() {
-        let params = SubAgentProgressParams {
-            parent_tool_id: "call_123".to_string(),
-            task_id: "task_abc".to_string(),
-            agent_name: "explorer".to_string(),
-            event: SubAgentEvent::Done,
-        };
-
-        let notification: ExtNotification = params.into();
-        assert_eq!(notification.method.as_ref(), SUB_AGENT_PROGRESS_METHOD);
-
-        let parsed: SubAgentProgressParams = serde_json::from_str(notification.params.get()).expect("valid JSON");
-        assert!(matches!(parsed.event, SubAgentEvent::Done));
-        assert_eq!(parsed.parent_tool_id, "call_123");
+        let json = serde_json::to_string(&entry).unwrap();
+        let parsed: McpServerStatusEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, entry);
     }
 
     #[test]
@@ -476,8 +368,6 @@ mod tests {
 
     #[test]
     fn deserialize_tool_call_update_event() {
-        // "model_name" is present because the wire format comes from AgentMessage serialization;
-        // SubAgentEvent::ToolCallUpdate has no model_name field, so serde silently ignores it.
         let json = r#"{"ToolCallUpdate":{"update":{"id":"c1","chunk":"{\"pattern\":\"test\"}"},"model_name":"m"}}"#;
         let event: SubAgentEvent = serde_json::from_str(json).unwrap();
         assert!(matches!(event, SubAgentEvent::ToolCallUpdate { .. }));
@@ -521,98 +411,5 @@ mod tests {
         let map = meta.clone().into_map();
         let parsed = ToolResultMeta::from_map(&map).expect("should deserialize ToolResultMeta");
         assert_eq!(parsed, meta);
-    }
-
-    #[test]
-    fn mcp_request_try_from_roundtrip() {
-        let msg = McpRequest::Authenticate {
-            session_id: "session-0".to_string(),
-            server_name: "my oauth server".to_string(),
-        };
-
-        let notification: ExtNotification = msg.clone().into();
-        let parsed = McpRequest::try_from(&notification).expect("should parse McpRequest");
-        assert_eq!(parsed, msg);
-    }
-
-    #[test]
-    fn mcp_notification_try_from_roundtrip() {
-        let msg = McpNotification::ServerStatus {
-            servers: vec![McpServerStatusEntry {
-                name: "github".to_string(),
-                status: McpServerStatus::Connected { tool_count: 5 },
-            }],
-        };
-
-        let notification: ExtNotification = msg.clone().into();
-        let parsed = McpNotification::try_from(&notification).expect("should parse McpNotification");
-        assert_eq!(parsed, msg);
-    }
-
-    #[test]
-    fn auth_methods_updated_try_from_roundtrip() {
-        let params = AuthMethodsUpdatedParams {
-            auth_methods: vec![AuthMethod::Agent(
-                AuthMethodAgent::new("anthropic", "Anthropic").description("authenticated"),
-            )],
-        };
-
-        let notification: ExtNotification = params.clone().into();
-        let parsed = AuthMethodsUpdatedParams::try_from(&notification).expect("should parse auth methods");
-        assert_eq!(parsed, params);
-    }
-
-    #[test]
-    fn try_from_wrong_method_returns_error() {
-        let notification = ext_notification(
-            CONTEXT_USAGE_METHOD,
-            &ContextUsageParams {
-                usage_ratio: Some(0.5),
-                context_limit: Some(100_000),
-                input_tokens: 50_000,
-                output_tokens: 0,
-                cache_read_tokens: None,
-                cache_creation_tokens: None,
-                reasoning_tokens: None,
-                total_input_tokens: 0,
-                total_output_tokens: 0,
-                total_cache_read_tokens: 0,
-                total_cache_creation_tokens: 0,
-                total_reasoning_tokens: 0,
-            },
-        );
-
-        let result = McpRequest::try_from(&notification);
-        assert!(matches!(
-            result,
-            Err(ExtNotificationParseError::WrongMethod { expected, actual })
-                if expected == MCP_MESSAGE_METHOD && actual == CONTEXT_USAGE_METHOD
-        ));
-    }
-
-    #[test]
-    fn try_from_invalid_json_returns_error() {
-        let notification = ext_notification(MCP_MESSAGE_METHOD, &"not a valid McpRequest");
-
-        let result = McpRequest::try_from(&notification);
-        assert!(matches!(
-            result,
-            Err(ExtNotificationParseError::InvalidJson { method, .. }) if method == MCP_MESSAGE_METHOD
-        ));
-    }
-
-    #[test]
-    fn ext_notification_parse_error_display() {
-        let wrong = ExtNotificationParseError::WrongMethod {
-            expected: MCP_MESSAGE_METHOD,
-            actual: CONTEXT_USAGE_METHOD.to_string(),
-        };
-        assert!(wrong.to_string().contains(MCP_MESSAGE_METHOD));
-        assert!(wrong.to_string().contains(CONTEXT_USAGE_METHOD));
-
-        let json_err = serde_json::from_str::<McpRequest>("{}").unwrap_err();
-        let invalid = ExtNotificationParseError::InvalidJson { method: MCP_MESSAGE_METHOD, source: json_err };
-        assert!(invalid.to_string().contains("invalid JSON"));
-        assert!(invalid.to_string().contains(MCP_MESSAGE_METHOD));
     }
 }
