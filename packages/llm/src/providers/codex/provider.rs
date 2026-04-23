@@ -25,7 +25,7 @@ pub struct CodexProvider {
 
 impl CodexProvider {
     pub fn new(token_manager: CodexTokenManager<OAuthCredentialStore>) -> Self {
-        Self { client: reqwest::Client::new(), model: "gpt-5.4".to_string(), token_manager: Arc::new(token_manager) }
+        Self { client: reqwest::Client::new(), model: "gpt-5.5".to_string(), token_manager: Arc::new(token_manager) }
     }
 
     fn build_request(&self, context: &Context) -> Result<CreateResponse> {
@@ -213,7 +213,7 @@ mod tests {
     fn create_test_provider() -> CodexProvider {
         let store = OAuthCredentialStore::new("codex-test");
         let tm = CodexTokenManager::new(store, "codex-test");
-        CodexProvider::new(tm).with_model("gpt-5.4")
+        CodexProvider::new(tm).with_model("gpt-5.5")
     }
 
     #[test]
@@ -225,7 +225,7 @@ mod tests {
         );
 
         let request = provider.build_request(&context).unwrap();
-        assert_eq!(request.model.as_deref(), Some("gpt-5.4"));
+        assert_eq!(request.model.as_deref(), Some("gpt-5.5"));
         assert_eq!(request.store, Some(false));
         assert_eq!(request.stream, Some(true));
         assert!(request.tools.is_none());
@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn display_name_includes_model() {
         let provider = create_test_provider();
-        assert_eq!(provider.display_name(), "Codex (gpt-5.4)");
+        assert_eq!(provider.display_name(), "Codex (gpt-5.5)");
     }
 
     #[test]
@@ -308,7 +308,7 @@ mod tests {
         let request = provider.build_request(&context).unwrap();
         let json = serde_json::to_value(&request).unwrap();
 
-        assert_eq!(json["model"], "gpt-5.4");
+        assert_eq!(json["model"], "gpt-5.5");
         assert_eq!(json["store"], false);
         assert_eq!(json["stream"], true);
         assert_eq!(json["reasoning"]["effort"], "medium");
