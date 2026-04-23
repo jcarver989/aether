@@ -74,9 +74,10 @@ fn process_event(
         }
         ResponseStreamEvent::ResponseOutputItemDone(e) => {
             if let OutputItem::Reasoning(reasoning) = e.item
+                && let Some(id) = reasoning.id
                 && let Some(encrypted) = reasoning.encrypted_content
             {
-                responses.push(Ok(LlmResponse::EncryptedReasoning { id: reasoning.id, content: encrypted }));
+                responses.push(Ok(LlmResponse::EncryptedReasoning { id, content: encrypted }));
             }
         }
         ResponseStreamEvent::ResponseCompleted(e) => {
@@ -352,7 +353,7 @@ mod tests {
             sequence_number: 1,
             output_index: 0,
             item: OutputItem::Reasoning(ReasoningItem {
-                id: "r_1".to_string(),
+                id: Some("r_1".to_string()),
                 summary: vec![],
                 encrypted_content: Some("enc-blob-data".to_string()),
                 content: None,
@@ -408,7 +409,7 @@ mod tests {
             sequence_number: 1,
             output_index: 0,
             item: OutputItem::Reasoning(ReasoningItem {
-                id: "r_2".to_string(),
+                id: Some("r_2".to_string()),
                 summary: vec![],
                 encrypted_content: None,
                 content: None,

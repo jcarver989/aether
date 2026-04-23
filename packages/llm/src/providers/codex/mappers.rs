@@ -33,7 +33,7 @@ pub fn map_messages(messages: &[ChatMessage]) -> crate::Result<(Option<String>, 
                 }
                 if let Some(encrypted) = &reasoning.encrypted_content {
                     items.push(InputItem::Item(Item::Reasoning(ReasoningItem {
-                        id: encrypted.id.clone(),
+                        id: Some(encrypted.id.clone()),
                         summary: vec![],
                         encrypted_content: Some(encrypted.content.clone()),
                         content: None,
