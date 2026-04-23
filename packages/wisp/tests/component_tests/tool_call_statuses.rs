@@ -1,5 +1,5 @@
 use acp_utils::notifications::SubAgentProgressParams;
-use agent_client_protocol as acp;
+use agent_client_protocol::schema as acp;
 use tui::testing::{assert_buffer_eq, render_component, render_lines};
 use tui::{BRAILLE_FRAMES as FRAMES, DiffLine, DiffPreview, DiffTag, Line, SplitDiffCell, SplitDiffRow, ViewContext};
 use wisp::components::tool_call_status_view::{MAX_TOOL_ARG_LENGTH, ToolCallStatus, ToolCallStatusView};

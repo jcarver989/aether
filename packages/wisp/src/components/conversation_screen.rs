@@ -10,7 +10,7 @@ use crate::components::session_picker::{SessionEntry, SessionPicker, SessionPick
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::keybindings::Keybindings;
 use acp_utils::notifications::ElicitationResponse;
-use agent_client_protocol::{self as acp, SessionId};
+use agent_client_protocol::schema::{self as acp, SessionId};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Instant;

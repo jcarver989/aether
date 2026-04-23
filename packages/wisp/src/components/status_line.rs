@@ -1,7 +1,7 @@
 use crate::components::context_bar::{context_bar, context_color};
 use crate::components::reasoning_bar::{reasoning_bar, reasoning_color};
 use acp_utils::config_option_id::ConfigOptionId;
-use agent_client_protocol::{
+use agent_client_protocol::schema::{
     self as acp, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOptions,
 };
 use tui::{Color, Frame, Line, ViewContext, display_width_text};

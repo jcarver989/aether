@@ -9,7 +9,7 @@ use crate::components::provider_login::{ProviderLoginEntry, ProviderLoginStatus,
 use crate::components::server_status::server_status_summary;
 use acp_utils::notifications::McpServerStatusEntry;
 use acp_utils::settings::SettingsStore;
-use agent_client_protocol::AuthMethod;
+use agent_client_protocol::schema::{AuthMethod, SessionConfigOption};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tracing::warn;
@@ -136,9 +136,9 @@ pub(crate) fn build_login_entries(auth_methods: &[AuthMethod]) -> Vec<ProviderLo
 }
 
 pub(crate) fn create_overlay(
-    config_options: &[agent_client_protocol::SessionConfigOption],
+    config_options: &[SessionConfigOption],
     server_statuses: &[McpServerStatusEntry],
-    auth_methods: &[agent_client_protocol::AuthMethod],
+    auth_methods: &[AuthMethod],
 ) -> overlay::SettingsOverlay {
     let mut menu = menu::SettingsMenu::from_config_options(config_options);
     decorate_menu(&mut menu, server_statuses, auth_methods);
@@ -194,11 +194,9 @@ fn theme_file_from_picker_value(value: &str) -> Option<String> {
     if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
 }
 
-pub(crate) fn cycle_quick_option(
-    config_options: &[agent_client_protocol::SessionConfigOption],
-) -> Option<(String, String)> {
+pub(crate) fn cycle_quick_option(config_options: &[SessionConfigOption]) -> Option<(String, String)> {
     use crate::components::status_line::is_cycleable_mode_option;
-    use agent_client_protocol::{SessionConfigKind, SessionConfigSelectOptions};
+    use agent_client_protocol::schema::{SessionConfigKind, SessionConfigSelectOptions};
 
     let option = config_options.iter().find(|option| is_cycleable_mode_option(option))?;
 
@@ -219,9 +217,7 @@ pub(crate) fn cycle_quick_option(
     options.get(next_index).map(|next| (option.id.0.to_string(), next.value.0.to_string()))
 }
 
-pub(crate) fn cycle_reasoning_option(
-    config_options: &[agent_client_protocol::SessionConfigOption],
-) -> Option<(String, String)> {
+pub(crate) fn cycle_reasoning_option(config_options: &[SessionConfigOption]) -> Option<(String, String)> {
     use crate::components::status_line::{extract_reasoning_effort, extract_reasoning_levels};
     use acp_utils::config_option_id::ConfigOptionId;
     use utils::ReasoningEffort;

@@ -366,7 +366,7 @@ mod tests {
 
     #[test]
     fn drain_completed_returns_content_and_tool_ids() {
-        use agent_client_protocol as acp;
+        use agent_client_protocol::schema as acp;
 
         let mut buffer = ConversationBuffer::new();
         buffer.append_text_chunk("hello");
@@ -390,7 +390,7 @@ mod tests {
 
     #[test]
     fn drain_completed_keeps_running_tools() {
-        use agent_client_protocol as acp;
+        use agent_client_protocol::schema as acp;
 
         let mut buffer = ConversationBuffer::new();
         buffer.append_text_chunk("hello");

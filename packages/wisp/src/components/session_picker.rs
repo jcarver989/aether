@@ -1,4 +1,4 @@
-use agent_client_protocol as acp;
+use agent_client_protocol::schema as acp;
 use chrono::{DateTime, Utc};
 use std::path::PathBuf;
 use tui::{

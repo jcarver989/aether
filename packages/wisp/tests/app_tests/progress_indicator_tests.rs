@@ -19,7 +19,7 @@ async fn test_spinner_visible_after_prompt_submit() {
 
 #[tokio::test]
 async fn test_spinner_persists_on_session_update() {
-    use agent_client_protocol as acp;
+    use agent_client_protocol::schema as acp;
 
     let terminal = TestTerminal::new(TEST_WIDTH, 40);
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));

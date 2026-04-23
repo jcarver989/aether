@@ -1,5 +1,5 @@
 use acp_utils::config_meta::SelectOptionMeta;
-use agent_client_protocol::SessionConfigSelectOption;
+use agent_client_protocol::schema::SessionConfigSelectOption;
 use tui::Component;
 use tui::ViewContext;
 use tui::testing::render_component;
@@ -11,10 +11,15 @@ fn make_select_option(
     name: &str,
     current: &str,
     values: &[(&str, &str)],
-) -> agent_client_protocol::SessionConfigOption {
+) -> agent_client_protocol::schema::SessionConfigOption {
     let options: Vec<SessionConfigSelectOption> =
         values.iter().map(|(v, n)| SessionConfigSelectOption::new((*v).to_string(), (*n).to_string())).collect();
-    agent_client_protocol::SessionConfigOption::select(id.to_string(), name.to_string(), current.to_string(), options)
+    agent_client_protocol::schema::SessionConfigOption::select(
+        id.to_string(),
+        name.to_string(),
+        current.to_string(),
+        options,
+    )
 }
 
 #[test]

@@ -1,6 +1,6 @@
 use acp_utils::client::AcpEvent;
 use acp_utils::client::AcpPromptHandle;
-use agent_client_protocol as acp;
+use agent_client_protocol::schema as acp;
 use tui::Renderer as FrameRenderer;
 use tui::RendererCommand;
 use tui::Theme;

@@ -1,4 +1,4 @@
-use agent_client_protocol as acp;
+use agent_client_protocol::schema as acp;
 use tui::testing::{TestTerminal, assert_buffer_eq};
 use tui::{KeyCode, KeyEvent, KeyModifiers};
 

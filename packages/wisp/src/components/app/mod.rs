@@ -20,7 +20,7 @@ use acp_utils::client::{AcpEvent, AcpPromptHandle};
 use acp_utils::config_meta::SelectOptionMeta;
 use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::{CreateElicitationRequestParams, ElicitationAction, ElicitationResponse};
-use agent_client_protocol::{self as acp, SessionId};
+use agent_client_protocol::schema::{self as acp, SessionId};
 use attachments::build_attachment_blocks;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -298,7 +298,7 @@ impl App {
                     if let Some(ref mut overlay) = self.settings_overlay {
                         overlay.on_authenticate_started(method_id);
                     }
-                    let _ = self.prompt_handle.authenticate(&self.session_id, method_id);
+                    let _ = self.prompt_handle.authenticate(method_id);
                 }
             }
         }
@@ -395,12 +395,13 @@ impl App {
     }
 
     fn on_ext_notification(&mut self, notification: &acp::ExtNotification) {
+        use acp_utils::ext_codec::logical_notification_method;
         use acp_utils::notifications::{
             AUTH_METHODS_UPDATED_METHOD, AuthMethodsUpdatedParams, CONTEXT_CLEARED_METHOD, CONTEXT_USAGE_METHOD,
             ContextUsageParams, McpNotification, SUB_AGENT_PROGRESS_METHOD, SubAgentProgressParams,
         };
 
-        match notification.method.as_ref() {
+        match logical_notification_method(notification) {
             CONTEXT_CLEARED_METHOD => {
                 self.conversation_screen.reset_after_context_cleared();
                 self.context_usage = None;

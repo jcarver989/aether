@@ -5,7 +5,7 @@ use crate::components::provider_login::{ProviderLoginMessage, ProviderLoginOverl
 use crate::components::server_status::{ServerStatusMessage, ServerStatusOverlay};
 use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::McpServerStatusEntry;
-use agent_client_protocol::{self as acp, SessionConfigKind, SessionConfigOption};
+use agent_client_protocol::schema::{self as acp, SessionConfigKind, SessionConfigOption};
 use tui::Panel;
 use tui::{Component, Cursor, Event, Frame, Line, ViewContext};
 use unicode_width::UnicodeWidthStr;
@@ -322,7 +322,7 @@ mod tests {
     use crate::settings::types::SettingsMenuEntryKind;
     use acp_utils::config_option_id::THEME_CONFIG_ID;
     use acp_utils::notifications::McpServerStatus;
-    use agent_client_protocol::SessionConfigSelectOption;
+    use agent_client_protocol::schema::{SessionConfigOption, SessionConfigSelectOption};
     use tui::{KeyCode, KeyEvent, KeyModifiers};
 
     fn select_opt(id: &'static str, name: &'static str) -> SessionConfigSelectOption {
@@ -334,11 +334,11 @@ mod tests {
         label: &'static str,
         current: &'static str,
         opts: Vec<SessionConfigSelectOption>,
-    ) -> agent_client_protocol::SessionConfigOption {
-        agent_client_protocol::SessionConfigOption::select(id, label, current, opts)
+    ) -> SessionConfigOption {
+        SessionConfigOption::select(id, label, current, opts)
     }
 
-    fn provider_model_options(multi_select_model: bool) -> Vec<agent_client_protocol::SessionConfigOption> {
+    fn provider_model_options(multi_select_model: bool) -> Vec<SessionConfigOption> {
         let provider = config_select(
             "provider",
             "Provider",
