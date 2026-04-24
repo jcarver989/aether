@@ -1,9 +1,16 @@
-/// Errors returned by ACP server-side actor operations.
+/// Errors returned by ACP server-side outbound traffic.
 #[derive(Debug, thiserror::Error)]
 pub enum AcpServerError {
-    #[error("ACP actor stopped")]
-    ActorStopped,
+    #[error("ACP protocol error during {operation}: {source}")]
+    Protocol {
+        operation: String,
+        #[source]
+        source: agent_client_protocol::Error,
+    },
+}
 
-    #[error("ACP protocol error: {0}")]
-    Protocol(String),
+impl AcpServerError {
+    pub fn protocol(operation: &'static str, source: agent_client_protocol::Error) -> Self {
+        Self::Protocol { operation: operation.to_string(), source }
+    }
 }
