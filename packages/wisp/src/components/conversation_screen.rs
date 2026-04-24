@@ -10,11 +10,11 @@ use crate::components::session_picker::{SessionEntry, SessionPicker, SessionPick
 use crate::components::tool_call_statuses::ToolCallStatuses;
 use crate::keybindings::Keybindings;
 use acp_utils::notifications::ElicitationResponse;
+use agent_client_protocol::Responder;
 use agent_client_protocol::schema::{self as acp, SessionId};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Instant;
-use tokio::sync::oneshot;
 use tui::{Component, Cursor, Event, Frame, Insets, ViewContext};
 
 pub enum ConversationScreenMessage {
@@ -180,9 +180,9 @@ impl ConversationScreen {
     pub fn on_elicitation_request(
         &mut self,
         params: acp_utils::notifications::ElicitationParams,
-        response_tx: oneshot::Sender<ElicitationResponse>,
+        responder: Responder<ElicitationResponse>,
     ) {
-        self.active_modal = Some(Modal::Elicitation(ElicitationForm::from_params(params, response_tx)));
+        self.active_modal = Some(Modal::Elicitation(ElicitationForm::from_params(params, responder)));
     }
 
     pub fn on_sub_agent_progress(&mut self, progress: &acp_utils::notifications::SubAgentProgressParams) {

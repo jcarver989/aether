@@ -1,3 +1,4 @@
+use acp_utils::notifications::{ContextUsageParams, SubAgentEvent, SubAgentProgressParams, SubAgentToolRequest};
 use agent_client_protocol::schema as acp;
 use tui::testing::TestTerminal;
 
@@ -9,29 +10,20 @@ async fn test_sub_agent_progress_notification_triggers_render() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
-    let json = r#"{"parent_tool_id":"p1","task_id":"t1","agent_name":"explorer","event":{"ToolCall":{"request":{"id":"c1","name":"grep","arguments":"{}"},"model_name":"m"}}}"#;
-    let raw = serde_json::value::to_raw_value(&serde_json::from_str::<serde_json::Value>(json).unwrap()).unwrap();
-    let notification = acp::ExtNotification::new("_aether/sub_agent_progress", std::sync::Arc::from(raw));
+    let params = SubAgentProgressParams {
+        parent_tool_id: "p1".to_string(),
+        task_id: "t1".to_string(),
+        agent_name: "explorer".to_string(),
+        event: SubAgentEvent::ToolCall {
+            request: SubAgentToolRequest {
+                id: "c1".to_string(),
+                name: "grep".to_string(),
+                arguments: "{}".to_string(),
+            },
+        },
+    };
+    renderer.on_sub_agent_progress(params).unwrap();
 
-    renderer.on_ext_notification(notification).unwrap();
-
-    // Should render without crashing
-    let lines = renderer.writer().get_lines();
-    assert!(!lines.is_empty());
-}
-
-#[tokio::test]
-async fn test_invalid_sub_agent_progress_json_silently_ignored() {
-    let terminal = TestTerminal::new(TEST_WIDTH, 40);
-    let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
-    renderer.initial_render().unwrap();
-
-    let raw = serde_json::value::to_raw_value(&serde_json::json!({"bad": "data"})).unwrap();
-    let notification = acp::ExtNotification::new("_aether/sub_agent_progress", std::sync::Arc::from(raw));
-
-    renderer.on_ext_notification(notification).unwrap();
-
-    // Should render without crashing
     let lines = renderer.writer().get_lines();
     assert!(!lines.is_empty());
 }
@@ -42,16 +34,21 @@ async fn test_context_usage_notification_updates_nominal_display() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
-    let raw = serde_json::value::to_raw_value(&serde_json::json!({
-        "usage_ratio": 0.75,
-        "input_tokens": 150_000,
-        "context_limit": 200_000
-    }))
-    .unwrap();
-    let notification =
-        acp::ExtNotification::new(acp_utils::notifications::CONTEXT_USAGE_METHOD, std::sync::Arc::from(raw));
-
-    renderer.on_ext_notification(notification).unwrap();
+    let params = ContextUsageParams {
+        usage_ratio: Some(0.75),
+        context_limit: Some(200_000),
+        input_tokens: 150_000,
+        output_tokens: 0,
+        cache_read_tokens: None,
+        cache_creation_tokens: None,
+        reasoning_tokens: None,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cache_read_tokens: 0,
+        total_cache_creation_tokens: 0,
+        total_reasoning_tokens: 0,
+    };
+    renderer.on_context_usage(params).unwrap();
 
     let lines = renderer.writer().get_lines();
     assert!(
@@ -67,27 +64,37 @@ async fn test_context_usage_notification_with_unknown_limit_clears_meter() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
-    // First set a known usage
-    let raw = serde_json::value::to_raw_value(&serde_json::json!({
-        "usage_ratio": 0.67,
-        "input_tokens": 100_000,
-        "context_limit": 150_000
-    }))
-    .unwrap();
-    let notification =
-        acp::ExtNotification::new(acp_utils::notifications::CONTEXT_USAGE_METHOD, std::sync::Arc::from(raw));
-    renderer.on_ext_notification(notification).unwrap();
+    let nominal = ContextUsageParams {
+        usage_ratio: Some(0.67),
+        context_limit: Some(150_000),
+        input_tokens: 100_000,
+        output_tokens: 0,
+        cache_read_tokens: None,
+        cache_creation_tokens: None,
+        reasoning_tokens: None,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cache_read_tokens: 0,
+        total_cache_creation_tokens: 0,
+        total_reasoning_tokens: 0,
+    };
+    renderer.on_context_usage(nominal).unwrap();
 
-    // Then clear it with null limit
-    let raw = serde_json::value::to_raw_value(&serde_json::json!({
-        "usage_ratio": null,
-        "input_tokens": 0,
-        "context_limit": null
-    }))
-    .unwrap();
-    let notification =
-        acp::ExtNotification::new(acp_utils::notifications::CONTEXT_USAGE_METHOD, std::sync::Arc::from(raw));
-    renderer.on_ext_notification(notification).unwrap();
+    let cleared = ContextUsageParams {
+        usage_ratio: None,
+        context_limit: None,
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_read_tokens: None,
+        cache_creation_tokens: None,
+        reasoning_tokens: None,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cache_read_tokens: 0,
+        total_cache_creation_tokens: 0,
+        total_reasoning_tokens: 0,
+    };
+    renderer.on_context_usage(cleared).unwrap();
 
     let lines = renderer.writer().get_lines();
     assert!(
@@ -103,7 +110,6 @@ async fn test_context_cleared_notification_resets_conversation() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
-    // Add some conversation content
     renderer
         .on_session_update(acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
             acp::TextContent::new("hello world"),
@@ -113,11 +119,7 @@ async fn test_context_cleared_notification_resets_conversation() {
     let lines = renderer.writer().get_lines();
     assert!(lines.iter().any(|l| l.contains("hello world")), "Content should be visible before clear");
 
-    // Send context_cleared notification
-    let raw = serde_json::value::to_raw_value(&serde_json::json!({})).unwrap();
-    let notification =
-        acp::ExtNotification::new(acp_utils::notifications::CONTEXT_CLEARED_METHOD, std::sync::Arc::from(raw));
-    renderer.on_ext_notification(notification).unwrap();
+    renderer.on_context_cleared().unwrap();
 
     let lines = renderer.writer().get_lines();
     assert!(
@@ -133,7 +135,6 @@ async fn test_on_tick_requests_render_while_completed_entries() {
     let mut renderer = Renderer::new(terminal, TEST_AGENT.to_string(), &[], (TEST_WIDTH, 40));
     renderer.initial_render().unwrap();
 
-    // Send a plan with completed entries
     renderer
         .on_session_update(acp::SessionUpdate::Plan(acp::Plan::new(vec![acp::PlanEntry::new(
             "1",
@@ -142,10 +143,8 @@ async fn test_on_tick_requests_render_while_completed_entries() {
         )])))
         .unwrap();
 
-    // Tick should produce a render (entries within grace period)
     renderer.on_tick().await.unwrap();
 
-    // Should render without crashing
     let lines = renderer.writer().get_lines();
     assert!(!lines.is_empty());
 }

@@ -113,11 +113,40 @@ impl Renderer {
         Ok(())
     }
 
-    pub(super) fn on_ext_notification(
+    pub(super) fn on_context_usage(
         &mut self,
-        notification: acp::ExtNotification,
+        params: acp_utils::notifications::ContextUsageParams,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.handle_acp_event(AcpEvent::ExtNotification(notification))?;
+        self.handle_acp_event(AcpEvent::ContextUsage(params))?;
+        Ok(())
+    }
+
+    pub(super) fn on_context_cleared(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.handle_acp_event(AcpEvent::ContextCleared(acp_utils::notifications::ContextClearedParams::default()))?;
+        Ok(())
+    }
+
+    pub(super) fn on_sub_agent_progress(
+        &mut self,
+        params: acp_utils::notifications::SubAgentProgressParams,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.handle_acp_event(AcpEvent::SubAgentProgress(params))?;
+        Ok(())
+    }
+
+    pub(super) fn on_auth_methods_updated(
+        &mut self,
+        params: acp_utils::notifications::AuthMethodsUpdatedParams,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.handle_acp_event(AcpEvent::AuthMethodsUpdated(params))?;
+        Ok(())
+    }
+
+    pub(super) fn on_mcp_notification(
+        &mut self,
+        notification: acp_utils::notifications::McpNotification,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.handle_acp_event(AcpEvent::McpNotification(notification))?;
         Ok(())
     }
 

@@ -20,11 +20,11 @@ use acp_utils::client::{AcpEvent, AcpPromptHandle};
 use acp_utils::config_meta::SelectOptionMeta;
 use acp_utils::config_option_id::ConfigOptionId;
 use acp_utils::notifications::{CreateElicitationRequestParams, ElicitationAction, ElicitationResponse};
+use agent_client_protocol::Responder;
 use agent_client_protocol::schema::{self as acp, SessionId};
 use attachments::build_attachment_blocks;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
-use tokio::sync::oneshot;
 use tui::RendererCommand;
 use tui::{Component, Event, Frame, KeyEvent, ViewContext};
 use utils::plan_review::{PlanReviewDecision, PlanReviewElicitationMeta};
@@ -48,7 +48,7 @@ pub struct App {
     auth_methods: Vec<acp::AuthMethod>,
     settings_overlay: Option<SettingsOverlay>,
     screen_router: ScreenRouter,
-    pending_plan_review_response: Option<oneshot::Sender<ElicitationResponse>>,
+    pending_plan_review_response: Option<Responder<ElicitationResponse>>,
     keybindings: Keybindings,
     session_id: SessionId,
     prompt_handle: AcpPromptHandle,
@@ -117,14 +117,30 @@ impl App {
     pub fn on_acp_event(&mut self, event: AcpEvent) {
         match event {
             AcpEvent::SessionUpdate(update) => self.on_session_update(&update),
-            AcpEvent::ExtNotification(notification) => {
-                self.on_ext_notification(&notification);
+            AcpEvent::ContextCleared(_) => {
+                self.conversation_screen.reset_after_context_cleared();
+                self.context_usage = None;
+            }
+            AcpEvent::ContextUsage(params) => {
+                self.context_usage = params
+                    .context_limit
+                    .filter(|limit| *limit > 0)
+                    .map(|limit| ContextUsageDisplay::new(params.input_tokens, limit));
+            }
+            AcpEvent::SubAgentProgress(progress) => {
+                self.conversation_screen.on_sub_agent_progress(&progress);
+            }
+            AcpEvent::AuthMethodsUpdated(params) => {
+                self.update_auth_methods(params.auth_methods);
+            }
+            AcpEvent::McpNotification(notification) => {
+                self.on_mcp_notification(notification);
             }
             AcpEvent::PromptDone(stop_reason) => self.on_prompt_done(stop_reason),
             AcpEvent::PromptError(error) => {
                 self.conversation_screen.on_prompt_error(&error);
             }
-            AcpEvent::ElicitationRequest { params, response_tx } => self.on_elicitation_request(params, response_tx),
+            AcpEvent::ElicitationRequest { params, responder } => self.on_elicitation_request(params, responder),
             AcpEvent::AuthenticateComplete { method_id } => {
                 self.on_authenticate_complete(&method_id);
             }
@@ -354,8 +370,8 @@ impl App {
             }
             ScreenRouterMessage::FinishPlanReview(action) => {
                 let response = plan_review_response(action);
-                if let Some(response_tx) = self.pending_plan_review_response.take() {
-                    let _ = response_tx.send(response);
+                if let Some(responder) = self.pending_plan_review_response.take() {
+                    let _ = responder.respond(response);
                 }
             }
         }
@@ -377,13 +393,13 @@ impl App {
     fn on_elicitation_request(
         &mut self,
         params: acp_utils::notifications::ElicitationParams,
-        response_tx: oneshot::Sender<acp_utils::notifications::ElicitationResponse>,
+        responder: Responder<ElicitationResponse>,
     ) {
         self.settings_overlay = None;
 
         if let Some(meta) = plan_review_meta_from_request(&params.request) {
-            if let Some(existing_tx) = self.pending_plan_review_response.replace(response_tx) {
-                let _ = existing_tx.send(cancel_response());
+            if let Some(existing) = self.pending_plan_review_response.replace(responder) {
+                let _ = existing.respond(cancel_response());
             }
             let document = PlanDocument::parse(meta.plan_path, &meta.markdown);
             let input = PlanReviewInput { title: meta.title, document };
@@ -391,53 +407,20 @@ impl App {
             return;
         }
 
-        self.conversation_screen.on_elicitation_request(params, response_tx);
+        self.conversation_screen.on_elicitation_request(params, responder);
     }
 
-    fn on_ext_notification(&mut self, notification: &acp::ExtNotification) {
-        use acp_utils::ext_codec::logical_notification_method;
-        use acp_utils::notifications::{
-            AUTH_METHODS_UPDATED_METHOD, AuthMethodsUpdatedParams, CONTEXT_CLEARED_METHOD, CONTEXT_USAGE_METHOD,
-            ContextUsageParams, McpNotification, SUB_AGENT_PROGRESS_METHOD, SubAgentProgressParams,
-        };
-
-        match logical_notification_method(notification) {
-            CONTEXT_CLEARED_METHOD => {
-                self.conversation_screen.reset_after_context_cleared();
-                self.context_usage = None;
-            }
-            CONTEXT_USAGE_METHOD => {
-                if let Ok(params) = serde_json::from_str::<ContextUsageParams>(notification.params.get()) {
-                    self.context_usage = params
-                        .context_limit
-                        .filter(|limit| *limit > 0)
-                        .map(|limit| ContextUsageDisplay::new(params.input_tokens, limit));
+    fn on_mcp_notification(&mut self, notification: acp_utils::notifications::McpNotification) {
+        use acp_utils::notifications::McpNotification;
+        match notification {
+            McpNotification::ServerStatus { servers } => {
+                if let Some(ref mut overlay) = self.settings_overlay {
+                    overlay.update_server_statuses(servers.clone());
                 }
+                self.server_statuses = servers;
             }
-            SUB_AGENT_PROGRESS_METHOD => {
-                if let Ok(progress) = serde_json::from_str::<SubAgentProgressParams>(notification.params.get()) {
-                    self.conversation_screen.on_sub_agent_progress(&progress);
-                }
-            }
-            AUTH_METHODS_UPDATED_METHOD => {
-                if let Ok(params) = AuthMethodsUpdatedParams::try_from(notification) {
-                    self.update_auth_methods(params.auth_methods);
-                }
-            }
-            _ => {
-                if let Ok(notification) = McpNotification::try_from(notification) {
-                    match notification {
-                        McpNotification::ServerStatus { servers } => {
-                            if let Some(ref mut overlay) = self.settings_overlay {
-                                overlay.update_server_statuses(servers.clone());
-                            }
-                            self.server_statuses = servers;
-                        }
-                        McpNotification::UrlElicitationComplete(params) => {
-                            self.conversation_screen.on_url_elicitation_complete(&params);
-                        }
-                    }
-                }
+            McpNotification::UrlElicitationComplete(params) => {
+                self.conversation_screen.on_url_elicitation_complete(&params);
             }
         }
     }
@@ -704,10 +687,12 @@ mod tests {
     use crate::components::elicitation_form::ElicitationForm;
     use crate::settings::{DEFAULT_CONTENT_PADDING, ThemeSettings as WispThemeSettings, WispSettings, save_settings};
     use crate::test_helpers::with_wisp_home;
+    use acp_utils::testing::test_connection;
     use std::fs;
     use std::path::Path;
     use std::time::Duration;
     use tempfile::TempDir;
+    use tokio::task::LocalSet;
     use tui::testing::render_component;
     use tui::{Frame, KeyCode, KeyModifiers, Renderer, Theme, ViewContext};
     use utils::plan_review::PlanReviewElicitationMeta;
@@ -1001,103 +986,134 @@ mod tests {
         assert!(!app.needs_mouse_capture());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn ctrl_g_blocked_during_elicitation() {
-        let mut app = make_app();
-        app.conversation_screen.active_modal = Some(Modal::Elicitation(ElicitationForm::from_params(
-            acp_utils::notifications::ElicitationParams {
-                server_name: "test-server".to_string(),
-                request: acp_utils::notifications::CreateElicitationRequestParams::FormElicitationParams {
-                    meta: None,
-                    message: "test".to_string(),
-                    requested_schema: acp_utils::ElicitationSchema::builder().build().unwrap(),
-                },
-            },
-            oneshot::channel().0,
-        )));
+        LocalSet::new()
+            .run_until(async {
+                let mut app = make_app();
+                let (cx, mut peer) = test_connection().await;
+                let (responder, _rx) = peer.fake_elicitation(&cx).await;
+                app.conversation_screen.active_modal = Some(Modal::Elicitation(ElicitationForm::from_params(
+                    acp_utils::notifications::ElicitationParams {
+                        server_name: "test-server".to_string(),
+                        request: acp_utils::notifications::CreateElicitationRequestParams::FormElicitationParams {
+                            meta: None,
+                            message: "test".to_string(),
+                            requested_schema: acp_utils::ElicitationSchema::builder().build().unwrap(),
+                        },
+                    },
+                    responder,
+                )));
 
-        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
-        assert!(!app.screen_router.is_git_diff(), "git diff should not open during elicitation");
+                send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
+                assert!(!app.screen_router.is_git_diff(), "git diff should not open during elicitation");
+            })
+            .await;
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn plan_review_elicitation_opens_full_screen_review() {
-        let mut app = make_app();
-        let (response_tx, _response_rx) = oneshot::channel();
+        LocalSet::new()
+            .run_until(async {
+                let mut app = make_app();
+                let (cx, mut peer) = test_connection().await;
+                let (responder, _rx) = peer.fake_elicitation(&cx).await;
 
-        app.on_elicitation_request(make_plan_review_params("# Plan\n\n- item"), response_tx);
+                app.on_elicitation_request(make_plan_review_params("# Plan\n\n- item"), responder);
 
-        assert!(app.screen_router.is_plan_review(), "plan review mode should open");
-        assert!(app.conversation_screen.active_modal.is_none(), "plan review should bypass modal form");
+                assert!(app.screen_router.is_plan_review(), "plan review mode should open");
+                assert!(app.conversation_screen.active_modal.is_none(), "plan review should bypass modal form");
+            })
+            .await;
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn regular_form_elicitation_still_uses_modal_form() {
-        let mut app = make_app();
-        let (response_tx, _response_rx) = oneshot::channel();
+        LocalSet::new()
+            .run_until(async {
+                let mut app = make_app();
+                let (cx, mut peer) = test_connection().await;
+                let (responder, _rx) = peer.fake_elicitation(&cx).await;
 
-        app.on_elicitation_request(
-            acp_utils::notifications::ElicitationParams {
-                server_name: "test-server".to_string(),
-                request: acp_utils::notifications::CreateElicitationRequestParams::FormElicitationParams {
-                    meta: None,
-                    message: "regular form".to_string(),
-                    requested_schema: acp_utils::ElicitationSchema::builder().build().unwrap(),
-                },
-            },
-            response_tx,
-        );
+                app.on_elicitation_request(
+                    acp_utils::notifications::ElicitationParams {
+                        server_name: "test-server".to_string(),
+                        request: acp_utils::notifications::CreateElicitationRequestParams::FormElicitationParams {
+                            meta: None,
+                            message: "regular form".to_string(),
+                            requested_schema: acp_utils::ElicitationSchema::builder().build().unwrap(),
+                        },
+                    },
+                    responder,
+                );
 
-        assert!(!app.screen_router.is_plan_review());
-        assert!(matches!(app.conversation_screen.active_modal, Some(Modal::Elicitation(_))));
+                assert!(!app.screen_router.is_plan_review());
+                assert!(matches!(app.conversation_screen.active_modal, Some(Modal::Elicitation(_))));
+            })
+            .await;
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn plan_review_finish_routes_response_and_closes_mode() {
-        let mut app = make_app();
-        let (response_tx, response_rx) = oneshot::channel();
-        app.on_elicitation_request(make_plan_review_params("# Plan"), response_tx);
+        LocalSet::new()
+            .run_until(async {
+                let mut app = make_app();
+                let (cx, mut peer) = test_connection().await;
+                let (responder, rx) = peer.fake_elicitation(&cx).await;
+                app.on_elicitation_request(make_plan_review_params("# Plan"), responder);
 
-        send_key(&mut app, KeyCode::Char('a'), KeyModifiers::NONE).await;
+                send_key(&mut app, KeyCode::Char('a'), KeyModifiers::NONE).await;
 
-        assert!(!app.screen_router.is_plan_review(), "plan review mode should close after finish");
-        let response = response_rx.await.expect("plan review response should be sent");
-        assert_eq!(response.action, acp_utils::notifications::ElicitationAction::Accept);
-        assert_eq!(response.content.expect("approve content")["decision"], "approve");
+                assert!(!app.screen_router.is_plan_review(), "plan review mode should close after finish");
+                let response = rx.await.expect("plan review response should be sent");
+                assert_eq!(response.action, acp_utils::notifications::ElicitationAction::Accept);
+                assert_eq!(response.content.expect("approve content")["decision"], "approve");
+            })
+            .await;
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn plan_review_cancel_routes_cancel_response() {
-        let mut app = make_app();
-        let (response_tx, response_rx) = oneshot::channel();
-        app.on_elicitation_request(make_plan_review_params("# Plan"), response_tx);
+        LocalSet::new()
+            .run_until(async {
+                let mut app = make_app();
+                let (cx, mut peer) = test_connection().await;
+                let (responder, rx) = peer.fake_elicitation(&cx).await;
+                app.on_elicitation_request(make_plan_review_params("# Plan"), responder);
 
-        send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+                send_key(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
 
-        let response = response_rx.await.expect("plan review response should be sent");
-        assert_eq!(response.action, acp_utils::notifications::ElicitationAction::Cancel);
-        assert!(response.content.is_none());
+                let response = rx.await.expect("plan review response should be sent");
+                assert_eq!(response.action, acp_utils::notifications::ElicitationAction::Cancel);
+                assert!(response.content.is_none());
+            })
+            .await;
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn replacing_pending_plan_review_cancels_the_previous_response() {
-        let mut app = make_app();
-        let (first_tx, first_rx) = oneshot::channel();
-        let (second_tx, second_rx) = oneshot::channel();
+        LocalSet::new()
+            .run_until(async {
+                let mut app = make_app();
+                let (cx, mut peer) = test_connection().await;
+                let (first_responder, first_rx) = peer.fake_elicitation(&cx).await;
+                let (second_responder, second_rx) = peer.fake_elicitation(&cx).await;
 
-        app.on_elicitation_request(make_plan_review_params("# First"), first_tx);
-        app.on_elicitation_request(make_plan_review_params("# Second"), second_tx);
+                app.on_elicitation_request(make_plan_review_params("# First"), first_responder);
+                app.on_elicitation_request(make_plan_review_params("# Second"), second_responder);
 
-        let first_response = first_rx.await.expect("first plan review response should be sent");
-        assert_eq!(first_response.action, acp_utils::notifications::ElicitationAction::Cancel);
-        assert!(first_response.content.is_none());
-        assert!(app.screen_router.is_plan_review(), "replacement plan review should stay open");
+                let first_response = first_rx.await.expect("first plan review response should be sent");
+                assert_eq!(first_response.action, acp_utils::notifications::ElicitationAction::Cancel);
+                assert!(first_response.content.is_none());
+                assert!(app.screen_router.is_plan_review(), "replacement plan review should stay open");
 
-        send_key(&mut app, KeyCode::Char('a'), KeyModifiers::NONE).await;
+                send_key(&mut app, KeyCode::Char('a'), KeyModifiers::NONE).await;
 
-        let second_response = second_rx.await.expect("replacement plan review response should be sent");
-        assert_eq!(second_response.action, acp_utils::notifications::ElicitationAction::Accept);
-        assert_eq!(second_response.content.expect("approve content")["decision"], "approve");
+                let second_response = second_rx.await.expect("replacement plan review response should be sent");
+                assert_eq!(second_response.action, acp_utils::notifications::ElicitationAction::Accept);
+                assert_eq!(second_response.content.expect("approve content")["decision"], "approve");
+            })
+            .await;
     }
 
     #[tokio::test]
@@ -1456,24 +1472,30 @@ mod tests {
         assert_eq!(count, 1, "should show exactly one completion message, not duplicates");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn ctrl_g_blocked_during_url_elicitation_modal() {
-        let mut app = make_app();
-        app.conversation_screen.active_modal = Some(Modal::Elicitation(ElicitationForm::from_params(
-            acp_utils::notifications::ElicitationParams {
-                server_name: "test-server".to_string(),
-                request: acp_utils::notifications::CreateElicitationRequestParams::UrlElicitationParams {
-                    meta: None,
-                    message: "Auth".to_string(),
-                    url: "https://example.com/auth".to_string(),
-                    elicitation_id: "el-1".to_string(),
-                },
-            },
-            oneshot::channel().0,
-        )));
+        LocalSet::new()
+            .run_until(async {
+                let mut app = make_app();
+                let (cx, mut peer) = test_connection().await;
+                let (responder, _rx) = peer.fake_elicitation(&cx).await;
+                app.conversation_screen.active_modal = Some(Modal::Elicitation(ElicitationForm::from_params(
+                    acp_utils::notifications::ElicitationParams {
+                        server_name: "test-server".to_string(),
+                        request: acp_utils::notifications::CreateElicitationRequestParams::UrlElicitationParams {
+                            meta: None,
+                            message: "Auth".to_string(),
+                            url: "https://example.com/auth".to_string(),
+                            elicitation_id: "el-1".to_string(),
+                        },
+                    },
+                    responder,
+                )));
 
-        send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
-        assert!(!app.screen_router.is_git_diff(), "git diff should not open during URL elicitation modal");
+                send_key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
+                assert!(!app.screen_router.is_git_diff(), "git diff should not open during URL elicitation modal");
+            })
+            .await;
     }
 
     #[tokio::test]

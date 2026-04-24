@@ -4,9 +4,9 @@ use acp_utils::notifications::{
 use acp_utils::{
     ConstTitle, ElicitationSchema, EnumSchema, MultiSelectEnumSchema, PrimitiveSchema, SingleSelectEnumSchema,
 };
+use agent_client_protocol::Responder;
 use std::process::Command;
 use std::sync::Arc;
-use tokio::sync::oneshot;
 use tui::{
     Checkbox, Component, Event, Form, FormField, FormFieldKind, FormMessage, Frame, MultiSelect, NumberField,
     RadioSelect, SelectOption, TextField, ViewContext,
@@ -41,7 +41,7 @@ type BrowserOpener = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
 pub struct ElicitationForm {
     pub ui: ElicitationUi,
     browser_opener: BrowserOpener,
-    pub(crate) response_tx: Option<oneshot::Sender<ElicitationResponse>>,
+    pub(crate) responder: Option<Responder<ElicitationResponse>>,
 }
 
 impl UrlPrompt {
@@ -83,12 +83,12 @@ impl Component for ElicitationForm {
                 if let Some(msg) = outcome.into_iter().next() {
                     match msg {
                         FormMessage::Close => {
-                            let _ = self.response_tx.take().map(|tx| tx.send(Self::cancel()));
+                            let _ = self.responder.take().map(|r| r.respond(Self::cancel()));
                             return Some(vec![ElicitationMessage::Responded]);
                         }
                         FormMessage::Submit => {
                             let response = self.confirm();
-                            let _ = self.response_tx.take().map(|tx| tx.send(response));
+                            let _ = self.responder.take().map(|r| r.respond(response));
                             return Some(vec![ElicitationMessage::Responded]);
                         }
                     }
@@ -104,8 +104,8 @@ impl Component for ElicitationForm {
                         Ok(()) => {
                             let server_name = prompt.server_name.clone();
                             let elicitation_id = prompt.elicitation_id.clone();
-                            let _ = self.response_tx.take().map(|tx| {
-                                tx.send(ElicitationResponse { action: ElicitationAction::Accept, content: None })
+                            let _ = self.responder.take().map(|r| {
+                                r.respond(ElicitationResponse { action: ElicitationAction::Accept, content: None })
                             });
                             return Some(vec![
                                 ElicitationMessage::Responded,
@@ -117,11 +117,11 @@ impl Component for ElicitationForm {
                         }
                     },
                     tui::KeyCode::Char('d' | 'D') => {
-                        let _ = self.response_tx.take().map(|tx| tx.send(Self::decline()));
+                        let _ = self.responder.take().map(|r| r.respond(Self::decline()));
                         return Some(vec![ElicitationMessage::Responded]);
                     }
                     tui::KeyCode::Esc => {
-                        let _ = self.response_tx.take().map(|tx| tx.send(Self::cancel()));
+                        let _ = self.responder.take().map(|r| r.respond(Self::cancel()));
                         return Some(vec![ElicitationMessage::Responded]);
                     }
                     _ => {}
@@ -140,13 +140,13 @@ impl Component for ElicitationForm {
 }
 
 impl ElicitationForm {
-    pub fn from_params(params: ElicitationParams, response_tx: oneshot::Sender<ElicitationResponse>) -> Self {
-        Self::with_browser_opener(params, response_tx, default_browser_opener)
+    pub fn from_params(params: ElicitationParams, responder: Responder<ElicitationResponse>) -> Self {
+        Self::with_browser_opener(params, responder, default_browser_opener)
     }
 
     pub fn with_browser_opener<F>(
         params: ElicitationParams,
-        response_tx: oneshot::Sender<ElicitationResponse>,
+        responder: Responder<ElicitationResponse>,
         browser_opener: F,
     ) -> Self
     where
@@ -161,7 +161,7 @@ impl ElicitationForm {
                 ElicitationUi::Url(UrlPrompt::new(params.server_name, elicitation_id, message, url))
             }
         };
-        Self { ui, browser_opener: Arc::new(browser_opener), response_tx: Some(response_tx) }
+        Self { ui, browser_opener: Arc::new(browser_opener), responder: Some(responder) }
     }
 
     pub fn confirm(&self) -> ElicitationResponse {
@@ -377,8 +377,10 @@ fn options_from_const_titles(items: &[ConstTitle]) -> Vec<SelectOption> {
 mod tests {
     use super::*;
     use acp_utils::EnumSchema;
+    use acp_utils::testing::test_connection;
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
+    use tokio::task::LocalSet;
 
     fn test_schema() -> ElicitationSchema {
         serde_json::from_value(serde_json::json!({
@@ -466,38 +468,43 @@ mod tests {
         }
     }
 
-    #[test]
-    fn confirm_produces_correct_json() {
-        let (tx, _rx) = oneshot::channel();
-        let params = ElicitationParams {
-            server_name: "test-server".to_string(),
-            request: CreateElicitationRequestParams::FormElicitationParams {
-                meta: None,
-                message: "Test".to_string(),
-                requested_schema: ElicitationSchema::builder()
-                    .optional_string("name")
-                    .optional_bool("approved", true)
-                    .optional_enum_schema(
-                        "color",
-                        EnumSchema::builder(vec!["red".into(), "green".into()])
-                            .untitled()
-                            .with_default("green")
-                            .unwrap()
-                            .build(),
-                    )
-                    .build()
-                    .unwrap(),
-            },
-        };
+    #[tokio::test(flavor = "current_thread")]
+    async fn confirm_produces_correct_json() {
+        LocalSet::new()
+            .run_until(async {
+                let (cx, mut peer) = test_connection().await;
+                let (responder, _rx) = peer.fake_elicitation(&cx).await;
+                let params = ElicitationParams {
+                    server_name: "test-server".to_string(),
+                    request: CreateElicitationRequestParams::FormElicitationParams {
+                        meta: None,
+                        message: "Test".to_string(),
+                        requested_schema: ElicitationSchema::builder()
+                            .optional_string("name")
+                            .optional_bool("approved", true)
+                            .optional_enum_schema(
+                                "color",
+                                EnumSchema::builder(vec!["red".into(), "green".into()])
+                                    .untitled()
+                                    .with_default("green")
+                                    .unwrap()
+                                    .build(),
+                            )
+                            .build()
+                            .unwrap(),
+                    },
+                };
 
-        let form = ElicitationForm::from_params(params, tx);
-        let response = form.confirm();
+                let form = ElicitationForm::from_params(params, responder);
+                let response = form.confirm();
 
-        assert_eq!(response.action, ElicitationAction::Accept);
-        let content = response.content.unwrap();
-        assert_eq!(content["name"], "");
-        assert_eq!(content["approved"], true);
-        assert_eq!(content["color"], "green");
+                assert_eq!(response.action, ElicitationAction::Accept);
+                let content = response.content.unwrap();
+                assert_eq!(content["name"], "");
+                assert_eq!(content["approved"], true);
+                assert_eq!(content["color"], "green");
+            })
+            .await;
     }
 
     #[test]
@@ -623,129 +630,167 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn single_field_permission_like_form_submits_on_first_enter() {
-        let (tx, mut rx) = oneshot::channel();
-        let mut form = ElicitationForm::from_params(permission_like_params(), tx);
+        LocalSet::new()
+            .run_until(async {
+                let (cx, mut peer) = test_connection().await;
+                let (responder, rx) = peer.fake_elicitation(&cx).await;
+                let mut form = ElicitationForm::from_params(permission_like_params(), responder);
 
-        let outcome =
-            form.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Enter, tui::KeyModifiers::NONE))).await;
-        let messages = outcome.expect("enter should be handled");
+                let outcome =
+                    form.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Enter, tui::KeyModifiers::NONE))).await;
+                let messages = outcome.expect("enter should be handled");
 
-        assert!(messages.iter().any(|m| matches!(m, ElicitationMessage::Responded)));
+                assert!(messages.iter().any(|m| matches!(m, ElicitationMessage::Responded)));
 
-        let response = rx.try_recv().expect("first enter should produce an immediate response");
-        assert_eq!(response.action, ElicitationAction::Accept);
-        assert_eq!(response.content.unwrap()["decision"], "deny");
+                let response = rx.await.expect("first enter should produce a response");
+                assert_eq!(response.action, ElicitationAction::Accept);
+                assert_eq!(response.content.unwrap()["decision"], "deny");
+            })
+            .await;
     }
 
-    #[test]
-    fn single_field_permission_like_form_respects_default_deny() {
-        let (tx, _rx) = oneshot::channel();
-        let form = ElicitationForm::from_params(permission_like_params(), tx);
+    #[tokio::test(flavor = "current_thread")]
+    async fn single_field_permission_like_form_respects_default_deny() {
+        LocalSet::new()
+            .run_until(async {
+                let (cx, mut peer) = test_connection().await;
+                let (responder, _rx) = peer.fake_elicitation(&cx).await;
+                let form = ElicitationForm::from_params(permission_like_params(), responder);
 
-        let response = form.confirm();
-        assert_eq!(response.action, ElicitationAction::Accept);
-        assert_eq!(response.content.unwrap()["decision"], "deny");
+                let response = form.confirm();
+                assert_eq!(response.action, ElicitationAction::Accept);
+                assert_eq!(response.content.unwrap()["decision"], "deny");
+            })
+            .await;
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn url_modal_enter_returns_accept_with_carried_id() {
-        let opened_urls = Arc::new(Mutex::new(Vec::new()));
-        let opened_urls_for_opener = Arc::clone(&opened_urls);
-        let (tx, rx) = oneshot::channel();
-        let params = url_params("github", "el-123", "https://github.com/login/oauth");
-        let mut form = ElicitationForm::with_browser_opener(params, tx, move |url| {
-            opened_urls_for_opener.lock().unwrap().push(url.to_string());
-            Ok(())
-        });
-        let outcome =
-            form.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Enter, tui::KeyModifiers::NONE))).await;
-        let messages = outcome.unwrap();
+        LocalSet::new()
+            .run_until(async {
+                let opened_urls = Arc::new(Mutex::new(Vec::new()));
+                let opened_urls_for_opener = Arc::clone(&opened_urls);
+                let (cx, mut peer) = test_connection().await;
+                let (responder, rx) = peer.fake_elicitation(&cx).await;
+                let params = url_params("github", "el-123", "https://github.com/login/oauth");
+                let mut form = ElicitationForm::with_browser_opener(params, responder, move |url| {
+                    opened_urls_for_opener.lock().unwrap().push(url.to_string());
+                    Ok(())
+                });
+                let outcome =
+                    form.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Enter, tui::KeyModifiers::NONE))).await;
+                let messages = outcome.unwrap();
 
-        assert_eq!(opened_urls.lock().unwrap().as_slice(), ["https://github.com/login/oauth"]);
-        assert!(messages.iter().any(|m| matches!(m, ElicitationMessage::Responded)));
-        let opened = messages.iter().find_map(|m| match m {
-            ElicitationMessage::UrlOpened { elicitation_id, server_name } => {
-                Some((elicitation_id.clone(), server_name.clone()))
-            }
-            ElicitationMessage::Responded => None,
-        });
-        let (id, server) = opened.expect("UrlOpened message should be emitted");
-        assert_eq!(id, "el-123", "elicitation_id must come from request, not URL re-parsing");
-        assert_eq!(server, "github");
+                assert_eq!(opened_urls.lock().unwrap().as_slice(), ["https://github.com/login/oauth"]);
+                assert!(messages.iter().any(|m| matches!(m, ElicitationMessage::Responded)));
+                let opened = messages.iter().find_map(|m| match m {
+                    ElicitationMessage::UrlOpened { elicitation_id, server_name } => {
+                        Some((elicitation_id.clone(), server_name.clone()))
+                    }
+                    ElicitationMessage::Responded => None,
+                });
+                let (id, server) = opened.expect("UrlOpened message should be emitted");
+                assert_eq!(id, "el-123", "elicitation_id must come from request, not URL re-parsing");
+                assert_eq!(server, "github");
 
-        let response = rx.await.unwrap();
-        assert_eq!(response.action, ElicitationAction::Accept);
-        assert!(response.content.is_none());
+                let response = rx.await.unwrap();
+                assert_eq!(response.action, ElicitationAction::Accept);
+                assert!(response.content.is_none());
+            })
+            .await;
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn url_modal_launch_failure_keeps_modal_open_and_shows_error() {
-        let (tx, mut rx) = oneshot::channel();
-        let params = url_params("github", "el-fail", "https://github.com/login/oauth");
-        let mut form = ElicitationForm::with_browser_opener(params, tx, |_| Err("boom".to_string()));
+        LocalSet::new()
+            .run_until(async {
+                let (cx, mut peer) = test_connection().await;
+                let (responder, mut rx) = peer.fake_elicitation(&cx).await;
+                let params = url_params("github", "el-fail", "https://github.com/login/oauth");
+                let mut form = ElicitationForm::with_browser_opener(params, responder, |_| Err("boom".to_string()));
 
-        let outcome =
-            form.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Enter, tui::KeyModifiers::NONE))).await;
-        let messages = outcome.expect("URL opener failure should still produce an event result");
-        assert!(messages.is_empty(), "modal should remain open on launch failure");
-        assert!(rx.try_recv().is_err(), "response should not be sent when browser launch fails");
+                let outcome =
+                    form.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Enter, tui::KeyModifiers::NONE))).await;
+                let messages = outcome.expect("URL opener failure should still produce an event result");
+                assert!(messages.is_empty(), "modal should remain open on launch failure");
+                assert!(rx.try_recv().is_err(), "response should not be sent when browser launch fails");
 
-        let ElicitationUi::Url(prompt) = &form.ui else {
-            panic!("expected URL prompt");
-        };
-        assert_eq!(prompt.launch_error.as_deref(), Some("Failed to open browser: boom"));
+                let ElicitationUi::Url(prompt) = &form.ui else {
+                    panic!("expected URL prompt");
+                };
+                assert_eq!(prompt.launch_error.as_deref(), Some("Failed to open browser: boom"));
+            })
+            .await;
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn url_modal_d_returns_decline() {
-        let (tx, rx) = oneshot::channel();
-        let params = url_params("github", "el-456", "https://github.com/login/oauth");
-        let mut form = ElicitationForm::from_params(params, tx);
-        let outcome =
-            form.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Char('d'), tui::KeyModifiers::NONE))).await;
-        let messages = outcome.unwrap();
+        LocalSet::new()
+            .run_until(async {
+                let (cx, mut peer) = test_connection().await;
+                let (responder, rx) = peer.fake_elicitation(&cx).await;
+                let params = url_params("github", "el-456", "https://github.com/login/oauth");
+                let mut form = ElicitationForm::from_params(params, responder);
+                let outcome = form
+                    .on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Char('d'), tui::KeyModifiers::NONE)))
+                    .await;
+                let messages = outcome.unwrap();
 
-        assert!(messages.iter().any(|m| matches!(m, ElicitationMessage::Responded)));
+                assert!(messages.iter().any(|m| matches!(m, ElicitationMessage::Responded)));
 
-        let response = rx.await.unwrap();
-        assert_eq!(response.action, ElicitationAction::Decline);
+                let response = rx.await.unwrap();
+                assert_eq!(response.action, ElicitationAction::Decline);
+            })
+            .await;
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn url_modal_esc_returns_cancel() {
-        let (tx, rx) = oneshot::channel();
-        let params = url_params("github", "el-789", "https://github.com/login/oauth");
-        let mut form = ElicitationForm::from_params(params, tx);
-        let outcome = form.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Esc, tui::KeyModifiers::NONE))).await;
-        let messages = outcome.unwrap();
+        LocalSet::new()
+            .run_until(async {
+                let (cx, mut peer) = test_connection().await;
+                let (responder, rx) = peer.fake_elicitation(&cx).await;
+                let params = url_params("github", "el-789", "https://github.com/login/oauth");
+                let mut form = ElicitationForm::from_params(params, responder);
+                let outcome =
+                    form.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Esc, tui::KeyModifiers::NONE))).await;
+                let messages = outcome.unwrap();
 
-        assert!(messages.iter().any(|m| matches!(m, ElicitationMessage::Responded)));
+                assert!(messages.iter().any(|m| matches!(m, ElicitationMessage::Responded)));
 
-        let response = rx.await.unwrap();
-        assert_eq!(response.action, ElicitationAction::Cancel);
+                let response = rx.await.unwrap();
+                assert_eq!(response.action, ElicitationAction::Cancel);
+            })
+            .await;
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn form_modal_esc_returns_cancel() {
-        let (tx, rx) = oneshot::channel();
-        let params = ElicitationParams {
-            server_name: "test".to_string(),
-            request: CreateElicitationRequestParams::FormElicitationParams {
-                meta: None,
-                message: "Test".to_string(),
-                requested_schema: ElicitationSchema::builder().build().unwrap(),
-            },
-        };
-        let mut form = ElicitationForm::from_params(params, tx);
-        let outcome = form.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Esc, tui::KeyModifiers::NONE))).await;
-        let messages = outcome.unwrap();
+        LocalSet::new()
+            .run_until(async {
+                let (cx, mut peer) = test_connection().await;
+                let (responder, rx) = peer.fake_elicitation(&cx).await;
+                let params = ElicitationParams {
+                    server_name: "test".to_string(),
+                    request: CreateElicitationRequestParams::FormElicitationParams {
+                        meta: None,
+                        message: "Test".to_string(),
+                        requested_schema: ElicitationSchema::builder().build().unwrap(),
+                    },
+                };
+                let mut form = ElicitationForm::from_params(params, responder);
+                let outcome =
+                    form.on_event(&Event::Key(tui::KeyEvent::new(tui::KeyCode::Esc, tui::KeyModifiers::NONE))).await;
+                let messages = outcome.unwrap();
 
-        assert!(messages.iter().any(|m| matches!(m, ElicitationMessage::Responded)));
+                assert!(messages.iter().any(|m| matches!(m, ElicitationMessage::Responded)));
 
-        let response = rx.await.unwrap();
-        assert_eq!(response.action, ElicitationAction::Cancel);
+                let response = rx.await.unwrap();
+                assert_eq!(response.action, ElicitationAction::Cancel);
+            })
+            .await;
     }
 
     #[test]
@@ -794,7 +839,7 @@ mod tests {
             "https://github.com/login/oauth".to_string(),
         );
         let ui = ElicitationUi::Url(prompt);
-        let mut form = ElicitationForm { ui, browser_opener: Arc::new(default_browser_opener), response_tx: None };
+        let mut form = ElicitationForm { ui, browser_opener: Arc::new(default_browser_opener), responder: None };
 
         let lines = render_component(|ctx| form.render(ctx), 80, 20).get_lines();
         let text: String = lines.join("\n");
