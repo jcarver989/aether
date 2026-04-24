@@ -1,3 +1,4 @@
+use super::session_manager::SessionManager;
 use acp_utils::notifications::McpRequest;
 use agent_client_protocol::schema::{
     AuthenticateRequest, CancelNotification, InitializeRequest, ListSessionsRequest, LoadSessionRequest,
@@ -6,22 +7,6 @@ use agent_client_protocol::schema::{
 use agent_client_protocol::{self as acp, Agent, Builder, Client, HandleDispatchFrom, NullRun};
 use std::sync::Arc;
 
-use super::session_manager::SessionManager;
-
-/// Wire every inbound ACP request and notification we care about into the
-/// builder. Each handler is a thin wrapper that forwards the call to
-/// [`SessionManager`].
-///
-/// Unhandled methods are auto-rejected by the SDK with JSON-RPC -32601
-/// (`method_not_found`, with the unknown method in `error.data`), so we don't
-/// register an explicit fallback handler.
-///
-/// A generic `forward` helper was evaluated and rejected: `on_receive_request`
-/// takes an `AsyncFnMut` plus a companion dispatch value produced by the
-/// `acp::on_receive_request!()` macro at the call site, and `SessionManager`'s
-/// async methods have type `for<'a> fn(&'a SessionManager, Req) -> impl Future<..>`.
-/// Threading those through a single higher-ranked helper costs more clarity
-/// than the explicit repetition below saves.
 pub(crate) fn acp_agent_builder(
     manager: Arc<SessionManager>,
 ) -> Builder<Agent, impl HandleDispatchFrom<Client>, NullRun> {

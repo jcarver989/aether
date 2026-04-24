@@ -365,9 +365,6 @@ impl SessionManager {
             error!("Failed to send auth methods updated notification: {:?}", e);
         }
 
-        // Broadcast updated config options to all active sessions. The registry
-        // clones snapshots under its lock; we build and send notifications after
-        // the lock is released so I/O never runs under the session map.
         let credential_store = OAuthCredentialStore::default();
         let available = catalog::get_local_models().await;
         let all_models = get_all_models(&available);
