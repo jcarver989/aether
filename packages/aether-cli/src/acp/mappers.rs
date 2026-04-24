@@ -379,9 +379,6 @@ pub async fn replay_to_client(events: &[SessionEvent], connection: &ConnectionTo
     }
 }
 
-/// Pure mapping from stored session events to the ACP notifications that
-/// replay them to a client. Kept separate so it can be tested without a live
-/// ACP connection.
 pub fn replay_events_to_notifications(events: &[SessionEvent], session_id: &SessionId) -> Vec<SessionNotification> {
     let mut out = Vec::new();
     for event in events {
