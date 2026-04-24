@@ -201,7 +201,7 @@ async fn submit_plan_external_command_forwards_empty_stdout() {
     let plan_path = temp_dir.path().join("plan.md");
     fs::write(&plan_path, "# Plan").expect("write plan");
 
-    let server = PlanMcp::new().with_submit_command(vec!["/bin/true".into()]);
+    let server = PlanMcp::new().with_submit_command(vec!["/usr/bin/true".into()]);
     let (_server, client) = connect(server, silent_client()).await.expect("connect");
 
     let result = submit_plan(&client, plan_path.to_string_lossy().as_ref()).await;
@@ -215,7 +215,7 @@ async fn submit_plan_external_command_errors_on_nonzero_exit() {
     let plan_path = temp_dir.path().join("plan.md");
     fs::write(&plan_path, "# Plan").expect("write plan");
 
-    let server = PlanMcp::new().with_submit_command(vec!["/bin/false".into()]);
+    let server = PlanMcp::new().with_submit_command(vec!["/usr/bin/false".into()]);
     let (_server, client) = connect(server, silent_client()).await.expect("connect");
 
     let result = submit_plan_raw(&client, plan_path.to_string_lossy().as_ref()).await;
