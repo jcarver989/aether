@@ -1,14 +1,5 @@
 //! Typed wire-format types for Aether's custom ACP extension requests and
 //! notifications.
-//!
-//! Each type carries its own wire method name via the
-//! [`JsonRpcRequest`](agent_client_protocol::JsonRpcRequest) /
-//! [`JsonRpcNotification`](agent_client_protocol::JsonRpcNotification) /
-//! [`JsonRpcResponse`](agent_client_protocol::JsonRpcResponse) derive. Senders
-//! pass these straight to [`ConnectionTo::send_notification`] /
-//! [`send_request`]; receivers register typed `on_receive_notification` /
-//! `on_receive_request` handlers and the ACP builder routes by type.
-
 use agent_client_protocol::schema::AuthMethod;
 use agent_client_protocol::{JsonRpcNotification, JsonRpcRequest, JsonRpcResponse};
 pub use mcp_utils::display_meta::{ToolDisplayMeta, ToolResultMeta};
@@ -88,19 +79,15 @@ pub use mcp_utils::client::UrlElicitationCompleteParams;
 
 /// Server→client MCP extension notifications (relay → wisp).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonRpcNotification)]
-#[notification(method = "_aether/mcp")]
+#[notification(method = "_aether/mcp_event")]
 pub enum McpNotification {
     ServerStatus { servers: Vec<McpServerStatusEntry> },
     UrlElicitationComplete(UrlElicitationCompleteParams),
 }
 
 /// Client→server MCP extension requests (wisp → relay).
-///
-/// Shares the `_aether/mcp` wire method with [`McpNotification`] — each peer
-/// only registers a handler for its direction, so there is no collision on a
-/// given connection.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonRpcNotification)]
-#[notification(method = "_aether/mcp")]
+#[notification(method = "_aether/mcp_request")]
 pub enum McpRequest {
     Authenticate { session_id: String, server_name: String },
 }
@@ -168,10 +155,10 @@ mod tests {
     fn wire_method_names_are_prefixed() {
         assert_eq!(ContextClearedParams::default().method(), "_aether/context_cleared");
         assert!(AuthMethodsUpdatedParams { auth_methods: vec![] }.method() == "_aether/auth_methods_updated");
-        assert!(McpNotification::ServerStatus { servers: vec![] }.method() == "_aether/mcp");
+        assert!(McpNotification::ServerStatus { servers: vec![] }.method() == "_aether/mcp_event");
         assert!(
             McpRequest::Authenticate { session_id: String::new(), server_name: String::new() }.method()
-                == "_aether/mcp"
+                == "_aether/mcp_request"
         );
     }
 
@@ -253,7 +240,7 @@ mod tests {
         };
 
         let untyped = msg.to_untyped_message().expect("serializable");
-        assert_eq!(untyped.method(), "_aether/mcp");
+        assert_eq!(untyped.method(), "_aether/mcp_request");
         let parsed = McpRequest::parse_message(untyped.method(), untyped.params()).expect("roundtrip");
         assert_eq!(parsed, msg);
     }
@@ -275,7 +262,7 @@ mod tests {
         };
 
         let untyped = msg.to_untyped_message().expect("serializable");
-        assert_eq!(untyped.method(), "_aether/mcp");
+        assert_eq!(untyped.method(), "_aether/mcp_event");
         let parsed = McpNotification::parse_message(untyped.method(), untyped.params()).expect("roundtrip");
         assert_eq!(parsed, msg);
     }
