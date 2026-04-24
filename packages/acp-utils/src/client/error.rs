@@ -1,18 +1,21 @@
 /// Errors returned by ACP client-side operations.
 #[derive(Debug, thiserror::Error)]
 pub enum AcpClientError {
-    #[error("failed to spawn agent subprocess: {0}")]
-    SpawnFailed(#[source] std::io::Error),
+    /// The agent command string could not be parsed / the subprocess could
+    /// not be spawned.
+    #[error("invalid agent command: {0}")]
+    InvalidAgentCommand(#[source] agent_client_protocol::Error),
 
+    /// The transport could not be established before the ACP handshake.
+    #[error("ACP connection failed before handshake: {0}")]
+    ConnectFailed(#[source] agent_client_protocol::Error),
+
+    /// The agent subprocess exited unexpectedly.
     #[error("agent subprocess crashed: {0}")]
     AgentCrashed(String),
 
+    /// The ACP request/response exchange failed (`initialize`, `new_session`,
+    /// `prompt`, etc.).
     #[error("ACP protocol error: {0}")]
     Protocol(#[source] agent_client_protocol::Error),
-}
-
-impl From<agent_client_protocol::Error> for AcpClientError {
-    fn from(e: agent_client_protocol::Error) -> Self {
-        Self::Protocol(e)
-    }
 }

@@ -83,8 +83,10 @@ impl TestPeer {
 pub async fn test_connection() -> (ConnectionTo<Client>, TestPeer) {
     let (agent_writer, client_reader) = tokio::io::duplex(4096);
     let (client_writer, agent_reader) = tokio::io::duplex(4096);
+
     let agent_transport = ByteStreams::new(agent_writer.compat_write(), agent_reader.compat());
     let client_transport = ByteStreams::new(client_writer.compat_write(), client_reader.compat());
+
     let (sn_tx, sn_rx) = mpsc::unbounded_channel::<SessionNotification>();
     let (mcp_tx, mcp_rx) = mpsc::unbounded_channel::<McpNotification>();
     let (el_tx, el_rx) = mpsc::unbounded_channel::<ElicitationParams>();
