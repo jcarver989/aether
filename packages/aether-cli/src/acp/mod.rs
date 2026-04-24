@@ -20,8 +20,6 @@ use tracing::info;
 use tracing_appender::rolling::daily;
 use tracing_subscriber::EnvFilter;
 
-use crate::acp::handlers::acp_agent_builder;
-
 #[derive(clap::Args, Debug)]
 pub struct AcpArgs {
     /// Path to log file directory (default: /tmp/aether-acp-logs)
