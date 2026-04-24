@@ -1,9 +1,9 @@
-use acp_utils::notifications::{
-    ELICITATION_METHOD, ElicitationParams, ElicitationResponse, McpNotification, McpRequest,
-};
+use acp_utils::notifications::{ElicitationParams, McpNotification, McpRequest};
+use acp_utils::server::AcpServerError;
 use aether_core::events::{AgentMessage, UserMessage};
 use aether_core::mcp::run_mcp_task::McpCommand;
-use agent_client_protocol::{self as acp, ExtNotification, SessionId};
+use agent_client_protocol::schema::{self as acp, SessionId};
+use agent_client_protocol::{Client, ConnectionTo};
 use llm::parser::ModelProviderParser;
 use llm::{ContentBlock, ReasoningEffort};
 use mcp_utils::client::{ElicitationRequest, McpClientEvent, cancel_result};
@@ -13,16 +13,16 @@ use std::fmt;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 use tracing::warn;
 use tracing::{error, info};
 
 use super::mappers::{
     map_agent_message_to_session_notification, map_agent_message_to_stop_reason, try_extract_plan_notification,
-    try_into_ext_notification,
+    try_into_agent_notification,
 };
 use super::session::Session;
 use super::session_store::SessionStore;
-use acp_utils::server::AcpActorHandle;
 use aether_core::context::ext::{SessionEvent, UserEvent};
 
 pub(crate) enum SessionCommand {
@@ -54,29 +54,60 @@ impl fmt::Display for RelayError {
 pub(crate) struct RelayHandle {
     pub cmd_tx: mpsc::Sender<SessionCommand>,
     pub mcp_request_tx: mpsc::Sender<McpRequest>,
-    pub join_handle: JoinHandle<()>,
+    cancel: CancellationToken,
+    join: JoinHandle<()>,
+}
+
+impl RelayHandle {
+    /// Signal the relay loop to exit. Idempotent.
+    pub fn cancel(&self) {
+        self.cancel.cancel();
+    }
+
+    /// Wait for the relay task to finish. Call [`Self::cancel`] first; when
+    /// draining many relays, fan out `cancel()` before awaiting any `join()`
+    /// so shutdowns run concurrently.
+    pub async fn join(self) {
+        let _ = self.join.await;
+    }
+
+    /// Cancel and join in one step. Prefer [`Self::cancel`] + [`Self::join`] when
+    /// draining many relays so the cancel signals can fan out concurrently.
+    pub async fn stop(self) {
+        self.cancel();
+        self.join().await;
+    }
 }
 
 pub(crate) fn spawn_relay(
     session: Session,
-    actor_handle: AcpActorHandle,
+    connection: ConnectionTo<Client>,
     acp_session_id: SessionId,
     session_store: Arc<SessionStore>,
 ) -> RelayHandle {
     let (cmd_tx, cmd_rx) = mpsc::channel(50);
     let (mcp_request_tx, mcp_request_rx) = mpsc::channel(50);
-    let join_handle =
-        tokio::spawn(run_session_relay(session, cmd_rx, mcp_request_rx, actor_handle, acp_session_id, session_store));
-    RelayHandle { cmd_tx, mcp_request_tx, join_handle }
+    let cancel = CancellationToken::new();
+    let join = tokio::spawn(run_session_relay(
+        session,
+        cmd_rx,
+        mcp_request_rx,
+        connection,
+        acp_session_id,
+        session_store,
+        cancel.clone(),
+    ));
+    RelayHandle { cmd_tx, mcp_request_tx, cancel, join }
 }
 
 async fn run_session_relay(
     session: Session,
     mut cmd_rx: mpsc::Receiver<SessionCommand>,
     mut mcp_request_rx: mpsc::Receiver<McpRequest>,
-    actor_handle: AcpActorHandle,
+    connection: ConnectionTo<Client>,
     acp_session_id: SessionId,
     session_store: Arc<SessionStore>,
+    cancel: CancellationToken,
 ) {
     let Session {
         agent_tx,
@@ -88,14 +119,16 @@ async fn run_session_relay(
         initial_server_statuses,
     } = session;
 
-    let notification: ExtNotification = McpNotification::ServerStatus { servers: initial_server_statuses }.into();
-
-    if let Err(e) = actor_handle.send_ext_notification(notification).await {
+    if let Err(e) = connection
+        .send_notification(McpNotification::ServerStatus { servers: initial_server_statuses })
+        .map_err(|e| AcpServerError::protocol("_aether/mcp_event", e))
+    {
         error!("Failed to send initial MCP server status: {:?}", e);
     }
 
     loop {
         tokio::select! {
+            () = cancel.cancelled() => break,
             Some(cmd) = cmd_rx.recv() => {
                 match cmd {
                     SessionCommand::Prompt {
@@ -111,9 +144,10 @@ async fn run_session_relay(
                             event_rx: &mut event_rx,
                             mcp_request_rx: &mut mcp_request_rx,
                             cmd_rx: &mut cmd_rx,
-                            actor_handle: &actor_handle,
+                            connection: &connection,
                             acp_session_id: &acp_session_id,
                             session_store: &session_store,
+                            cancel: &cancel,
                         };
                         let result = handle_prompt(&mut ctx, content, switch_model, reasoning_effort).await;
                         let _ = result_tx.send(result);
@@ -126,12 +160,12 @@ async fn run_session_relay(
             Some(msg) = mcp_request_rx.recv() => {
                 match msg {
                     McpRequest::Authenticate { server_name, .. } => {
-                        authenticate_mcp_server(&mcp_tx, &actor_handle, &agent_tx, &server_name).await;
+                        authenticate_mcp_server(&mcp_tx, &connection, &agent_tx, &server_name).await;
                     }
                 }
             }
             Some(event) = event_rx.recv() => {
-                handle_mcp_client_event(&actor_handle, event).await;
+                handle_mcp_client_event(&connection, event).await;
             }
             else => break,
         }
@@ -145,9 +179,10 @@ struct PromptContext<'a> {
     event_rx: &'a mut mpsc::Receiver<McpClientEvent>,
     mcp_request_rx: &'a mut mpsc::Receiver<McpRequest>,
     cmd_rx: &'a mut mpsc::Receiver<SessionCommand>,
-    actor_handle: &'a AcpActorHandle,
+    connection: &'a ConnectionTo<Client>,
     acp_session_id: &'a SessionId,
     session_store: &'a Arc<SessionStore>,
+    cancel: &'a CancellationToken,
 }
 
 async fn handle_prompt(
@@ -207,6 +242,11 @@ where
 {
     loop {
         tokio::select! {
+            () = ctx.cancel.cancelled() => {
+                info!("Relay cancellation observed during active prompt; forwarding Cancel to agent");
+                let _ = ctx.agent_tx.send(UserMessage::Cancel).await;
+                return Ok(acp::StopReason::Cancelled);
+            }
             msg = ctx.agent_rx.recv() => {
                 if let Some(msg) = msg {
                     log_event(
@@ -214,7 +254,7 @@ where
                         &ctx.acp_session_id.0,
                         &SessionEvent::Agent(msg.clone()),
                     );
-                    forward_notification(ctx.actor_handle, ctx.acp_session_id, &msg).await;
+                    forward_notification(ctx.connection, ctx.acp_session_id, &msg);
                     if let Some(reason) = on_agent_message(&msg) {
                         info!("Turn completed, stop reason: {:?}", reason);
                         return Ok(reason);
@@ -225,12 +265,12 @@ where
                 }
             }
             Some(event) = ctx.event_rx.recv() => {
-                handle_mcp_client_event(ctx.actor_handle, event).await;
+                handle_mcp_client_event(ctx.connection, event).await;
             }
             Some(msg) = ctx.mcp_request_rx.recv() => {
                 match msg {
                     McpRequest::Authenticate { server_name, .. } => {
-                        authenticate_mcp_server(ctx.mcp_tx, ctx.actor_handle, ctx.agent_tx, &server_name).await;
+                        authenticate_mcp_server(ctx.mcp_tx, ctx.connection, ctx.agent_tx, &server_name).await;
                     }
                 }
             }
@@ -260,15 +300,22 @@ fn log_event(store: &SessionStore, session_id: &str, event: &SessionEvent) {
     }
 }
 
-async fn handle_elicitation_request(actor_handle: &AcpActorHandle, elicitation: ElicitationRequest) {
-    let ext_params = build_elicitation_params(&elicitation.server_name, &elicitation.request);
-    let ext_request = build_ext_request(&ext_params);
+async fn handle_elicitation_request(connection: &ConnectionTo<Client>, elicitation: ElicitationRequest) {
+    let params = build_elicitation_params(&elicitation.server_name, &elicitation.request);
 
-    let result = actor_handle.ext_method(ext_request).await;
-    let mcp_result = match result {
-        Ok(ref response) => parse_elicitation_response(response),
+    let mcp_result = match connection
+        .send_request(params)
+        .block_task()
+        .await
+        .map_err(|e| AcpServerError::protocol("_aether/elicitation", e))
+    {
+        Ok(response) => {
+            let mut result = CreateElicitationResult::new(response.action);
+            result.content = response.content;
+            result
+        }
         Err(e) => {
-            error!("Failed to send elicitation ext_method: {:?}", e);
+            error!("Failed to send elicitation request: {:?}", e);
             cancel_result()
         }
     };
@@ -280,27 +327,6 @@ async fn handle_elicitation_request(actor_handle: &AcpActorHandle, elicitation: 
 
 fn build_elicitation_params(server_name: &str, request: &CreateElicitationRequestParams) -> ElicitationParams {
     ElicitationParams { server_name: server_name.to_string(), request: request.clone() }
-}
-
-fn build_ext_request(params: &ElicitationParams) -> acp::ExtRequest {
-    let raw = serde_json::value::to_raw_value(params).expect("ElicitationParams is serializable");
-    acp::ExtRequest::new(ELICITATION_METHOD, Arc::from(raw))
-}
-
-fn parse_elicitation_response(response: &acp::ExtResponse) -> CreateElicitationResult {
-    let parsed: Result<ElicitationResponse, _> = serde_json::from_str(response.0.get());
-
-    match parsed {
-        Ok(r) => {
-            let mut result = CreateElicitationResult::new(r.action);
-            result.content = r.content;
-            result
-        }
-        Err(e) => {
-            error!("Failed to parse elicitation response: {:?}", e);
-            cancel_result()
-        }
-    }
 }
 
 async fn expand_slash_command_in_content(
@@ -403,7 +429,7 @@ fn parse_slash_command_arguments(args_text: &str) -> Option<serde_json::Map<Stri
 
 async fn authenticate_mcp_server(
     mcp_tx: &mpsc::Sender<McpCommand>,
-    actor_handle: &AcpActorHandle,
+    connection: &ConnectionTo<Client>,
     agent_tx: &mpsc::Sender<UserMessage>,
     name: &str,
 ) {
@@ -426,8 +452,10 @@ async fn authenticate_mcp_server(
     };
 
     let (statuses, tool_definitions) = result;
-    let notification: ExtNotification = McpNotification::ServerStatus { servers: statuses }.into();
-    if let Err(e) = actor_handle.send_ext_notification(notification).await {
+    if let Err(e) = connection
+        .send_notification(McpNotification::ServerStatus { servers: statuses })
+        .map_err(|e| AcpServerError::protocol("_aether/mcp_event", e))
+    {
         error!("Failed to send updated MCP server status: {:?}", e);
     }
     if let Err(e) = agent_tx.send(UserMessage::UpdateTools(tool_definitions)).await {
@@ -435,33 +463,56 @@ async fn authenticate_mcp_server(
     }
 }
 
-async fn forward_notification(actor_handle: &AcpActorHandle, acp_session_id: &SessionId, msg: &AgentMessage) {
+fn forward_notification(connection: &ConnectionTo<Client>, acp_session_id: &SessionId, msg: &AgentMessage) {
     if let Some(notification) = map_agent_message_to_session_notification(acp_session_id.clone(), msg) {
-        if let Err(e) = actor_handle.send_session_notification(notification).await {
+        if let Err(e) =
+            connection.send_notification(notification).map_err(|e| AcpServerError::protocol("session/update", e))
+        {
             error!("Failed to send session notification: {:?}", e);
         }
-    } else if let Some(ext_notification) = try_into_ext_notification(msg)
-        && let Err(e) = actor_handle.send_ext_notification(ext_notification).await
+    } else if let Some(agent_notif) = try_into_agent_notification(msg)
+        && let Err(e) = send_agent_notification(connection, agent_notif)
     {
         error!("Failed to send ext notification: {:?}", e);
     }
 
     if let AgentMessage::ToolResult { result_meta, .. } = msg
         && let Some(plan_notif) = try_extract_plan_notification(acp_session_id.clone(), result_meta.as_ref())
-        && let Err(e) = actor_handle.send_session_notification(plan_notif).await
+        && let Err(e) =
+            connection.send_notification(plan_notif).map_err(|e| AcpServerError::protocol("session/update", e))
     {
         error!("Failed to send plan notification: {:?}", e);
     }
 }
 
-async fn handle_mcp_client_event(actor_handle: &AcpActorHandle, event: McpClientEvent) {
+fn send_agent_notification(
+    connection: &ConnectionTo<Client>,
+    notification: super::mappers::AgentExtNotification,
+) -> Result<(), AcpServerError> {
+    use super::mappers::AgentExtNotification;
+    match notification {
+        AgentExtNotification::ContextUsage(p) => {
+            connection.send_notification(p).map_err(|e| AcpServerError::protocol("_aether/context_usage", e))
+        }
+        AgentExtNotification::ContextCleared(p) => {
+            connection.send_notification(p).map_err(|e| AcpServerError::protocol("_aether/context_cleared", e))
+        }
+        AgentExtNotification::SubAgentProgress(p) => {
+            connection.send_notification(p).map_err(|e| AcpServerError::protocol("_aether/sub_agent_progress", e))
+        }
+    }
+}
+
+async fn handle_mcp_client_event(connection: &ConnectionTo<Client>, event: McpClientEvent) {
     match event {
         McpClientEvent::Elicitation(elicitation) => {
-            handle_elicitation_request(actor_handle, elicitation).await;
+            handle_elicitation_request(connection, elicitation).await;
         }
         McpClientEvent::UrlElicitationComplete(params) => {
-            let notification: ExtNotification = McpNotification::UrlElicitationComplete(params).into();
-            if let Err(e) = actor_handle.send_ext_notification(notification).await {
+            if let Err(e) = connection
+                .send_notification(McpNotification::UrlElicitationComplete(params))
+                .map_err(|e| AcpServerError::protocol("_aether/mcp_event", e))
+            {
                 error!("Failed to send URL elicitation complete notification: {:?}", e);
             }
         }
@@ -471,6 +522,8 @@ async fn handle_mcp_client_event(actor_handle: &AcpActorHandle, event: McpClient
 #[cfg(test)]
 mod tests {
     use super::*;
+    use acp_utils::testing::test_connection;
+    use tokio::task::LocalSet;
     #[test]
     fn test_argument_parsing() {
         let arg_map = parse_slash_command_arguments("do a thing that has spaces").expect("Expected Some");
@@ -501,6 +554,46 @@ mod tests {
             .expect("cancel should be forwarded")
             .expect("agent channel should stay open");
         assert!(matches!(msg, UserMessage::Cancel));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn run_turn_loop_exits_on_cancel_and_forwards_cancel_to_agent() {
+        LocalSet::new()
+            .run_until(async {
+                let tmp = tempfile::tempdir().expect("tempdir");
+                let session_store = Arc::new(SessionStore::from_path(tmp.path().to_path_buf()));
+                let (cx, _peer) = test_connection().await;
+                let acp_session_id = SessionId::new("test-session");
+                let cancel = CancellationToken::new();
+
+                let (agent_tx, mut outbound_user_messages) = mpsc::channel::<UserMessage>(1);
+                let (_agent_from_tx, mut agent_rx) = mpsc::channel::<AgentMessage>(1);
+                let (mcp_tx, _mcp_rx) = mpsc::channel(1);
+                let (_event_tx, mut event_rx) = mpsc::channel(1);
+                let (_mcp_req_tx, mut mcp_request_rx) = mpsc::channel(1);
+                let (_cmd_tx, mut cmd_rx) = mpsc::channel(1);
+
+                let mut ctx = PromptContext {
+                    agent_tx: &agent_tx,
+                    agent_rx: &mut agent_rx,
+                    mcp_tx: &mcp_tx,
+                    event_rx: &mut event_rx,
+                    mcp_request_rx: &mut mcp_request_rx,
+                    cmd_rx: &mut cmd_rx,
+                    connection: &cx,
+                    acp_session_id: &acp_session_id,
+                    session_store: &session_store,
+                    cancel: &cancel,
+                };
+
+                cancel.cancel();
+                let result = run_turn_loop(&mut ctx, "closed", |_| None).await;
+                assert!(matches!(result, Ok(acp::StopReason::Cancelled)));
+
+                let forwarded = outbound_user_messages.recv().await.expect("cancel forwarded");
+                assert!(matches!(forwarded, UserMessage::Cancel));
+            })
+            .await;
     }
 
     #[tokio::test]
@@ -569,106 +662,85 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_parse_elicitation_response_accept_no_content() {
-        let response_json = serde_json::json!({
-            "action": "accept",
-            "content": null
-        });
-        let raw = serde_json::value::to_raw_value(&response_json).unwrap();
-        let ext_response = acp::ExtResponse::new(Arc::from(raw));
+    #[tokio::test(flavor = "current_thread")]
+    async fn url_elicitation_complete_is_forwarded_as_mcp_notification() {
+        LocalSet::new()
+            .run_until(async {
+                let (cx, mut peer) = test_connection().await;
+                let event = McpClientEvent::UrlElicitationComplete(mcp_utils::client::UrlElicitationCompleteParams {
+                    server_name: "github".to_string(),
+                    elicitation_id: "el-42".to_string(),
+                });
 
-        let result = parse_elicitation_response(&ext_response);
-        assert_eq!(result.action, rmcp::model::ElicitationAction::Accept);
-        assert!(result.content.is_none());
-    }
+                handle_mcp_client_event(&cx, event).await;
 
-    #[test]
-    fn test_parse_elicitation_response_accept() {
-        let response_json = serde_json::json!({
-            "action": "accept",
-            "content": { "color": "red" }
-        });
-        let raw = serde_json::value::to_raw_value(&response_json).unwrap();
-        let ext_response = acp::ExtResponse::new(Arc::from(raw));
-
-        let result = parse_elicitation_response(&ext_response);
-        assert_eq!(result.action, rmcp::model::ElicitationAction::Accept);
-        assert_eq!(result.content, Some(serde_json::json!({ "color": "red" })));
-    }
-
-    #[test]
-    fn test_parse_elicitation_response_decline() {
-        let response_json = serde_json::json!({
-            "action": "decline",
-            "content": null
-        });
-        let raw = serde_json::value::to_raw_value(&response_json).unwrap();
-        let ext_response = acp::ExtResponse::new(Arc::from(raw));
-
-        let result = parse_elicitation_response(&ext_response);
-        assert_eq!(result.action, rmcp::model::ElicitationAction::Decline);
-        assert!(result.content.is_none());
-    }
-
-    #[test]
-    fn test_parse_elicitation_response_cancel() {
-        let response_json = serde_json::json!({
-            "action": "cancel",
-            "content": null
-        });
-        let raw = serde_json::value::to_raw_value(&response_json).unwrap();
-        let ext_response = acp::ExtResponse::new(Arc::from(raw));
-
-        let result = parse_elicitation_response(&ext_response);
-        assert_eq!(result.action, rmcp::model::ElicitationAction::Cancel);
-        assert!(result.content.is_none());
-    }
-
-    #[test]
-    fn test_parse_elicitation_response_invalid_json() {
-        let raw: Arc<serde_json::value::RawValue> = serde_json::from_str("\"not_an_object\"").unwrap();
-        let ext_response = acp::ExtResponse::new(raw);
-
-        let result = parse_elicitation_response(&ext_response);
-        assert_eq!(result.action, rmcp::model::ElicitationAction::Cancel);
-        assert!(result.content.is_none());
-    }
-
-    #[tokio::test]
-    async fn url_elicitation_complete_event_emits_ext_notification() {
-        use acp_utils::notifications::{MCP_MESSAGE_METHOD, McpNotification};
-        use acp_utils::server::AcpRequest;
-
-        let (req_tx, mut req_rx) = mpsc::unbounded_channel();
-        let handle = AcpActorHandle::new(req_tx);
-        let event = McpClientEvent::UrlElicitationComplete(mcp_utils::client::UrlElicitationCompleteParams {
-            server_name: "github".to_string(),
-            elicitation_id: "el-42".to_string(),
-        });
-
-        let driver = tokio::spawn(async move {
-            let request = req_rx.recv().await.expect("expected ExtNotification request");
-            match request {
-                AcpRequest::ExtNotification { notification, response_tx } => {
-                    let _ = response_tx.send(Ok(()));
-                    notification
-                }
-                other => panic!("expected ExtNotification, got {other:?}"),
-            }
-        });
-
-        handle_mcp_client_event(&handle, event).await;
-        let notification = driver.await.expect("driver task should complete");
-
-        assert_eq!(notification.method.as_ref(), MCP_MESSAGE_METHOD);
-        let parsed = McpNotification::try_from(&notification).expect("should parse");
-        assert_eq!(
-            parsed,
-            McpNotification::UrlElicitationComplete(acp_utils::notifications::UrlElicitationCompleteParams {
-                server_name: "github".to_string(),
-                elicitation_id: "el-42".to_string(),
+                let received = peer.next_mcp_notification().await;
+                assert!(matches!(received, McpNotification::UrlElicitationComplete(_)));
             })
-        );
+            .await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn elicitation_request_forwards_response_from_peer() {
+        LocalSet::new()
+            .run_until(async {
+                let (cx, mut peer) = test_connection().await;
+                peer.queue_elicitation_response(acp_utils::notifications::ElicitationResponse {
+                    action: rmcp::model::ElicitationAction::Accept,
+                    content: Some(serde_json::json!({ "color": "red" })),
+                });
+
+                let (tx, rx) = oneshot::channel();
+                let elicitation = ElicitationRequest {
+                    server_name: "test-server".to_string(),
+                    request: CreateElicitationRequestParams::FormElicitationParams {
+                        meta: None,
+                        message: "Pick a color".to_string(),
+                        requested_schema: rmcp::model::ElicitationSchema::builder()
+                            .required_bool("approved")
+                            .build()
+                            .unwrap(),
+                    },
+                    response_sender: tx,
+                };
+
+                handle_elicitation_request(&cx, elicitation).await;
+
+                let result = rx.await.expect("response forwarded");
+                assert_eq!(result.action, rmcp::model::ElicitationAction::Accept);
+                assert_eq!(result.content, Some(serde_json::json!({ "color": "red" })));
+
+                let received = peer.next_elicitation_request().await;
+                assert_eq!(received.server_name, "test-server");
+            })
+            .await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn elicitation_request_surfaces_cancel_on_transport_error() {
+        LocalSet::new()
+            .run_until(async {
+                let (cx, _peer) = test_connection().await;
+                // No response queued → peer replies with method_not_found, which surfaces
+                // as an AcpServerError and triggers the cancel_result() fallback.
+
+                let (tx, rx) = oneshot::channel();
+                let elicitation = ElicitationRequest {
+                    server_name: "test-server".to_string(),
+                    request: CreateElicitationRequestParams::UrlElicitationParams {
+                        meta: None,
+                        message: "Authorize".to_string(),
+                        url: "https://example.com".to_string(),
+                        elicitation_id: "el-1".to_string(),
+                    },
+                    response_sender: tx,
+                };
+
+                handle_elicitation_request(&cx, elicitation).await;
+
+                let result = rx.await.expect("response forwarded");
+                assert_eq!(result.action, rmcp::model::ElicitationAction::Cancel);
+            })
+            .await;
     }
 }

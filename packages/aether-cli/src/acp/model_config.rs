@@ -1,7 +1,7 @@
 use acp_utils::config_meta::{ConfigOptionMeta, SelectOptionMeta};
 use acp_utils::config_option_id::ConfigOptionId;
 use aether_core::agent_spec::AgentSpec;
-use agent_client_protocol::{self as acp, SessionConfigOption, SessionConfigOptionCategory};
+use agent_client_protocol::schema::{self as acp, SessionConfigOption, SessionConfigOptionCategory};
 use llm::ReasoningEffort;
 use llm::catalog::LlmModel;
 use llm::oauth::OAuthCredentialStorage;
@@ -255,7 +255,7 @@ pub(crate) fn pick_default_model(available: &[LlmModel]) -> Option<&LlmModel> {
 mod tests {
     use super::*;
     use aether_core::agent_spec::{AgentSpecExposure, ToolFilter};
-    use agent_client_protocol::{SessionConfigKind, SessionConfigSelectOption, SessionConfigSelectOptions};
+    use agent_client_protocol::schema::{SessionConfigKind, SessionConfigSelectOption, SessionConfigSelectOptions};
     use llm::catalog::{AnthropicModel, DeepSeekModel, GeminiModel};
     use llm::testing::FakeOAuthCredentialStore;
 

@@ -1,4 +1,4 @@
-use agent_client_protocol as acp;
+use agent_client_protocol::schema as acp;
 use rmcp::model::{Prompt, PromptArgument};
 
 /// Create an MCP prompt with no arguments.
