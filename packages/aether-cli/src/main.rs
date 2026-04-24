@@ -1,4 +1,4 @@
-use aether_cli::acp::{AcpArgs, run_acp};
+use aether_cli::acp::{AcpArgs, AcpRunOutcome, run_acp};
 use aether_cli::agent::{AgentCommand, NewAgentOutcome, NewArgs, run_list, run_new, run_remove, should_run_onboarding};
 use aether_cli::headless::{HeadlessArgs, run_headless};
 use aether_cli::show_prompt::{PromptArgs, run_prompt};
@@ -47,7 +47,12 @@ fn main() -> ExitCode {
     let result: Result<ExitCode, String> = match cli.command {
         Some(Command::Headless(args)) => rt.block_on(run_headless(args)).map_err(|e| e.to_string()),
 
-        Some(Command::Acp(args)) => rt.block_on(run_acp(args)).map(|()| ExitCode::SUCCESS).map_err(|e| e.to_string()),
+        Some(Command::Acp(args)) => rt
+            .block_on(run_acp(args))
+            .map(|outcome| match outcome {
+                AcpRunOutcome::CleanDisconnect => ExitCode::SUCCESS,
+            })
+            .map_err(|e| e.to_string()),
 
         Some(Command::ShowPrompt(args)) => {
             rt.block_on(run_prompt(args)).map(|()| ExitCode::SUCCESS).map_err(|e| e.to_string())
