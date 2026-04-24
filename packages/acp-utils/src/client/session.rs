@@ -184,14 +184,14 @@ async fn run_main(
     cx: ConnectionTo<acp::Agent>,
     event_tx: mpsc::UnboundedSender<AcpEvent>,
     mut cmd_rx: mpsc::UnboundedReceiver<PromptCommand>,
-    handshake_tx: mpsc::UnboundedSender<InitializeResult>,
+    init_tx: mpsc::UnboundedSender<InitializeResult>,
     init_request: InitializeRequest,
     new_session_request: NewSessionRequest,
 ) {
     let init_resp = match cx.send_request(init_request).block_task().await {
         Ok(r) => r,
         Err(e) => {
-            let _ = handshake_tx.send(Err(AcpClientError::Protocol(e)));
+            let _ = init_tx.send(Err(AcpClientError::Protocol(e)));
             return;
         }
     };
@@ -200,13 +200,13 @@ async fn run_main(
     let session_resp = match cx.send_request(new_session_request).block_task().await {
         Ok(r) => r,
         Err(e) => {
-            let _ = handshake_tx.send(Err(AcpClientError::Protocol(e)));
+            let _ = init_tx.send(Err(AcpClientError::Protocol(e)));
             return;
         }
     };
     info!("ACP session created: {}", session_resp.session_id);
 
-    let _ = handshake_tx.send(Ok((init_resp, session_resp)));
+    let _ = init_tx.send(Ok((init_resp, session_resp)));
 
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
