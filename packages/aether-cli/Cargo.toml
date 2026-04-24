@@ -56,3 +56,4 @@ tempfile = { workspace = true }
 crossterm = { workspace = true }
 
 [dev-dependencies]
+acp_utils = { package = "aether-acp-utils", path = "../acp-utils", features = ["testing"], version = "0.3.0" }
