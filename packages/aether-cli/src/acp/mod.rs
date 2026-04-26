@@ -12,6 +12,7 @@ pub use mappers::map_mcp_prompt_to_available_command;
 pub use session_manager::SessionManager;
 
 use agent_client_protocol::{self as acp, ByteStreams};
+use llm::ReasoningEffort;
 use std::sync::Arc;
 use std::{fs::create_dir_all, path::PathBuf};
 use tokio::io::{stdin, stdout};
@@ -20,11 +21,26 @@ use tracing::info;
 use tracing_appender::rolling::daily;
 use tracing_subscriber::EnvFilter;
 
+use session_manager::InitialSessionSelection;
+
 #[derive(clap::Args, Debug)]
 pub struct AcpArgs {
     /// Path to log file directory (default: /tmp/aether-acp-logs)
     #[clap(long, default_value = "/tmp/aether-acp-logs")]
     pub log_dir: PathBuf,
+
+    /// Initial agent (mode) to select for new sessions. Mutually exclusive with `--model` and `--reasoning-effort`.
+    #[clap(long, conflicts_with_all = ["model", "reasoning_effort"])]
+    pub agent: Option<String>,
+
+    /// Initial model id (e.g. `anthropic:claude-sonnet-4-5`) for new sessions.
+    /// Mutually exclusive with `--agent`.
+    #[clap(long, conflicts_with = "agent")]
+    pub model: Option<String>,
+
+    /// Initial reasoning effort for an explicit model session. Requires `--model` and is mutually exclusive with `--agent`.
+    #[clap(long, value_name = "low|medium|high|xhigh", requires = "model", conflicts_with = "agent")]
+    pub reasoning_effort: Option<ReasoningEffort>,
 }
 
 /// Outcome of running the ACP server successfully.
@@ -61,7 +77,14 @@ pub async fn run_acp(args: AcpArgs) -> Result<AcpRunOutcome, AcpRunError> {
 
     setup_logging(&args);
 
-    let manager = Arc::new(SessionManager::new());
+    let initial_selection = if let Some(agent) = args.agent.clone() {
+        InitialSessionSelection::agent(agent)
+    } else if let Some(model) = args.model.clone() {
+        InitialSessionSelection::model(model, args.reasoning_effort)
+    } else {
+        InitialSessionSelection::default()
+    };
+    let manager = Arc::new(SessionManager::with_initial_selection(initial_selection));
 
     let transport = ByteStreams::new(stdout().compat_write(), stdin().compat());
     let connect_result = handlers::acp_agent_builder(manager.clone()).connect_to(transport).await;
@@ -82,4 +105,45 @@ fn setup_logging(args: &AcpArgs) {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .pretty()
         .init();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[derive(Debug, Parser)]
+    struct TestCli {
+        #[command(flatten)]
+        args: AcpArgs,
+    }
+
+    #[test]
+    fn agent_conflicts_with_model() {
+        let err = TestCli::try_parse_from(["test", "--agent", "planner", "--model", "anthropic:claude-sonnet-4-5"])
+            .expect_err("agent and model should conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn agent_conflicts_with_reasoning_effort() {
+        let err = TestCli::try_parse_from(["test", "--agent", "planner", "--reasoning-effort", "high"])
+            .expect_err("agent and reasoning effort should conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn reasoning_effort_requires_model() {
+        let err = TestCli::try_parse_from(["test", "--reasoning-effort", "high"])
+            .expect_err("reasoning effort should require model");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn reasoning_effort_with_model_is_allowed() {
+        let cli =
+            TestCli::try_parse_from(["test", "--model", "anthropic:claude-sonnet-4-5", "--reasoning-effort", "high"])
+                .expect("reasoning effort can configure an explicit model session");
+        assert_eq!(cli.args.reasoning_effort, Some(ReasoningEffort::High));
+    }
 }
