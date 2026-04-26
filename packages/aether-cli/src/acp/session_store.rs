@@ -34,8 +34,7 @@ impl SessionStore {
         Ok(Self { dir: home.join(".aether/sessions") })
     }
 
-    #[cfg(test)]
-    pub fn from_path(dir: PathBuf) -> Self {
+    pub(crate) fn from_path(dir: PathBuf) -> Self {
         Self { dir }
     }
 

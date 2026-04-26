@@ -65,6 +65,13 @@ pub struct SessionManager {
     initial_selection: InitialSessionSelection,
 }
 
+pub(crate) struct SessionManagerConfig {
+    pub(crate) registry: Arc<SessionRegistry>,
+    pub(crate) session_store: Arc<SessionStore>,
+    pub(crate) has_oauth_credential: fn(&str) -> bool,
+    pub(crate) initial_selection: InitialSessionSelection,
+}
+
 struct SessionModeCatalog {
     catalog: AgentCatalog,
     modes: Vec<ValidatedMode>,
@@ -95,26 +102,13 @@ impl PromptModalities {
     }
 }
 
-impl Default for SessionManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl SessionManager {
-    pub fn new() -> Self {
-        Self::with_initial_selection(InitialSessionSelection::default())
-    }
-
-    pub fn with_initial_selection(initial_selection: InitialSessionSelection) -> Self {
-        info!("Creating SessionManager");
-        let session_store =
-            SessionStore::new().map_or_else(|e| panic!("Failed to initialize session store: {e}"), Arc::new);
+    pub(crate) fn new(deps: SessionManagerConfig) -> Self {
         Self {
-            registry: Arc::new(SessionRegistry::new()),
-            session_store,
-            has_oauth_credential: OAuthCredentialStore::has_credential,
-            initial_selection,
+            registry: deps.registry,
+            session_store: deps.session_store,
+            has_oauth_credential: deps.has_oauth_credential,
+            initial_selection: deps.initial_selection,
         }
     }
 
@@ -366,8 +360,14 @@ mod tests {
 
     #[tokio::test]
     async fn initialize_always_advertises_load_session_support() {
-        let mut manager = SessionManager::new();
-        manager.has_oauth_credential = |_| false;
+        let session_store =
+            SessionStore::new().map_or_else(|e| panic!("Failed to initialize session store: {e}"), Arc::new);
+        let manager = SessionManager::new(SessionManagerConfig {
+            registry: Arc::new(SessionRegistry::new()),
+            session_store,
+            has_oauth_credential: |_| false,
+            initial_selection: InitialSessionSelection::default(),
+        });
         let response =
             manager.initialize(InitializeRequest::new(ProtocolVersion::LATEST)).await.expect("initialize succeeds");
         let json = serde_json::to_string(&response).expect("response serializes");

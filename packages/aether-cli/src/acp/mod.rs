@@ -7,6 +7,7 @@ pub(crate) mod session;
 pub(crate) mod session_manager;
 pub(crate) mod session_registry;
 pub(crate) mod session_store;
+pub mod testing;
 
 pub use mappers::map_mcp_prompt_to_available_command;
 pub use session_manager::SessionManager;
@@ -21,7 +22,10 @@ use tracing::info;
 use tracing_appender::rolling::daily;
 use tracing_subscriber::EnvFilter;
 
-use session_manager::InitialSessionSelection;
+use llm::oauth::OAuthCredentialStore;
+use session_manager::{InitialSessionSelection, SessionManagerConfig};
+use session_registry::SessionRegistry;
+use session_store::SessionStore;
 
 #[derive(clap::Args, Debug)]
 pub struct AcpArgs {
@@ -84,7 +88,14 @@ pub async fn run_acp(args: AcpArgs) -> Result<AcpRunOutcome, AcpRunError> {
     } else {
         InitialSessionSelection::default()
     };
-    let manager = Arc::new(SessionManager::with_initial_selection(initial_selection));
+    let session_store =
+        SessionStore::new().map_or_else(|e| panic!("Failed to initialize session store: {e}"), Arc::new);
+    let manager = Arc::new(SessionManager::new(SessionManagerConfig {
+        registry: Arc::new(SessionRegistry::new()),
+        session_store,
+        has_oauth_credential: OAuthCredentialStore::has_credential,
+        initial_selection,
+    }));
 
     let transport = ByteStreams::new(stdout().compat_write(), stdin().compat());
     let connect_result = handlers::acp_agent_builder(manager.clone()).connect_to(transport).await;
