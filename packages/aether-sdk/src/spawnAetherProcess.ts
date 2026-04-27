@@ -1,8 +1,12 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import type { AsyncQueue } from "./asyncQueue.js";
 import { AetherSdkError } from "./errors.js";
 import type { AetherMessage } from "./types.js";
+
+const TERMINATION_GRACE_MS = 1_000;
 
 export interface SpawnAetherProcessOptions {
   command: string;
@@ -42,7 +46,7 @@ export function spawnAetherProcess({
 
   const { stdin, stdout } = child;
   if (!stdin || !stdout) {
-    stopChild(child);
+    void stopChild(child);
     throw new AetherSdkError(
       "process_spawn_failed",
       "aether process is missing stdio pipes",
@@ -71,11 +75,32 @@ export function spawnAetherProcess({
   return { child, stdin, stdout };
 }
 
-export function stopChild(child: ChildProcess): void {
-  if (child.exitCode !== null || child.signalCode !== null) return;
+export async function stopChild(child: ChildProcess): Promise<void> {
+  if (hasExited(child)) return;
+
+  const exited = once(child, "exit")
+    .then(() => undefined)
+    .catch(() => undefined);
   try {
     child.kill("SIGTERM");
   } catch {}
+
+  await Promise.race([
+    exited,
+    sleep(TERMINATION_GRACE_MS, undefined, { ref: false }).then(() => {
+      if (!hasExited(child)) {
+        try {
+          child.kill("SIGKILL");
+        } catch {}
+      }
+    }),
+  ]);
+
+  if (!hasExited(child)) await exited;
+}
+
+function hasExited(child: ChildProcess): boolean {
+  return child.exitCode !== null || child.signalCode !== null;
 }
 
 function mergeEnv(

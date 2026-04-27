@@ -66,10 +66,15 @@ export class LocalMcpServerHost {
     const httpServer = this.httpServer;
     this.httpServer = null;
     this.authToken = null;
-    if (httpServer) {
-      httpServer.close();
-      await once(httpServer, "close");
-    }
+    if (!httpServer) return;
+
+    await new Promise<void>((resolve, reject) => {
+      httpServer.close((err?: Error) => {
+        if (err) reject(err);
+        else resolve();
+      });
+      httpServer.closeAllConnections();
+    });
   }
 
   private buildMcpRouter(): express.Router {
@@ -107,7 +112,7 @@ export class LocalMcpServerHost {
   }
 
   private buildServer(): McpServer {
-    const server = new McpServer({ name: this.config.name, version: "0.1.0" });
+    const server = new McpServer({ name: this.config.name, version: "0.1.1" });
     for (const def of this.config.tools) {
       server.registerTool(
         def.name,

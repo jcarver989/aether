@@ -16,7 +16,7 @@ import type {
   ExternalMcpServerConfig,
 } from "./types.js";
 
-const SDK_VERSION = "0.1.0";
+const SDK_VERSION = "0.1.1";
 
 export type PermissionRequestHandler = (
   request: acp.RequestPermissionRequest,
@@ -196,12 +196,8 @@ export class AetherSession {
     this.closed = true;
     this.abortCleanup?.[Symbol.dispose]();
     this.abortCleanup = null;
-    try {
-      stopChild(this.child);
-    } finally {
-      this.events.close();
-      await this.mcpCleanup().catch(() => undefined);
-    }
+    this.events.close();
+    await Promise.allSettled([stopChild(this.child), this.mcpCleanup()]);
   }
 
   async [Symbol.asyncDispose](): Promise<void> {

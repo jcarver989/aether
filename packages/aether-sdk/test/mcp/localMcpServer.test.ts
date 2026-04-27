@@ -1,3 +1,6 @@
+import { once } from "node:events";
+import { connect, type Socket } from "node:net";
+
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
@@ -122,6 +125,25 @@ describe("LocalMcpServerHost", () => {
     expect(response.status).toBeGreaterThanOrEqual(400);
   });
 
+  it("stop() force-closes active HTTP connections", async () => {
+    const fixture = createHost();
+    host = fixture.host;
+    const info = await host.start();
+    const socket = await openUnfinishedMcpRequest(info.url, info.authToken);
+    const socketClosed = new Promise<void>((resolve) => {
+      socket.once("close", () => resolve());
+    });
+
+    try {
+      await host.stop();
+      host = null;
+      await socketClosed;
+      expect(socket.destroyed).toBe(true);
+    } finally {
+      socket.destroy();
+    }
+  });
+
   it("stop() closes the listening port", async () => {
     const fixture = createHost();
     host = fixture.host;
@@ -141,3 +163,26 @@ describe("LocalMcpServerHost", () => {
     ).rejects.toThrow();
   });
 });
+
+async function openUnfinishedMcpRequest(
+  urlString: string,
+  authToken: string,
+): Promise<Socket> {
+  const url = new URL(urlString);
+  const socket = connect(Number(url.port), url.hostname);
+  socket.on("error", () => undefined);
+  await once(socket, "connect");
+  socket.write(
+    [
+      `POST ${url.pathname} HTTP/1.1`,
+      `Host: ${url.host}`,
+      `Authorization: Bearer ${authToken}`,
+      "Content-Type: application/json",
+      "Accept: application/json",
+      "Content-Length: 1000000",
+      "",
+      "{",
+    ].join("\r\n"),
+  );
+  return socket;
+}
