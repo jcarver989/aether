@@ -2,4 +2,4 @@
 
 All notable changes to this project will be documented in this file.
 
-## [crucible-v0.2.0] - 2026-04-22
+## [crucible-v0.2.1] - 2026-04-27
