@@ -2,6 +2,11 @@
   "name": "@aether-agent/sdk",
   "version": "0.1.1",
   "description": "TypeScript SDK for the Aether agent CLI",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jcarver989/aether.git",
+    "directory": "packages/aether-sdk"
+  },
   "type": "module",
   "exports": {
     ".": {
