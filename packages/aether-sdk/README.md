@@ -1,3 +1,18 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+
+- [@aether-agent/sdk](#aether-agentsdk)
+  - [Install](#install)
+  - [Basic session](#basic-session)
+  - [Multi-turn usage](#multi-turn-usage)
+  - [Closure-backed custom tool](#closure-backed-custom-tool)
+    - [How closure-backed tools are wired](#how-closure-backed-tools-are-wired)
+    - [Aether tool naming](#aether-tool-naming)
+  - [External MCP servers](#external-mcp-servers)
+  - [Permission and elicitation hooks](#permission-and-elicitation-hooks)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # @aether-agent/sdk
 
 TypeScript SDK for the [Aether](https://aether-agent.io) agent. It spawns
