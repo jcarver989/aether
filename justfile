@@ -21,7 +21,7 @@ test *PKGS:
 fmt-check *PKGS:
     cargo fmt --check {{ if PKGS == "" { "--all" } else { PKGS } }}
 
-# Format code
+# Format Rust code
 fmt:
     cargo fmt --all
 
@@ -33,8 +33,22 @@ lint *PKGS:
 doc-check *PKGS:
     RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --all-features {{ if PKGS == "" { "--workspace --examples" } else { PKGS } }}
 
+# Install Node dependencies for the TypeScript SDK
+sdk-install:
+    pnpm install --frozen-lockfile
+
+# End-to-end probe: build aether + SDK, then run one prompt through the real binary.
+# Forwards extra args to the script (e.g. `just sdk-e2e -- --model anthropic:claude-sonnet-4-5`).
+sdk-e2e *ARGS:
+    cargo build -p aether-agent-cli
+    pnpm sdk:build
+    pnpm sdk:e2e {{ARGS}}
+
 # Run all CI checks
 ci: fmt-check lint test doc-check
+    pnpm fmt-check
+    pnpm sdk:typecheck
+    pnpm sdk:test
 
 # Initialize or update cargo-dist configuration and CI workflows
 dist-init:

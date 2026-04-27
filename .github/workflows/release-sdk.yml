@@ -1,0 +1,38 @@
+name: Release SDK
+
+on:
+  push:
+    tags:
+      - "aether-sdk-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    environment: ci
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - uses: jdx/mise-action@v4
+
+      - name: Setup npm registry
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .tool-versions
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm sdk:build
+
+      - name: Publish
+        run: npm publish --access public --provenance
+        working-directory: packages/aether-sdk
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

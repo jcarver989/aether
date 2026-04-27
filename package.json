@@ -1,0 +1,16 @@
+{
+  "name": "aether-monorepo",
+  "private": true,
+  "scripts": {
+    "sdk:build": "pnpm --filter @aether-agent/sdk build",
+    "sdk:typecheck": "pnpm --filter @aether-agent/sdk typecheck",
+    "sdk:test": "pnpm --filter @aether-agent/sdk test",
+    "sdk:e2e": "pnpm --filter @aether-agent/sdk e2e",
+    "fmt": "prettier --write \"packages/aether-sdk/**/*.{ts,mts,cts,mjs,cjs,js,jsx,json}\"",
+    "fmt-check": "prettier --check \"packages/aether-sdk/**/*.{ts,mts,cts,mjs,cjs,js,jsx,json}\""
+  },
+  "packageManager": "pnpm@10.28.0",
+  "devDependencies": {
+    "prettier": "^3.8.3"
+  }
+}
