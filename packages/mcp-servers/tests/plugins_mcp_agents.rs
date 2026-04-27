@@ -1,8 +1,8 @@
 use mcp_servers::subagents::SubAgentsMcp;
 use mcp_utils::testing::connect;
-use rmcp::RoleServer;
 use rmcp::model::{CallToolRequestParams, ClientCapabilities, ClientInfo, Implementation};
 use rmcp::service::RunningService;
+use rmcp::{RoleClient, RoleServer};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
