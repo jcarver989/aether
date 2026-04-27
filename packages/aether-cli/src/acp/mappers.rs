@@ -76,7 +76,12 @@ fn http_config(url: String, headers: &[HttpHeader]) -> StreamableHttpClientTrans
 
     let mut config = StreamableHttpClientTransportConfig::with_uri(url);
     if let Some(auth) = auth_header {
-        config = config.auth_header(auth);
+        // rmcp's `auth_header` wants the bare token; it adds the `Bearer ` prefix itself.
+        let token = auth
+            .split_once(' ')
+            .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("Bearer"))
+            .map_or(auth.as_str(), |(_, rest)| rest);
+        config = config.auth_header(token.to_string());
     }
     config
 }
@@ -721,9 +726,37 @@ mod tests {
             McpServerConfig::Server(ServerConfig::Http { name, config }) => {
                 assert_eq!(name, "http-server");
                 assert_eq!(config.uri.as_ref(), "https://example.com/mcp");
-                assert_eq!(config.auth_header.as_deref(), Some("Bearer token123"));
+                assert_eq!(config.auth_header.as_deref(), Some("token123"));
             }
             other => panic!("Expected Http, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_http_auth_header_strips_bearer_case_insensitively() {
+        let cases = [
+            ("Bearer token123", "token123"),
+            ("bearer token123", "token123"),
+            ("BEARER token123", "token123"),
+            ("bEaReR token123", "token123"),
+            // Non-Bearer scheme: pass through verbatim. rmcp will then prefix
+            // with "Bearer ", which is the contract for non-bearer auth too.
+            ("Token foo", "Token foo"),
+            ("token123", "token123"),
+        ];
+
+        for (input, expected) in cases {
+            let server = acp::McpServer::Http(
+                acp::McpServerHttp::new("http-server", "https://example.com/mcp")
+                    .headers(vec![acp::HttpHeader::new("Authorization", input)]),
+            );
+            let configs = map_acp_mcp_servers(vec![server]);
+            match &configs[0] {
+                McpServerConfig::Server(ServerConfig::Http { config, .. }) => {
+                    assert_eq!(config.auth_header.as_deref(), Some(expected), "input was {input:?}");
+                }
+                other => panic!("Expected Http, got {other:?}"),
+            }
         }
     }
 
