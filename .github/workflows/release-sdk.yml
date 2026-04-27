@@ -13,6 +13,9 @@ jobs:
     name: Publish to npm
     runs-on: ubuntu-latest
     environment: ci
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
