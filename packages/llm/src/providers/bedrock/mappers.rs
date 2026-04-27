@@ -18,33 +18,42 @@ fn bedrock_err(e: impl Display) -> LlmError {
 pub fn map_messages(messages: &[ChatMessage]) -> Result<(Vec<SystemContentBlock>, Vec<Message>)> {
     let mut system_blocks = Vec::new();
     let mut bedrock_messages = Vec::new();
+    let mut pending_tool_results = Vec::new();
+
     for message in messages {
         match message {
+            ChatMessage::ToolCallResult(result) => {
+                pending_tool_results.push(build_tool_result_block(result)?);
+            }
+
             ChatMessage::System { content, .. } => {
+                flush_tool_results(&mut pending_tool_results, &mut bedrock_messages)?;
                 system_blocks.push(SystemContentBlock::Text(content.clone()));
             }
 
             ChatMessage::User { content, .. } => {
+                flush_tool_results(&mut pending_tool_results, &mut bedrock_messages)?;
                 bedrock_messages.push(build_user_content_blocks(content)?);
             }
 
             ChatMessage::Assistant { content, tool_calls, .. } => {
+                flush_tool_results(&mut pending_tool_results, &mut bedrock_messages)?;
                 bedrock_messages.push(map_assistant_message(content, tool_calls)?);
             }
 
-            ChatMessage::ToolCallResult(result) => {
-                bedrock_messages.push(map_tool_call_result(result)?);
-            }
-
             ChatMessage::Error { message, .. } => {
+                flush_tool_results(&mut pending_tool_results, &mut bedrock_messages)?;
                 bedrock_messages.push(build_user_message(&format!("Error: {message}"))?);
             }
 
             ChatMessage::Summary { content, .. } => {
+                flush_tool_results(&mut pending_tool_results, &mut bedrock_messages)?;
                 bedrock_messages.push(build_user_message(&format!("[Previous conversation handoff]\n\n{content}"))?);
             }
         }
     }
+
+    flush_tool_results(&mut pending_tool_results, &mut bedrock_messages)?;
 
     Ok((system_blocks, bedrock_messages))
 }
@@ -144,22 +153,30 @@ fn map_assistant_message(content: &str, tool_calls: &[crate::ToolCallRequest]) -
     builder.build().map_err(bedrock_err)
 }
 
-fn map_tool_call_result(result: &result::Result<ToolCallResult, ToolCallError>) -> Result<Message> {
+fn flush_tool_results(pending_tool_results: &mut Vec<ToolResultBlock>, messages: &mut Vec<Message>) -> Result<()> {
+    if pending_tool_results.is_empty() {
+        return Ok(());
+    }
+
+    let mut builder = Message::builder().role(ConversationRole::User);
+    for tool_result in pending_tool_results.drain(..) {
+        builder = builder.content(BedrockContentBlock::ToolResult(tool_result));
+    }
+
+    messages.push(builder.build().map_err(bedrock_err)?);
+    Ok(())
+}
+
+fn build_tool_result_block(result: &result::Result<ToolCallResult, ToolCallError>) -> Result<ToolResultBlock> {
     let (id, content_text, status) = match result {
         Ok(tool_result) => (&tool_result.id, &tool_result.result, ToolResultStatus::Success),
         Err(tool_error) => (&tool_error.id, &tool_error.error, ToolResultStatus::Error),
     };
 
-    let block = ToolResultBlock::builder()
+    ToolResultBlock::builder()
         .tool_use_id(id)
         .content(ToolResultContentBlock::Text(content_text.clone()))
         .status(status)
-        .build()
-        .map_err(bedrock_err)?;
-
-    Message::builder()
-        .role(ConversationRole::User)
-        .content(BedrockContentBlock::ToolResult(block))
         .build()
         .map_err(bedrock_err)
 }
@@ -326,6 +343,52 @@ mod tests {
         let content = mapped[0].content();
         assert_eq!(content.len(), 1);
         assert!(content[0].is_tool_result());
+    }
+
+    #[test]
+    fn test_map_consecutive_tool_results_into_single_user_message() {
+        let messages = vec![
+            ChatMessage::Assistant {
+                content: String::new(),
+                reasoning: AssistantReasoning::default(),
+                timestamp: IsoString::now(),
+                tool_calls: vec![
+                    ToolCallRequest {
+                        id: "call_1".to_string(),
+                        name: "find".to_string(),
+                        arguments: r#"{"pattern":"**/*.ts"}"#.to_string(),
+                    },
+                    ToolCallRequest {
+                        id: "call_2".to_string(),
+                        name: "find".to_string(),
+                        arguments: r#"{"pattern":"**/package.json"}"#.to_string(),
+                    },
+                ],
+            },
+            ChatMessage::ToolCallResult(Ok(ToolCallResult {
+                id: "call_1".to_string(),
+                name: "find".to_string(),
+                arguments: r#"{"pattern":"**/*.ts"}"#.to_string(),
+                result: "17 files".to_string(),
+            })),
+            ChatMessage::ToolCallResult(Ok(ToolCallResult {
+                id: "call_2".to_string(),
+                name: "find".to_string(),
+                arguments: r#"{"pattern":"**/package.json"}"#.to_string(),
+                result: "2 files".to_string(),
+            })),
+        ];
+
+        let (_system, mapped) = map_messages(&messages).unwrap();
+        assert_eq!(mapped.len(), 2);
+        assert_eq!(mapped[0].role(), &ConversationRole::Assistant);
+        assert_eq!(mapped[1].role(), &ConversationRole::User);
+        assert_eq!(mapped[0].content().len(), 2);
+        assert!(mapped[0].content().iter().all(BedrockContentBlock::is_tool_use));
+
+        let tool_results = mapped[1].content();
+        assert_eq!(tool_results.len(), 2);
+        assert!(tool_results.iter().all(BedrockContentBlock::is_tool_result));
     }
 
     #[test]
