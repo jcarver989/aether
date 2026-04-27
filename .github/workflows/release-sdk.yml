@@ -37,5 +37,3 @@ jobs:
       - name: Publish
         run: npm publish --access public --provenance
         working-directory: packages/aether-sdk
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
