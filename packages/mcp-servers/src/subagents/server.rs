@@ -70,7 +70,12 @@ impl SubAgentsMcp {
         let mut instructions = include_str!("./instructions.md").to_string();
         let invocable: Vec<_> = self.catalog.agent_invocable().collect();
 
-        if !invocable.is_empty() {
+        if invocable.is_empty() {
+            instructions.push_str(
+                "\n\n**No sub-agents are currently available.** \
+                 The spawn_subagent tool has no registered agents and should not be called.",
+            );
+        } else {
             instructions.push_str("\n\n## Available Sub-Agents\n");
             instructions.push_str("The following sub-agents are available:\n\n");
 
@@ -103,6 +108,12 @@ impl SubAgentsMcp {
         context: RequestContext<RoleServer>,
     ) -> Result<Json<SpawnSubAgentsOutput>, String> {
         let Parameters(args) = request;
+
+        if !args.tasks.is_empty() && self.catalog.agent_invocable().next().is_none() {
+            return Err("No agent-invocable sub-agents are registered in this project. \
+                 The spawn_subagent tool is not usable — do not call it again."
+                .to_string());
+        }
 
         let progress_token = context.meta.get_progress_token();
         let peer = Arc::new(context.peer.clone());
