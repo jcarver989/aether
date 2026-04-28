@@ -11,6 +11,7 @@ import type {
   AetherElicitationRequest,
   AetherElicitationResponse,
   AetherMessage,
+  AetherSettings,
   AetherToolGroups,
   AgentSelection,
   ExternalMcpServerConfig,
@@ -22,7 +23,7 @@ export type PermissionRequestHandler = (
   request: acp.RequestPermissionRequest,
 ) => Promise<acp.RequestPermissionResponse>;
 
-export interface AetherSessionOptions {
+interface AetherSessionCommonOptions {
   cwd?: string;
   binaryPath?: string;
   agent?: AgentSelection;
@@ -37,6 +38,12 @@ export interface AetherSessionOptions {
     request: AetherElicitationRequest,
   ) => Promise<AetherElicitationResponse>;
 }
+
+type SettingsSelection =
+  | { settings?: AetherSettings; settingsFile?: never }
+  | { settings?: never; settingsFile?: string };
+
+export type AetherSessionOptions = AetherSessionCommonOptions & SettingsSelection;
 
 /**
  * Permission handler that selects the first `allow_*` option, or cancels if
@@ -73,6 +80,8 @@ export class AetherSession {
       tools,
       binaryPath: aetherPath = "aether",
       agent: selection,
+      settings,
+      settingsFile,
       logDir,
       cwd = process.cwd(),
       env,
@@ -82,6 +91,8 @@ export class AetherSession {
 
     if (abortSignal?.aborted)
       throw new AetherSdkError("aborted", "Aborted by caller");
+
+    const args = buildAetherAcpArgs({ selection, logDir, settings, settingsFile });
 
     const events = new AsyncQueue<AetherMessage>();
     await using stack = new AsyncDisposableStack();
@@ -94,15 +105,6 @@ export class AetherSession {
 
     if (abortSignal?.aborted)
       throw new AetherSdkError("aborted", "Aborted by caller");
-
-    const args = ["acp"];
-    if (selection?.agent) args.push("--agent", selection.agent);
-    else if (selection?.model) {
-      args.push("--model", selection.model);
-      if (selection.reasoningEffort)
-        args.push("--reasoning-effort", selection.reasoningEffort);
-    }
-    if (logDir) args.push("--log-dir", logDir);
 
     const spawned = spawnAetherProcess({
       command: aetherPath,
@@ -262,6 +264,39 @@ export class AetherSession {
       this.promptInProgress = false;
     }
   }
+}
+
+interface BuildAetherAcpArgsOptions {
+  selection?: AgentSelection;
+  logDir?: string;
+  settings?: AetherSettings;
+  settingsFile?: string;
+}
+
+export function buildAetherAcpArgs({
+  selection,
+  logDir,
+  settings,
+  settingsFile,
+}: BuildAetherAcpArgsOptions = {}): string[] {
+  if (settings && settingsFile) {
+    throw new AetherSdkError(
+      "invalid_options",
+      "Cannot provide both `settings` and `settingsFile`",
+    );
+  }
+
+  const args = ["acp"];
+  if (selection?.agent) args.push("--agent", selection.agent);
+  else if (selection?.model) {
+    args.push("--model", selection.model);
+    if (selection.reasoningEffort)
+      args.push("--reasoning-effort", selection.reasoningEffort);
+  }
+  if (logDir) args.push("--log-dir", logDir);
+  if (settings) args.push("--settings-json", JSON.stringify(settings));
+  if (settingsFile) args.push("--settings-file", settingsFile);
+  return args;
 }
 
 function createAcpClient(

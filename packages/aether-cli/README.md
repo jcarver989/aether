@@ -196,6 +196,17 @@ Define agents with specific model, prompts, and tool configurations:
 - Top-level `prompts` are inherited by all agents
 - Top-level `mcpServers` is the default MCP config for all agents
 
+### CLI config overrides
+
+`aether acp`, `aether headless`, and `aether show-prompt` also support:
+
+- `--settings-json <json>`: inline settings payload (same shape as `.aether/settings.json`)
+- `--settings-file <path>`: explicit settings file path
+- `--mcp-config <path>`: explicit MCP config file layer (repeatable)
+- `--mcp-config-json <json>`: inline MCP config layer (same shape as `mcp.json`, repeatable)
+
+`--settings-json` and `--settings-file` are mutually exclusive. If any MCP config override is provided, those layers replace settings/project MCP auto-detection; later duplicate server names win.
+
 ## Logs
 
 Logs are written to `--log-dir` (default: `/tmp/aether-acp-logs/`). Control verbosity with the `RUST_LOG` environment variable.

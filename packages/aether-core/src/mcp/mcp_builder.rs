@@ -9,13 +9,25 @@ use mcp_utils::client::{
 use crate::agent_spec::McpJsonFileRef;
 
 use super::run_mcp_task::{McpCommand, run_mcp_task};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::{
     sync::mpsc::{self, Receiver, Sender},
     task::JoinHandle,
 };
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum McpConfigLayer {
+    File(McpJsonFileRef),
+    Json(String),
+}
+
+impl From<McpJsonFileRef> for McpConfigLayer {
+    fn from(value: McpJsonFileRef) -> Self {
+        Self::File(value)
+    }
+}
 
 pub fn mcp() -> McpBuilder {
     McpBuilder::new()
@@ -95,31 +107,65 @@ impl McpBuilder {
         Ok(self)
     }
 
-    /// Load MCP server definitions from config refs, routing proxy-flagged files
-    /// through a single merged `ToolProxy`.
+    /// Load MCP server definitions from a pre-parsed `RawMcpConfig`.
     ///
-    /// Direct refs are loaded normally. All proxy-flagged refs are merged into
-    /// one `McpServerConfig::ToolProxy` named `"proxy"`.
-    pub async fn from_mcp_config_refs(mut self, refs: &[McpJsonFileRef]) -> Result<Self, ParseError> {
-        if refs.is_empty() {
+    /// Useful when the caller has already parsed JSON from a CLI string or
+    /// other non-file source.
+    pub async fn from_raw_config(mut self, raw: RawMcpConfig) -> Result<Self, ParseError> {
+        let configs = raw.into_configs(&self.factories).await?;
+        self.mcp_configs.extend(configs);
+        Ok(self)
+    }
+
+    /// Load MCP config layers in authored order.
+    ///
+    /// Direct file refs and inline JSON are merged before runtime conversion, so
+    /// duplicate server names produce exactly one server with the rightmost layer
+    /// winning. Proxy refs remain grouped in the synthetic `"proxy"` server.
+    pub async fn from_mcp_config_layers(mut self, layers: &[McpConfigLayer]) -> Result<Self, ParseError> {
+        if layers.is_empty() {
             return Ok(self);
         }
 
-        let (direct, proxied): (Vec<_>, Vec<_>) = refs.iter().partition(|r| !r.proxy);
+        let mut direct_servers = BTreeMap::new();
+        let mut proxied_paths = Vec::new();
 
-        if !direct.is_empty() {
-            let paths: Vec<&Path> = direct.iter().map(|r| r.path.as_path()).collect();
-            self = self.from_json_files(&paths).await?;
+        for layer in layers {
+            match layer {
+                McpConfigLayer::File(config_ref) if config_ref.proxy => {
+                    proxied_paths.push(config_ref.path.as_path());
+                }
+                McpConfigLayer::File(config_ref) => {
+                    direct_servers.extend(RawMcpConfig::from_json_files(&[config_ref.path.as_path()])?.servers);
+                }
+                McpConfigLayer::Json(json) => {
+                    direct_servers.extend(RawMcpConfig::from_json(json)?.servers);
+                }
+            }
         }
 
-        if !proxied.is_empty() {
-            let paths: Vec<&Path> = proxied.iter().map(|r| r.path.as_path()).collect();
-            let raw_config = RawMcpConfig::from_json_files(&paths)?;
+        if !direct_servers.is_empty() {
+            let configs = RawMcpConfig { servers: direct_servers }.into_configs(&self.factories).await?;
+            self.mcp_configs.extend(configs);
+        }
+
+        if !proxied_paths.is_empty() {
+            let raw_config = RawMcpConfig::from_json_files(&proxied_paths)?;
             let servers = raw_config.into_proxy_server_configs(&self.factories).await?;
             self.mcp_configs.push(McpServerConfig::ToolProxy { name: "proxy".to_string(), servers });
         }
 
         Ok(self)
+    }
+
+    /// Load MCP server definitions from config refs, routing proxy-flagged files
+    /// through a single merged `ToolProxy`.
+    ///
+    /// Direct refs are loaded normally. All proxy-flagged refs are merged into
+    /// one `McpServerConfig::ToolProxy` named `"proxy"`.
+    pub async fn from_mcp_config_refs(self, refs: &[McpJsonFileRef]) -> Result<Self, ParseError> {
+        let layers: Vec<_> = refs.iter().cloned().map(McpConfigLayer::File).collect();
+        self.from_mcp_config_layers(&layers).await
     }
 
     pub async fn spawn(self) -> Result<McpSpawnResult, McpError> {
@@ -148,5 +194,182 @@ impl McpBuilder {
             event_rx,
             handle: mcp_handle,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn from_mcp_config_layers_parses_servers_and_mcpservers_aliases() {
+        let servers_json = r#"{
+            "servers": {
+                "one": {
+                    "type": "stdio",
+                    "command": "echo",
+                    "args": ["one"]
+                }
+            }
+        }"#
+        .to_string();
+        let mcpservers_json = r#"{
+            "mcpServers": {
+                "two": {
+                    "type": "stdio",
+                    "command": "echo",
+                    "args": ["two"]
+                }
+            }
+        }"#
+        .to_string();
+
+        let builder = mcp()
+            .from_mcp_config_layers(&[McpConfigLayer::Json(servers_json), McpConfigLayer::Json(mcpservers_json)])
+            .await
+            .unwrap();
+        assert_eq!(builder.mcp_configs.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn from_mcp_config_layers_json_layers_in_order_last_wins() {
+        let first = r#"{
+            "servers": {
+                "same": {
+                    "type": "stdio",
+                    "command": "echo",
+                    "args": ["first"]
+                }
+            }
+        }"#
+        .to_string();
+        let second = r#"{
+            "servers": {
+                "same": {
+                    "type": "stdio",
+                    "command": "echo",
+                    "args": ["second"]
+                }
+            }
+        }"#
+        .to_string();
+
+        let builder =
+            mcp().from_mcp_config_layers(&[McpConfigLayer::Json(first), McpConfigLayer::Json(second)]).await.unwrap();
+        assert_eq!(builder.mcp_configs.len(), 1);
+        match &builder.mcp_configs[0] {
+            McpServerConfig::Server(mcp_utils::client::ServerConfig::Stdio { args, .. }) => {
+                assert_eq!(args, &vec!["second".to_string()]);
+            }
+            other => panic!("expected stdio config, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn from_mcp_config_layers_merges_files_and_inline_json_before_conversion() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("mcp.json");
+        std::fs::write(
+            &file_path,
+            r#"{
+                "servers": {
+                    "same": {
+                        "type": "stdio",
+                        "command": "echo",
+                        "args": ["from-file"]
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+        let inline = r#"{
+            "servers": {
+                "same": {
+                    "type": "stdio",
+                    "command": "echo",
+                    "args": ["from-json"]
+                }
+            }
+        }"#
+        .to_string();
+
+        let builder = mcp()
+            .from_mcp_config_layers(&[
+                McpConfigLayer::File(McpJsonFileRef::direct(file_path)),
+                McpConfigLayer::Json(inline),
+            ])
+            .await
+            .unwrap();
+
+        assert_eq!(builder.mcp_configs.len(), 1);
+        match &builder.mcp_configs[0] {
+            McpServerConfig::Server(mcp_utils::client::ServerConfig::Stdio { args, .. }) => {
+                assert_eq!(args, &vec!["from-json".to_string()]);
+            }
+            other => panic!("expected stdio config, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn from_mcp_config_layers_preserves_file_and_json_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("mcp.json");
+        std::fs::write(
+            &file_path,
+            r#"{
+                "servers": {
+                    "same": {
+                        "type": "stdio",
+                        "command": "echo",
+                        "args": ["from-file"]
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+        let inline = r#"{
+            "servers": {
+                "same": {
+                    "type": "stdio",
+                    "command": "echo",
+                    "args": ["from-json"]
+                }
+            }
+        }"#
+        .to_string();
+
+        let builder = mcp()
+            .from_mcp_config_layers(&[
+                McpConfigLayer::Json(inline),
+                McpConfigLayer::File(McpJsonFileRef::direct(file_path)),
+            ])
+            .await
+            .unwrap();
+
+        match &builder.mcp_configs[0] {
+            McpServerConfig::Server(mcp_utils::client::ServerConfig::Stdio { args, .. }) => {
+                assert_eq!(args, &vec!["from-file".to_string()]);
+            }
+            other => panic!("expected stdio config, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn from_raw_config_adds_configs() {
+        let raw = RawMcpConfig::from_json(
+            r#"{
+                "servers": {
+                    "stdio-one": {
+                        "type": "stdio",
+                        "command": "echo",
+                        "args": ["one"]
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let builder = mcp().from_raw_config(raw).await.unwrap();
+        assert_eq!(builder.mcp_configs.len(), 1);
     }
 }

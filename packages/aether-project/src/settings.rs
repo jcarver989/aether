@@ -8,6 +8,93 @@ use llm::{LlmModel, ReasoningEffort};
 use std::collections::HashSet;
 use std::path::Path;
 
+/// A prompt entry: either a path/glob string or inline text.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(untagged)]
+pub enum PromptEntry {
+    /// A file path or glob pattern (existing behavior).
+    Path(String),
+    /// Inline prompt text provided directly.
+    Text { text: String },
+}
+
+impl PromptEntry {
+    pub fn path(path: impl Into<String>) -> Self {
+        Self::Path(path.into())
+    }
+
+    pub fn text(text: impl Into<String>) -> Self {
+        Self::Text { text: text.into() }
+    }
+
+    pub fn as_path(&self) -> Option<&str> {
+        match self {
+            Self::Path(path) => Some(path),
+            Self::Text { .. } => None,
+        }
+    }
+
+    pub fn is_path(&self, expected: &str) -> bool {
+        self.as_path() == Some(expected)
+    }
+
+    pub fn display_label(&self) -> &str {
+        match self {
+            Self::Path(path) => path,
+            Self::Text { .. } => "<inline prompt>",
+        }
+    }
+
+    pub fn to_prompt(&self, project_root: &Path) -> Prompt {
+        match self {
+            Self::Path(pattern) => Prompt::from_globs(vec![pattern.clone()], project_root.to_path_buf()),
+            Self::Text { text } => Prompt::text(text),
+        }
+    }
+
+    fn validate(&self, project_root: &Path, agent_name: Option<&str>) -> Result<(), SettingsError> {
+        match self {
+            Self::Path(pattern) => validate_prompt_entry(project_root, pattern, agent_name),
+            Self::Text { text } if text.trim().is_empty() => match agent_name {
+                Some(agent) => Err(SettingsError::EmptyInlinePrompt { agent: agent.to_string() }),
+                None => Err(SettingsError::EmptyInheritedInlinePrompt),
+            },
+            Self::Text { .. } => Ok(()),
+        }
+    }
+}
+
+impl From<&str> for PromptEntry {
+    fn from(path: &str) -> Self {
+        Self::path(path)
+    }
+}
+
+impl From<String> for PromptEntry {
+    fn from(path: String) -> Self {
+        Self::path(path)
+    }
+}
+
+/// Alternate sources for the agent catalog, used by CLI `--settings-json` / `--settings-file`.
+#[derive(Debug, Clone)]
+pub enum AgentCatalogSource {
+    /// Load from the project's `.aether/settings.json` (default).
+    ProjectFiles,
+    /// Use an already-parsed `Settings` value directly.
+    Settings(Settings),
+}
+
+impl AgentCatalogSource {
+    pub fn from_settings_json(json: &str) -> Result<Self, SettingsError> {
+        Settings::from_json_str(json).map(Self::Settings)
+    }
+
+    pub fn from_settings_file(path: &Path) -> Result<Self, SettingsError> {
+        Settings::from_file(path).map(Self::Settings)
+    }
+}
+
 /// An entry in the `mcpServers` array: either a plain path string or an object with options.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(untagged)]
@@ -48,12 +135,30 @@ impl From<&str> for McpServerEntry {
 pub struct Settings {
     /// Inherited prompts for all agents.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub prompts: Vec<String>,
+    pub prompts: Vec<PromptEntry>,
     /// Inherited MCP configs for all agents, applied in order (last wins on collisions).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub mcp_servers: Vec<McpServerEntry>,
     /// The canonical authored agent registry.
     pub agents: Vec<AgentEntry>,
+}
+
+impl Settings {
+    pub fn from_json_str(json: &str) -> Result<Self, SettingsError> {
+        if json.trim().is_empty() {
+            Ok(Self::default())
+        } else {
+            serde_json::from_str(json).map_err(|e| SettingsError::ParseError(e.to_string()))
+        }
+    }
+
+    pub fn from_file(path: &Path) -> Result<Self, SettingsError> {
+        let content = std::fs::read_to_string(path).map_err(|e| SettingsError::SettingsFileReadError {
+            path: path.display().to_string(),
+            error: e.to_string(),
+        })?;
+        Self::from_json_str(&content)
+    }
 }
 
 /// Agent entry DTO for `.aether/settings.json`.
@@ -70,7 +175,7 @@ pub struct AgentEntry {
     #[serde(default)]
     pub agent_invocable: bool,
     #[serde(default)]
-    pub prompts: Vec<String>,
+    pub prompts: Vec<PromptEntry>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mcp_servers: Vec<McpServerEntry>,
     #[serde(default, skip_serializing_if = "ToolFilter::is_empty")]
@@ -82,22 +187,28 @@ pub struct AgentEntry {
 /// If `.aether/settings.json` is absent, returns a valid empty catalog.
 /// If the settings file is malformed or contains invalid entries, returns an error.
 pub fn load_agent_catalog(project_root: &Path) -> Result<super::catalog::AgentCatalog, SettingsError> {
-    let settings_path = project_root.join(".aether/settings.json");
+    load_agent_catalog_from_source(project_root, AgentCatalogSource::ProjectFiles)
+}
 
-    let settings = match std::fs::read_to_string(&settings_path) {
-        Ok(content) => {
-            if content.trim().is_empty() {
-                Settings::default()
-            } else {
-                serde_json::from_str(&content).map_err(|e| SettingsError::ParseError(e.to_string()))?
+/// Load and resolve the agent catalog from an explicit source.
+pub fn load_agent_catalog_from_source(
+    project_root: &Path,
+    source: AgentCatalogSource,
+) -> Result<super::catalog::AgentCatalog, SettingsError> {
+    let settings = match source {
+        AgentCatalogSource::ProjectFiles => {
+            let settings_path = project_root.join(".aether/settings.json");
+            match std::fs::read_to_string(&settings_path) {
+                Ok(content) => Settings::from_json_str(&content)?,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    return Ok(super::catalog::AgentCatalog::empty(project_root.to_path_buf()));
+                }
+                Err(e) => {
+                    return Err(SettingsError::IoError(format!("Failed to read {}: {}", settings_path.display(), e)));
+                }
             }
         }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(super::catalog::AgentCatalog::empty(project_root.to_path_buf()));
-        }
-        Err(e) => {
-            return Err(SettingsError::IoError(format!("Failed to read {}: {}", settings_path.display(), e)));
-        }
+        AgentCatalogSource::Settings(settings) => settings,
     };
 
     resolve_settings(project_root, settings)
@@ -105,11 +216,11 @@ pub fn load_agent_catalog(project_root: &Path) -> Result<super::catalog::AgentCa
 
 /// Resolve settings into a catalog of agent specs.
 fn resolve_settings(project_root: &Path, settings: Settings) -> Result<super::catalog::AgentCatalog, SettingsError> {
-    let Settings { prompts: inherited_patterns, mcp_servers, agents } = settings;
+    let Settings { prompts: inherited_prompt_entries, mcp_servers, agents } = settings;
 
-    validate_prompt_entries(project_root, &inherited_patterns, None)?;
+    validate_prompt_entries(project_root, &inherited_prompt_entries, None)?;
     let inherited_mcp_config_refs = resolve_mcp_config_refs(project_root, &mcp_servers)?;
-    let inherited_prompts = build_inherited_prompts(&inherited_patterns, project_root);
+    let inherited_prompts = build_inherited_prompts(&inherited_prompt_entries, project_root);
 
     let mut seen_names = HashSet::new();
     let mut specs = Vec::with_capacity(agents.len());
@@ -168,7 +279,7 @@ fn resolve_agent_entry(
     let prompts = if entry.prompts.is_empty() {
         inherited_prompts.to_vec()
     } else {
-        entry.prompts.iter().map(|p| Prompt::from_globs(vec![p.clone()], project_root.to_path_buf())).collect()
+        entry.prompts.iter().map(|entry| entry.to_prompt(project_root)).collect()
     };
 
     Ok(AgentSpec {
@@ -212,13 +323,10 @@ fn canonicalize_model_spec(model: &str) -> Result<String, String> {
 
 fn validate_prompt_entries(
     project_root: &Path,
-    patterns: &[String],
+    entries: &[PromptEntry],
     agent_name: Option<&str>,
 ) -> Result<(), SettingsError> {
-    for pattern in patterns {
-        validate_prompt_entry(project_root, pattern, agent_name)?;
-    }
-    Ok(())
+    entries.iter().try_for_each(|entry| entry.validate(project_root, agent_name))
 }
 
 fn resolve_mcp_config_refs(
@@ -269,11 +377,12 @@ fn validate_prompt_entry(project_root: &Path, pattern: &str, agent_name: Option<
     }
 }
 
-/// Build the inherited prompts from patterns.
+/// Build the inherited prompts from entries.
 ///
-/// Each pattern becomes one `Prompt::PromptGlobs` value.
-fn build_inherited_prompts(patterns: &[String], project_root: &Path) -> Vec<Prompt> {
-    patterns.iter().map(|pattern| Prompt::from_globs(vec![pattern.clone()], project_root.to_path_buf())).collect()
+/// Each path entry becomes one `Prompt::PromptGlobs` value.
+/// Each text entry becomes one `Prompt::Text` value.
+fn build_inherited_prompts(entries: &[PromptEntry], project_root: &Path) -> Vec<Prompt> {
+    entries.iter().map(|entry| entry.to_prompt(project_root)).collect()
 }
 
 #[cfg(test)]
@@ -755,5 +864,142 @@ mod tests {
             r#"{"mcpServers": [{"path": "nonexistent.json", "proxy": true}], "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
         );
         assert!(matches!(result, Err(SettingsError::InvalidMcpConfigPath { .. })));
+    }
+
+    #[test]
+    fn inline_text_prompt_parsed_as_text_variant() {
+        let json = r#"{"agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": [{"text": "You are a helpful reviewer."}]}]}"#;
+        let (dir, result) = setup_and_load(json);
+        assert!(result.is_ok(), "unexpected error: {:?}", result.err());
+        let catalog = result.unwrap();
+        let spec = catalog.get("planner").unwrap();
+        assert_eq!(spec.prompts.len(), 1);
+        let built = spec.prompts[0].clone();
+        let content = tokio::runtime::Runtime::new().unwrap().block_on(built.build()).unwrap();
+        assert_eq!(content, "You are a helpful reviewer.");
+        drop(dir);
+    }
+
+    #[test]
+    fn mixed_path_and_text_prompts() {
+        let dir = create_temp_project();
+        write_file(dir.path(), "AGENTS.md", "Be helpful");
+        write_settings(
+            dir.path(),
+            r#"{"agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md", {"text": "Additional instructions"}]}]}"#,
+        );
+
+        let catalog = load_agent_catalog(dir.path()).unwrap();
+        let spec = catalog.get("planner").unwrap();
+        assert_eq!(spec.prompts.len(), 2);
+    }
+
+    #[test]
+    fn empty_inline_text_prompt_rejected() {
+        let json = r#"{"agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": [{"text": "   "}]}]}"#;
+        let (_, result) = setup_and_load(json);
+        assert!(matches!(result, Err(SettingsError::EmptyInlinePrompt { .. })));
+    }
+
+    #[test]
+    fn empty_inherited_inline_text_prompt_rejected() {
+        let json = r#"{"prompts": [{"text": ""}], "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true}]}"#;
+        let (_, result) = setup_and_load(json);
+        assert!(matches!(result, Err(SettingsError::EmptyInheritedInlinePrompt)));
+    }
+
+    #[test]
+    fn inherited_inline_text_prompt_resolves() {
+        let json = r#"{"prompts": [{"text": "You are inherited."}], "agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true}]}"#;
+        let (_, catalog) = setup_and_load_ok(json);
+        let spec = catalog.get("planner").unwrap();
+        assert_eq!(spec.prompts.len(), 1);
+        let content = tokio::runtime::Runtime::new().unwrap().block_on(spec.prompts[0].clone().build()).unwrap();
+        assert_eq!(content, "You are inherited.");
+    }
+
+    #[test]
+    fn load_catalog_from_inline_settings() {
+        let dir = create_temp_project();
+        let settings = Settings {
+            prompts: vec![PromptEntry::text("Inline instructions.")],
+            mcp_servers: vec![],
+            agents: vec![AgentEntry {
+                name: "inline-agent".to_string(),
+                description: "Agent from inline settings".to_string(),
+                model: "anthropic:claude-sonnet-4-5".to_string(),
+                reasoning_effort: None,
+                user_invocable: true,
+                agent_invocable: false,
+                prompts: vec![PromptEntry::text("Agent-specific instructions.")],
+                mcp_servers: vec![],
+                tools: ToolFilter::default(),
+            }],
+        };
+        let catalog = load_agent_catalog_from_source(dir.path(), AgentCatalogSource::Settings(settings)).unwrap();
+        let spec = catalog.get("inline-agent").unwrap();
+        assert_eq!(spec.name, "inline-agent");
+        assert_eq!(spec.model, "anthropic:claude-sonnet-4-5");
+    }
+
+    #[test]
+    fn load_catalog_from_settings_file() {
+        let dir = create_temp_project();
+        write_file(
+            dir.path(),
+            "custom-settings.json",
+            r#"{"agents": [{"name": "file-agent", "description": "Agent from file", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": [{"text": "From file."}]}]}"#,
+        );
+        let catalog = load_agent_catalog_from_source(
+            dir.path(),
+            AgentCatalogSource::from_settings_file(&dir.path().join("custom-settings.json")).unwrap(),
+        )
+        .unwrap();
+        let spec = catalog.get("file-agent").unwrap();
+        assert_eq!(spec.name, "file-agent");
+    }
+
+    #[test]
+    fn inline_settings_do_not_read_project_file() {
+        let dir = create_temp_project();
+        write_file(dir.path(), "AGENTS.md", "Be helpful");
+        write_settings(
+            dir.path(),
+            r#"{"agents": [{"name": "project-agent", "description": "From project", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#,
+        );
+        let settings = Settings {
+            prompts: vec![],
+            mcp_servers: vec![],
+            agents: vec![AgentEntry {
+                name: "inline-agent".to_string(),
+                description: "From inline".to_string(),
+                model: "anthropic:claude-sonnet-4-5".to_string(),
+                reasoning_effort: None,
+                user_invocable: true,
+                agent_invocable: false,
+                prompts: vec![PromptEntry::text("Inline prompt.")],
+                mcp_servers: vec![],
+                tools: ToolFilter::default(),
+            }],
+        };
+        let catalog = load_agent_catalog_from_source(dir.path(), AgentCatalogSource::Settings(settings)).unwrap();
+        assert!(catalog.get("project-agent").is_err());
+        assert!(catalog.get("inline-agent").is_ok());
+    }
+
+    #[test]
+    fn settings_file_not_found_returns_error() {
+        let dir = create_temp_project();
+        let result = AgentCatalogSource::from_settings_file(&dir.path().join("nonexistent.json"))
+            .and_then(|source| load_agent_catalog_from_source(dir.path(), source));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn string_prompt_backward_compat() {
+        let json = r#"{"agents": [{"name": "planner", "description": "Planner agent", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["AGENTS.md"]}]}"#;
+        let (dir, result) = setup_and_load(json);
+        assert!(result.is_ok());
+        drop(dir);
     }
 }

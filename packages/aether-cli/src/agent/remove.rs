@@ -38,10 +38,10 @@ fn cleanup_agent_files(project_root: &Path, slug: &str, entry: &aether_project::
         let _ = fs::remove_dir_all(&per_agent_dir);
     }
 
-    for prompt in &entry.prompts {
-        let path = project_root.join(prompt);
-        if path.starts_with(project_root.join(".aether")) {
-            let _ = fs::remove_file(&path);
+    for path in entry.prompts.iter().filter_map(aether_project::PromptEntry::as_path) {
+        let full_path = project_root.join(path);
+        if full_path.starts_with(project_root.join(".aether")) {
+            let _ = fs::remove_file(&full_path);
         }
     }
 
@@ -120,7 +120,7 @@ mod tests {
                 user_invocable: true,
                 agent_invocable: true,
                 model: "anthropic:claude-sonnet-4-5".to_string(),
-                prompts: vec!["AGENTS.md".to_string()],
+                prompts: vec!["AGENTS.md".into()],
                 mcp_servers: vec!["coding".into()],
                 ..AgentEntry::default()
             },

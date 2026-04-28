@@ -1,10 +1,13 @@
 import { fileURLToPath } from "node:url";
+import { mkdtempSync, readFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { AetherSession, type AetherMessage, tool } from "../src/index.js";
+import { buildAetherAcpArgs } from "../src/session.js";
 
 const FAKE_AETHER = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -126,5 +129,93 @@ describe("AetherSession with a fake ACP agent", () => {
     }
 
     expect(received).toBe("42");
+  });
+
+  it("passes --settings-json when inline settings are provided", async () => {
+    const tmpDir = mkdtempSync(path.join(os.tmpdir(), "aether-sdk-settings-"));
+    const logFile = path.join(tmpDir, "fake-aether.log");
+
+    const settings = {
+      agents: [
+        {
+          name: "sdk-agent",
+          description: "Agent provided by SDK host",
+          model: "anthropic:claude-sonnet-4-5",
+          userInvocable: true,
+          prompts: [{ text: "You are running in a host app." }],
+        },
+      ],
+    };
+
+    const session = await AetherSession.start({
+      binaryPath: FAKE_AETHER,
+      cwd: tmpDir,
+      settings,
+      agent: { agent: "sdk-agent" },
+      env: { FAKE_AETHER_LOG_FILE: logFile },
+    });
+
+    await session.close();
+
+    const entries = readFileSync(logFile, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { event: string; argv?: string[] });
+
+    const argvEntry = entries.find((entry) => entry.event === "argv");
+    expect(argvEntry?.argv).toBeDefined();
+    expect(argvEntry?.argv).toContain("--settings-json");
+    const jsonIndex = argvEntry!.argv!.indexOf("--settings-json");
+    expect(jsonIndex).toBeGreaterThan(-1);
+    expect(argvEntry!.argv![jsonIndex + 1]).toBe(JSON.stringify(settings));
+  });
+
+  it("builds aether acp args for inline settings", () => {
+    const settings = { agents: [] };
+    expect(
+      buildAetherAcpArgs({
+        selection: { agent: "sdk-agent" },
+        logDir: "/tmp/aether-logs",
+        settings,
+      }),
+    ).toEqual([
+      "acp",
+      "--agent",
+      "sdk-agent",
+      "--log-dir",
+      "/tmp/aether-logs",
+      "--settings-json",
+      JSON.stringify(settings),
+    ]);
+  });
+
+  it("builds aether acp args for settings files", () => {
+    expect(
+      buildAetherAcpArgs({
+        selection: { model: "anthropic:claude-sonnet-4-5", reasoningEffort: "high" },
+        settingsFile: "/tmp/settings.json",
+      }),
+    ).toEqual([
+      "acp",
+      "--model",
+      "anthropic:claude-sonnet-4-5",
+      "--reasoning-effort",
+      "high",
+      "--settings-file",
+      "/tmp/settings.json",
+    ]);
+  });
+
+  it("rejects settings + settingsFile conflict", async () => {
+    await expect(
+      AetherSession.start({
+        binaryPath: FAKE_AETHER,
+        settings: { agents: [] },
+        settingsFile: "/tmp/settings.json",
+      } as any),
+    ).rejects.toMatchObject({
+      name: "AetherSdkError",
+      code: "invalid_options",
+    });
   });
 });

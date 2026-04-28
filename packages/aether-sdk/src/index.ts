@@ -6,13 +6,18 @@ export type {
 export { tool } from "./tool.js";
 export { AetherSdkError } from "./errors.js";
 export type {
+  AetherAgentSettings,
   AetherElicitationRequest,
   AetherElicitationResponse,
+  AetherMessage,
+  AetherMcpServerRef,
+  AetherSettings,
+  AetherToolFilter,
+  AetherToolGroups,
   AgentSelection,
   ExternalMcpServerConfig,
-  AetherMessage,
-  AetherToolGroups,
   HttpMcpServerConfig,
+  PromptEntry,
   ReasoningEffort,
   SdkMcpToolDefinition,
   SseMcpServerConfig,

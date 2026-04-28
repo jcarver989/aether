@@ -1,3 +1,5 @@
+use crate::runtime::McpConfigLayers;
+
 use super::handlers::acp_agent_builder;
 use super::relay::spawn_relay;
 use super::session::Session;
@@ -7,6 +9,7 @@ use super::session_store::SessionStore;
 use acp_utils::testing::{TestPeer, duplex_pair};
 use aether_core::core::AgentHandle;
 use aether_core::events::{AgentMessage, UserMessage};
+use aether_project::AgentCatalogSource;
 use agent_client_protocol::schema::SessionId;
 use agent_client_protocol::{Agent, Client, ConnectionTo};
 use llm::oauth::OAuthCredentialStore;
@@ -39,6 +42,8 @@ impl AcpTestHarness {
             session_store: session_store.clone(),
             has_oauth_credential: OAuthCredentialStore::has_credential,
             initial_selection: InitialSessionSelection::default(),
+            catalog_source: AgentCatalogSource::ProjectFiles,
+            mcp_configs: McpConfigLayers::default(),
         }));
 
         let (peer, client_builder) = TestPeer::new();

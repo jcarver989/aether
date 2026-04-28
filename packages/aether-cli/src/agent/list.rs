@@ -62,7 +62,7 @@ fn print_agent(agent: &AgentEntry, settings: &Settings) {
         println!(
             "  {}     {}",
             "prompts:".dim(),
-            effective_prompts.iter().map(std::string::String::as_str).collect::<Vec<_>>().join(", ")
+            effective_prompts.iter().map(aether_project::PromptEntry::display_label).collect::<Vec<_>>().join(", ")
         );
     }
 
@@ -113,7 +113,7 @@ mod tests {
                 user_invocable: true,
                 agent_invocable: true,
                 model: "anthropic:claude-sonnet-4-5".to_string(),
-                prompts: vec!["AGENTS.md".to_string()],
+                prompts: vec!["AGENTS.md".into()],
                 mcp_servers: vec!["coding".into()],
                 ..AgentEntry::default()
             },

@@ -26,13 +26,14 @@ use super::model_config::{
     validated_modes_from_specs,
 };
 use super::relay::{SessionCommand, spawn_relay};
-use super::session::Session;
+use super::session::{Session, SessionOptions};
 use super::session_registry::{ConfigSnapshot, SessionRegistry};
 use super::session_store::{SessionMeta, SessionStore};
+use crate::runtime::McpConfigLayers;
 use acp_utils::content::format_embedded_resource;
 use aether_core::agent_spec::AgentSpec;
 use aether_core::context::ext::ContextExt;
-use aether_project::{AgentCatalog, load_agent_catalog};
+use aether_project::{AgentCatalog, AgentCatalogSource, load_agent_catalog_from_source};
 use llm::Context;
 
 /// Initial session selection supplied when `aether acp` starts.
@@ -63,6 +64,8 @@ pub struct SessionManager {
     session_store: Arc<SessionStore>,
     has_oauth_credential: fn(&str) -> bool,
     initial_selection: InitialSessionSelection,
+    catalog_source: AgentCatalogSource,
+    mcp_configs: McpConfigLayers,
 }
 
 pub(crate) struct SessionManagerConfig {
@@ -70,6 +73,8 @@ pub(crate) struct SessionManagerConfig {
     pub(crate) session_store: Arc<SessionStore>,
     pub(crate) has_oauth_credential: fn(&str) -> bool,
     pub(crate) initial_selection: InitialSessionSelection,
+    pub(crate) catalog_source: AgentCatalogSource,
+    pub(crate) mcp_configs: McpConfigLayers,
 }
 
 struct SessionModeCatalog {
@@ -109,6 +114,8 @@ impl SessionManager {
             session_store: deps.session_store,
             has_oauth_credential: deps.has_oauth_credential,
             initial_selection: deps.initial_selection,
+            catalog_source: deps.catalog_source,
+            mcp_configs: deps.mcp_configs,
         }
     }
 
@@ -138,8 +145,8 @@ impl SessionManager {
         }
     }
 
-    async fn load_mode_catalog(cwd: &Path) -> Result<SessionModeCatalog, acp::Error> {
-        let catalog = load_agent_catalog(cwd).map_err(|e| {
+    async fn load_mode_catalog(&self, cwd: &Path) -> Result<SessionModeCatalog, acp::Error> {
+        let catalog = load_agent_catalog_from_source(cwd, self.catalog_source.clone()).map_err(|e| {
             error!("Failed to load agent catalog: {e}");
             acp::Error::invalid_params()
         })?;
@@ -367,6 +374,8 @@ mod tests {
             session_store,
             has_oauth_credential: |_| false,
             initial_selection: InitialSessionSelection::default(),
+            catalog_source: AgentCatalogSource::ProjectFiles,
+            mcp_configs: McpConfigLayers::default(),
         });
         let response =
             manager.initialize(InitializeRequest::new(ProtocolVersion::LATEST)).await.expect("initialize succeeds");
@@ -488,7 +497,7 @@ impl SessionManager {
         let session_id = uuid::Uuid::new_v4().to_string();
         let acp_session_id = acp::SessionId::new(session_id.clone());
 
-        let mode_catalog = Self::load_mode_catalog(&args.cwd).await?;
+        let mode_catalog = self.load_mode_catalog(&args.cwd).await?;
         let default_model = pick_default_model(&mode_catalog.available).ok_or_else(|| {
             error!("No models available — set an API key env var (e.g. ANTHROPIC_API_KEY)");
             acp::Error::internal_error()
@@ -499,13 +508,19 @@ impl SessionManager {
         let model_str = spec.model.clone();
         let reasoning_effort = spec.reasoning_effort;
 
-        let session =
-            Session::new(spec, args.cwd.clone(), map_acp_mcp_servers(args.mcp_servers), None, Some(session_id.clone()))
-                .await
-                .map_err(|e| {
-                    error!("Failed to create session: {}", e);
-                    acp::Error::internal_error()
-                })?;
+        let session = Session::new(SessionOptions {
+            spec,
+            cwd: args.cwd.clone(),
+            extra_mcp_servers: map_acp_mcp_servers(args.mcp_servers),
+            mcp_config_layers: self.mcp_configs.clone(),
+            restored_messages: None,
+            prompt_cache_key: Some(session_id.clone()),
+        })
+        .await
+        .map_err(|e| {
+            error!("Failed to create session: {}", e);
+            acp::Error::internal_error()
+        })?;
 
         let available_commands = session.list_available_commands().await.map_err(|e| {
             error!("Failed to list available commands: {}", e);
@@ -576,7 +591,7 @@ impl SessionManager {
         })?;
 
         let context = Context::from_events(&events);
-        let mode_catalog = Self::load_mode_catalog(&args.cwd).await?;
+        let mode_catalog = self.load_mode_catalog(&args.cwd).await?;
 
         let spec = if let Some(mode_name) = meta.selected_mode.as_deref() {
             resolve_agent_spec(&mode_catalog.catalog, mode_name, &args.cwd)?
@@ -592,13 +607,14 @@ impl SessionManager {
 
         let restored_messages: Vec<_> = context.messages().iter().filter(|m| !m.is_system()).cloned().collect();
 
-        let session = Session::new(
+        let session = Session::new(SessionOptions {
             spec,
-            args.cwd.clone(),
-            map_acp_mcp_servers(args.mcp_servers),
-            Some(restored_messages),
-            Some(session_id.clone()),
-        )
+            cwd: args.cwd.clone(),
+            extra_mcp_servers: map_acp_mcp_servers(args.mcp_servers),
+            mcp_config_layers: self.mcp_configs.clone(),
+            restored_messages: Some(restored_messages),
+            prompt_cache_key: Some(session_id.clone()),
+        })
         .await
         .map_err(|e| {
             error!("Failed to create session for load: {e}");

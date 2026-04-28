@@ -58,20 +58,46 @@ yourself in a `finally` block.
 
 `AetherSessionOptions` lets you pick the initial agent or model:
 
-| Option            | Notes                                                                |
-| ----------------- | -------------------------------------------------------------------- |
-| `agent`           | Mode name from `.aether/settings.json` (e.g. `planner`).             |
-| `model`           | Direct model id (e.g. `anthropic:claude-sonnet-4-5`).                |
-| `reasoningEffort` | `"low"`, `"medium"`, `"high"`, `"xhigh"`.                            |
-| `cwd`             | Working directory for the spawned `aether acp` process.              |
-| `tools`           | Closure-backed TypeScript tool groups keyed by Aether tool prefix.   |
-| `externalMcpServers` | External stdio/http/sse MCP servers keyed by Aether tool prefix.   |
-| `abortSignal`     | Cancel the active session and tear the subprocess down.              |
+| Option               | Notes                                                                |
+| -------------------- | -------------------------------------------------------------------- |
+| `agent`              | Mode name from `.aether/settings.json` (e.g. `planner`).             |
+| `model`              | Direct model id (e.g. `anthropic:claude-sonnet-4-5`).                |
+| `reasoningEffort`    | `"low"`, `"medium"`, `"high"`, `"xhigh"`.                            |
+| `cwd`                | Working directory for the spawned `aether acp` process.              |
+| `settings`           | Inline `.aether/settings.json` object passed via `--settings-json`.  |
+| `settingsFile`       | Explicit settings file path passed via `--settings-file`.            |
+| `tools`              | Closure-backed TypeScript tool groups keyed by Aether tool prefix.   |
+| `externalMcpServers` | External stdio/http/sse MCP servers keyed by Aether tool prefix.     |
+| `abortSignal`        | Cancel the active session and tear the subprocess down.              |
 
 `agent` and `model` are mutually exclusive — they are forwarded to the spawned
 `aether acp` process as `--agent` / `--model` / `--reasoning-effort`, where the
 CLI enforces the conflict and resolves the initial system prompt and tool
 filter before the session is constructed.
+
+`settings` and `settingsFile` are also mutually exclusive.
+
+### Running without `.aether/settings.json`
+
+```ts
+await using session = await AetherSession.start({
+  cwd: "/tmp/workdir-without-aether",
+  settings: {
+    agents: [
+      {
+        name: "sdk-agent",
+        description: "Agent supplied by the SDK host",
+        model: "anthropic:claude-sonnet-4-5",
+        userInvocable: true,
+        prompts: [{ text: "You are running inside my host app." }],
+        tools: { allow: ["custom__*"] },
+      },
+    ],
+  },
+  agent: { agent: "sdk-agent" },
+  tools: { custom: [myTool] },
+});
+```
 
 ## Multi-turn usage
 

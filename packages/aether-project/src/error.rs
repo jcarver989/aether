@@ -68,4 +68,16 @@ pub enum SettingsError {
     /// Duplicate prompt names in the catalog.
     #[error("Duplicate prompt name: '{name}'")]
     DuplicatePromptName { name: String },
+
+    /// An inline prompt entry has empty or whitespace-only text.
+    #[error("Inline prompt text is empty for agent '{agent}'")]
+    EmptyInlinePrompt { agent: String },
+
+    /// An inherited inline prompt entry has empty or whitespace-only text.
+    #[error("Inline prompt text is empty in inherited prompts")]
+    EmptyInheritedInlinePrompt,
+
+    /// Failed to read a settings file provided via CLI.
+    #[error("Failed to read settings file '{path}': {error}")]
+    SettingsFileReadError { path: String, error: String },
 }

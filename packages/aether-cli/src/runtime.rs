@@ -2,10 +2,10 @@ use crate::error::CliError;
 use aether_core::agent_spec::{AgentSpec, McpJsonFileRef};
 use aether_core::core::{AgentBuilder, AgentHandle, Prompt};
 use aether_core::events::{AgentMessage, UserMessage};
-use aether_core::mcp::McpBuilder;
 use aether_core::mcp::McpSpawnResult;
 use aether_core::mcp::mcp;
 use aether_core::mcp::run_mcp_task::McpCommand;
+use aether_core::mcp::{McpBuilder, McpConfigLayer};
 use aether_project::load_agent_catalog;
 use llm::{ChatMessage, LlmModel, ToolDefinition};
 use mcp_servers::McpBuilderExt;
@@ -15,12 +15,26 @@ use mcp_utils::status::McpServerStatusEntry;
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
-use tracing::debug;
+
+#[derive(Clone, Debug, Default)]
+pub struct McpConfigLayers {
+    pub layers: Vec<McpConfigLayer>,
+}
+
+impl McpConfigLayers {
+    pub fn from_refs(refs: Vec<McpJsonFileRef>) -> Self {
+        Self { layers: refs.into_iter().map(McpConfigLayer::File).collect() }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.layers.is_empty()
+    }
+}
 
 pub struct RuntimeBuilder {
     cwd: PathBuf,
     spec: AgentSpec,
-    mcp_configs: Vec<McpJsonFileRef>,
+    mcp_configs: McpConfigLayers,
     extra_mcp_servers: Vec<McpServerConfig>,
     oauth_applicator: Option<Box<dyn FnOnce(McpBuilder) -> McpBuilder + Send>>,
     prompt_cache_key: Option<String>,
@@ -51,7 +65,7 @@ impl RuntimeBuilder {
         Ok(Self {
             cwd,
             spec,
-            mcp_configs: Vec::new(),
+            mcp_configs: McpConfigLayers::default(),
             extra_mcp_servers: Vec::new(),
             oauth_applicator: None,
             prompt_cache_key: None,
@@ -62,7 +76,7 @@ impl RuntimeBuilder {
         Self {
             cwd,
             spec,
-            mcp_configs: Vec::new(),
+            mcp_configs: McpConfigLayers::default(),
             extra_mcp_servers: Vec::new(),
             oauth_applicator: None,
             prompt_cache_key: None,
@@ -74,11 +88,8 @@ impl RuntimeBuilder {
         self
     }
 
-    /// Set the MCP config ref overrides. When non-empty, these completely
-    /// replace any refs resolved from the agent's `AgentSpec` (CLI override
-    /// semantics). On collisions across files, the rightmost path wins.
-    pub fn mcp_configs(mut self, refs: Vec<McpJsonFileRef>) -> Self {
-        self.mcp_configs = refs;
+    pub fn mcp_configs(mut self, layers: McpConfigLayers) -> Self {
+        self.mcp_configs = layers;
         self
     }
 
@@ -149,13 +160,17 @@ impl RuntimeBuilder {
             builder = apply_oauth(builder);
         }
 
-        let mcp_config_refs: Vec<McpJsonFileRef> =
-            if self.mcp_configs.is_empty() { self.spec.mcp_config_refs.clone() } else { self.mcp_configs };
+        let mcp_configs = if self.mcp_configs.is_empty() {
+            McpConfigLayers::from_refs(self.spec.mcp_config_refs.clone())
+        } else {
+            self.mcp_configs
+        };
 
-        if !mcp_config_refs.is_empty() {
-            debug!("Loading MCP configs from: {:?}", mcp_config_refs);
-            builder =
-                builder.from_mcp_config_refs(&mcp_config_refs).await.map_err(|e| CliError::McpError(e.to_string()))?;
+        if !mcp_configs.is_empty() {
+            builder = builder
+                .from_mcp_config_layers(&mcp_configs.layers)
+                .await
+                .map_err(|e| CliError::McpError(e.to_string()))?;
         }
 
         let McpSpawnResult {

@@ -27,6 +27,9 @@ use session_manager::{InitialSessionSelection, SessionManagerConfig};
 use session_registry::SessionRegistry;
 use session_store::SessionStore;
 
+use crate::config_args::{McpConfigArgs, SettingsSourceArgs};
+use crate::error::CliError;
+
 #[derive(clap::Args, Debug)]
 pub struct AcpArgs {
     /// Path to log file directory (default: /tmp/aether-acp-logs)
@@ -45,6 +48,12 @@ pub struct AcpArgs {
     /// Initial reasoning effort for an explicit model session. Requires `--model` and is mutually exclusive with `--agent`.
     #[clap(long, value_name = "low|medium|high|xhigh", requires = "model", conflicts_with = "agent")]
     pub reasoning_effort: Option<ReasoningEffort>,
+
+    #[command(flatten)]
+    pub mcp_config: McpConfigArgs,
+
+    #[command(flatten)]
+    pub settings_source: SettingsSourceArgs,
 }
 
 /// Outcome of running the ACP server successfully.
@@ -58,12 +67,14 @@ pub enum AcpRunOutcome {
 #[derive(Debug)]
 pub enum AcpRunError {
     Protocol(acp::Error),
+    Config(CliError),
 }
 
 impl std::fmt::Display for AcpRunError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AcpRunError::Protocol(e) => write!(f, "ACP protocol error: {e}"),
+            AcpRunError::Config(e) => write!(f, "Configuration error: {e}"),
         }
     }
 }
@@ -72,6 +83,7 @@ impl std::error::Error for AcpRunError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             AcpRunError::Protocol(e) => Some(e),
+            AcpRunError::Config(e) => Some(e),
         }
     }
 }
@@ -80,6 +92,8 @@ pub async fn run_acp(args: AcpArgs) -> Result<AcpRunOutcome, AcpRunError> {
     info!("Starting Aether ACP server");
 
     setup_logging(&args);
+
+    let catalog_source = args.settings_source.into_catalog_source().map_err(AcpRunError::Config)?;
 
     let initial_selection = if let Some(agent) = args.agent.clone() {
         InitialSessionSelection::agent(agent)
@@ -95,6 +109,8 @@ pub async fn run_acp(args: AcpArgs) -> Result<AcpRunOutcome, AcpRunError> {
         session_store,
         has_oauth_credential: OAuthCredentialStore::has_credential,
         initial_selection,
+        catalog_source,
+        mcp_configs: args.mcp_config.into_layers(),
     }));
 
     let transport = ByteStreams::new(stdout().compat_write(), stdin().compat());

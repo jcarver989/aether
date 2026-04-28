@@ -7,6 +7,33 @@ import type { z } from "zod";
 
 export type ReasoningEffort = "low" | "medium" | "high" | "xhigh";
 
+export type PromptEntry = string | { text: string };
+
+export type AetherMcpServerRef = string | { path: string; proxy?: boolean };
+
+export interface AetherToolFilter {
+  allow?: string[];
+  deny?: string[];
+}
+
+export interface AetherAgentSettings {
+  name: string;
+  description: string;
+  model: string;
+  reasoningEffort?: ReasoningEffort;
+  userInvocable?: boolean;
+  agentInvocable?: boolean;
+  prompts?: PromptEntry[];
+  mcpServers?: AetherMcpServerRef[];
+  tools?: AetherToolFilter;
+}
+
+export interface AetherSettings {
+  prompts?: PromptEntry[];
+  mcpServers?: AetherMcpServerRef[];
+  agents?: AetherAgentSettings[];
+}
+
 export type AgentSelection =
   | { agent: string; model?: never; reasoningEffort?: never }
   | { agent?: never; model: string; reasoningEffort?: ReasoningEffort }

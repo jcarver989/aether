@@ -2,6 +2,7 @@ use super::draft_agent_entry::DraftAgentEntry;
 use super::new_agent_step::{McpConfigFile, NewAgentMode, NewAgentOutcome, NewAgentStep, PromptFile};
 use super::steps::{IdentityStep, ModelStep, PromptsStep, StepCommand, ToolsStep, default_servers};
 use crate::error::CliError;
+use aether_project::PromptEntry;
 use std::cmp::Ordering;
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
@@ -42,7 +43,7 @@ impl NewAgentWizard {
                 entry: aether_project::AgentEntry {
                     user_invocable: true,
                     agent_invocable: true,
-                    prompts: prompt_options.iter().map(|d| d.filename().to_string()).collect(),
+                    prompts: prompt_options.iter().map(|d| PromptEntry::from(d.filename())).collect(),
                     mcp_servers: default_servers(),
                     ..aether_project::AgentEntry::default()
                 },

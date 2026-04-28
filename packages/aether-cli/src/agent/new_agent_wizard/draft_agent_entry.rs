@@ -1,4 +1,4 @@
-use aether_project::{AgentEntry, McpServerEntry, Settings};
+use aether_project::{AgentEntry, McpServerEntry, PromptEntry, Settings};
 use std::{
     fs::{create_dir_all, read_to_string, write},
     path::{Path, PathBuf},
@@ -39,15 +39,15 @@ impl DraftAgentEntry {
     pub fn to_agent_entry(&self, mode: &NewAgentMode, inherited_prompts: &[String]) -> AgentEntry {
         let paths = self.generated_paths(mode);
 
-        let mut prompts = vec![paths.system_md.to_string_lossy().to_string()];
+        let mut prompts = vec![PromptEntry::from(paths.system_md.to_string_lossy().to_string())];
         match mode {
             NewAgentMode::ScaffoldProject => {
                 prompts.extend(self.entry.prompts.iter().cloned());
             }
             NewAgentMode::AddAgentToExistingProject => {
-                for name in &self.entry.prompts {
-                    if !inherited_prompts.iter().any(|d| d == name) {
-                        prompts.push(name.clone());
+                for entry in &self.entry.prompts {
+                    if entry.as_path().is_none_or(|path| !inherited_prompts.iter().any(|inherited| inherited == path)) {
+                        prompts.push(entry.clone());
                     }
                 }
             }
@@ -115,7 +115,13 @@ pub struct GeneratedPaths {
 fn inherited_prompts_from_existing(existing: Option<&str>) -> Vec<String> {
     existing
         .and_then(|s| serde_json::from_str::<Settings>(s).ok())
-        .map(|s| s.prompts.into_iter().filter(|p| PromptFile::all().iter().any(|d| d.filename() == p)).collect())
+        .map(|s| {
+            s.prompts
+                .into_iter()
+                .filter_map(|prompt| prompt.as_path().map(str::to_string))
+                .filter(|path| PromptFile::all().iter().any(|file| file.filename() == path))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -147,7 +153,7 @@ pub fn scaffold(project_root: &Path, draft: &DraftAgentEntry) -> Result<(), CliE
     let paths = draft.generated_paths(&NewAgentMode::ScaffoldProject);
     write_if_absent(&project_root.join(&paths.system_md), &draft.system_md_content)?;
     write_if_absent(&project_root.join(".aether/mcp.json"), &draft.to_mcp_json())?;
-    if draft.entry.prompts.iter().any(|n| n == PromptFile::Agents.filename()) {
+    if draft.entry.prompts.iter().any(|entry| entry.is_path(PromptFile::Agents.filename())) {
         write_if_absent(&project_root.join("AGENTS.md"), &build_agents_md(draft))?;
     }
     let settings = draft.to_settings(&NewAgentMode::ScaffoldProject, None);
@@ -201,7 +207,7 @@ mod tests {
                 user_invocable: true,
                 agent_invocable: true,
                 model: "anthropic:claude-sonnet-4-5".to_string(),
-                prompts: vec!["AGENTS.md".to_string()],
+                prompts: vec!["AGENTS.md".into()],
                 mcp_servers: vec!["coding".into(), "skills".into(), "tasks".into()],
                 ..AgentEntry::default()
             },
@@ -211,6 +217,10 @@ mod tests {
         };
         draft.system_md_content = build_system_md(&draft);
         draft
+    }
+
+    fn prompt_paths(paths: &[&str]) -> Vec<PromptEntry> {
+        paths.iter().copied().map(PromptEntry::from).collect()
     }
 
     #[test]
@@ -302,8 +312,8 @@ mod tests {
         assert!(settings.mcp_servers.is_empty());
 
         assert_eq!(settings.agents.len(), 1);
-        assert!(settings.agents[0].prompts.contains(&".aether/DEFAULT.md".to_string()));
-        assert!(settings.agents[0].prompts.contains(&"AGENTS.md".to_string()));
+        assert!(settings.agents[0].prompts.iter().any(|p| p.is_path(".aether/DEFAULT.md")));
+        assert!(settings.agents[0].prompts.iter().any(|p| p.is_path("AGENTS.md")));
         assert!(settings.agents[0].mcp_servers.contains(&".aether/mcp.json".into()));
     }
 
@@ -318,7 +328,7 @@ mod tests {
 
         let content = std::fs::read_to_string(dir.path().join(".aether/settings.json")).unwrap();
         let settings: Settings = serde_json::from_str(&content).unwrap();
-        assert!(!settings.prompts.contains(&"AGENTS.md".to_string()));
+        assert!(!settings.prompts.iter().any(|p| p.is_path("AGENTS.md")));
     }
 
     #[test]
@@ -471,7 +481,7 @@ mod tests {
         assert_eq!(researcher.name, "Researcher");
         assert!(!researcher.user_invocable);
         assert!(researcher.agent_invocable);
-        assert!(researcher.prompts.contains(&".aether/agents/researcher/RESEARCHER.md".to_string()));
+        assert!(researcher.prompts.iter().any(|p| p.is_path(".aether/agents/researcher/RESEARCHER.md")));
         assert!(researcher.mcp_servers.contains(&".aether/agents/researcher/mcp.json".into()));
     }
 
@@ -516,13 +526,13 @@ mod tests {
     #[test]
     fn build_settings_json_scaffold_emits_all_selected_prompts() {
         let mut draft = default_draft();
-        draft.entry.prompts = vec!["AGENTS.md".into(), "CLAUDE.md".into()];
+        draft.entry.prompts = prompt_paths(&["AGENTS.md", "CLAUDE.md"]);
         let settings = draft.to_settings(&NewAgentMode::ScaffoldProject, None);
 
         assert!(settings.prompts.is_empty());
-        assert!(settings.agents[0].prompts.contains(&".aether/DEFAULT.md".to_string()));
-        assert!(settings.agents[0].prompts.contains(&"AGENTS.md".to_string()));
-        assert!(settings.agents[0].prompts.contains(&"CLAUDE.md".to_string()));
+        assert!(settings.agents[0].prompts.iter().any(|p| p.is_path(".aether/DEFAULT.md")));
+        assert!(settings.agents[0].prompts.iter().any(|p| p.is_path("AGENTS.md")));
+        assert!(settings.agents[0].prompts.iter().any(|p| p.is_path("CLAUDE.md")));
     }
 
     #[test]
@@ -535,23 +545,23 @@ mod tests {
         .unwrap();
 
         let mut new_draft = researcher_draft();
-        new_draft.entry.prompts = vec!["AGENTS.md".into(), "CLAUDE.md".into()];
+        new_draft.entry.prompts = prompt_paths(&["AGENTS.md", "CLAUDE.md"]);
         let settings = new_draft.to_settings(&NewAgentMode::AddAgentToExistingProject, Some(&existing));
 
         let researcher = &settings.agents[1];
         assert_eq!(researcher.name, "Researcher");
         assert!(
-            !researcher.prompts.contains(&"AGENTS.md".to_string()),
+            !researcher.prompts.iter().any(|p| p.is_path("AGENTS.md")),
             "AGENTS.md is inherited from top-level prompts"
         );
-        assert!(researcher.prompts.contains(&"CLAUDE.md".to_string()));
+        assert!(researcher.prompts.iter().any(|p| p.is_path("CLAUDE.md")));
     }
 
     #[test]
     fn scaffold_writes_agents_md_when_selected() {
         let dir = tempfile::tempdir().unwrap();
         let mut draft = default_draft();
-        draft.entry.prompts = vec!["AGENTS.md".into()];
+        draft.entry.prompts = prompt_paths(&["AGENTS.md"]);
         scaffold(dir.path(), &draft).unwrap();
         assert!(dir.path().join("AGENTS.md").exists());
     }
@@ -594,7 +604,7 @@ mod tests {
     fn scaffold_never_writes_claude_or_gemini_md() {
         let dir = tempfile::tempdir().unwrap();
         let mut draft = default_draft();
-        draft.entry.prompts = vec!["AGENTS.md".into(), "CLAUDE.md".into(), "GEMINI.md".into()];
+        draft.entry.prompts = prompt_paths(&["AGENTS.md", "CLAUDE.md", "GEMINI.md"]);
         scaffold(dir.path(), &draft).unwrap();
 
         assert!(dir.path().join("AGENTS.md").exists());

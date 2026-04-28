@@ -15,7 +15,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing::{debug, error};
 
-use crate::runtime::RuntimeBuilder;
+use crate::runtime::{McpConfigLayers, RuntimeBuilder};
 
 /// Represents an active Aether agent session
 pub struct Session {
@@ -28,21 +28,28 @@ pub struct Session {
     pub initial_server_statuses: Vec<McpServerStatusEntry>,
 }
 
+pub struct SessionOptions {
+    pub spec: AgentSpec,
+    pub cwd: PathBuf,
+    pub extra_mcp_servers: Vec<McpServerConfig>,
+    pub mcp_config_layers: McpConfigLayers,
+    pub restored_messages: Option<Vec<ChatMessage>>,
+    pub prompt_cache_key: Option<String>,
+}
+
 impl Session {
     /// Creates a new session with the given LLM provider and configuration.
     ///
     /// Pass `restored_messages` to pre-populate conversation history (e.g. session resume).
-    pub async fn new(
-        spec: AgentSpec,
-        cwd: PathBuf,
-        extra_mcp_servers: Vec<McpServerConfig>,
-        restored_messages: Option<Vec<ChatMessage>>,
-        prompt_cache_key: Option<String>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn new(options: SessionOptions) -> Result<Self, Box<dyn std::error::Error>> {
+        let SessionOptions { spec, cwd, extra_mcp_servers, mcp_config_layers, restored_messages, prompt_cache_key } =
+            options;
+
         debug!("MCP configs: {:?}", spec.mcp_config_refs);
         debug!("Using project root: {:?}", cwd);
 
-        let mut rb = RuntimeBuilder::from_spec(cwd, spec).extra_servers(extra_mcp_servers);
+        let mut rb =
+            RuntimeBuilder::from_spec(cwd, spec).extra_servers(extra_mcp_servers).mcp_configs(mcp_config_layers);
 
         if let Some(key) = prompt_cache_key {
             rb = rb.prompt_cache_key(key);

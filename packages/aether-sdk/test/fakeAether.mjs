@@ -36,6 +36,8 @@ let capturedMcpServers = [];
 let capturedMeta = null;
 let conn;
 
+log(JSON.stringify({ event: "argv", argv: process.argv.slice(2) }));
+
 const agent = {
   async initialize() {
     return {

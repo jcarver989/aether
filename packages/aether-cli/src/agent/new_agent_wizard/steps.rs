@@ -1,6 +1,6 @@
 use super::draft_agent_entry::{DraftAgentEntry, build_system_md};
 use super::new_agent_step::{McpConfigFile, NewAgentMode, PromptFile, server_options};
-use aether_project::McpServerEntry;
+use aether_project::{McpServerEntry, PromptEntry};
 use tui::{
     BorderedTextField, Color, Component, Event, FocusRing, KeyCode, Line, MultiSelect, Panel, SelectOption, Style,
     ViewContext, render_markdown_result,
@@ -206,13 +206,14 @@ impl PromptsStep {
         let json = self.prompt_select.to_json();
         draft.entry.prompts = json
             .as_array()
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(PromptEntry::from)).collect())
             .unwrap_or_default();
     }
 
     pub fn sync_from_draft(&mut self, draft: &mut DraftAgentEntry) {
         for (i, option) in self.prompt_select.options.iter().enumerate() {
-            self.prompt_select.selected[i] = draft.entry.prompts.iter().any(|d| d == &option.value);
+            self.prompt_select.selected[i] =
+                draft.entry.prompts.iter().any(|entry| entry.is_path(option.value.as_str()));
         }
         if !draft.system_md_edited {
             draft.system_md_content = build_system_md(draft);
