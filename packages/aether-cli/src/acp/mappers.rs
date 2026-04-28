@@ -341,7 +341,7 @@ fn map_tool_progress_to_notification(
     total: Option<f64>,
     message: Option<&String>,
 ) -> Option<SessionNotification> {
-    tracing::info!("Tool progress: {message:?}");
+    tracing::debug!("Tool progress: {message:?}");
 
     if message.and_then(|msg_str| try_parse_sub_agent_progress(msg_str, request)).is_some() {
         return None;
