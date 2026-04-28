@@ -8,6 +8,7 @@ jobs:
   release-plz-release:
     name: Release-plz release
     runs-on: ubuntu-latest
+    environment: ci
     permissions:
       contents: write
       pull-requests: read
@@ -31,6 +32,7 @@ jobs:
   release-plz-pr:
     name: Release-plz PR
     runs-on: ubuntu-latest
+    environment: ci
     permissions:
       contents: write
       pull-requests: write
