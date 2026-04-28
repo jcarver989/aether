@@ -186,6 +186,15 @@ async fn stream_agent_messages(mut rx: Receiver<AgentMessage>, tx: Sender<AgentR
                     max_attempts
                 );
             }
+            AgentMessage::Retrying { attempt, max_attempts, delay_ms, error } => {
+                tracing::debug!(
+                    "Retrying: attempt {}/{} in {}ms after transient error: {}",
+                    attempt,
+                    max_attempts,
+                    delay_ms,
+                    error
+                );
+            }
             AgentMessage::ModelSwitched { previous, new } => {
                 tracing::debug!("Model switched: {} -> {}", previous, new);
             }

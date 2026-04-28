@@ -1,4 +1,4 @@
-use super::agent::{AgentConfig, AutoContinue};
+use super::agent::{AgentConfig, AutoContinue, RetryConfig};
 use crate::agent_spec::AgentSpec;
 use crate::context::CompactionConfig;
 use crate::core::{Agent, Prompt, Result};
@@ -44,6 +44,7 @@ pub struct AgentBuilder {
     tool_timeout: Duration,
     compaction_config: Option<CompactionConfig>,
     max_auto_continues: u32,
+    retry_config: RetryConfig,
     prompt_cache_key: Option<String>,
 }
 
@@ -59,6 +60,7 @@ impl AgentBuilder {
             tool_timeout: Duration::from_mins(20),
             compaction_config: Some(CompactionConfig::default()),
             max_auto_continues: 3,
+            retry_config: RetryConfig::default(),
             prompt_cache_key: None,
         }
     }
@@ -161,6 +163,12 @@ impl AgentBuilder {
         self
     }
 
+    /// Configure retry behavior for transient LLM provider failures.
+    pub fn retry(mut self, config: RetryConfig) -> Self {
+        self.retry_config = config;
+        self
+    }
+
     /// Set a prompt cache key for LLM provider request routing.
     ///
     /// This is typically a session ID (UUID) that remains stable across all
@@ -204,6 +212,7 @@ impl AgentBuilder {
             tool_timeout: self.tool_timeout,
             compaction_config: self.compaction_config,
             auto_continue: AutoContinue::new(self.max_auto_continues),
+            retry_config: self.retry_config,
         };
 
         let agent = Agent::new(config, user_message_rx, message_tx);

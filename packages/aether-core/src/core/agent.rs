@@ -1,4 +1,5 @@
 use crate::context::{CompactionConfig, Compactor, TokenTracker};
+pub use crate::core::retry_config::RetryConfig;
 use crate::events::{AgentMessage, UserMessage};
 use crate::mcp::run_mcp_task::{McpCommand, ToolExecutionEvent};
 use futures::Stream;
@@ -12,6 +13,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio::time::sleep;
 use tokio_stream::StreamExt;
 use tokio_stream::StreamMap;
 use tokio_stream::wrappers::ReceiverStream;
@@ -36,6 +38,7 @@ pub(crate) struct AgentConfig {
     pub tool_timeout: Duration,
     pub compaction_config: Option<CompactionConfig>,
     pub auto_continue: AutoContinue,
+    pub retry_config: RetryConfig,
 }
 
 pub struct Agent {
@@ -48,6 +51,7 @@ pub struct Agent {
     token_tracker: TokenTracker,
     compaction_config: Option<CompactionConfig>,
     auto_continue: AutoContinue,
+    retry_config: RetryConfig,
     active_requests: HashMap<String, ToolCallRequest>,
     queued_user_messages: VecDeque<Vec<llm::ContentBlock>>,
 }
@@ -76,6 +80,7 @@ impl Agent {
             token_tracker: TokenTracker::new(context_limit),
             compaction_config: config.compaction_config,
             auto_continue: config.auto_continue,
+            retry_config: config.retry_config,
             active_requests: HashMap::new(),
             queued_user_messages: VecDeque::new(),
         }
@@ -225,7 +230,7 @@ impl Agent {
 
     async fn start_next_turn(&mut self) {
         self.maybe_preflight_compact().await;
-        self.start_llm_stream();
+        self.start_llm_stream(None);
     }
 
     async fn on_user_cancel(&mut self, state: &mut IterationState) {
@@ -248,7 +253,7 @@ impl Agent {
     fn on_user_text(&mut self, content: Vec<llm::ContentBlock>) {
         self.context.add_message(ChatMessage::User { content, timestamp: IsoString::now() });
         self.auto_continue.reset();
-        self.start_llm_stream();
+        self.start_llm_stream(None);
     }
 
     async fn on_switch_model(&mut self, new_provider: Box<dyn StreamingModelProvider>) {
@@ -263,10 +268,57 @@ impl Agent {
         let _ = self.message_tx.send(self.context_usage_message()).await;
     }
 
-    fn start_llm_stream(&mut self) {
+    fn start_llm_stream(&mut self, delay: Option<Duration>) {
         self.streams.remove(LLM_STREAM_KEY);
-        let llm_stream = self.llm.stream_response(&self.context).map(StreamEvent::Llm);
-        self.streams.insert(LLM_STREAM_KEY.to_string(), Box::pin(llm_stream));
+        let stream: EventStream = match delay {
+            None => Box::pin(self.llm.stream_response(&self.context).map(StreamEvent::Llm)),
+            Some(delay) => {
+                let llm = Arc::clone(&self.llm);
+                let context = self.context.clone();
+                Box::pin(async_stream::stream! {
+                    sleep(delay).await;
+                    let mut inner = llm.stream_response(&context);
+                    while let Some(item) = inner.next().await {
+                        yield StreamEvent::Llm(item);
+                    }
+                })
+            }
+        };
+        self.streams.insert(LLM_STREAM_KEY.to_string(), stream);
+    }
+
+    async fn on_llm_error(&mut self, error: LlmError, state: &mut IterationState) {
+        if !error.is_retryable() || state.retry_attempt >= self.retry_config.max_attempts {
+            let _ = self.message_tx.send(AgentMessage::Error { message: error.to_string() }).await;
+            return;
+        }
+
+        state.retry_attempt += 1;
+        let delay = self.retry_config.compute_delay(state.retry_attempt);
+        let delay_ms = u64::try_from(delay.as_millis()).unwrap_or(u64::MAX);
+
+        tracing::warn!(
+            attempt = state.retry_attempt,
+            max_attempts = self.retry_config.max_attempts,
+            delay_ms,
+            error = %error,
+            "Retrying LLM request after transient failure"
+        );
+
+        let _ = self
+            .message_tx
+            .send(AgentMessage::Retrying {
+                attempt: state.retry_attempt,
+                max_attempts: self.retry_config.max_attempts,
+                delay_ms,
+                error: error.to_string(),
+            })
+            .await;
+
+        // The previous stream may have emitted partial tool-call deltas
+        // before interrupting so we drop them to ensure we rebuild tool state
+        self.active_requests.clear();
+        self.start_llm_stream(Some(delay));
     }
 
     fn is_busy(&self) -> bool {
@@ -312,7 +364,7 @@ impl Agent {
         let response = match result {
             Ok(response) => response,
             Err(e) => {
-                let _ = self.message_tx.send(AgentMessage::Error { message: e.to_string() }).await;
+                self.on_llm_error(e, state).await;
                 return;
             }
         };
@@ -666,6 +718,7 @@ struct IterationState {
     completed_tool_calls: Vec<Result<ToolCallResult, ToolCallError>>,
     llm_done: bool,
     stop_reason: Option<StopReason>,
+    retry_attempt: u32,
 }
 
 impl IterationState {
@@ -679,6 +732,7 @@ impl IterationState {
             completed_tool_calls: Vec::new(),
             llm_done: false,
             stop_reason: None,
+            retry_attempt: 0,
         }
     }
 
@@ -730,6 +784,7 @@ mod tests {
                 tool_timeout: Duration::from_secs(1),
                 compaction_config: Some(CompactionConfig::with_threshold(0.85)),
                 auto_continue: AutoContinue::new(0),
+                retry_config: RetryConfig::disabled(),
             },
             user_rx,
             message_tx,

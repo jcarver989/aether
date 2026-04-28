@@ -77,10 +77,19 @@ fn process_stream_event(
         ContentBlockStop { data } => Ok(handle_content_block_stop(&data, active_tool_calls, index_to_id)),
         MessageDelta { data } => Ok(handle_message_delta(&data)),
         MessageStop { .. } => Ok(handle_message_stop()),
-        Error { data } => {
-            Err(LlmError::ApiError(format!("Anthropic API error: {} - {}", data.error.error_type, data.error.message)))
-        }
+        Error { data } => Err(map_anthropic_stream_error(&data.error.error_type, &data.error.message)),
         Ping => Ok(handle_ping()),
+    }
+}
+
+fn map_anthropic_stream_error(error_type: &str, message: &str) -> LlmError {
+    let formatted = format!("Anthropic API error: {error_type} - {message}");
+    match error_type {
+        "rate_limit_error" => LlmError::RateLimited(formatted),
+        "overloaded_error" | "internal_server_error" | "api_error" => {
+            LlmError::ServerError { status: None, message: formatted }
+        }
+        _ => LlmError::ApiError(formatted),
     }
 }
 

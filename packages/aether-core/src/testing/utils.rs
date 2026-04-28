@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use futures::future::join_all;
 
-use crate::core::agent;
+use crate::core::{RetryConfig, agent};
 use crate::events::{AgentMessage, UserMessage};
 use crate::mcp::McpSpawnResult;
 use crate::mcp::mcp;
@@ -29,6 +29,7 @@ pub struct TestAgentBuilder {
     responses: Vec<Vec<Result<LlmResponse, LlmError>>>,
     timeout: Option<Duration>,
     max_auto_continues: Option<u32>,
+    retry_config: Option<RetryConfig>,
 }
 
 impl Default for TestAgentBuilder {
@@ -39,7 +40,13 @@ impl Default for TestAgentBuilder {
 
 impl TestAgentBuilder {
     pub fn new() -> Self {
-        Self { messages: Vec::new(), responses: Vec::new(), timeout: None, max_auto_continues: None }
+        Self {
+            messages: Vec::new(),
+            responses: Vec::new(),
+            timeout: None,
+            max_auto_continues: None,
+            retry_config: None,
+        }
     }
 
     pub fn user_messages(mut self, user_messages: Vec<UserMessage>) -> Self {
@@ -64,6 +71,11 @@ impl TestAgentBuilder {
 
     pub fn max_auto_continues(mut self, max: u32) -> Self {
         self.max_auto_continues = Some(max);
+        self
+    }
+
+    pub fn retry_config(mut self, config: RetryConfig) -> Self {
+        self.retry_config = Some(config);
         self
     }
 
@@ -95,6 +107,11 @@ impl TestAgentBuilder {
         }
         if let Some(max) = self.max_auto_continues {
             builder = builder.max_auto_continues(max);
+        }
+        if let Some(retry) = self.retry_config {
+            builder = builder.retry(retry);
+        } else {
+            builder = builder.retry(RetryConfig::disabled());
         }
 
         let (tx, mut rx, _handle) = builder.spawn().await?;

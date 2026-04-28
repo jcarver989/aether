@@ -144,6 +144,7 @@ fn map_agent_message_to_notification(
         | AgentMessage::ContextCompactionStarted { .. }
         | AgentMessage::ContextCompactionResult { .. }
         | AgentMessage::AutoContinue { .. }
+        | AgentMessage::Retrying { .. }
         | AgentMessage::ModelSwitched { .. } => None,
     }
 }

@@ -106,6 +106,18 @@ pub enum AgentMessage {
         max_attempts: u32,
     },
 
+    /// Agent is retrying after a transient LLM provider failure
+    Retrying {
+        /// Current retry attempt number (1-indexed).
+        attempt: u32,
+        /// Maximum allowed attempts.
+        max_attempts: u32,
+        /// Backoff delay in milliseconds before the retry fires.
+        delay_ms: u64,
+        /// The error that triggered the retry, formatted for display.
+        error: String,
+    },
+
     /// The model was successfully switched.
     ModelSwitched {
         previous: String,

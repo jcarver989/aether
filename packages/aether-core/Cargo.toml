@@ -24,6 +24,7 @@ name = "aether_core"
 path = "src/lib.rs"
 
 [dependencies]
+async-stream = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -53,6 +54,7 @@ testing = []
 aether-core = { package = "aether-agent-core", path = ".", features = ["testing"] }
 reqwest = { workspace = true }
 tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 [[example]]
 name = "basic_agent"

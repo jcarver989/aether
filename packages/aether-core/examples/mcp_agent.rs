@@ -34,8 +34,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         use AgentMessage::{
             AutoContinue, Cancelled, ContextCleared, ContextCompactionResult, ContextCompactionStarted,
-            ContextUsageUpdate, Done, Error, ModelSwitched, Text, Thought, ToolCall, ToolCallUpdate, ToolError,
-            ToolProgress, ToolResult,
+            ContextUsageUpdate, Done, Error, ModelSwitched, Retrying, Text, Thought, ToolCall, ToolCallUpdate,
+            ToolError, ToolProgress, ToolResult,
         };
         match rx.recv().await {
             Some(Text { chunk, is_complete, .. }) => {
@@ -96,6 +96,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             Some(AutoContinue { attempt, max_attempts }) => {
                 println!("Auto-continuing: attempt {attempt}/{max_attempts} (LLM stopped due to length)");
+            }
+            Some(Retrying { attempt, max_attempts, delay_ms, error }) => {
+                println!("Retrying ({attempt}/{max_attempts}) in {delay_ms}ms: {error}");
             }
             Some(ModelSwitched { previous, new }) => {
                 println!("Model switched: {previous} -> {new}");

@@ -81,6 +81,7 @@ dependencies = [
  "aether-utils",
  "agent-client-protocol",
  "async-openai",
+ "async-stream",
  "chrono",
  "clap",
  "futures",

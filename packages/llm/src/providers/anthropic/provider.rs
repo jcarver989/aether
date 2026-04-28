@@ -130,19 +130,17 @@ impl AnthropicProvider {
         );
 
         debug!("Anthropic request headers: {}", format_headers(&headers));
-        let response = self
-            .client
-            .post(&url)
-            .headers(headers)
-            .json(&request)
-            .send()
-            .await
-            .map_err(|e| LlmError::ApiRequest(e.to_string()))?;
+        let response = self.client.post(&url).headers(headers).json(&request).send().await?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(LlmError::ApiError(format!("Anthropic API request failed with status {status}: {error_text}")));
+            let message = format!("Anthropic API request failed with status {status}: {error_text}");
+            return Err(match status.as_u16() {
+                429 => LlmError::RateLimited(message),
+                s if (500..600).contains(&s) => LlmError::ServerError { status: Some(s), message },
+                _ => LlmError::ApiError(message),
+            });
         }
 
         let event_stream = response.bytes_stream().eventsource();
@@ -152,7 +150,7 @@ impl AnthropicProvider {
                     let data = event.data;
                     if data == "[DONE]" { None } else { Some(Ok(data)) }
                 }
-                Err(e) => Some(Err(LlmError::IoError(e.to_string()))),
+                Err(e) => Some(Err(LlmError::StreamInterrupted(e.to_string()))),
             })
         });
 

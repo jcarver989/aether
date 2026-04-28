@@ -24,16 +24,20 @@ pub fn create_custom_stream_generic<R: Serialize + Send + 'static>(
             Ok(stream) => stream,
             Err(e) => {
                 warn!("create_stream_byot failed: {e}");
-                yield Err(LlmError::ApiRequest(e.to_string()));
+                yield Err(LlmError::from(e));
                 return;
             }
         };
 
+        // Once the SSE stream has started (HTTP 200), any error from async-openai
+        // is a mid-stream interruption — the upstream library discards HTTP status
+        // codes when wrapping non-2xx responses, so trying to reclassify by type
+        // is unreliable. Treat all post-handshake errors as retryable.
         let stream = stream.map(|result| {
             if let Err(ref e) = result {
                 warn!("Stream error from API: {e}");
             }
-            result.map_err(|e| LlmError::ApiError(e.to_string()))
+            result.map_err(|e| LlmError::StreamInterrupted(e.to_string()))
         });
 
         for await item in process_compatible_stream(stream) {
@@ -128,9 +132,11 @@ pub fn process_compatible_stream<E: Into<LlmError> + Send>(
 
         if chunk_count == 0 {
             warn!("Stream completed with zero chunks — provider returned an empty stream");
-        } else {
-            info!(chunk_count, had_text, had_reasoning, had_tool_calls, "Stream completed");
+            yield Err(LlmError::StreamInterrupted("provider returned an empty stream".into()));
+            return;
         }
+
+        info!(chunk_count, had_text, had_reasoning, had_tool_calls, "Stream completed");
 
         yield Ok(LlmResponse::Done {
             stop_reason: last_stop_reason,
@@ -183,6 +189,28 @@ mod tests {
             LlmResponse::Usage { tokens } => Some(tokens),
             _ => None,
         })
+    }
+
+    #[tokio::test]
+    async fn test_process_compatible_stream_yields_stream_interrupted_on_empty_input() {
+        let stream_items: Vec<std::result::Result<ChatCompletionStreamResponse, std::io::Error>> = vec![];
+        let mut processed = Box::pin(process_compatible_stream(tokio_stream::iter(stream_items)));
+
+        let mut events = Vec::new();
+        while let Some(event) = processed.next().await {
+            events.push(event);
+        }
+
+        assert!(matches!(events.first(), Some(Ok(LlmResponse::Start { .. }))), "expected leading Start event");
+        let last = events.last().expect("stream must yield at least one event");
+        assert!(
+            matches!(last, Err(LlmError::StreamInterrupted(_))),
+            "empty stream must terminate with StreamInterrupted (retryable), got {last:?}"
+        );
+        assert!(last.as_ref().err().unwrap().is_retryable(), "StreamInterrupted must be retryable");
+
+        let has_done = events.iter().any(|e| matches!(e, Ok(LlmResponse::Done { .. })));
+        assert!(!has_done, "empty stream must NOT yield Done — that was the pre-fix behavior");
     }
 
     #[tokio::test]

@@ -61,6 +61,7 @@ fn event_kind(msg: &AgentMessage) -> Option<CliEventKind> {
         AgentMessage::Error { .. } => Some(CliEventKind::Error),
         AgentMessage::Cancelled { .. } => Some(CliEventKind::Cancelled),
         AgentMessage::AutoContinue { .. } => Some(CliEventKind::AutoContinue),
+        AgentMessage::Retrying { .. } => Some(CliEventKind::Retrying),
         AgentMessage::ModelSwitched { .. } => Some(CliEventKind::ModelSwitched),
         AgentMessage::ToolProgress { .. } => Some(CliEventKind::ToolProgress),
         AgentMessage::ContextCompactionStarted { .. } => Some(CliEventKind::ContextCompactionStarted),
@@ -92,6 +93,10 @@ fn format_text(msg: &AgentMessage) -> Option<String> {
 
         AgentMessage::AutoContinue { attempt, max_attempts } => {
             Some(format!("Continuing ({attempt}/{max_attempts})..."))
+        }
+
+        AgentMessage::Retrying { attempt, max_attempts, delay_ms, error } => {
+            Some(format!("Retrying ({attempt}/{max_attempts}) in {delay_ms}ms: {error}"))
         }
 
         AgentMessage::ModelSwitched { previous, new } => Some(format!("Model switched: {previous} -> {new}")),
@@ -196,6 +201,18 @@ fn emit_event(msg: &AgentMessage) {
                 attempt,
                 max_attempts,
                 "Continuing ({attempt}/{max_attempts})..."
+            );
+        }
+
+        AgentMessage::Retrying { attempt, max_attempts, delay_ms, error } => {
+            tracing::info!(
+                target: "agent",
+                kind,
+                attempt,
+                max_attempts,
+                delay_ms,
+                error = %error,
+                "Retrying ({attempt}/{max_attempts}) in {delay_ms}ms: {error}"
             );
         }
 
