@@ -28,18 +28,19 @@ impl McpBuilderExt for McpBuilder {
                             CodingMcpArgs::default()
                         }
                     };
-                    let CodingMcpArgs { permission_mode, rules_dirs, .. } = parsed;
+                    let CodingMcpArgs { permission_mode, rules_dirs, disable_lsp, .. } = parsed;
                     debug!(
-                        "CodingMcp created with LSP, permission_mode={:?}, rules_dirs={}",
+                        "CodingMcp created, disable_lsp={}, permission_mode={:?}, rules_dirs={}",
+                        disable_lsp,
                         permission_mode,
                         rules_dirs.len()
                     );
-                    CodingMcp::with_tools(DefaultCodingTools::new())
-                        .with_lsp(project_path.clone())
+                    let server = CodingMcp::with_tools(DefaultCodingTools::new())
                         .with_rules_dirs(rules_dirs)
-                        .with_root_dir(project_path)
-                        .with_permission_mode(permission_mode)
-                        .into_dyn()
+                        .with_root_dir(project_path.clone())
+                        .with_permission_mode(permission_mode);
+                    let server = if disable_lsp { server } else { server.with_lsp(project_path) };
+                    server.into_dyn()
                 }
                 .boxed()
             }),

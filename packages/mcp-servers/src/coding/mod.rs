@@ -96,6 +96,10 @@ pub struct CodingMcpArgs {
     /// Permission mode controlling user approval for tool calls
     #[arg(long = "permission-mode", default_value = "always-allow")]
     pub permission_mode: PermissionMode,
+
+    /// Disable LSP-backed coding tools and daemon connections.
+    #[arg(long = "disable-lsp")]
+    pub disable_lsp: bool,
 }
 
 impl CodingMcpArgs {
@@ -293,9 +297,10 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
     }
 
     fn build_instructions(&self) -> String {
-        let base = r"# Coding MCP Server
+        let mut base = String::from(
+            r"# Coding MCP Server
 
-File I/O, search, shell, and LSP code intelligence tools for coding workflows.
+File I/O, search, shell, and optional LSP code intelligence tools for coding workflows.
 
 ## Quick Reference
 
@@ -303,11 +308,18 @@ File I/O, search, shell, and LSP code intelligence tools for coding workflows.
 - **File names** (find *.test.ts): `find`
 - **Read/write/edit** files: `read_file`, `write_file`, `edit_file`
 - **Shell commands**: `bash`
-- **Errors & warnings** (instant check without build): `lsp_check_errors`
+",
+        );
+
+        if self.lsp.is_some() {
+            base.push_str(
+                r"- **Errors & warnings** (instant check without build): `lsp_check_errors`
 - **Code symbols** (definitions, usages, types): `lsp_symbol`
 - **File structure** (what's in this file?): `lsp_document`
 - **Rename symbol** (refactor across codebase): `lsp_rename`
-";
+",
+            );
+        }
 
         match self.get_workspace_root() {
             Some(root) => format!(
@@ -318,7 +330,7 @@ When using tools that take file paths, always use absolute paths from:
                 base,
                 root.display()
             ),
-            None => base.to_string(),
+            None => base,
         }
     }
 
@@ -753,6 +765,25 @@ mod tests {
     fn args_default_permission_mode_is_always_allow() {
         let args = CodingMcpArgs::from_args(vec![]).unwrap();
         assert_eq!(args.permission_mode, PermissionMode::AlwaysAllow);
+    }
+
+    #[test]
+    fn args_default_lsp_enabled() {
+        let args = CodingMcpArgs::from_args(vec![]).unwrap();
+        assert!(!args.disable_lsp);
+    }
+
+    #[test]
+    fn args_parses_disable_lsp() {
+        let args = CodingMcpArgs::from_args(vec!["--disable-lsp".into()]).unwrap();
+        assert!(args.disable_lsp);
+    }
+
+    #[test]
+    fn disabled_lsp_instructions_omit_lsp_tools() {
+        let instructions = CodingMcp::new().build_instructions();
+        assert!(!instructions.contains("lsp_check_errors"));
+        assert!(!instructions.contains("lsp_symbol"));
     }
 
     #[test]

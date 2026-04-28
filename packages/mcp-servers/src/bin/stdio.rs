@@ -49,13 +49,13 @@ async fn main() -> Result<(), StdioError> {
 
     match cli.server.as_str() {
         "coding" => {
-            let parsed = CodingMcpArgs::from_args(cli.args).map_err(StdioError::ServerArgs)?;
-            let CodingMcpArgs { root_dir, rules_dirs, permission_mode } = parsed;
+            let CodingMcpArgs { root_dir, rules_dirs, permission_mode, disable_lsp } =
+                CodingMcpArgs::from_args(cli.args).map_err(StdioError::ServerArgs)?;
             let server = CodingMcp::new().with_rules_dirs(rules_dirs).with_permission_mode(permission_mode);
-            let server = if let Some(root_dir) = root_dir {
-                server.with_lsp(root_dir.clone()).with_root_dir(root_dir)
-            } else {
-                server
+            let server = match root_dir {
+                Some(root_dir) if !disable_lsp => server.with_root_dir(root_dir.clone()).with_lsp(root_dir),
+                Some(root_dir) => server.with_root_dir(root_dir),
+                None => server,
             };
             serve_stdio(server).await
         }
