@@ -1,5 +1,6 @@
 use crate::{
-    CodingMcp, CodingMcpArgs, DefaultCodingTools, LspMcp, PlanMcp, SkillsMcp, SubAgentsMcp, SurveyMcp, TasksMcp,
+    CodingMcp, CodingMcpArgs, DefaultCodingTools, LspIntegration, LspMcp, PlanMcp, SkillsMcp, SubAgentsMcp, SurveyMcp,
+    TasksMcp,
 };
 use aether_core::mcp::McpBuilder;
 use futures::FutureExt;
@@ -28,18 +29,22 @@ impl McpBuilderExt for McpBuilder {
                             CodingMcpArgs::default()
                         }
                     };
-                    let CodingMcpArgs { permission_mode, rules_dirs, .. } = parsed;
+                    let CodingMcpArgs { permission_mode, rules_dirs, lsp_integration, .. } = parsed;
                     debug!(
-                        "CodingMcp created with LSP, permission_mode={:?}, rules_dirs={}",
+                        "CodingMcp created, lsp_integration={:?}, permission_mode={:?}, rules_dirs={}",
+                        lsp_integration,
                         permission_mode,
                         rules_dirs.len()
                     );
-                    CodingMcp::with_tools(DefaultCodingTools::new())
-                        .with_lsp(project_path.clone())
+                    let server = CodingMcp::with_tools(DefaultCodingTools::new())
                         .with_rules_dirs(rules_dirs)
-                        .with_root_dir(project_path)
-                        .with_permission_mode(permission_mode)
-                        .into_dyn()
+                        .with_root_dir(project_path.clone())
+                        .with_permission_mode(permission_mode);
+                    match lsp_integration {
+                        LspIntegration::Enabled => server.with_lsp(project_path),
+                        LspIntegration::Disabled => server,
+                    }
+                    .into_dyn()
                 }
                 .boxed()
             }),

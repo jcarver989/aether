@@ -81,21 +81,59 @@ pub enum PermissionMode {
     AlwaysAsk,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum LspIntegration {
+    #[default]
+    Enabled,
+    Disabled,
+}
+
 /// CLI arguments for `CodingMcp` server
-#[derive(Debug, Clone, Default, Parser)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct CodingMcpArgs {
     /// Root directory for workspace (used for LSP initialization)
-    #[arg(long = "root-dir")]
     pub root_dir: Option<PathBuf>,
 
     /// Prompt directories to scan for automatic read-triggered rules.
     /// Can be specified multiple times: --rules-dir .aether/skills --rules-dir .claude/rules
-    #[arg(long = "rules-dir")]
     pub rules_dirs: Vec<PathBuf>,
 
     /// Permission mode controlling user approval for tool calls
-    #[arg(long = "permission-mode", default_value = "always-allow")]
     pub permission_mode: PermissionMode,
+
+    /// Whether LSP-backed tools should connect to aether-lspd.
+    pub lsp_integration: LspIntegration,
+}
+
+#[derive(Debug, Clone, Default, Parser)]
+struct RawCodingMcpArgs {
+    /// Root directory for workspace (used for LSP initialization)
+    #[arg(long = "root-dir")]
+    root_dir: Option<PathBuf>,
+
+    /// Prompt directories to scan for automatic read-triggered rules.
+    /// Can be specified multiple times: --rules-dir .aether/skills --rules-dir .claude/rules
+    #[arg(long = "rules-dir")]
+    rules_dirs: Vec<PathBuf>,
+
+    /// Permission mode controlling user approval for tool calls
+    #[arg(long = "permission-mode", default_value = "always-allow")]
+    permission_mode: PermissionMode,
+
+    /// Disable LSP-backed coding tools and daemon connections.
+    #[arg(long = "disable-lsp")]
+    disable_lsp: bool,
+}
+
+impl From<RawCodingMcpArgs> for CodingMcpArgs {
+    fn from(args: RawCodingMcpArgs) -> Self {
+        Self {
+            root_dir: args.root_dir,
+            rules_dirs: args.rules_dirs,
+            permission_mode: args.permission_mode,
+            lsp_integration: if args.disable_lsp { LspIntegration::Disabled } else { LspIntegration::Enabled },
+        }
+    }
 }
 
 impl CodingMcpArgs {
@@ -104,7 +142,9 @@ impl CodingMcpArgs {
         let mut full_args = vec!["coding-mcp".to_string()];
         full_args.extend(args);
 
-        Self::try_parse_from(full_args).map_err(|e| format!("Failed to parse CodingMcp arguments: {e}"))
+        RawCodingMcpArgs::try_parse_from(full_args)
+            .map(CodingMcpArgs::from)
+            .map_err(|e| format!("Failed to parse CodingMcp arguments: {e}"))
     }
 
     /// Parse the root directory from an mcp.json config file.
@@ -293,9 +333,10 @@ impl<T: CodingTools + 'static> CodingMcp<T> {
     }
 
     fn build_instructions(&self) -> String {
-        let base = r"# Coding MCP Server
+        let mut base = String::from(
+            r"# Coding MCP Server
 
-File I/O, search, shell, and LSP code intelligence tools for coding workflows.
+File I/O, search, shell, and optional LSP code intelligence tools for coding workflows.
 
 ## Quick Reference
 
@@ -303,11 +344,18 @@ File I/O, search, shell, and LSP code intelligence tools for coding workflows.
 - **File names** (find *.test.ts): `find`
 - **Read/write/edit** files: `read_file`, `write_file`, `edit_file`
 - **Shell commands**: `bash`
-- **Errors & warnings** (instant check without build): `lsp_check_errors`
+",
+        );
+
+        if self.lsp.is_some() {
+            base.push_str(
+                r"- **Errors & warnings** (instant check without build): `lsp_check_errors`
 - **Code symbols** (definitions, usages, types): `lsp_symbol`
 - **File structure** (what's in this file?): `lsp_document`
 - **Rename symbol** (refactor across codebase): `lsp_rename`
-";
+",
+            );
+        }
 
         match self.get_workspace_root() {
             Some(root) => format!(
@@ -318,7 +366,7 @@ When using tools that take file paths, always use absolute paths from:
                 base,
                 root.display()
             ),
-            None => base.to_string(),
+            None => base,
         }
     }
 
@@ -753,6 +801,25 @@ mod tests {
     fn args_default_permission_mode_is_always_allow() {
         let args = CodingMcpArgs::from_args(vec![]).unwrap();
         assert_eq!(args.permission_mode, PermissionMode::AlwaysAllow);
+    }
+
+    #[test]
+    fn args_default_lsp_integration_is_enabled() {
+        let args = CodingMcpArgs::from_args(vec![]).unwrap();
+        assert_eq!(args.lsp_integration, LspIntegration::Enabled);
+    }
+
+    #[test]
+    fn args_parses_disable_lsp() {
+        let args = CodingMcpArgs::from_args(vec!["--disable-lsp".into()]).unwrap();
+        assert_eq!(args.lsp_integration, LspIntegration::Disabled);
+    }
+
+    #[test]
+    fn disabled_lsp_instructions_omit_lsp_tools() {
+        let instructions = CodingMcp::new().build_instructions();
+        assert!(!instructions.contains("lsp_check_errors"));
+        assert!(!instructions.contains("lsp_symbol"));
     }
 
     #[test]

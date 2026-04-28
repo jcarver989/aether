@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::process::{ExitStatus, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
@@ -321,6 +321,40 @@ impl Drop for LspClient {
 
 type PendingResult = Result<Value, ClientError>;
 
+type ReadyCheck = futures::future::BoxFuture<'static, bool>;
+
+#[derive(Clone, Debug)]
+struct DaemonProcessStatus {
+    success: bool,
+    display: String,
+}
+
+impl From<ExitStatus> for DaemonProcessStatus {
+    fn from(status: ExitStatus) -> Self {
+        Self { success: status.success(), display: status.to_string() }
+    }
+}
+
+trait DaemonChild {
+    fn try_wait(&mut self) -> io::Result<Option<DaemonProcessStatus>>;
+    fn kill(&mut self) -> futures::future::BoxFuture<'_, io::Result<()>>;
+    fn wait(&mut self) -> futures::future::BoxFuture<'_, io::Result<DaemonProcessStatus>>;
+}
+
+impl DaemonChild for tokio::process::Child {
+    fn try_wait(&mut self) -> io::Result<Option<DaemonProcessStatus>> {
+        tokio::process::Child::try_wait(self).map(|status| status.map(DaemonProcessStatus::from))
+    }
+
+    fn kill(&mut self) -> futures::future::BoxFuture<'_, io::Result<()>> {
+        Box::pin(async move { tokio::process::Child::kill(self).await })
+    }
+
+    fn wait(&mut self) -> futures::future::BoxFuture<'_, io::Result<DaemonProcessStatus>> {
+        Box::pin(async move { tokio::process::Child::wait(self).await.map(DaemonProcessStatus::from) })
+    }
+}
+
 async fn run_reader(
     mut reader: ReadHalf<UnixStream>,
     pending: Arc<Mutex<HashMap<i64, oneshot::Sender<PendingResult>>>>,
@@ -362,6 +396,53 @@ async fn run_reader(
     }
 }
 
+async fn wait_for_daemon_ready<C, F>(
+    child: &mut C,
+    mut is_ready: F,
+    attempts: usize,
+    poll_interval: Duration,
+) -> ClientResult<()>
+where
+    C: DaemonChild,
+    F: FnMut() -> ReadyCheck,
+{
+    for _ in 0..attempts {
+        match child.try_wait() {
+            Ok(Some(status)) if !status.success => {
+                return Err(ClientError::SpawnFailed(std::io::Error::other(format!(
+                    "Daemon exited with status: {}",
+                    status.display
+                ))));
+            }
+            Ok(Some(_) | None) => {}
+            Err(err) => return Err(ClientError::SpawnFailed(err)),
+        }
+
+        tokio::time::sleep(poll_interval).await;
+        if is_ready().await {
+            return Ok(());
+        }
+    }
+
+    let _ = child.kill().await;
+    let _ = child.wait().await;
+    Err(ClientError::SpawnTimeout)
+}
+
+fn spawn_daemon_reaper<C>(mut child: C) -> tokio::task::JoinHandle<()>
+where
+    C: DaemonChild + Send + 'static,
+{
+    tokio::spawn(async move {
+        match child.wait().await {
+            Ok(status) => {
+                tracing::debug!(status = %status.display, success = status.success, "aether-lspd launcher reaped");
+            }
+            Err(err) => tracing::warn!(%err, "Failed to reap aether-lspd launcher"),
+        }
+    })
+}
+
 async fn spawn_daemon(socket_path: &Path) -> ClientResult<()> {
     let (binary, subcommand) = find_daemon_binary()?;
     let log_file = log_file_path(socket_path);
@@ -381,25 +462,21 @@ async fn spawn_daemon(socket_path: &Path) -> ClientResult<()> {
         .stderr(Stdio::null());
 
     let mut child = cmd.spawn().map_err(ClientError::SpawnFailed)?;
+    let ready_socket = socket_path.to_path_buf();
 
-    for _ in 0..50 {
-        match child.try_wait() {
-            Ok(Some(status)) if !status.success() => {
-                return Err(ClientError::SpawnFailed(std::io::Error::other(format!(
-                    "Daemon exited with status: {status}"
-                ))));
-            }
-            Ok(Some(_) | None) => {}
-            Err(err) => return Err(ClientError::SpawnFailed(err)),
-        }
+    wait_for_daemon_ready(
+        &mut child,
+        move || {
+            let socket_path = ready_socket.clone();
+            Box::pin(async move { UnixStream::connect(socket_path).await.is_ok() })
+        },
+        50,
+        Duration::from_millis(100),
+    )
+    .await?;
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        if UnixStream::connect(socket_path).await.is_ok() {
-            return Ok(());
-        }
-    }
-
-    Err(ClientError::SpawnTimeout)
+    spawn_daemon_reaper(child);
+    Ok(())
 }
 
 fn find_daemon_binary() -> ClientResult<(PathBuf, Option<&'static str>)> {
@@ -432,4 +509,91 @@ fn find_daemon_binary() -> ClientResult<(PathBuf, Option<&'static str>)> {
 fn which_aether_lspd() -> Option<PathBuf> {
     std::env::var_os("PATH")
         .and_then(|paths| std::env::split_paths(&paths).map(|path| path.join("aether-lspd")).find(|path| path.exists()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use tokio::sync::Notify;
+
+    struct FakeDaemonChild {
+        failed_status: Option<DaemonProcessStatus>,
+        kill_calls: Arc<AtomicUsize>,
+        wait_calls: Arc<AtomicUsize>,
+        waited: Arc<Notify>,
+    }
+
+    impl FakeDaemonChild {
+        fn running() -> Self {
+            Self {
+                failed_status: None,
+                kill_calls: Arc::new(AtomicUsize::new(0)),
+                wait_calls: Arc::new(AtomicUsize::new(0)),
+                waited: Arc::new(Notify::new()),
+            }
+        }
+    }
+
+    impl DaemonChild for FakeDaemonChild {
+        fn try_wait(&mut self) -> std::io::Result<Option<DaemonProcessStatus>> {
+            Ok(self.failed_status.clone())
+        }
+
+        fn kill(&mut self) -> futures::future::BoxFuture<'_, std::io::Result<()>> {
+            let kill_calls = Arc::clone(&self.kill_calls);
+            Box::pin(async move {
+                kill_calls.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            })
+        }
+
+        fn wait(&mut self) -> futures::future::BoxFuture<'_, std::io::Result<DaemonProcessStatus>> {
+            let wait_calls = Arc::clone(&self.wait_calls);
+            let waited = Arc::clone(&self.waited);
+            Box::pin(async move {
+                wait_calls.fetch_add(1, Ordering::SeqCst);
+                waited.notify_waiters();
+                Ok(DaemonProcessStatus { success: true, display: "exit status: 0".to_string() })
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn reaper_waits_for_spawned_daemon_launcher() {
+        let child = FakeDaemonChild::running();
+        let wait_calls = Arc::clone(&child.wait_calls);
+        let waited = Arc::clone(&child.waited);
+
+        let handle = spawn_daemon_reaper(child);
+        waited.notified().await;
+        handle.await.expect("reaper task should complete");
+
+        assert_eq!(wait_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn startup_timeout_kills_and_reaps_launcher() {
+        let mut child = FakeDaemonChild::running();
+        let kill_calls = Arc::clone(&child.kill_calls);
+        let wait_calls = Arc::clone(&child.wait_calls);
+        let ready = Arc::new(AtomicBool::new(false));
+        let ready_check = Arc::clone(&ready);
+
+        let result = wait_for_daemon_ready(
+            &mut child,
+            move || {
+                let ready = Arc::clone(&ready_check);
+                Box::pin(async move { ready.load(Ordering::SeqCst) })
+            },
+            1,
+            Duration::ZERO,
+        )
+        .await;
+
+        assert!(matches!(result, Err(ClientError::SpawnTimeout)));
+        assert_eq!(kill_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(wait_calls.load(Ordering::SeqCst), 1);
+    }
 }

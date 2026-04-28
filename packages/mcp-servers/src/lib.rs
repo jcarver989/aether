@@ -28,7 +28,7 @@ pub mod plan;
 
 // Re-export primary types for convenience
 #[cfg(feature = "coding")]
-pub use coding::{CodingMcp, CodingMcpArgs, CodingTools, DefaultCodingTools, PermissionMode};
+pub use coding::{CodingMcp, CodingMcpArgs, CodingTools, DefaultCodingTools, LspIntegration, PermissionMode};
 
 #[cfg(feature = "coding")]
 pub use lsp::{LspMcp, LspMcpArgs, LspRegistry};
