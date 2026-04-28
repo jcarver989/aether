@@ -1,0 +1,10 @@
+[workspace]
+git_release_enable = false
+git_tag_name = "{{ package }}-v{{ version }}"
+pr_branch_prefix = "release-plz/"
+pr_name = "chore: release"
+dependencies_update = true
+
+[[package]]
+name = "crucible"
+release = false
