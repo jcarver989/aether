@@ -385,20 +385,26 @@ async fn spawn_daemon(socket_path: &Path) -> ClientResult<()> {
     for _ in 0..50 {
         match child.try_wait() {
             Ok(Some(status)) if !status.success() => {
-                return Err(ClientError::SpawnFailed(std::io::Error::other(format!(
-                    "Daemon exited with status: {status}"
-                ))));
+                return Err(ClientError::SpawnFailed(io::Error::other(format!("Daemon exited with status: {status}"))));
             }
-            Ok(Some(_) | None) => {}
+            Ok(_) => {}
             Err(err) => return Err(ClientError::SpawnFailed(err)),
         }
 
         tokio::time::sleep(Duration::from_millis(100)).await;
         if UnixStream::connect(socket_path).await.is_ok() {
+            tokio::spawn(async move {
+                match child.wait().await {
+                    Ok(status) => tracing::debug!(%status, "aether-lspd launcher reaped"),
+                    Err(err) => tracing::warn!(%err, "Failed to reap aether-lspd launcher"),
+                }
+            });
             return Ok(());
         }
     }
 
+    let _ = child.kill().await;
+    let _ = child.wait().await;
     Err(ClientError::SpawnTimeout)
 }
 
