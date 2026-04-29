@@ -1,6 +1,6 @@
 use crate::setup::McpBuilderExt;
 use aether_core::{
-    agent_spec::McpJsonFileRef,
+    agent_spec::McpConfigSource,
     core::{AgentBuilder, AgentHandle, Prompt},
     events::{AgentMessage, UserMessage},
     mcp::{McpSpawnResult, mcp, run_mcp_task::McpCommand},
@@ -242,7 +242,7 @@ async fn execute_single_agent(
         }
 
         let McpSpawnResult { tool_definitions, instructions, server_statuses: _, command_tx, event_rx: _, handle: _ } =
-            spawn_mcps(&spec.mcp_config_refs, roots, catalog.project_root()).await?;
+            spawn_mcps(&spec.mcp_config_sources, roots, catalog.project_root()).await?;
         let filtered_tools = spec.tools.apply(tool_definitions);
         spec.prompts.push(Prompt::mcp_instructions(instructions));
 
@@ -314,16 +314,16 @@ async fn execute_single_agent(
 }
 
 async fn spawn_mcps(
-    effective_mcp_config_refs: &[McpJsonFileRef],
+    effective_mcp_config_sources: &[McpConfigSource],
     roots: Vec<PathBuf>,
     project_root: &Path,
 ) -> Result<McpSpawnResult, String> {
     let mut builder = mcp().with_builtin_servers(project_root.to_path_buf(), project_root);
     builder = builder.with_roots(roots);
 
-    if !effective_mcp_config_refs.is_empty() {
+    if !effective_mcp_config_sources.is_empty() {
         builder = builder
-            .from_mcp_config_refs(effective_mcp_config_refs)
+            .from_mcp_config_sources(effective_mcp_config_sources)
             .await
             .map_err(|e| format!("Failed to load mcp configs: {e}"))?;
     }

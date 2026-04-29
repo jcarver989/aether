@@ -8,8 +8,8 @@ pub fn resolve_agent_spec(catalog: &AgentCatalog, agent_name: Option<&str>, cwd:
         Some(name) => catalog.resolve(name, cwd).map_err(|e| CliError::AgentError(e.to_string())),
 
         None => {
-            if let Some(first) = catalog.user_invocable().next() {
-                catalog.resolve(&first.name, cwd).map_err(|e| CliError::AgentError(e.to_string()))
+            if let Some(selected) = catalog.default_agent() {
+                catalog.resolve(&selected.name, cwd).map_err(|e| CliError::AgentError(e.to_string()))
             } else {
                 let model = "anthropic:claude-sonnet-4-5".parse().map_err(|e: String| CliError::ModelError(e))?;
 
@@ -44,8 +44,8 @@ mod tests {
     fn resolve_with_explicit_name() {
         let (dir, catalog) = setup_catalog(
             r#"{"agents": [
-                {"name": "first", "description": "First", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["PROMPT.md"]},
-                {"name": "second", "description": "Second", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["PROMPT.md"]}
+                {"name": "first", "description": "First", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": [{"type":"file","path":"PROMPT.md"}]},
+                {"name": "second", "description": "Second", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": [{"type":"file","path":"PROMPT.md"}]}
             ]}"#,
         );
         let spec = resolve_agent_spec(&catalog, Some("second"), dir.path()).unwrap();
@@ -56,8 +56,8 @@ mod tests {
     fn resolve_auto_selects_first_user_invocable() {
         let (dir, catalog) = setup_catalog(
             r#"{"agents": [
-                {"name": "internal", "description": "Internal", "model": "anthropic:claude-sonnet-4-5", "agentInvocable": true, "prompts": ["PROMPT.md"]},
-                {"name": "visible", "description": "Visible", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["PROMPT.md"]}
+                {"name": "internal", "description": "Internal", "model": "anthropic:claude-sonnet-4-5", "agentInvocable": true, "prompts": [{"type":"file","path":"PROMPT.md"}]},
+                {"name": "visible", "description": "Visible", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": [{"type":"file","path":"PROMPT.md"}]}
             ]}"#,
         );
         let spec = resolve_agent_spec(&catalog, None, dir.path()).unwrap();
@@ -76,7 +76,7 @@ mod tests {
     fn resolve_unknown_name_errors() {
         let (dir, catalog) = setup_catalog(
             r#"{"agents": [
-                {"name": "alpha", "description": "Alpha", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": ["PROMPT.md"]}
+                {"name": "alpha", "description": "Alpha", "model": "anthropic:claude-sonnet-4-5", "userInvocable": true, "prompts": [{"type":"file","path":"PROMPT.md"}]}
             ]}"#,
         );
         let result = resolve_agent_spec(&catalog, Some("nonexistent"), dir.path());

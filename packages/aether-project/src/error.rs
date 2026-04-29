@@ -65,6 +65,18 @@ pub enum SettingsError {
     #[error("Agent '{name}' not found")]
     AgentNotFound { name: String },
 
+    /// The authored config contains no agents.
+    #[error("Aether config must contain at least one agent")]
+    EmptyAgents,
+
+    /// The configured agent selector did not match an agent.
+    #[error("Configured agent selector '{name}' did not match any agent")]
+    InvalidAgentSelector { name: String },
+
+    /// The configured agent selector matched an agent that users cannot invoke.
+    #[error("Configured agent selector '{name}' is not user-invocable")]
+    NonUserInvocableAgentSelector { name: String },
+
     /// Duplicate prompt names in the catalog.
     #[error("Duplicate prompt name: '{name}'")]
     DuplicatePromptName { name: String },

@@ -7,6 +7,7 @@ use super::session_store::SessionStore;
 use acp_utils::testing::{TestPeer, duplex_pair};
 use aether_core::core::AgentHandle;
 use aether_core::events::{AgentMessage, UserMessage};
+use aether_project::AetherConfigSource;
 use agent_client_protocol::schema::SessionId;
 use agent_client_protocol::{Agent, Client, ConnectionTo};
 use llm::oauth::OAuthCredentialStore;
@@ -39,6 +40,7 @@ impl AcpTestHarness {
             session_store: session_store.clone(),
             has_oauth_credential: OAuthCredentialStore::has_credential,
             initial_selection: InitialSessionSelection::default(),
+            config_source: AetherConfigSource::ProjectFiles,
         }));
 
         let (peer, client_builder) = TestPeer::new();

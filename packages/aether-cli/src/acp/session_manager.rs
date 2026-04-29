@@ -32,7 +32,7 @@ use super::session_store::{SessionMeta, SessionStore};
 use acp_utils::content::format_embedded_resource;
 use aether_core::agent_spec::AgentSpec;
 use aether_core::context::ext::ContextExt;
-use aether_project::{AgentCatalog, load_agent_catalog};
+use aether_project::{AetherConfigSource, AgentCatalog, load_agent_catalog_from_source};
 use llm::Context;
 
 /// Initial session selection supplied when `aether acp` starts.
@@ -63,6 +63,7 @@ pub struct SessionManager {
     session_store: Arc<SessionStore>,
     has_oauth_credential: fn(&str) -> bool,
     initial_selection: InitialSessionSelection,
+    config_source: AetherConfigSource,
 }
 
 pub(crate) struct SessionManagerConfig {
@@ -70,6 +71,7 @@ pub(crate) struct SessionManagerConfig {
     pub(crate) session_store: Arc<SessionStore>,
     pub(crate) has_oauth_credential: fn(&str) -> bool,
     pub(crate) initial_selection: InitialSessionSelection,
+    pub(crate) config_source: AetherConfigSource,
 }
 
 struct SessionModeCatalog {
@@ -109,6 +111,7 @@ impl SessionManager {
             session_store: deps.session_store,
             has_oauth_credential: deps.has_oauth_credential,
             initial_selection: deps.initial_selection,
+            config_source: deps.config_source,
         }
     }
 
@@ -138,8 +141,8 @@ impl SessionManager {
         }
     }
 
-    async fn load_mode_catalog(cwd: &Path) -> Result<SessionModeCatalog, acp::Error> {
-        let catalog = load_agent_catalog(cwd).map_err(|e| {
+    async fn load_mode_catalog(&self, cwd: &Path) -> Result<SessionModeCatalog, acp::Error> {
+        let catalog = load_agent_catalog_from_source(cwd, self.config_source.clone()).map_err(|e| {
             error!("Failed to load agent catalog: {e}");
             acp::Error::invalid_params()
         })?;
@@ -367,6 +370,7 @@ mod tests {
             session_store,
             has_oauth_credential: |_| false,
             initial_selection: InitialSessionSelection::default(),
+            config_source: AetherConfigSource::ProjectFiles,
         });
         let response =
             manager.initialize(InitializeRequest::new(ProtocolVersion::LATEST)).await.expect("initialize succeeds");
@@ -488,7 +492,7 @@ impl SessionManager {
         let session_id = uuid::Uuid::new_v4().to_string();
         let acp_session_id = acp::SessionId::new(session_id.clone());
 
-        let mode_catalog = Self::load_mode_catalog(&args.cwd).await?;
+        let mode_catalog = self.load_mode_catalog(&args.cwd).await?;
         let default_model = pick_default_model(&mode_catalog.available).ok_or_else(|| {
             error!("No models available — set an API key env var (e.g. ANTHROPIC_API_KEY)");
             acp::Error::internal_error()
@@ -576,7 +580,7 @@ impl SessionManager {
         })?;
 
         let context = Context::from_events(&events);
-        let mode_catalog = Self::load_mode_catalog(&args.cwd).await?;
+        let mode_catalog = self.load_mode_catalog(&args.cwd).await?;
 
         let spec = if let Some(mode_name) = meta.selected_mode.as_deref() {
             resolve_agent_spec(&mode_catalog.catalog, mode_name, &args.cwd)?

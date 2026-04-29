@@ -1,3 +1,4 @@
+import type { AetherConfig } from "./generated/aether-config.js";
 import type { ChildProcess } from "node:child_process";
 import { addAbortListener } from "node:events";
 import path from "node:path";
@@ -22,10 +23,14 @@ export type PermissionRequestHandler = (
   request: acp.RequestPermissionRequest,
 ) => Promise<acp.RequestPermissionResponse>;
 
-export interface AetherSessionOptions {
+export type ConfigSelection =
+  | { config: AetherConfig; configFile?: never }
+  | { config?: never; configFile: string }
+  | { config?: never; configFile?: never };
+
+export interface CommonAetherSessionOptions {
   cwd?: string;
   binaryPath?: string;
-  agent?: AgentSelection;
   env?: Record<string, string | undefined>;
   logDir?: string;
   tools?: AetherToolGroups;
@@ -37,6 +42,10 @@ export interface AetherSessionOptions {
     request: AetherElicitationRequest,
   ) => Promise<AetherElicitationResponse>;
 }
+
+export type AetherSessionOptions = CommonAetherSessionOptions &
+  ConfigSelection &
+  AgentSelection;
 
 /**
  * Permission handler that selects the first `allow_*` option, or cancels if
@@ -72,7 +81,11 @@ export class AetherSession {
       externalMcpServers,
       tools,
       binaryPath: aetherPath = "aether",
-      agent: selection,
+      agent,
+      model,
+      reasoningEffort,
+      config,
+      configFile,
       logDir,
       cwd = process.cwd(),
       env,
@@ -95,12 +108,29 @@ export class AetherSession {
     if (abortSignal?.aborted)
       throw new AetherSdkError("aborted", "Aborted by caller");
 
+    if (config && configFile)
+      throw new AetherSdkError(
+        "invalid_options",
+        "config and configFile cannot both be supplied",
+      );
+    if (agent && model)
+      throw new AetherSdkError(
+        "invalid_options",
+        "agent and model cannot both be supplied",
+      );
+
     const args = ["acp"];
-    if (selection?.agent) args.push("--agent", selection.agent);
-    else if (selection?.model) {
-      args.push("--model", selection.model);
-      if (selection.reasoningEffort)
-        args.push("--reasoning-effort", selection.reasoningEffort);
+    if (config) args.push("--config-json", JSON.stringify(config));
+    if (configFile) args.push("--config-file", configFile);
+    if (agent) args.push("--agent", agent);
+    else if (model) {
+      args.push("--model", model);
+      if (reasoningEffort) args.push("--reasoning-effort", reasoningEffort);
+    } else if (reasoningEffort) {
+      throw new AetherSdkError(
+        "invalid_options",
+        "reasoningEffort requires model",
+      );
     }
     if (logDir) args.push("--log-dir", logDir);
 
